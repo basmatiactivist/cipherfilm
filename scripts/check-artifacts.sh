@@ -9,6 +9,9 @@ set -eu
 user=$(id -un | sed 's/[-._]/[-._]/g')
 pat="$HOME|/Users/$user|/home/$user|$user"
 [ -n "${CHECK_ARTIFACTS_EXTRA:-}" ] && pat="$pat|$CHECK_ARTIFACTS_EXTRA"
+# CHECK_ARTIFACTS_ONLY_EXTRA=1: look only for the extra words (the Play bundle keeps unstripped libraries and debug
+# symbols, which name the CI machine's build folder; that names nobody, so there only a person's home is looked for)
+[ "${CHECK_ARTIFACTS_ONLY_EXTRA:-}" = 1 ] && pat="${CHECK_ARTIFACTS_EXTRA:?CHECK_ARTIFACTS_ONLY_EXTRA needs CHECK_ARTIFACTS_EXTRA}"
 tmp=$(mktemp -d /tmp/cfcheck.XXXXXX)
 trap 'rm -rf "$tmp"' EXIT
 bad=0

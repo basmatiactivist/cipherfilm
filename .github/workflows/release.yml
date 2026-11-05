@@ -150,10 +150,13 @@ jobs:
 
   android:
     # starts alongside the tests: it is the longest job, and the release still waits for every check. The signing key
-    # is not passed from here: the job in android.yml reads it from the "release" environment
+    # lives in the "release" environment, which the job in android.yml uses; GitHub hands a called workflow
+    # environment secrets only when the caller passes secrets on. The repository itself keeps no secrets, so this
+    # passes nothing but what that environment (v* tags only) holds.
     needs: on-master
     uses: ./.github/workflows/android.yml
     with: { version: "${{ github.ref_name }}" }
+    secrets: inherit  # zizmor: ignore[secrets-inherit] only the release environment's own secrets exist
 
   mac:
     # macOS runner, also alongside the tests

@@ -243,9 +243,9 @@ func TestUploadRetriesResumesAndSkipsDuplicates(t *testing.T) {
 		want[filepath.Base(name)] = sha256.Sum256(data)
 	}
 	t.Setenv("CIPHERFILM_UPLOAD_STATE", t.TempDir())
-	t.Setenv("CIPHERFILM_PASSWORD", password)
 
 	runOnce := func() (int, error) {
+		t.Setenv("CIPHERFILM_PASSWORD", password) // each run takes it out of the environment
 		o := options{server: srv.URL, email: email, parallel: 2, segments: 2}
 		// newClient is replaced by one that trusts the test server's certificate
 		testClient = func(c *client) {
@@ -333,13 +333,13 @@ func TestMalformedItemIdFromTheServerIsRefused(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "a.jpg"), randBytes(1000), 0o600)
 	t.Setenv("CIPHERFILM_UPLOAD_STATE", t.TempDir())
-	t.Setenv("CIPHERFILM_PASSWORD", password)
 	testClient = func(c *client) {
 		c.http.Transport = srv.Client().Transport.(*http.Transport).Clone()
 		c.backoff = func(int) time.Duration { return time.Millisecond }
 	}
 	for _, id := range []string{"./../../../../././escaped-file-b", "0123456789ABCDEF0123456789ABCDEF", "0123456789abcdef"} {
 		fake.badID = id
+		t.Setenv("CIPHERFILM_PASSWORD", password) // each run takes it out of the environment
 		var log bytes.Buffer
 		if code, _ := run(context.Background(), options{server: srv.URL, email: email, parallel: 1, segments: 1}, dir, &log); code == 0 {
 			t.Fatalf("%q: run reported success", id)

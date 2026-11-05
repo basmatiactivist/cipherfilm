@@ -12,18 +12,23 @@ pat="$HOME|/Users/$user|/home/$user|$user"
 tmp=$(mktemp -d /tmp/cfcheck.XXXXXX)
 trap 'rm -rf "$tmp"' EXIT
 bad=0
+n=0
 for f in "$@"; do
-  [ -f "$f" ] || continue
+  # every argument must be a file that can be searched: a folder, a link or a pattern that matched nothing is an error
+  if [ -L "$f" ] || [ ! -f "$f" ]; then
+    echo "NOT A REGULAR FILE: $f" >&2; bad=1; continue
+  fi
   case "$f" in
     *.zip|*.apk)
       d="$tmp/$(basename "$f")"; mkdir -p "$d"; unzip -q -o "$f" -d "$d"
       hits=$(LC_ALL=C grep -rlaE "$pat" "$d" 2>/dev/null | sed "s|$d/||" || true) ;;
     *) hits=$(LC_ALL=C grep -laE "$pat" "$f" 2>/dev/null || true) ;;
   esac
+  n=$((n + 1))
   if [ -n "$hits" ]; then
     bad=1
     echo "FOUND in $f:"; echo "$hits" | sed 's/^/  /' | head -20
   fi
 done
-[ $bad -eq 0 ] && echo "artifacts clean: no build paths or user name in $# files"
-exit $bad
+[ $bad -eq 0 ] && [ $n -eq $# ] && echo "artifacts clean: no build paths or user name in $n files" && exit 0
+exit 1

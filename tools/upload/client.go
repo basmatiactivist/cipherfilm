@@ -95,7 +95,9 @@ func newClient(server, email, caFile string, conns int) (*client, error) {
 		ForceAttemptHTTP2: false,
 		WriteBufferSize:   256 << 10,
 	}
-	return &client{base: u, http: &http.Client{Transport: tr, Jar: jar}, email: email, backoff: defaultBackoff}, nil
+	// redirects are not followed: a request body (the login proof among them) goes to --server and nowhere else
+	noRedirect := func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return &client{base: u, http: &http.Client{Transport: tr, Jar: jar, CheckRedirect: noRedirect}, email: email, backoff: defaultBackoff}, nil
 }
 
 func defaultBackoff(attempt int) time.Duration {

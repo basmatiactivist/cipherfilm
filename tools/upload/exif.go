@@ -78,6 +78,7 @@ func readExif(r io.ReaderAt, size int64) (*exifInfo, error) {
 func jpegExif(r io.ReaderAt, size int64) (int64, error) {
 	pos := int64(2)
 	h := make([]byte, 4)
+	fill := make([]byte, 4096)
 	for pos+4 <= min(size, exifReadLimit) {
 		if _, err := r.ReadAt(h, pos); err != nil {
 			return 0, errNoExif
@@ -86,11 +87,23 @@ func jpegExif(r io.ReaderAt, size int64) (int64, error) {
 			return 0, errNoExif
 		}
 		marker := h[1]
-		if marker == 0xD8 || (marker >= 0xD0 && marker <= 0xD7) || marker == 0x01 || marker == 0xFF {
-			pos += 2
-			if marker == 0xFF {
-				pos--
+		if marker == 0xFF { // a run of fill bytes: skip it a block at a time, not one read per byte
+			for pos++; pos < min(size, exifReadLimit); {
+				k, _ := r.ReadAt(fill, pos)
+				i := 0
+				for i < k && fill[i] == 0xFF {
+					i++
+				}
+				pos += int64(i)
+				if i < k || k == 0 {
+					break
+				}
 			}
+			pos-- // the last 0xFF starts the next marker
+			continue
+		}
+		if marker == 0xD8 || (marker >= 0xD0 && marker <= 0xD7) || marker == 0x01 {
+			pos += 2
 			continue
 		}
 		if marker == 0xDA || marker == 0xD9 { // image data starts: no EXIF before it
@@ -305,6 +318,14 @@ func ilocFind(b []byte, want uint32) (int64, error) {
 		n, ok2 := rd(2)
 		if !ok1 || !ok2 {
 			return 0, errNoExif
+		}
+		// the extents must fit in what is left of the box; with all their fields 0 bytes wide only the first counts
+		per := uint64(idxSize + offSize + lenSize)
+		if n*per > uint64(len(b)-p) {
+			return 0, errNoExif
+		}
+		if per == 0 {
+			n = min(n, 1)
 		}
 		var first uint64
 		for e := uint64(0); e < n; e++ {

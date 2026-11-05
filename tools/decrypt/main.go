@@ -175,7 +175,7 @@ type meta struct {
 	CaptureTS int64  `json:"capture_ts"`
 }
 
-var unsafeName = regexp.MustCompile(`[\x00-\x1f/\\:*?"<>|]`)
+var unsafeName = regexp.MustCompile(`[\x00-\x1f\x7f\x{80}-\x{9f}/\\:*?"<>|]`)
 
 // idRe is the id format the server issues for items and albums. Ids come from the (untrusted) database and end up in
 // paths, so anything else is refused before it is used.
@@ -236,7 +236,7 @@ func export(b *backupDir, a *account, master []byte, o options) error {
 		done[it.ID] = exported{it, path}
 		bytesOut += size
 		if (n+1)%25 == 0 || n+1 == len(items) {
-			fmt.Fprintf(os.Stderr, "  [%d/%d] %s\n", n+1, len(items), path)
+			fmt.Fprintf(os.Stderr, "  [%d/%d] %s\n", n+1, len(items), clean(path))
 		}
 	}
 	if !o.verify && !o.noAlbums {
@@ -306,11 +306,16 @@ func readSegment(path string, want int64) ([]byte, error) {
 	if !fi.Mode().IsRegular() || fi.Size() != want {
 		return nil, errors.New("unexpected file in the backup")
 	}
-	f, err := os.Open(path)
+	// opened without following a symlink or waiting on a FIFO, and checked again on the descriptor: the file must not
+	// have been swapped between the check above and the open
+	f, err := os.OpenFile(path, os.O_RDONLY|noFollow, 0)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
+	if fi2, err := f.Stat(); err != nil || !os.SameFile(fi, fi2) || !fi2.Mode().IsRegular() || fi2.Size() != want {
+		return nil, errors.New("unexpected file in the backup")
+	}
 	buf := make([]byte, want)
 	if _, err := io.ReadFull(f, buf); err != nil {
 		return nil, err

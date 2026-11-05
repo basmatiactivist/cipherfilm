@@ -35,6 +35,12 @@ func TestCleanRemovesTerminalEscapes(t *testing.T) {
 	}
 }
 
+func TestSafeNameDropsControlCharacters(t *testing.T) {
+	if got := safeName("a\x1b\x7f\u009bb.jpg", "x"); got != "a___b.jpg" {
+		t.Fatalf("safeName = %q", got)
+	}
+}
+
 func TestHostileKDFParametersAreRejected(t *testing.T) {
 	salt := "AAAAAAAAAAAAAAAAAAAAAA"
 	for _, p := range []kdfParams{{Alg: "argon2id13", V: 1, Ops: 1 << 32, Mem: 1 << 26, Salt: salt}, {Alg: "argon2id13", V: 1, Ops: 3, Mem: 4 << 30, Salt: salt}, {Alg: "argon2id13", V: 1, Ops: 0, Mem: 1 << 26, Salt: salt}} {

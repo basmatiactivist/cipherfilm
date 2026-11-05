@@ -93,6 +93,7 @@ func readPassword(file string) (string, error) {
 		return strings.TrimRight(string(b), "\r\n"), err
 	}
 	if v := os.Getenv("CIPHERFILM_PASSWORD"); v != "" {
+		os.Unsetenv("CIPHERFILM_PASSWORD") // so sips, qlmanage and ffmpeg do not inherit it
 		return v, nil
 	}
 	fmt.Fprint(os.Stderr, "Password: ")

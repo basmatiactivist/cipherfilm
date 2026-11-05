@@ -217,6 +217,47 @@ func TestStateSurvivesReopenAndCrashedLines(t *testing.T) {
 	}
 }
 
+// countingReaderAt counts the reads a parser makes.
+type countingReaderAt struct {
+	r *bytes.Reader
+	n int
+}
+
+func (c *countingReaderAt) ReadAt(p []byte, off int64) (int, error) { c.n++; return c.r.ReadAt(p, off) }
+
+func TestJpegFillBytesAreSkippedInBlocks(t *testing.T) {
+	app1 := append([]byte("Exif\x00\x00"), tiffBlock()...)
+	jpg := append([]byte{0xFF, 0xD8}, bytes.Repeat([]byte{0xFF}, 100000)...)
+	jpg = append(append(jpg, 0xE1), binary.BigEndian.AppendUint16(nil, uint16(len(app1)+2))...)
+	jpg = append(append(jpg, app1...), 0xFF, 0xD9)
+	r := &countingReaderAt{r: bytes.NewReader(jpg)}
+	if _, err := jpegExif(r, int64(len(jpg))); err != nil {
+		t.Fatalf("EXIF after fill bytes not found: %v", err)
+	}
+	if r.n > 100 {
+		t.Fatalf("%d reads for one run of fill bytes", r.n)
+	}
+}
+
+func TestIlocWithEmptyExtentsIsQuick(t *testing.T) {
+	// version 0, every size 0, 65535 items with 65535 extents each: nothing to read per extent
+	b := []byte{0, 0, 0, 0, 0x00, 0x00, 0xFF, 0xFF}
+	for i := 0; i < 0xFFFF; i++ {
+		b = append(b, 0, 2, 0, 0, 0xFF, 0xFF)
+	}
+	start := time.Now()
+	if _, err := ilocFind(b, 1); err == nil {
+		t.Fatal("no item 1, yet an offset was found")
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("took %v", d)
+	}
+	// extents that claim more bytes than the box holds
+	if _, err := ilocFind([]byte{0, 0, 0, 0, 0x44, 0x00, 0, 1, 0, 1, 0, 0, 0xFF, 0xFF, 0, 0, 0, 0}, 1); err == nil {
+		t.Fatal("extents past the end accepted")
+	}
+}
+
 func TestShortHeifInfoBoxIsNoExifNotACrash(t *testing.T) {
 	// a 62-byte HEIC whose iinf box claims version 1 but holds only 6 bytes
 	raw, _ := hex.DecodeString("000000146674797068656963000000006d6966310000002a6d657461000000000000000e69696e6601000000000000000010696c6f630000000000000000")

@@ -72,9 +72,11 @@ func openState(path string) (*state, error) {
 		}
 		f.Close()
 	}
-	// compact: write what is current to a new file and swap it in
+	// compact: write what is current to a new file and swap it in. The new file is always created here, never one
+	// already there (a leftover, or a link to some other file) reused
 	tmp := path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	os.Remove(tmp)
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return nil, err
 	}

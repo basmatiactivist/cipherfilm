@@ -270,7 +270,9 @@ func videoFrame(ctx context.Context, p, dir string) (string, error) {
 	if _, err := exec.LookPath("ffmpeg"); err == nil {
 		out := filepath.Join(dir, "frame.jpg")
 		for _, at := range []string{"1", "0"} { // a second in, else the first frame (very short clips)
-			cmd := exec.CommandContext(ctx, "ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-ss", at, "-i", p, "-frames:v", "1",
+			// read as the MP4/MOV the extension says it is, from the local file only
+			cmd := exec.CommandContext(ctx, "ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-protocol_whitelist", "file",
+				"-f", "mov", "-ss", at, "-i", "file:"+p, "-frames:v", "1",
 				"-vf", fmt.Sprintf("scale='min(%d,iw)':-2", previewPx), "-q:v", "2", out)
 			if cmd.Run() == nil {
 				if fi, err := os.Stat(out); err == nil && fi.Size() > 0 {

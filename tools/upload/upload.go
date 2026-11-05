@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -88,7 +89,7 @@ func (u *uploader) loadLibrary(ctx context.Context) (n int, quotaLeft int64, unl
 		if p.Next == "" {
 			return n, quotaLeft, unlimited, nil
 		}
-		path = "/api/items?after=" + p.Next
+		path = "/api/items?after=" + url.QueryEscape(p.Next)
 	}
 }
 

@@ -1,0 +1,72 @@
+name: Mac
+# Builds the Mac app (mac/) with xcodebuild and runs its core tests (crypto against the web client's test vectors,
+# tokenizer, search index). Runs on pushes that touch mac/, and from the release workflow for a tag, which attaches
+# cipherfilm-mac-<version>.zip. Unsigned until signing secrets exist: the build is signed ad hoc and Gatekeeper
+# refuses it at first (System Settings > Privacy & Security > Open Anyway, or sign and notarise it with a Developer ID).
+on:
+  workflow_call:
+    inputs:
+      version: { type: string, required: true }
+  push:
+    branches: [master]
+    paths: ["mac/**", "tools/decrypt/testdata/**", ".github/workflows/mac.yml"]
+  pull_request:
+    paths: ["mac/**", "tools/decrypt/testdata/**", ".github/workflows/mac.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 40
+    defaults:
+      run: { working-directory: mac }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }  # no token left in .git for later steps
+      - name: Newest Xcode on the runner
+        run: |
+          X=$(ls -d /Applications/Xcode_*.app | grep -v -i beta | sort -V | tail -1)
+          sudo xcode-select -s "$X"
+          xcodebuild -version
+      - name: ONNX Runtime from the cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: mac/Vendor
+          key: "onnxruntime-${{ hashFiles('mac/scripts/fetch-onnxruntime.sh') }}"
+      - name: ONNX Runtime (pinned release, checked against its SHA-256)
+        run: ./scripts/fetch-onnxruntime.sh
+      - name: Core tests
+        run: swift test
+      - name: Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: Build the app
+        env:
+          # v1.7.2 from the release workflow; 0.0.0 for a plain push
+          VERSION: ${{ inputs.version || '0.0.0' }}
+        run: |
+          v="${VERSION#v}"
+          xcodebuild -project Cipherfilm.xcodeproj -scheme CipherfilmApp -configuration Release \
+            -destination 'platform=macOS,arch=arm64' -derivedDataPath build/dd \
+            CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO \
+            ENABLE_HARDENED_RUNTIME=NO \
+            MARKETING_VERSION="${v%%-*}" CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" build
+          APP="build/dd/Build/Products/Release/Cipherfilm.app"
+          test -x "$APP/Contents/MacOS/Cipherfilm"
+          test -d "$APP/Contents/Frameworks/onnxruntime.framework"
+          # an ad-hoc signature has no team: with the hardened runtime, library validation refuses the embedded ONNX
+          # Runtime and the app quits at launch ("different Team IDs"); it must start, so check that here
+          ! codesign -dvv "$APP" 2>&1 | grep -q "flags=.*runtime"
+          ("$APP/Contents/MacOS/Cipherfilm" > launch.log 2>&1 &); sleep 8
+          pgrep -f "$APP/Contents/MacOS/Cipherfilm" >/dev/null || { cat launch.log; echo "the app did not start"; exit 1; }
+          pkill -f "$APP/Contents/MacOS/Cipherfilm" || true
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Contents/Info.plist")" = "${v%%-*}"
+          mkdir -p ../dist
+          ditto -c -k --keepParent "$APP" "../dist/cipherfilm-mac-$v.zip"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mac-app
+          path: dist/cipherfilm-mac-*.zip
+          retention-days: 14

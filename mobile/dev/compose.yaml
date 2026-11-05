@@ -1,0 +1,29 @@
+# A throwaway Cipherfilm for testing the Android app in the emulator and the Mac app (https://localhost:8443), never the real one. The emulator reaches the
+# Mac as 10.0.2.2; Caddy serves https://10.0.2.2:8443 with its own local certificate authority, which only test
+# builds of the app trust (plugins/withTestCA.js). Start, get a test account and the CA:
+#   docker compose -f mobile/dev/compose.yaml up -d --build --wait
+#   node mobile/dev/account.mjs        (prints the test login; once per fresh volume)
+name: cipherfilm-androidtest
+services:
+  app:
+    build: ../..
+    image: cipherfilm:androidtest
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - data:/data
+    environment:
+      LISTEN_ADDR: ":8080"
+  proxy:
+    image: caddy:2.11.7-alpine
+    depends_on: [app]
+    ports:
+      - "127.0.0.1:8443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy:/data
+volumes:
+  data:
+  caddy:

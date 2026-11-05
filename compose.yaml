@@ -1,0 +1,29 @@
+# Production base: the app only. It publishes NO ports and does not provide HTTPS.
+# Pick how people reach it by adding exactly one overlay (see README "Choose how to deploy"):
+#   compose.tailscale.yaml   private, via your tailnet (no public ports)
+#   compose.proxy.yaml       behind your own reverse proxy on this host
+#   compose.caddy.yaml       public domain with automatic HTTPS (Caddy)
+# Select one in .env with COMPOSE_FILE, e.g. COMPOSE_FILE=compose.yaml:compose.tailscale.yaml
+name: cipherfilm-prod
+
+services:
+  app:
+    build: .
+    image: ${CIPHERFILM_IMAGE:-cipherfilm:latest}
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 256
+    mem_limit: 768m
+    volumes:
+      - appdata:/data
+    environment:
+      LISTEN_ADDR: ":8080"
+      TRUST_PROXY: "0"
+      PUBLIC_HOSTS: "${PUBLIC_HOSTS:-}"   # the name(s) the app is reached by; requests for any other name are refused
+
+volumes:
+  appdata:
+    name: ${DATA_VOLUME:-cipherfilm_data}

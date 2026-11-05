@@ -1,0 +1,12 @@
+#!/bin/sh
+# Refuses to push commits or tags that carry a real e-mail address (scripts/check-identity.sh).
+z=0000000000000000000000000000000000000000
+revs=
+while read -r _ lsha _ rsha; do
+  [ "$lsha" = $z ] && continue # a deletion
+  # a remote tip that isn't here (not fetched) can't be excluded; --not --remotes below still limits the range
+  if [ "$rsha" = $z ] || ! git cat-file -e "$rsha^{commit}" 2>/dev/null; then revs="$revs $lsha"; else revs="$revs $lsha ^$rsha"; fi
+done
+[ -z "$revs" ] && exit 0
+# shellcheck disable=SC2086
+exec scripts/check-identity.sh $revs --not --remotes="$1"

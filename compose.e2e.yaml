@@ -1,0 +1,37 @@
+# End-to-end test stack: the app behind Caddy with a locally issued HTTPS certificate, and Playwright.
+# Self-contained (no OrbStack, no published ports), so it runs the same on a laptop and in GitHub CI,
+# and never touches the dev stack. Used by `make e2e`.
+name: cipherfilm-e2e
+services:
+  app:
+    build: .
+    image: cipherfilm:e2e
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - appdata:/data
+    environment:
+      LISTEN_ADDR: ":8080"
+  proxy:
+    image: caddy:2.11.7-alpine
+    command: caddy reverse-proxy --from cipherfilm.test --to app:8080 --internal-certs
+    depends_on: [app]
+    networks:
+      default:
+        aliases: [cipherfilm.test]
+  playwright:
+    image: mcr.microsoft.com/playwright:v1.64.1-noble
+    profiles: [test]
+    depends_on: [proxy]
+    working_dir: /e2e
+    volumes:
+      - ./e2e:/e2e
+    environment:
+      BASE_URL: https://cipherfilm.test
+      SETUP_TOKEN: ${SETUP_TOKEN:-}
+      CI: ${CI:-}
+    command: sh -c 'npm ci --silent && npx playwright test'
+volumes:
+  appdata:

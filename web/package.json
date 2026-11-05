@@ -1,0 +1,26 @@
+{
+  "name": "cipherfilm-web",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit && vite build && vite build -c vite.sw.config.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@types/libsodium-wrappers-sumo": "0.8.2",
+    "client-zip": "2.5.1",
+    "exifr": "7.1.3",
+    "libheif-js": "1.23.5",
+    "libsodium-wrappers": "^0.8.4",
+    "libsodium-wrappers-sumo": "0.8.4",
+    "onnxruntime-web": "1.31.1",
+    "preact": "11.1.1"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "2.10.6",
+    "typescript": "7.0.2",
+    "vite": "8.3.5",
+    "vitest": "5.1.0"
+  }
+}

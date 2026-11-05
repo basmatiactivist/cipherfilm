@@ -1,0 +1,27 @@
+# Overlay: public site with automatic HTTPS from Let's Encrypt, via Caddy.
+# Needs: a DNS name pointing at this host (SITE_ADDRESS in .env) and ports 80 and 443 reachable from the internet.
+# Cipherfilm stays safe on the public internet only if you keep the admin invite-only (the default) and keep it updated.
+services:
+  caddy:
+    image: ${CADDY_IMAGE:-caddy:2-alpine}
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS in .env, e.g. photos.example.com}
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [app]
+    security_opt: ["no-new-privileges:true"]
+  app:
+    environment:
+      TRUST_PROXY: "1"
+
+volumes:
+  caddy_data:
+    name: ${CADDY_DATA_VOLUME:-cipherfilm_caddy_data}
+  caddy_config:

@@ -1,0 +1,59 @@
+# THREAT_MODEL.md (draft v1)
+
+## Assets
+Photo/video contents, thumbnails, filenames, EXIF (incl. GPS), capture dates, album names, user passwords, master and recovery keys.
+
+## Actors
+Admin (trusted to administer, **not** to see content), regular users, other tailnet members, a passive attacker with a copy of the disk/backups, an attacker who compromises the server process, a network attacker, a malicious or curious VPS provider.
+
+## What the server stores and learns
+- **Learns:** e-mail addresses, who is admin, account creation, last sign-in time per person, an admin activity log of the last 500 events (invites, limit and role changes, disabling, deleting; metadata only), and IPs only transiently in the rate limiter (the server writes no request logs, and the only secret it logs is the one-time setup token), number of items, ciphertext sizes (approximate file sizes, photo vs. video guess), upload/delete times, album structure (how many albums, which items are in which album), quota usage.
+- **Never receives:** passwords, `authKey`'s preimage, KEK, master key, recovery key, item keys, plaintext or filenames, EXIF/GPS, capture dates, album names.
+
+## Scenarios
+
+| Threat | Outcome |
+|---|---|
+| DB + blobs stolen (disk, backup, provider) | Only ciphertext. Offline password guessing requires the Argon2id (client params) work per guess against `argon2id(authKey)`. Weak passwords are still guessable; recovery keys are 256-bit. |
+| Admin snoops | Cannot decrypt anything; can disable/delete accounts and see the metadata above. Admin cannot reset a password in a way that preserves access to data: reset would require the recovery key. |
+| User A tries to reach user B's data (IDOR) | Every query is scoped to the session's `user_id`; object IDs are random 128-bit; foreign IDs return 404. Even if bypassed, the data is encrypted under B's keys. Tested at API and UI level. |
+| Network attacker | TLS (Tailscale Serve / OrbStack). HSTS. Tailnet is WireGuard encrypted as well. |
+| Tampering/swapping ciphertext | AEAD with AD binding item id, segment index, counts and total size. Failure -> nothing displayed. |
+| Brute-force login | Attempts are counted atomically before the Argon2 check: 30 per source address and 10 per (account, source address) per 15 minutes, as a hard block (no back-off); IPv6 sources are grouped by /64. Argon2id on the server side too, with at most 4 verifications in flight. There is deliberately no per-account ceiling across all sources, because that would let an attacker lock the real user out from many addresses; the cost is that a widely distributed guesser is limited only by the Argon2 work and the per-source buckets. Browsers that have signed in before carry a signed device cookie (HMAC over user id and password hash; invalidated by a password change) and are counted in a separate per-account bucket (20 per 15 minutes) instead of the per-source ones, so strangers sharing a proxy address (Tailscale Serve, Cloudflare Tunnel, `TRUST_PROXY=0`) cannot lock the real user out from a known browser. Limitation: a *new* browser or device can still be blocked for up to 15 minutes while someone is guessing from the same shared source; a stolen device cookie only buys 20 password guesses per 15 minutes. |
+| Session theft / CSRF | `__Host-` cookie, HttpOnly, Secure, SameSite=Strict, CSRF token + Origin check, sessions are server-side rows that end 30 days after their last use (at most a year after sign-in), and on sign-out, password change, recovery and account disable; Account › Devices lists them and signs out any one, and a device signed out that way deletes its local data at its next request. |
+| Invite/setup abuse | Setup token printed to container logs, usable once, then permanently disabled. Invite tokens are 256-bit, stored hashed, single-use, expiring. |
+| Phone with automatic backup lost or seized | The background backup holds only the account's public key and the session cookie: it can add photos, never read them. Thumbnails and the list are cached encrypted only; the master key stays in memory, or in the hardware keystore behind fingerprint/face if the person chose that. The session can be ended from another device by changing the password. |
+| Server inserts items | Items sealed to the public key (background backup) can be created by anyone holding that key, including a malicious server; they cannot be told apart from the phone's uploads. Reading the library stays impossible. |
+| What photos show, who is in them | Search runs on the phone (docs/SEARCH.md). Index entries are sealed to the account's public key, the people list is encrypted under the master key; the server sees only how many entries an account has, their padded sizes and when they were written. Favorites are a plain flag, like album membership: the server sees which photos are marked, not what they show. A malicious server could insert made-up index entries (as with sealed items) to make photos show up in the wrong searches; it cannot read any. The models come from the person's own server and are checked against SHA-256 values built into the app. |
+| Lost password **and** recovery key | Data is unrecoverable by design. The UI says so. |
+
+## The hard limit: malicious JavaScript
+In a web app the server delivers the code that does the encryption. **Anyone who controls the server (or the Tailscale Serve endpoint, or can modify the container image) can serve a modified client that exfiltrates the password or keys when a user next logs in.** E2EE here protects against passive compromise (disk theft, backups, a snooping admin who only reads data), not against an *active* malicious server operator. Users must trust that whoever runs the server does not ship altered code.
+
+Mitigations (reduce, not remove):
+- Strict CSP: no inline scripts, no `eval`, no third-party origins; `'wasm-unsafe-eval'` only; `frame-ancestors 'none'`; `base-uri 'none'`.
+- All assets self-hosted: no CDNs, external fonts, analytics or telemetry.
+- Few, pinned dependencies with lockfile + integrity hashes; builds are not yet reproducible and no bundle hash is published.
+- **Not implemented:** Subresource Integrity, service-worker pinning of the bundle hash and a published bundle hash. SRI on a same-origin script adds little against a compromised server, which serves the HTML too, so none of these would stop an active malicious operator; do not rely on the client to detect a swapped bundle.
+- Admin, as the person most able to ship bad code, is in the same trust position as the server operator; family members should know this.
+
+### HEIC decoder exception
+The WASM HEIC decoder (libheif, built with embind) constructs functions from strings, so it needs `unsafe-eval`. The page CSP stays strict. Instead the decoder runs in a dedicated worker file served only from `/heic/`, whose own CSP allows eval but sets `connect-src 'none'`: it receives file bytes, returns pixels, and cannot make any network request. Everything else (page, API, other workers) keeps the strict policy without eval. Residual risk: a decoder bug triggered by a hostile HEIC could misbehave inside that worker, but it cannot reach the network, the page, or any key.
+
+### Service Worker
+The Service Worker (`/sw.js`) decrypts video and big downloads. It is a single bundled script served with the normal strict CSP. It holds item keys only in memory, receives them from the page by message, and forgets them on sign-out. The `/sw/stream/` and `/sw/dl/` URLs exist only inside the worker; the server answers 404 for them, and no key ever appears in a URL.
+
+### Deployment
+The app needs a trusted HTTPS front (Tailscale Serve, your own proxy, or the bundled Caddy). Behind a proxy it trusts exactly the last `X-Forwarded-For` entry. Operating the Tailscale option means trusting your tailnet's ACLs; the public-internet Caddy option adds exposure of the login endpoints, which are rate-limited per account.
+
+## Other limits and non-goals
+- Metadata (sizes, counts, times, album structure) leaks as listed above; metadata padding only blunts size leakage for small objects.
+- Compromised client device or malicious browser extension defeats E2EE (keys live in memory there).
+- XSS in the app would expose in-memory keys; mitigated by CSP, no `innerHTML` with data, and decrypted names rendered as text only.
+- Browsers can keep decrypted blobs in memory / disk cache: we use `Cache-Control: no-store` on API responses and revoke object URLs.
+- Denial of service by an authenticated user: storage is bounded by the per-user quota, which is reserved atomically before an upload body is read and also covers thumbnails and previews; open unfinished uploads are capped at 50 per user. Connection count and slow request bodies are not capped by the app (no read timeout), so a fronting proxy should limit them.
+- No 2FA in v1 (a stolen password plus access to the tailnet is enough to log in).
+- Tailscale ACLs are the first line of defence (only intended devices reach the host); the app does not trust the network.
+
+## Residual-risk summary
+Strong against: data-at-rest compromise, curious admin, cross-user access, ciphertext tampering. Not strong against: a malicious server operator shipping hostile JS, a compromised user device, weak passwords combined with a stolen database.

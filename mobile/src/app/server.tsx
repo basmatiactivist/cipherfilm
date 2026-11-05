@@ -1,0 +1,25 @@
+import { useState } from "react";
+import { Keyboard } from "react-native";
+import { router } from "expo-router";
+import { Button } from "react-native-paper";
+import { Column, Field, Lead, Problem, Screen, Title } from "../ui";
+import { chooseServer, session } from "../session";
+import { useAction } from "../useAction";
+
+export default function ServerScreen() {
+  const [address, setAddress] = useState(session().server.replace(/^https:\/\//, ""));
+  const { busy, error, run } = useAction();
+  const go = () => run(async () => {
+    Keyboard.dismiss(); await chooseServer(address); router.replace("/signin"); });
+  return (
+    <Screen form>
+      <Column>
+        <Title>Connect to your Cipherfilm</Title>
+        <Lead>The address you open Cipherfilm at in the browser.</Lead>
+        <Problem>{error}</Problem>
+        <Field label="Address" value={address} onChangeText={setAddress} placeholder="photos.example.com" autoCapitalize="none" keyboardType="url" textContentType="URL" returnKeyType="go" onSubmitEditing={go} />
+        <Button mode="contained" onPress={go} loading={busy} disabled={busy || !address.trim()} contentStyle={{ height: 48 }}>Connect</Button>
+      </Column>
+    </Screen>
+  );
+}

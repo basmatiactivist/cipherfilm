@@ -1,0 +1,4 @@
+# built by scripts/build-libsodium.sh from the signed release
+android/src/main/jniLibs/
+android/build/
+android/.cxx/

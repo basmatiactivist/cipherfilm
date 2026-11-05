@@ -1,0 +1,18 @@
+# Local dev on OrbStack. HTTPS at https://cipherfilm.orb.local (OrbStack custom domain).
+name: cipherfilm
+services:
+  app:
+    build: .
+    image: cipherfilm:dev
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - appdata:/data
+    environment:
+      LISTEN_ADDR: ":8080"
+    labels:
+      dev.orbstack.domains: cipherfilm.orb.local
+volumes:
+  appdata:

@@ -1,0 +1,40 @@
+# The Xcode project for the Mac app, generated with XcodeGen (brew install xcodegen; then `xcodegen generate` in mac/).
+# The app target compiles Sources/Cipherfilm and uses CipherfilmCore from Package.swift; run
+# scripts/fetch-onnxruntime.sh first. CI builds it with xcodebuild (.github/workflows/mac.yml).
+name: Cipherfilm
+options:
+  bundleIdPrefix: app.cipherfilm
+  deploymentTarget: { macOS: "15.0" }
+  createIntermediateGroups: true
+packages:
+  CipherfilmCore:
+    path: .
+targets:
+  # not "Cipherfilm": the local package has an executable of that name, and xcodebuild -scheme would pick it
+  CipherfilmApp:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/Cipherfilm
+        excludes: [Info.plist, Cipherfilm.entitlements]
+    dependencies:
+      - package: CipherfilmCore
+        product: CipherfilmCore
+    settings:
+      base:
+        PRODUCT_NAME: Cipherfilm
+        PRODUCT_MODULE_NAME: Cipherfilm
+        PRODUCT_BUNDLE_IDENTIFIER: app.cipherfilm.mac
+        # a release build gets the tag's version (.github/workflows/mac.yml)
+        MARKETING_VERSION: "0.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        INFOPLIST_FILE: Sources/Cipherfilm/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Sources/Cipherfilm/Cipherfilm.entitlements
+        ENABLE_HARDENED_RUNTIME: YES
+        SWIFT_VERSION: "6.0"
+        ARCHS: arm64
+        ONLY_ACTIVE_ARCH: NO
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""

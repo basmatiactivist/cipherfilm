@@ -1,0 +1,26 @@
+# A throwaway Cipherfilm for the uploader's end-to-end test (tools/upload/e2e/run.sh), never the real one. Caddy serves
+# https://localhost:8463 with its own local certificate authority; the test passes that CA to the uploader.
+name: cipherfilm-uploadtest
+services:
+  app:
+    build: ../../..
+    image: cipherfilm:uploadtest
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - data:/data
+    environment:
+      LISTEN_ADDR: ":8080"
+  proxy:
+    image: caddy:2.11.7-alpine
+    depends_on: [app]
+    ports:
+      - "127.0.0.1:8463:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy:/data
+volumes:
+  data:
+  caddy:

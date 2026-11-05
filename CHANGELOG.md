@@ -1,0 +1,634 @@
+# Changelog
+
+All notable changes to Cipherfilm are listed here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
+[Semantic Versioning](https://semver.org/). The release workflow copies the section of the tagged
+version into the GitHub release notes, so a release cannot be published without an entry here.
+
+## [2.0.0] - 2026-11-05
+
+The project is now called **Cipherfilm**. The encryption format is unchanged: every photo, album, search index and
+backup made before stays readable, and `cipherfilm-decrypt` opens old backups. Because the app ids, the image and the
+setting names changed with the name, every device signs in once more.
+
+### What you have to do
+- **Android:** the app has a new id (`app.cipherfilm`), so it installs as a new app next to the old one. Install
+  `cipherfilm-android-2.0.0.apk`, sign in, turn backup and fingerprint unlock on again, then uninstall the old app.
+  Backup matches files by name and size, so nothing is uploaded twice. Photos you save from the app now go to
+  `Pictures/Cipherfilm`.
+- **Mac:** Cipherfilm is a new app (`app.cipherfilm.mac`) with its own settings. Install `cipherfilm-mac-2.0.0.zip`,
+  sign in, choose the export folder and the watched folders again and re-enable Touch ID; then delete the old app.
+  Export folders now carry a `.cipherfilm-export` marker, so point the export at a new empty folder (or delete the old
+  marker file first).
+- **Server:** the image moved to `ghcr.io/basmatiactivist/cipherfilm`. The compose project and volume names changed
+  (`cipherfilm-prod`, `cipherfilm_data`, `cipherfilm_caddy_data`, …): set the `*_VOLUME` variables in `.env` to your
+  old volume names, or copy the data into the new volumes, before you start the new stack.
+- **Environment variables:** they now start with `CIPHERFILM_` (`CIPHERFILM_IMAGE`, `CIPHERFILM_PASSWORD`,
+  `CIPHERFILM_RECOVERY`, `CIPHERFILM_UPLOAD_STATE`). The old names are no longer read; rename them in `.env` and scripts.
+- **Web:** sign in once more; the browser's old caches are not used any more.
+
+### Security
+- GitHub Actions hardened: every action pinned to a commit hash, no token left in checkouts, releases built without
+  caches and handed only the signing secrets, Dependabot updates only after a cooldown and merged through GitHub's
+  own auto-merge once the required checks pass, release files checked for build paths, CodeQL and OpenSSF Scorecard
+  for the public repository. Checked with actionlint and zizmor (no medium or high findings).
+- The Mac apps of 1.8.0 to 1.11.1 and the Android apps of 1.9.0 to 1.11.1 were built on a personal machine and
+  contained its file paths; they were removed from those releases. `scripts/check-artifacts.sh` now checks every
+  release file for such paths before upload, and the Mac build maps them away (docs/RELEASING.md).
+
+### Changed
+- Renamed to Cipherfilm everywhere: apps, server, image, tools (`cipherfilm-decrypt`, `cipherfilm-upload`), release
+  files and documentation. Request headers are now `X-CF-Device` and `X-CF-Session`; all clients and the server ship
+  together.
+- Web: the first load fetches about 30 % less code (189 instead of 268 KB compressed). The main thread uses libsodium's
+  standard build; the sumo build with Argon2 is only in the sign-in worker. The lightbox, people, account, admin and
+  recovery screens, the EXIF reader, the ZIP writer and the recovery word list load when first needed.
+- Web: previews are kept encrypted in the browser like thumbnails (up to 300 MB, least recently used go first; lock and
+  sign-out delete them), so paging back in the viewer downloads nothing again. Search waits 150 ms after typing stops.
+
+## [1.11.1] - 2026-11-05
+
+### Changed
+- Admin › Users: explicit search is a button like the other actions ("Allow explicit search" / "Turn off explicit
+  search") instead of a checkbox, with an "explicit search" badge on the account; the actions sit in one row under
+  the account's details.
+- Admin › Activity reads as sentences, grouped by day ("Today", "Yesterday", the date), with the time and an icon:
+  "You made anna@… an administrator", "The server console signed out every device of …".
+
+## [1.11.0] - 2026-11-05
+
+### Added
+- Server commands, like Immich's: `docker compose exec app /app help` lists them. `status`, `list-users`,
+  `make-admin`, `revoke-admin`, `disable-user`, `enable-user`, `delete-user --yes`, `set-quota`, `allow-explicit`,
+  `deny-explicit`, `list-sessions`, `sign-out [--wipe]`, `invite` and `reset-password` (which explains why a password
+  can't be reset on the server, and what works instead). Changes go to the audit log as "server console";
+  docs/SERVER-COMMANDS.md.
+
+## [1.10.0] - 2026-11-05
+
+### Changed
+- One design system for all three apps: colors (light and dark), type roles, spacing, radii, shadows and motion live in
+  `design/tokens/tokens.json` and are generated into the web, Android and Mac apps (`make tokens`; DESIGN.md, "Tokens").
+  The web looks exactly as before. Android and the Mac now use the web's dark palette, the same corner radii and one
+  type scale; the Mac's tiles show the favorite heart in the same dark disc as the other apps.
+
+### Fixed
+- Mac: the primary button in dark mode had white text on light teal (2.5:1); it is dark ink now (7.8:1).
+- Mac: text fields show a teal border while they have the keyboard focus.
+- Android: the tick in a checked box was white on light teal in dark mode; it now takes the readable color.
+- Android: the "waiting" dot in Backup was Material's stock pink; it is a neutral now.
+- Web: the dismiss button of a message and an upload's cancel button are 44 px on touch screens.
+
+## [1.9.1] - 2026-11-05
+
+### Fixed
+- Mac: Search & People showed "Can't connect to the server" while the server was fine. Small requests (index pages,
+  the people document) allowed only a 20-second pause, which a model download over a relayed tailnet could exceed,
+  and the model download gave up after eight tries without data. Requests now allow a one-minute pause, the download
+  retries with backoff until it is done and says why it waits, and each failure says what happened (timed out,
+  dropped, offline, refused, or the server's answer, such as 404 or 502) and which step of search it stopped.
+
+## [1.9.0] - 2026-11-05
+
+### Added
+- **Devices** (web, Account › Devices): every device signed in to the account, with its name, when it was last
+  active and which one indexes for search. "Sign out…" ends one device's session, "Sign out all other devices" all
+  others. A device signed out this way is told so at its next request (`X-CF-Session: revoked`) and deletes what it
+  keeps of the library (web: keys, caches, the kept key; Android: as at sign-out). The apps send a device name
+  (`X-CF-Device`, e.g. "Pixel 8 (Android app)"); browsers are named from their User-Agent ("Firefox on macOS").
+- **One device indexes.** Per account one device computes the search index; the others only read it and download
+  only the small text model (about 66 MB, or 256 MB for explicit search, instead of 250 or 650 MB). The first device
+  that indexes becomes that device; "Index here" in the app's search settings moves it. The settings say which device
+  it is. Two devices indexing at once did the work twice and, with two models, overwrote each other's entries.
+- Android: downloading the search model and indexing go on when the app leaves the screen, in the foreground service
+  with a notification ("Downloading the search model · 300 MB of 647 MB", "Indexing for search · 140 of 210").
+  Before, both stopped until the app was opened again.
+- Web: a reload no longer asks for the password. The tab keeps the key, encrypted with a non-extractable browser key,
+  in its sessionStorage; closing the tab, Lock, sign-out or being signed out from another device forgets it.
+
+### Changed
+- Sessions last while they are used: 30 days after the last request, at most a year after signing in (before: 14
+  days after signing in, and one day without use). Every device had to sign in again every two weeks.
+- The server keeps search index entries per model (standard and explicit), so one model's entries never overwrite the
+  other's; switching deletes the other model's entries on the server. Entries from before stay readable.
+- Faster: the server writes a session's "last seen" at most once a minute (before: with every request, every
+  thumbnail included), sorts the library list from an index and sends 2000 items per page instead of 500. The web
+  decrypts only new or changed items when the list reloads during an upload (before: all of them every five seconds),
+  and the grid's tiles render again only when they change. Android decrypts the library once at start (before: twice),
+  renders grid rows only when they change, and starts backup bookkeeping and search after the grid is shown.
+- Android and web: switching between standard and explicit search deletes the other model at once (Android: its
+  two files, a half download included; web: its text model in the browser's cache); turning search off (Android) or
+  signing out (web) deletes all of them. The tokenizer and the face models are shared and stay while search is on.
+- Android: where an admin allows explicit search, turning on search always asks "Standard" or "Explicit" first, with
+  the real download size for this phone, and only then downloads the chosen model. Before, it downloaded MobileCLIP and
+  offered the choice only afterwards.
+
+### Added
+- Mac: for people an admin allowed explicit search, turning on search asks which model first, "Standard search
+  (MobileCLIP, 250 MB)" or "Explicit search (LAION, 600 MB)", in Settings and in the question after the first unlock,
+  and downloads only that one. The switch in Settings › Search & People still changes it later.
+
+### Fixed
+- The explicit model (600 MB) never finished downloading over a slow connection: the server cut every model download
+  off after 30 minutes, and the apps started again ("server not reachable"). Now a download is cut off only when it
+  stalls for two minutes. Android also resumes as long as bytes keep coming and waits out a restarting server.
+- Android: choosing "Standard" in the model question kept explicit search if it had been chosen before, and the
+  question didn't come up when the admin had allowed explicit search after the app signed in.
+- Android: the index vanished and was rebuilt after switching between standard and explicit search, or when another
+  device used the other model (see "One device indexes" and entries per model above).
+- Mac: the search models never finished downloading from a slow server (a tailnet relayed through DERP brings about
+  280 KB/s, so 250 MB take 15 minutes): the download had a 10-minute limit and then showed "Can't connect to the
+  server". It now has no overall limit (two minutes without a byte count as a drop), resumes a dropped download where
+  it stopped (HTTP Range, also after quitting), tries again with backoff as long as bytes keep coming, and shows the
+  progress, speed and time left ("40 MB of 250 MB · 280 KB/s, about 13 min left") or why it is waiting.
+- Mac: switching between standard and explicit search deletes the other model's files in both directions (switching
+  to explicit search kept MobileCLIP's 210 MB); the tokenizer and the face models are shared and stay.
+- Mac: a second copy of the app (one started from Downloads while another runs from Applications) now shows the
+  running one's window and quits, instead of both uploading, exporting and indexing.
+- Mac: the app built by GitHub Actions (1.7.2, 1.7.3) quit at launch: it was signed ad hoc with the hardened runtime,
+  and macOS then refuses the embedded ONNX Runtime ("different Team IDs"). Ad-hoc builds no longer use the hardened
+  runtime, and CI now starts the app once to check. The 1.8.0 Mac app (built locally) was not affected.
+
+## [1.8.0] - 2026-11-04
+
+### Added
+- Explicit search, off for everyone until an admin allows it per person (Admin › Users, "Explicit search allowed";
+  admins included). The person then turns it on in Search settings on any device; it applies to the whole account.
+  Search then uses LAION's uncensored OpenCLIP ViT-B/32 (`laion2b_s34b_b79k`, the model Immich ships, MIT, about
+  600 MB) instead of MobileCLIP S2, and every device indexes the library again; turning it off goes back. The
+  server serves its files only to people allowed it. Immich's ONNX export was checked against LAION's original
+  weights (identical vectors). Where the models come from and what was checked: docs/MODELS.md.
+- Android: explicit search as above, and search ranked like Immich's: every indexed photo, best match first, no
+  cut-off; people, dates, videos and favorites in the query narrow the ranking.
+- Server: index writes carry the entry's model tag; where explicit search is allowed, writes without it (from apps
+  before this version) are refused with "update the app", so two app versions can't overwrite each other's entries.
+- Release: goes out without the Mac app when GitHub has no macOS runner; it is then built locally and attached.
+- Mac: explicit search for people an admin allows it: a switch in Settings › Search & People (shown only to them)
+  turns it on for the whole account, saved in the encrypted people document. The Mac then downloads LAION's
+  ViT-B/32 (about 600 MB, with the session) and looks at every photo again; turning it off goes back to MobileCLIP,
+  looks again and deletes the 600 MB. A change made on another device or by an admin is picked up within about a
+  minute. Its vectors match the Python reference (ONNX Runtime 1.31.1, Pillow's bicubic resize): text cosine 1.0,
+  images 0.990 to 0.9999.
+- Mac: search by what is in a photo ranked like Immich, for both models: every indexed photo best match first, no
+  cut-off, 200 at a time as you scroll; people, dates, videos and favorites in the query narrow the ranking.
+- Web: search by what is in a photo ("dog", "beach", "birthday cake"), as in the Android and Mac apps. The browser
+  never looks at photos: it uses the image vectors the apps stored in the encrypted index, opened with the account's
+  key, and turns the words into a vector with the same text model (ONNX Runtime Web 1.31.1 in a worker, downloaded
+  once from your own server, checked against its SHA-256 and kept in the browser's cache). Ranked like Immich:
+  matches by name first, then every indexed photo best match first, 200 at a time as you scroll. Dates, videos,
+  favorites and people's names narrow the list: "Anna beach 2023" is Anna's photos from 2023, beach first. Search by
+  name now also finds people. Without an index the empty result and Account › Search say to turn on search in the
+  Android or Mac app.
+- Web: Account › Search, with an "Explicit search" switch for people an admin allows it. It applies to the whole
+  account: the Android and Mac apps index the library again with LAION's ViT-B/32, and the browser searches with its
+  text model (254 MB, fp32; removed from the browser at sign-out). An int8 copy was tested and rejected: its vectors
+  differ too much from the full model's (cosine 0.89 on average, 0.55 at worst).
+
+## [1.7.4] - 2026-11-04
+
+### Added
+- Mac: the arrow keys move through the photo grid (⇧ adds to the selection), Space or Return opens the photo.
+  VoiceOver reads every tile as a photo or video with its date, and the viewer's icon buttons, arrows and filmstrip by
+  name.
+- Web: Favorites. A heart in the viewer (key F), in the right-click menu and in the selection bar marks photos; the
+  new Favorites page (G then F) lists them, a small heart marks them in the grid, and search finds "favorites".
+  Favorites set on the phone or Mac show up in the browser too, and the other way round.
+- Web: dark mode that follows the system: the same ink and paper with the light off, every text at WCAG AA contrast
+  or better.
+- Web: Lock in the account menu drops the keys from memory and asks for the password again, without signing out.
+- Web: Select all and Select none in the selection bar on every page with photos, the timeline and the trash
+  included (on phones Select all stays in the head of albums, people and favorites, so the bar keeps one row).
+- Android: zoom in the viewer: double-tap a photo for a closer look (again for all of it), pinch up to 5×, move it
+  with one finger.
+
+### Fixed
+- Android: changing the font size in Android's settings while Cipherfilm was open made it close at the next tap.
+- Android: after sharing photos to Cipherfilm, Back went through the screens open before instead of leaving the
+  app; a share Cipherfilm can't read now says so in plain words instead of a technical error.
+- Android: Favorites showed Unfavorite twice in the selection bar.
+- Android: Delete album without a connection did nothing; it now says why.
+- Android: Next on the keyboard after the e-mail goes to the password; Lock now no longer asks for the fingerprint
+  at once (the phone may be in someone else's hand); "Not now" to fingerprint unlock is remembered instead of asked
+  at every unlock; Sign out on the unlock screen asks first, like in Account.
+- Android: the buttons of the Sign out and Turn off search dialogs ran out of the dialog with large text; they are
+  stacked now.
+- Android: TalkBack read setting switches without a name and photos by file name; switch rows now toggle as a whole
+  and read their title and state, photos read "Photo" or "Video" and when they were taken.
+- Mac: buttons that showed nothing under the pointer or while pressed now do: the viewer's icons and arrows, album
+  covers, people, the faces of a person, the filmstrip, the album picker, the upload status and the primary buttons.
+- Mac: text links (Sign out, Retry, Rename, Use another server) took the text colour and read as plain text; they are
+  teal now and underline under the pointer.
+- Mac: an error at the top of the library could only be dismissed by clicking it, with nothing saying so; it has a
+  close button now.
+- Mac: the menu-bar panel showed "Locked" and "Signed out" in the same teal as "Unlocked".
+- Web: Select all on more than 500 photos and then Move to trash, Restore, Add to album or a favorite failed with
+  "That didn't work". Big selections now go to the server in batches of 500.
+- Web: uploads stopped because the server was gone (a restart, an update) said they would continue by themselves
+  but only did on a network change; they now try again every 15 seconds.
+- Web: notes like "Moved to the trash · Undo", "Added to album" and errors showed at the top of the page and were
+  missed when it was scrolled; they now appear under the top bar wherever you are, notes go away after a few
+  seconds, errors can be dismissed.
+- Web: after closing the viewer, keyboard focus went nowhere; it now lands on the photo last shown. Confirmations
+  (Empty trash, Delete forever, Delete album, delete a user) take the focus on their safe button; naming a person
+  and renaming an album return it to the button.
+- Web: fields that appear later (Rename album, the recovery-key password) didn't get the focus, so typing a name
+  could trigger shortcuts such as S for select instead.
+- Web: the year bar on the right covered the Select button and error notes; the last short row of a day was taller
+  than the rows above it.
+- Web: the tab title kept "Timeline" after signing out; the phone search box shows "Search" instead of a cut-off hint.
+- Web: the selection bar stayed open on a page with nothing left to select (after unfavoriting the last favorite).
+- Web: on phones the selection count shows as a number, so the bar with the new Favorite button still fits one row.
+- Web admin: failed user actions (delete, disable, make admin, revoke invite) now say why instead of doing nothing;
+  Copy link confirms with "Copied"; a user without a limit reads "4 MB used, no limit" instead of "4 MB of no limit".
+
+## [1.7.3] - 2026-11-04
+
+### Fixed
+- Android: a backup that started in the app and went on after leaving it could hang until the app was opened again,
+  at the first wait for a retry (React Native stops JS timers off screen); the next runs then didn't start either. A
+  headless JS task now keeps the timers going while an upload runs, also in background runs.
+- Android: a short network drop (changing networks, the VPN reconnecting) stopped the whole backup with "Can't reach
+  the server" although the server was fine. Parts are now retried for about a minute and a half, a file twice more
+  after 30 and 90 seconds, and reaching the server three times over half a minute; if it still fails, the backup
+  tries again after three minutes instead of the next periodic run. The message shows when it happened.
+- Mac: Settings at the bottom of the sidebar shows the same hover, pressed and keyboard-focus look as the other
+  sidebar rows.
+
+## [1.7.2] - 2026-11-04
+
+### Added
+- Release: the Mac app is attached to every release (`cipherfilm-mac-<version>.zip`, Apple silicon, macOS 15 or
+  newer), built by the release workflow with the tag's version. It is not signed by Apple yet: the first start needs
+  System Settings › Privacy & Security › Open Anyway.
+
+## [1.7.1] - 2026-11-04
+
+### Changed
+- Web and Android: thumbnails in batches too. The tiles that ask within 15 ms go out in one request, newest first,
+  tiles that scrolled away are skipped, and the same thumbnail is asked for once; the newest 400 are fetched ahead
+  after the library loads. Against a server without the batch route they load one by one as before.
+
+## [1.7.0] - 2026-11-04
+
+### Changed
+- Server: `POST /api/items/thumbs` returns up to 100 encrypted thumbnails in one response, so a grid needs one round
+  trip instead of one per photo (the Mac app uses it; the old single route stays).
+- Mac: thumbnails in batches, decoded off the main thread and fetched ahead; search indexing six photos at a time and
+  on battery too, with fewer screen refreshes while it runs; uploads four at a time off the main thread; a Photo menu
+  with shortcuts for the quick actions; Settings at the bottom of the sidebar; an upload icon that looks like upload.
+
+### Added
+- Web: who is in a photo. The details list every face the Android or Mac app found, with a face picture cropped in
+  the browser and the person's name (a link to their photos) or "Add name"; a name someone already has joins them.
+  A People page lists named people and groups not named yet; a person's page has Rename and Select all. Faces are
+  grouped in a Web Worker with the apps' algorithm, so every device shows the same people; the web computes no vectors
+  and, without index entries, says to turn on search in the Android or Mac app.
+- Web: Select all on an album's page (and a person's), for the usual selection actions.
+- Cipherfilm for macOS (`mac/`, docs/MAC.md): a native SwiftUI app for Apple silicon with the Android app's scope:
+  sign in and unlock, timeline by day, viewer with originals, video playback decrypted in memory while it streams,
+  favorites, albums, trash with restore, upload by drag and drop and file picker, search of what is in photos and of
+  people (naming, merging, hiding, "not this person"), "Photos like this one".
+- Mac: export to a folder, kept up to date on its own (or "Export Now"), by year and month or by album, everything,
+  favorites or chosen albums. No duplicates: each photo is written once, the same photo uploaded twice becomes one
+  file, files already in the folder are adopted, a layout change moves files. Items deleted in the library go to the
+  macOS Trash if their copy is unchanged; files renamed or moved in the folder are left alone.
+- Mac: unlock with Touch ID (a Secure Enclave key locks a copy of the master key; a new fingerprint turns it off).
+- Mac: the server and account are shown on the sign-in and unlock screens, in the sidebar and in the menu bar.
+- Mac: year scrubber and "Go to date"; an uploads panel with retry, pause and a queue that survives restarts; drag
+  photos out into other apps and Share…; notifications when background work finishes; a person's faces can be picked
+  and moved to another person.
+- Mac: watched folders upload new photos and videos seconds after they appear, with item keys sealed to the account
+  key (also while the library is locked); files the library has (name and size) are skipped.
+- Mac: stays in the menu bar with the window closed and can open at login; it indexes the whole library for search
+  and faces in the background (by default only on power). Everything can be turned on and off in Settings.
+- Mac: the same crypto (checked against the web client's test vectors), the same models and index format as Android
+  (vectors checked against the phone's entries: image cosine ≥ 0.998, faces found with the same boxes), libsodium
+  1.0.22, ONNX Runtime 1.31.1.
+- CI: a macOS job builds the Mac app with xcodebuild and runs its tests; the build is unsigned until signing secrets
+  exist.
+- Android: shake to lock and close. Two strong shakes lock the library, wipe decrypted images and shared copies, and
+  close the app (also out of the recent apps), as some banking apps do in case the phone is grabbed. On by default;
+  Account turns it off.
+- Android: the photo's details list every face found in it, named or not, and "Add name" names it right there; the
+  selection bar has "Select all" (all of a person's photos, an album, search results).
+- Android and Mac: a face given to a person ("move to", or named from the photo's details) stays with that person
+  even where the automatic grouping put it with someone else.
+- Test server (`mobile/dev`): also answers at https://localhost:8443 for the Mac app.
+
+### Fixed
+- Server: adding to an album (and other multi-step writes) could fail with a server error while another device
+  wrote at the same moment (for example while indexing): transactions now begin immediate and wait for the lock.
+- Mac: Save Original saved nothing into folders macOS protects (Desktop, Documents, Downloads) and share did nothing
+  visible while it prepared the file; both now write through the app's own staging folder, show what they are doing
+  and say when something fails. Photos dragged in from the Photos app or a browser are kept until they are uploaded.
+- Mac: a click opens a photo (a long press selects); the viewer has quick actions, a filmstrip and an info column
+  that shows every face in the photo and names it there; "Select All" on a person's or an album's page; renaming a
+  person reports when it couldn't be saved; ⌘Q keeps the app in the menu bar when it should keep running.
+- Mac: a debug build with the test server's certificate set up refused every other server ("answers, but not like a
+  Cipherfilm"); the test certificate now applies to the local test server only, and a certificate or name problem
+  says so in plain words. Release builds were not affected.
+
+## [1.6.2] - 2026-11-04
+
+### Changed
+- Android: the backup starts a few seconds after a photo or video is taken, not only about every 15 minutes. Android
+  starts it when its photo library changes, also when the app is closed.
+- Android: signing out deletes what the phone keeps for the account: the backup's settings, list and status, the
+  search settings and the pinned public key, the session cookie and the cached library (as before). The automatic
+  backup and background search stop. The search models stay; they hold nothing of anyone.
+- Android: WorkManager 2.12.0.
+
+### Fixed
+- Android: turning the backup on (again, or after signing in again) with "also the ones already in these folders"
+  could upload photos that were already in the library: the backup now learns what the library has before its first
+  run.
+
+## [1.6.1] - 2026-11-04
+
+### Changed
+- Android: uploads keep going until they are done (the automatic backup and files shared to Cipherfilm). A
+  foreground service holds the app while they run, so leaving the app, locking the screen, swiping the notification
+  away or swiping the app out of the recent apps no longer stops them. Before, Android froze the app seconds after it
+  left the screen, and a background run stopped after eight minutes. Where Android doesn't allow the service (battery
+  optimisation on), a run still stops after a few minutes and the next one goes on.
+- Android: the APK is half the size (31 instead of 69 MB): its native libraries are stored compressed. Android
+  unpacks them when installing.
+
+### Fixed
+- Android: opening the app could start two backup runs at once, which uploaded the same photos twice.
+- Android: a backup that Android ended mid-way no longer shows "Backing up…" until the next run.
+
+## [1.6.0] - 2026-11-03
+
+### Added
+- Android: search what's in your photos ("beach", "dog", "birthday cake"), on the phone, with Apple's MobileCLIP S2.
+  One search box also understands names of people, years and months (English and German), "videos", "favorites",
+  "screenshots", file names and cameras. "Photos like this one" from a photo's details.
+- Android: people. Faces are found (OpenCV YuNet) and grouped by who they are (SFace) on the phone. Name people,
+  join two groups ("same person as…"), take photos out ("not Anna"), hide someone. The people in a photo show in its
+  details.
+- Search is opt-in: the app asks once, Account › Search and people turns it on or off, with or without faces. The
+  models (about 250 MB, open licenses) come from your own server, by default only over Wi-Fi, and are checked against
+  SHA-256 values built into the app. Indexing runs while the app is open and, optionally, in the background (by
+  default only while charging): new photos are indexed during the automatic backup. The results are encrypted (see
+  docs/SEARCH.md), so the server never learns what photos show or who is in them, and other devices reuse them.
+- Android: favorites. The heart in the viewer and in the selection bar; Favorites in Albums and in Search. Favorites
+  are kept on the server, so all devices see them.
+- Android: free up space. Photos and videos on the phone that are already safe in Cipherfilm (same name and size,
+  upload finished) go to the phone's trash after Android's confirmation; optionally only older ones or some folders.
+- Android: the backup's "only while charging" reads Android's plugged-in state, which some phones report more
+  reliably than the battery's charging flag.
+- Server: favorites, encrypted search index entries, an encrypted per-account people list, and the search models
+  under `/api/models/` (shipped in the image; `MODELS_DIR`).
+
+## [1.5.0] - 2026-11-03
+
+### Added
+- Android: automatic backup. New photos and videos in the folders you choose (Camera, Screenshots, WhatsApp
+  Images, …) are encrypted on the phone and uploaded in the background, by default only on Wi-Fi, optionally only
+  while charging. Each folder remembers its own progress; you choose whether photos already on the phone are
+  included. Photos already in your library (same name and size) are skipped. A guided setup asks for photo access,
+  photo locations, running in the background (battery optimisation) and notifications, shows what is still missing,
+  and explains the extra battery rules of Samsung, Xiaomi and Huawei phones. A notification shows the progress and
+  says when you need to sign in again; "Back up now" starts it at once.
+- Android: the trash, under Albums. Restore photos or delete them for good.
+- A second kind of item key: the background backup seals each new item key to the account's public key, so it can
+  add photos without the master key and can never read any. The web app, the Android app, `cipherfilm-decrypt` and
+  `cipherfilm-upload` all open both kinds; the server accepts both. See docs/CRYPTO.md.
+
+### Fixed
+- Android: release builds keep the classes WorkManager creates by reflection.
+
+## [1.4.4] - 2026-11-03
+
+### Added
+- Android: albums. A new Albums tab shows every album with its newest photo; open one to see only its photos and
+  swipe through them, rename or delete it, or remove photos from it. Selected photos can be added to an album from
+  the library.
+- Android: the photo viewer has Share, Add to album, Save and Trash (with Undo) at the bottom.
+- Android: videos play in the app, with Android's own player (Media3): play, pause, seek, skip. The player reads
+  the encrypted segments and decrypts them in memory as it plays; nothing decrypted is written to storage and no
+  local server is involved. Playback pauses when the app goes to the background and stops when it locks.
+- Dependabot now also watches the Android app, its native libraries and the Mac uploader.
+
+### Changed
+- Android: the library opens at once. The app keeps the server's encrypted copy of the list and the thumbnails on
+  the phone (they open only with the key in memory, and are removed when you sign out), so a second start shows the
+  grid without downloading it again. Up to 16 downloads run in parallel instead of 5, newest-on-screen first, and
+  tiles scrolled past are skipped.
+- Web: thumbnails are kept encrypted in the browser's storage between visits (deleted at sign-out), and twice as
+  many load in parallel.
+- Web: videos buffer three segments ahead instead of one, so playback starts and continues without stalls on a slow
+  or distant connection.
+
+### Fixed
+- Android: while photos are selected, the selection actions replace the bottom navigation instead of sitting under
+  it.
+
+## [1.4.3] - 2026-11-03
+
+### Security
+- Android: locking, signing out or a session ending now forgets the decrypted library, its item keys, cached
+  previews and shared copies; a list loaded for one account is never shown to another, and nothing that shows the
+  library stays on screen once it is locked.
+- Android: the automatic lock measures time away with a clock that can't be set back.
+- Android: shared files waiting to be uploaded are dropped when you sign out, so they never land in another account.
+- Android: a fresh folder for every share, so an app that got one photo can't later read a different one; the
+  password salt length is checked before hashing.
+- Server: a recovery-key change only goes through while the session and the password that authorised it are still
+  current; every request body has a time limit, also when the server answers without reading it.
+- Mac uploader: refuses weak password-hashing settings from a server, survives malformed HEIF metadata, and keeps
+  control characters from file names out of its messages.
+
+### Added
+- `cipherfilm-upload`, a command-line uploader for macOS (`tools/upload`): point it at a folder and it encrypts every
+  photo and video in it, subfolders included, and uploads them in the web app's format. Several files and parts go up
+  at once, failed requests are retried, and an interrupted run continues where it stopped. Files already in the
+  library are skipped. Thumbnails come from macOS itself (sips, QuickLook). Attached to releases for Apple silicon
+  and Intel Macs.
+
+## [1.4.2] - 2026-11-03
+
+### Fixed
+- Android: sharing to another app and Save to phone handed out empty files. Copies are now written completely, and a
+  copy whose size doesn't match is never handed out.
+- Android: the actions after selecting no longer scroll sideways; a long press vibrates like other apps.
+
+### Changed
+- The Android build in a release starts alongside the tests and reuses caches (NDK, libsodium, npm, Gradle).
+- `mobile/dev`: a local throwaway instance for testing the app in the emulator; only unsigned test builds trust it.
+
+## [1.4.1] - 2026-11-03
+
+### Added
+- Android: long-press a photo to select, as in Google Photos; then Share (to any app), Add to album, Save to phone
+  (Pictures › Cipherfilm) or Trash, with Undo. Shared and saved copies are decrypted into a private folder that
+  only the chosen app can read, and removed again afterwards.
+- Android: screenshots and screen recordings of the app are blocked, and the app switcher shows the icon instead of
+  the library.
+
+### Fixed
+- Android: the back arrow on the Account screen showed as a box.
+- Android: the keyboard no longer opens by itself during setup, and an unreachable server reads "Can't connect to the
+  server" without naming a VPN.
+- Web: Account in the menu has a person icon instead of a sun.
+
+## [1.4.0] - 2026-11-03
+
+### Added
+- Android app (`cipherfilm-android-<version>.apk` in each release): share photos and videos from any app, or pick
+  them with the Upload button; they are encrypted on the phone with the same code as the web app and uploaded.
+  Afterwards Android asks once whether to remove them from the phone. Unlock with fingerprint or face (the key stays
+  in the phone's secure hardware), library with day headings and a full-screen viewer.
+- New icon and logo: a photo print with a padlock.
+
+### Changed
+- Web: uploads show in a window in the lower right instead of above the library, with overall progress, speed and
+  time left, and every file can be cancelled. Long imports list the files that matter now instead of thousands of rows.
+
+## [1.3.2] - 2026-11-03
+
+### Added
+- `PUBLIC_HOSTS`: the name(s) the app is reached by. When set, requests for any other name are refused.
+
+### Changed
+- Request bodies must arrive in time (30 seconds for forms, 15 minutes per upload part), so slow clients cannot hold
+  the server's handlers open.
+- The Kopia overlay runs Kopia as the app's user with no extra capabilities; a short `kopia-perms` step sets the
+  owner of Kopia's own volumes first.
+- Dependabot pull requests are merged automatically only if the workflow itself set the `automerge` label.
+
+### Fixed
+- A sign-in whose password check overlapped a password change or recovery could keep a session.
+- Uploads kept running after signing out; they now stop when the account that started them signs out.
+- `fotocrypt.sh restore` writes its archive listings to a private temporary folder.
+
+## [1.3.1] - 2026-11-03
+
+### Changed
+- The library and the trash are loaded in pages of 500, so a large library no longer needs one huge response.
+- Each finished item now counts its encrypted metadata plus 4 KB toward the storage quota, and album entries are
+  capped at 200,000 per account.
+
+### Fixed
+- A recovery started with the old recovery key can no longer finish after the key was replaced.
+- An upload that failed while its item was being deleted could tie up a database connection; with several at once
+  the server stopped answering.
+- A thumbnail or preview that arrived after its upload was finished was kept on disk without counting toward the
+  quota.
+- Creating the first account or accepting an invite: a retry after a lost response could show recovery words that were
+  never stored. A retry now sends the same keys again, and the app only reports success if the server holds them.
+  After a recovery whose response was lost, the app checks the new recovery key itself, not only the new password.
+- `scripts/restore.sh` accepts a backup without `blobs/` (taken before the first upload) and refuses to run over a
+  restore that stopped half-way, whose data may only be in `.previous/`.
+- `scripts/backup.sh` fails when the copy fails (a full disk, say) and leaves no archive that looks complete.
+- Two backups at the same time (a cron job and the nightly timer) no longer share their work; the second one stops.
+  An empty database never passes as a snapshot.
+- `cipherfilm-decrypt` cleans control characters from all text it takes from the backup, errors included.
+- The identity check in the git hooks fails closed when it cannot list the commits to check.
+
+## [1.3.0] - 2026-11-03
+
+### Fixed
+- An upload retry whose connection broke deleted the part already stored while the server kept it listed as received;
+  the app then reported the file as uploaded with a piece missing. A failed or wrong-size part now never replaces or
+  removes what is stored, and finishing an upload checks that every part is on disk (a missing one is asked for again).
+- "Delete forever" could empty the whole trash: a confirmation left open while the selection dropped to zero sent an
+  empty list, which the server read as "everything". The server now needs the items named, the app sends exactly
+  the ones shown, and the confirmation disappears when nothing is selected.
+- A new recovery key (made in Account, after a recovery, or when an account is created) is now stored only after its
+  words are on screen and "I've saved it" is ticked. Before, a lost response could leave a key that works but was
+  never shown, with the old one already dead. A retry checks whether the first attempt went through.
+- Restoring a backup purged its trash within seconds (the 30 days were counted from today). Restored trash now gets
+  a fresh 30 days, and every session ends before the restored app serves anything.
+- `scripts/restore.sh` moves the data it replaces to `.previous/` in the volume instead of deleting it, and stops if
+  the app keeps running.
+- The cleanup jobs no longer delete files when a database query fails, and recheck an item right before deleting it
+  (an upload finished or an item restored in the meantime is kept).
+- Two password changes at the same moment: the second is refused instead of silently replacing the first.
+- After a password change whose response was lost, the page picks up the new settings, so the next try works.
+- Quota counted a re-uploaded part twice after a failed retry.
+- An unknown command (`/app something`) now fails instead of starting a second server on the same data.
+
+### Changed
+- After a recovery or a new recovery key, the app says that older backups still need the previous password or key.
+
+## [1.2.0] - 2026-11-03
+
+### Added
+- Admin → Server shows the off-site backup: the last successful nightly run, and a warning on every admin page when
+  the last run failed or none has succeeded for 36 hours (`/app backup-report`, called by `scripts/kopia-snapshot.sh`).
+- `compose.kopia.yaml`: nightly off-site backups with Kopia (WebDAV/Nextcloud, S3, SFTP, ...), its UI only in the
+  tailnet on port 8443; `scripts/kopia-snapshot.sh` and `docs/BACKUP-KOPIA.md` for setup and restore.
+- `docs/SERVER-HARDENING.md`: locking down a fresh Debian 13 VPS (keys-only SSH, firewall, fail2ban, automatic
+  updates, kernel settings) before Cipherfilm goes on it.
+
+### Fixed
+- The database snapshot for backups is written aside, checked with SQLite's integrity check, and only then replaces
+  the previous one; a failed run keeps the old snapshot instead of leaving none.
+
+## [1.1.1] - 2026-11-03
+
+### Fixed
+- A very long file name in the upload list made the whole page wider than a phone screen. The name is now cut
+  off with an ellipsis.
+- "Skip to content" moves focus to the content directly instead of through the address bar, which added a
+  history entry the app reacted to.
+
+### Changed
+- Base images: distroless Debian 13 for the app image, Alpine 3.24 for the backup and restore helpers,
+  Tailscale 1.104.4.
+- Dependabot also watches the e2e test dependencies and the images in the compose files, and security
+  alerts and security updates are on.
+- README: current nginx `http2` syntax, Go 1.26 for building the decrypt tool, ready-made decrypt binaries on
+  every release.
+
+### Added
+- `scripts/check-identity.sh` and git hooks in `.githooks` that refuse commits, tags and pushes under a real
+  e-mail address; CI runs the same check on every push.
+
+## [1.1.0] - 2026-11-02
+
+### Added
+- Search by capture date (year, month, day), camera, file type and album name, not only by file name. It runs in
+  the browser over the decrypted metadata; the server never sees a search.
+- Uploads hold up on phones and bad connections: the screen stays on while files upload, closing the tab asks
+  first, a file stopped by a lost connection continues by itself when the connection is back, and after a reload
+  the library lists unfinished uploads, which continue where they stopped when chosen again.
+- `docs/MIGRATION.md`: moving an instance from the Mac setup to a server, or between servers.
+- Dependency updates from Dependabot merge themselves after the full CI is green; major versions wait for a person.
+
+### Changed
+- The browser suite (Playwright), the plaintext leak check and an automated migration test (backup, restore on a
+  new stack, sign in, decrypt offline) now run in CI on every push and before every release.
+- `make e2e` uses its own stack (`compose.e2e.yaml`, app behind Caddy with HTTPS) and needs only Docker.
+- Playwright 1.64, axe-core 4.14.
+
+### Fixed
+- Accessible names now contain the visible label (upload button, tiles without a preview, ZIP button on phones).
+- The upload benchmark measured the test tool instead of the app. Real large uploads run at 127 to 197 MB/s
+  (WebKit, Firefox); see `docs/UPLOAD-PERFORMANCE.md`.
+
+## [1.0.0] - 2026-11-02
+
+First stable release.
+
+### Added
+- End-to-end encrypted photo and video library: files, thumbnails, metadata and album names are encrypted
+  in the browser; the server never sees keys or plaintext (see `docs/CRYPTO.md`).
+- Invite-only accounts with an admin area: users, per-person storage limits and a default limit, role
+  changes, server status, activity log. Recovery key per person.
+- Timeline with justified rows and a year scrubber, albums, trash, search by file name, selection with
+  range and multi-select, drag and drop, right-click quick actions and keyboard shortcuts.
+- Lightbox with info panel and filmstrip; video streaming through a Service Worker; HEIC support.
+- Parallel, resumable-by-file uploads with worker-based thumbnails.
+- Offline decrypt tool (`cipherfilm-decrypt`) that reads the data folder or a backup directly, without the
+  server, for macOS, Linux and Windows.
+- Deployment overlays for Tailscale, your own reverse proxy and Caddy with automatic HTTPS.
+- Multi-architecture container image (amd64, arm64) on `ghcr.io`, built with provenance and SBOM.
+
+### Security
+- Independent security audits of the server, the client crypto and the deployment; findings fixed
+  (summary in `SECURITY.md`).
+- Rate limiting with known-device handling, CSRF protection, `__Host-` cookies, strict CSP, read-only
+  container with all capabilities dropped.

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="108" height="108"><title>Cipherfilm</title><desc>A photo print locked with a teal padlock. Author: basmatiactivist</desc>
+  <g transform="translate(18 18) scale(0.0703125)">
+  <g transform="translate(-19 6)"><clipPath id="print"><rect x="176" y="236" width="560" height="420" rx="60"/></clipPath>
+  <rect x="176" y="236" width="560" height="420" rx="60" fill="none" stroke="#1F2A33" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M165 555L338 404L445 505L540 429L747 564" fill="none" stroke="#1F2A33" stroke-width="44" stroke-linecap="round" stroke-linejoin="round" clip-path="url(#print)"/>
+  <circle cx="601.6" cy="349.4" r="37" fill="#1F2A33"/>
+  <g><path d="M668.84 599.6V550.76A73.16 73.16 0 0 1 815.16 550.76V599.6" fill="#FAF7F2" stroke="#FAF7F2" stroke-width="100.12"/>
+    <rect x="594" y="565.6" width="296" height="248.8" rx="67.76" fill="#FAF7F2"/></g>
+  <g><path d="M668.84 599.6V550.76A73.16 73.16 0 0 1 815.16 550.76V599.6" fill="none" stroke="#1F6F6B" stroke-width="40.12"/>
+    <rect x="624" y="595.6" width="236" height="188.8" rx="37.76" fill="#1F6F6B"/></g>
+  <circle cx="742" cy="678.67" r="20.06" fill="#FAF7F2"/>
+    <rect x="733.57" y="678.67" width="16.85" height="45.31" rx="8.43" fill="#FAF7F2"/></g>
+  </g>
+</svg>

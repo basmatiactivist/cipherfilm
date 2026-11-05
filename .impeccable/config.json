@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "web/src/styles.css"
+        ],
+        "createdAt": "2026-11-02T09:07:33.727Z",
+        "reason": "Chevron edge band is the confirmed Par Avion signature move (brief: .impeccable/surfaces/web-src-main-tsx.md); user confirmed the direction, patterned strip not a side-tab accent"
+      }
+    ]
+  }
+}

@@ -1,0 +1,67 @@
+name: Android
+# Builds the signed APK. Called by the release workflow for a tag; can also be run by hand (Actions > Android > Run
+# workflow) to check the build without releasing. Caches make a repeat build a few minutes: the NDK, libsodium (keyed
+# by the build script, which pins version and checksum), npm and Gradle (dependencies and build cache).
+on:
+  workflow_call:
+    inputs:
+      version: { type: string, required: true }
+    secrets:
+      ANDROID_KEYSTORE_B64: { required: true }
+      ANDROID_KEYSTORE_PASSWORD: { required: true }
+  workflow_dispatch:
+    inputs:
+      version: { type: string, required: true, default: "0.0.0", description: "versionName for the test build" }
+permissions:
+  contents: read
+env:
+  NDK: "30.0.16248370"
+  VERSION: ${{ inputs.version }}
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }  # no token left in .git for later steps
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with: { distribution: temurin, java-version: "17" }
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with: { node-version: "26", cache: npm, cache-dependency-path: mobile/package-lock.json }
+      - name: NDK from the cache
+        id: ndk
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with: { path: "/usr/local/lib/android/sdk/ndk/${{ env.NDK }}", key: "ndk-${{ env.NDK }}" }
+      - name: Install the NDK
+        if: steps.ndk.outputs.cache-hit != 'true'
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK" >/dev/null
+      - name: libsodium from the cache
+        id: sodium
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: mobile/modules/cf-native/android/src/main/jniLibs
+          key: "libsodium-${{ env.NDK }}-${{ hashFiles('mobile/modules/cf-native/scripts/build-libsodium.sh') }}"
+      - name: libsodium from the signed release
+        if: steps.sodium.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get install -y -qq minisign >/dev/null
+          ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$NDK" mobile/modules/cf-native/scripts/build-libsodium.sh
+      - name: JavaScript dependencies and native project
+        run: |
+          cd mobile && npm ci
+          CF_VERSION="${VERSION#v}" npx expo prebuild --platform android --clean --no-install
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+        with: { cache-read-only: false }
+      - name: Build and sign the APK
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          CF_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.p12"
+          trap 'rm -f "$RUNNER_TEMP/release.p12"' EXIT
+          cd mobile/android
+          CF_VERSION="${VERSION#v}" CF_KEYSTORE="$RUNNER_TEMP/release.p12" ./gradlew assembleRelease \
+            -PreactNativeArchitectures=arm64-v8a --build-cache --parallel --console=plain
+          mkdir -p ../../dist && cp app/build/outputs/apk/release/app-release.apk "../../dist/cipherfilm-android-${VERSION#v}.apk"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with: { name: android-app, path: dist/ }

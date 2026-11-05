@@ -1,0 +1,36 @@
+# Overlay: your own domain (e.g. photos.example.com) for the Tailscale setup, still reachable only in your tailnet.
+# The name points at the server's tailnet address; Caddy gets a Let's Encrypt certificate through a DNS check at
+# Cloudflare, so nothing is opened to the internet. Put it last:
+#   COMPOSE_FILE=compose.yaml:compose.tailscale.yaml:compose.kopia.yaml:compose.domain.yaml
+# Needs in .env: DOMAIN, TS_DOMAIN, CF_API_TOKEN, PUBLIC_HOSTS. Setup: docs/OWN-DOMAIN.md
+services:
+  tailscale:
+    environment:
+      TS_SERVE_CONFIG: /config/serve-domain.json     # :443 to Caddy; :8443 stays Kopia's UI (if you use Kopia)
+      TS_SOCKET: /var/run/tailscale/tailscaled.sock   # shared with Caddy for the tailnet name's certificate
+    volumes:
+      - tsrun:/var/run/tailscale
+  caddy:
+    build: ./deploy/domain
+    image: cipherfilm-caddy:2.11.7
+    restart: unless-stopped
+    network_mode: service:tailscale
+    depends_on: [tailscale, app]
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env, e.g. photos.example.com}
+      TS_DOMAIN: ${TS_DOMAIN:?set TS_DOMAIN in .env, e.g. photos.your-tailnet.ts.net}
+      CF_API_TOKEN: ${CF_API_TOKEN:?set CF_API_TOKEN in .env (Cloudflare token with Zone > DNS > Edit for this zone)}
+    volumes:
+      - ./deploy/domain/Caddyfile:/etc/caddy/Caddyfile:ro
+      - domaincerts:/data
+      - tsrun:/var/run/tailscale
+    tmpfs: [/config, /tmp]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+
+volumes:
+  tsrun:
+  domaincerts:
+    name: ${DOMAIN_CERTS_VOLUME:-cipherfilm_domain_certs}

@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-02T00:00:00Z",
+  "title": "Design System: Cipherfilm",
+  "extensions": {
+    "colorMeta": {
+      "teal": { "role": "primary", "displayName": "Deep Teal", "canonical": "#1f6f6b", "tonalRamp": ["#0c2b29", "#123f3c", "#17524f", "#1f6f6b", "#5e9a96", "#9fc2bf", "#e3eeeb", "#f2f7f6"] },
+      "paper": { "role": "neutral", "displayName": "Warm Paper", "canonical": "#faf7f2", "tonalRamp": ["#2b2822", "#5c5649", "#968d7b", "#cfc6b6", "#e6dfd3", "#f3eee5", "#faf7f2", "#fffefb"] },
+      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "#1f2a33", "tonalRamp": ["#10161b", "#1f2a33", "#4b5963", "#5f6c76", "#8a959d", "#b5bdc3", "#dde1e4", "#f1f3f4"] },
+      "danger": { "role": "status", "displayName": "Brick", "canonical": "#a3261f", "tonalRamp": ["#4a110e", "#6e1b16", "#861e18", "#a3261f", "#c46d68", "#e2b0ac", "#f8e6e3", "#fcf3f2"] },
+      "ok": { "role": "status", "displayName": "Moss", "canonical": "#1e6b45", "tonalRamp": ["#0d2f1e", "#154a30", "#1e6b45", "#4f9170", "#8fb9a3", "#c3dccf", "#e4f1ea", "#f3f9f6"] }
+    },
+    "typographyMeta": {
+      "page-title": { "displayName": "Page title", "purpose": "Serif page headings." },
+      "day-heading": { "displayName": "Day heading", "purpose": "Serif capture-day heads in the timeline." },
+      "body": { "displayName": "Body", "purpose": "System sans for everything operational." }
+    },
+    "shadows": [
+      { "name": "menu-and-tray", "value": "0 8px 24px rgba(31, 42, 51, 0.14), 0 2px 6px rgba(31, 42, 51, 0.08)", "purpose": "Avatar menu and drag tray only." },
+      { "name": "selection-bar-lift", "value": "0 -6px 20px rgba(31, 42, 51, 0.08)", "purpose": "Fixed selection bar." }
+    ],
+    "motion": [
+      { "name": "ease-out-expo-ish", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Background hovers (0.15s) and progress width (0.25s); only when reduced motion is not requested." }
+    ],
+    "breakpoints": [
+      { "name": "tablet-phone", "value": "860px" },
+      { "name": "narrow", "value": "600px" }
+    ]
+  },
+  "components": [
+    { "name": "Primary Button", "kind": "button", "refersTo": "button-primary", "description": "Upload and main form actions.",
+      "html": "<button class=\"ds-btn\">Upload</button>",
+      "css": ".ds-btn{min-height:44px;padding:0 18px;font:600 1rem system-ui,sans-serif;color:#fff;background:#1f6f6b;border:1px solid #1f6f6b;border-radius:6px;cursor:pointer;transition:background-color .15s}.ds-btn:hover{background:#17524f;border-color:#17524f}.ds-btn:focus-visible{outline:3px solid #1f6f6b;outline-offset:2px}" },
+    { "name": "Secondary Button", "kind": "button", "refersTo": "button-secondary", "description": "Select and other secondary actions.",
+      "html": "<button class=\"ds-btn2\">Select</button>",
+      "css": ".ds-btn2{min-height:44px;padding:0 18px;font:600 1rem system-ui,sans-serif;color:#17524f;background:#fffefb;border:1px solid #cfc6b6;border-radius:6px;cursor:pointer}.ds-btn2:hover{background:#e3eeeb;border-color:#1f6f6b}.ds-btn2:focus-visible{outline:3px solid #1f6f6b;outline-offset:2px}" },
+    { "name": "Search Field", "kind": "input", "refersTo": "input-search", "description": "Top bar search by file name.",
+      "html": "<input class=\"ds-search\" type=\"text\" placeholder=\"Search by file name\">",
+      "css": ".ds-search{width:100%;min-height:40px;padding:9px 12px 9px 38px;font:inherit;color:#1f2a33;background:#f3eee5;border:1px solid transparent;border-radius:6px}.ds-search:focus-visible{background:#fffefb;border-color:#1f6f6b;outline:3px solid #1f6f6b}" },
+    { "name": "Sidebar Item", "kind": "nav", "refersTo": "navitem", "description": "Sidebar entry; current page is teal-washed.",
+      "html": "<button class=\"ds-nav\" aria-current=\"page\">Timeline</button>",
+      "css": ".ds-nav{display:flex;align-items:center;width:100%;min-height:44px;padding:0 12px;font:600 1rem system-ui,sans-serif;color:#4b5963;background:none;border:0;border-radius:6px;cursor:pointer}.ds-nav:hover{background:#f3eee5;color:#1f2a33}.ds-nav[aria-current=page]{color:#17524f;background:#e3eeeb}" },
+    { "name": "Panel Card", "kind": "card", "refersTo": "panel", "description": "Flat bordered card with 8px radius.",
+      "html": "<div class=\"ds-card\"><h2>Password</h2><p>Change it here.</p></div>",
+      "css": ".ds-card{padding:20px;color:#1f2a33;background:#fffefb;border:1px solid #e6dfd3;border-radius:8px;font-family:system-ui,sans-serif}.ds-card h2{margin:0 0 8px;font-size:1.125rem}" },
+    { "name": "Status Pill", "kind": "chip", "refersTo": "pill", "description": "Small 4px-radius state label.",
+      "html": "<span class=\"ds-pill\">Active</span>",
+      "css": ".ds-pill{display:inline-block;padding:1px 9px;font:600 .8125rem system-ui,sans-serif;color:#1e6b45;background:#e4f1ea;border-radius:4px}" },
+    { "name": "Day Heading", "kind": "custom", "refersTo": "day-heading", "description": "Serif capture-day heading above a justified row.",
+      "html": "<h2 class=\"ds-day\">Sat, 14 June 2025</h2>",
+      "css": ".ds-day{margin:0;font:400 1.0625rem Georgia,'Iowan Old Style','Palatino Linotype',serif;color:#1f2a33}" },
+    { "name": "Accordion Card", "kind": "custom", "refersTo": "accordion", "description": "Account settings disclosure.",
+      "html": "<details class=\"ds-acc\"><summary><strong>Password</strong><span>Change your password</span></summary></details>",
+      "css": ".ds-acc{background:#fffefb;border:1px solid #e6dfd3;border-radius:8px;font-family:system-ui,sans-serif}.ds-acc summary{display:block;min-height:64px;padding:12px 16px;cursor:pointer;list-style:none}.ds-acc strong{display:block;color:#17524f}.ds-acc span{font-size:.875rem;color:#4b5963}.ds-acc summary:hover{background:#f3eee5}" }
+  ],
+  "narrative": {
+    "northStar": "Tinte und Papier",
+    "overview": "Ink on warm paper. The signed-in app is a quiet desk: a cream ground, blue-black ink text, hairline rules in sand, and a single deep teal that marks everything actionable or current. The photos supply all the color; the chrome stays out of their way.",
+    "keyCharacteristics": ["Warm paper ground, ink text, exactly one accent (deep teal).", "Flat: shadows only on the avatar menu and drag tray (and a faint lift on the selection bar).", "Small radii: 6px controls, 8px cards and panels.", "Serif for headings of time and place; sans for everything operational.", "Equal care for phone and desktop: sidebar becomes a bottom tab bar at 860px."],
+    "rules": [
+      { "name": "The One Teal Rule", "body": "Teal is the only accent. Status hues appear only to report state, never to decorate.", "section": "colors" },
+      { "name": "The Photos Carry Color Rule", "body": "Chrome stays paper, ink and teal so uploaded imagery is the most colorful thing on screen.", "section": "colors" },
+      { "name": "The Serif Is For Time And Place Rule", "body": "Serif is limited to brand name, day headings, page titles, auth card titles and album names.", "section": "typography" },
+      { "name": "The Flat-At-Rest Rule", "body": "Cards, panels, buttons and tiles carry no shadow. If a surface needs separation, give it a rule line or a tonal step.", "section": "elevation" }
+    ],
+    "dos": ["Do use teal (#1f6f6b) as the only accent and Pressed Teal (#17524f) for hover and current text.", "Do keep controls at 44px minimum and radii at 6px (controls) and 8px (cards).", "Do use the serif only for brand, day headings, page titles, auth titles and album names.", "Do separate surfaces with 1px sand rules or paper tone steps.", "Do draw icons from the shared 24px, 1.8-stroke inline set in currentColor.", "Do say plainly when something cannot be verified or recovered; use brick for errors and moss for confirmations."],
+    "donts": ["Don't add shadows to cards, buttons or tiles; shadows belong to menus and the drag tray.", "Don't introduce a second accent hue or tint the chrome with photo-derived color.", "Don't use the serif for buttons, labels, menus or body copy.", "Don't use external fonts, CDNs or icon fonts.", "Don't draw the sealed-envelope mark anywhere beyond the logo and storage area."]
+  }
+}

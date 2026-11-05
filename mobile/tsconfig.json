@@ -1,0 +1,31 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "paths": {
+      "@crypto/*": [
+        "../web/src/crypto/*"
+      ],
+      "libsodium-wrappers-sumo": [
+        "./src/crypto/libsodium.ts"
+      ],
+      "libsodium-wrappers": [
+        "./src/crypto/libsodium.ts"
+      ]
+    }
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "../web/src/crypto/*.ts",
+    ".expo/types/**/*.ts",
+    "expo-env.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "../web/src/crypto/*.test.ts",
+    "../web/src/crypto/kdf.worker.ts",
+    "../web/src/crypto/kdf-async.ts",
+    "../web/src/crypto/sodium-sumo.ts"
+  ]
+}

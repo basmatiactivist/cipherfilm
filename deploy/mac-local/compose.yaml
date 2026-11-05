@@ -1,0 +1,21 @@
+# fotocrypt: your own Cipherfilm instance on this Mac (OrbStack).
+# Reachable at https://fotocrypt.orb.local from this Mac only. Nothing is published to your network.
+name: fotocrypt
+services:
+  app:
+    image: fotocrypt:local
+    container_name: fotocrypt-app
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 256
+    mem_limit: 768m
+    volumes:
+      - ./data:/data            # the database and the encrypted files live here, in this folder
+    environment:
+      LISTEN_ADDR: ":8080"
+      TRUST_PROXY: "0"
+    labels:
+      dev.orbstack.domains: fotocrypt.orb.local

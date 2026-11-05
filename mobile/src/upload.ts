@@ -1,0 +1,127 @@
+// Encrypts a shared file on the phone and uploads it, part by part, exactly like the web client: the same segment
+// format, keys and metadata, so the web app and cipherfilm-decrypt read it. Only ciphertext leaves the phone.
+import { getSodium, b64 } from "@crypto/sodium";
+import { cipherLen, encryptSegment, segmentCount, segmentPlainLen, SEG_PLAIN } from "@crypto/file";
+import { encryptMeta, encryptPreview, encryptThumb, newItemKey, wrapItemKey } from "@crypto/item";
+type Sodium = Awaited<ReturnType<typeof getSodium>>;
+import N from "../modules/cf-native/src/CfNativeModule";
+import { api, putBytes } from "./api";
+import { session } from "./session";
+import { keepRunning, letGo } from "./keepAlive";
+import type { ItemMeta } from "./library";
+
+export const THUMB_PX = 640;
+export const PREVIEW_PX = 2048;
+const SEGMENTS_IN_FLIGHT = 2;
+const MAX_FILE = 8 * 1024 ** 3;
+
+export interface Shared { uri: string; name: string; size: number; mime: string; deletable: boolean }
+
+/** Name, size and type of a shared file, from the share itself or from Android's content provider. */
+export async function describe(uri: string, hint?: { name?: string | null; size?: number | null; mime?: string | null }): Promise<Shared> {
+  const st = await N.stat(uri);
+  return { uri, name: st.name || hint?.name || "photo", size: st.size >= 0 ? st.size : hint?.size ?? -1, mime: st.mime || hint?.mime || "application/octet-stream", deletable: st.deletable };
+}
+
+export const kindOf = (f: Pick<Shared, "mime" | "name">): "image" | "video" | "other" =>
+  f.mime.startsWith("video/") || /\.(mp4|mov|m4v|3gp|webm)$/i.test(f.name) ? "video"
+    : f.mime.startsWith("image/") || /\.(jpe?g|png|webp|heic|heif|gif|dng)$/i.test(f.name) ? "image" : "other";
+
+/** Uploads in progress: the app doesn't lock itself while one runs. */
+let running = 0;
+export const uploadsRunning = () => running;
+
+export class SignedOut extends Error {
+  constructor() { super("Stopped: you signed out or locked the app."); }
+}
+
+/** Uploads one file. onProgress gets plaintext bytes done. Resolves with the new item's id once the server has it. */
+export async function uploadShared(f: Shared, onProgress: (done: number, total: number) => void, signal: { cancelled: boolean }): Promise<string> {
+  if (f.size < 0) throw new Error("Android didn't say how big this file is, so it can't be uploaded safely.");
+  if (f.size > MAX_FILE) throw new Error("Files over 8 GB can't be uploaded.");
+  const s = await getSodium();
+  const { me, masterKey } = session();
+  if (!me || !masterKey) throw new SignedOut();
+  const owner = me.user.id;
+  // bound to the session that started it: after a sign-out or lock it stops before sending anything more
+  const mine = () => { const now = session(); if (signal.cancelled || now.me?.user.id !== owner || now.masterKey !== masterKey) throw new SignedOut(); };
+
+  mine();
+  running++;
+  // goes on when the person leaves the app (TransferService)
+  keepRunning("upload", "Uploading to Cipherfilm", f.name);
+  try {
+    return await uploadFile(f, s, (itemKey, id) => wrapItemKey(s, itemKey, masterKey, id), mine, onProgress);
+  } finally {
+    running--;
+    letGo("upload");
+  }
+}
+
+/** The upload itself. wrap() locks the new item key: under the master key, or sealed to the account's public key by
+ *  the background backup. mine() throws to stop between steps. */
+export async function uploadFile(f: Shared, s: Sodium, wrap: (itemKey: Uint8Array, id: string) => Uint8Array, mine: () => void, onProgress: (done: number, total: number) => void): Promise<string> {
+  if (f.size < 0) throw new Error("Android didn't say how big this file is, so it can't be uploaded safely.");
+  if (f.size > MAX_FILE) throw new Error("Files over 8 GB can't be uploaded.");
+  const kind = kindOf(f);
+  const count = segmentCount(f.size);
+  const id = (await api<{ id: string }>("POST", "/api/items", { kind, size: f.size, segment_count: count })).id;
+  const itemKey = newItemKey(s);
+  const wrapped = b64(s, wrap(itemKey, id));
+  try {
+    // thumbnails while the parts upload; a file Android can't decode still uploads, without a thumbnail
+    let dims: { width?: number; height?: number } = {};
+    const thumbWork = (async () => {
+      if (kind === "other") return;
+      try {
+        const [t, p] = await Promise.all([N.jpeg(f.uri, kind === "video", THUMB_PX, 82), N.jpeg(f.uri, kind === "video", PREVIEW_PX, 85)]);
+        if (!t || !p) return;
+        dims = { width: p.width, height: p.height };
+        mine();
+        await Promise.all([putBytes(`/api/items/${id}/thumb`, encryptThumb(s, t.bytes, itemKey, id)), putBytes(`/api/items/${id}/preview`, encryptPreview(s, p.bytes, itemKey, id))]);
+      } catch (e) {
+        if (e instanceof SignedOut) throw e;
+      }
+    })();
+    const infoWork = N.mediaInfo(f.uri, kind === "video").catch(() => ({}));
+
+    let done = 0;
+    onProgress(0, f.size || 1);
+    const inflight = new Set<Promise<void>>();
+    let failure: unknown;
+    for (let i = 0; i < count && failure === undefined; i++) {
+      mine();
+      const len = f.size === 0 ? 0 : segmentPlainLen(f.size, i);
+      const plain = len ? await N.readRange(f.uri, i * SEG_PLAIN, len) : new Uint8Array(0);
+      const ct = encryptSegment(s, itemKey, id, i, count, f.size, plain);
+      plain.fill(0);
+      if (ct.length !== cipherLen(len)) throw new Error("internal size error");
+      const put: Promise<void> = putBytes(`/api/items/${id}/segments/${i}`, ct)
+        .then(() => { done += len; onProgress(Math.min(done, f.size), f.size || 1); }, (e) => { failure ??= e; })
+        .finally(() => { inflight.delete(put); });
+      inflight.add(put);
+      if (inflight.size >= SEGMENTS_IN_FLIGHT) await Promise.race(inflight);
+    }
+    await Promise.all(inflight);
+    await thumbWork;
+    if (failure !== undefined) throw failure;
+
+    const info: Awaited<ReturnType<typeof N.mediaInfo>> = await infoWork;
+    const now = Date.now();
+    const meta: ItemMeta = {
+      name: f.name, mime: f.mime, size: f.size, lastModified: now, capture_ts: info.captureTs ?? now,
+      width: info.width ?? dims.width, height: info.height ?? dims.height, duration: info.duration,
+      ...(info.make ? { make: info.make } : {}), ...(info.model ? { model: info.model } : {}),
+      ...(info.lat != null && info.lon != null ? { gps: { lat: info.lat, lon: info.lon } } : {}),
+    };
+    mine();
+    await api("POST", `/api/items/${id}/finalize`, { wrapped_item_key: wrapped, meta_enc: b64(s, encryptMeta(s, meta, itemKey, id)) });
+    return id;
+  } catch (e) {
+    // an unfinished upload is discarded right away instead of waiting two days for the server's cleanup
+    api("DELETE", `/api/items/${id}`).catch(() => {});
+    throw e;
+  } finally {
+    s.memzero(itemKey);
+  }
+}

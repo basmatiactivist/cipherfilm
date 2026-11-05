@@ -1,0 +1,13 @@
+{
+  "name": "cipherfilm-e2e",
+  "private": true,
+  "version": "0.0.1",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@playwright/test": "1.64.1",
+    "libsodium-wrappers-sumo": "0.8.4"
+  }
+}

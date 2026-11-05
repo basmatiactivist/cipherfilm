@@ -1,0 +1,79 @@
+# Updates arrive as one grouped pull request per area, weekly, and only for versions that have been out for a few
+# days (cooldown): a hijacked package is usually found and pulled within hours, before it would reach us. Security
+# updates are not limited by this file and open on their own. The crypto and storage libraries (libsodium, x/crypto, sqlite) are
+# upgraded together with the others, but the pull request must pass the cross-implementation test
+# vectors (make test) and the e2e suite before merging.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /server
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7, semver-major-days: 30, semver-minor-days: 7, semver-patch-days: 3 }
+    open-pull-requests-limit: 2
+    groups: { go-server: { patterns: ["*"] } }
+  - package-ecosystem: gomod
+    directory: /tools/decrypt
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7, semver-major-days: 30, semver-minor-days: 7, semver-patch-days: 3 }
+    open-pull-requests-limit: 2
+    groups: { go-decrypt: { patterns: ["*"] } }
+  - package-ecosystem: npm
+    directory: /web
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7, semver-major-days: 30, semver-minor-days: 7, semver-patch-days: 3 }
+    open-pull-requests-limit: 2
+    groups: { web: { patterns: ["*"] } }
+  - package-ecosystem: gomod
+    directory: /tools/upload
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7, semver-major-days: 30, semver-minor-days: 7, semver-patch-days: 3 }
+    open-pull-requests-limit: 2
+    groups: { go-upload: { patterns: ["*"] } }
+  # the Android app: Expo pins React Native and its modules per SDK, so a pull request here is checked with
+  # `npx expo install --check` before merging; SDK upgrades are done by hand (npx expo install expo@next --fix)
+  - package-ecosystem: npm
+    directory: /mobile
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7, semver-major-days: 30, semver-minor-days: 7, semver-patch-days: 3 }
+    open-pull-requests-limit: 2
+    groups: { mobile: { patterns: ["*"] } }
+  # the app's own native libraries: Media3 (video player), JNA, ExifInterface
+  - package-ecosystem: gradle
+    directory: /mobile/modules/cf-native/android
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7, semver-major-days: 30, semver-minor-days: 7, semver-patch-days: 3 }
+    open-pull-requests-limit: 2
+    groups: { android-native: { patterns: ["*"] } }
+  - package-ecosystem: npm
+    directory: /e2e
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7, semver-major-days: 30, semver-minor-days: 7, semver-patch-days: 3 }
+    open-pull-requests-limit: 2
+    groups: { e2e: { patterns: ["*"] } }
+  - package-ecosystem: docker
+    directories: [/, /deploy/domain]
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7, semver-major-days: 30, semver-minor-days: 7, semver-patch-days: 3 }
+    open-pull-requests-limit: 2
+    groups: { docker: { patterns: ["*"] } }
+  # images in the compose files: Caddy, Tailscale, the Playwright browsers. The helper images in the
+  # Makefile and scripts/ (alpine, golang, node) are not seen by Dependabot; docs/RELEASING.md lists them.
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7, semver-major-days: 30, semver-minor-days: 7, semver-patch-days: 3 }
+    open-pull-requests-limit: 2
+    groups: { compose: { patterns: ["*"] } }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7, semver-major-days: 30, semver-minor-days: 7, semver-patch-days: 3 }
+    open-pull-requests-limit: 2
+    groups: { actions: { patterns: ["*"] } }
+  # the Mac app: swift-sodium (libsodium); ONNX Runtime is pinned in mac/scripts/fetch-onnxruntime.sh
+  - package-ecosystem: swift
+    directory: /mac
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7, semver-major-days: 30, semver-minor-days: 7, semver-patch-days: 3 }
+    open-pull-requests-limit: 2
+    groups: { mac: { patterns: ["*"] } }

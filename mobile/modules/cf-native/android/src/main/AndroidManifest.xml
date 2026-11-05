@@ -1,0 +1,13 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+  <!-- uploads go on when the app leaves the screen (TransferService) -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+  <uses-permission android:name="android.permission.WAKE_LOCK" />
+  <application>
+    <service android:name="app.cipherfilm.cfnative.TransferService" android:exported="false" android:foregroundServiceType="dataSync" />
+    <receiver android:name="app.cipherfilm.cfnative.TransferService$Dismissed" android:exported="false" />
+    <!-- ONNX Runtime (search, Vision.kt) would start a usage-telemetry client at app start that reports to Microsoft.
+         Cipherfilm sends nothing anywhere but to its own server: the provider is removed. -->
+    <provider android:name="ai.onnxruntime.TelemetryInitializer" android:authorities="${applicationId}.onnxruntime_telemetry_initializer" tools:node="remove" />
+  </application>
+</manifest>

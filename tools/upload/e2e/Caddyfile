@@ -1,0 +1,9 @@
+# Test instance only: reachable as https://localhost:8463 from this Mac and as https://proxy inside the compose network.
+{
+	skip_install_trust
+}
+
+https://localhost, https://proxy {
+	tls internal
+	reverse_proxy app:8080
+}

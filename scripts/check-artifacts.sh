@@ -1,0 +1,29 @@
+#!/bin/sh
+# Checks release files before they are uploaded: none may contain a path of the machine that built them (the home
+# folder, and so the user name) or the builder's name. Archives (.zip, .apk) are unpacked and searched inside.
+#   scripts/check-artifacts.sh dist/*
+# Exit 1 with the matches if anything is found. Extra words to look for: CHECK_ARTIFACTS_EXTRA="word1|word2".
+set -eu
+[ $# -gt 0 ] || { echo "usage: $0 FILE..." >&2; exit 2; }
+# the user name also with "-" or "_" for "." (as in a temporary folder named after the home folder)
+user=$(id -un | sed 's/[-._]/[-._]/g')
+pat="$HOME|/Users/$user|/home/$user|$user"
+[ -n "${CHECK_ARTIFACTS_EXTRA:-}" ] && pat="$pat|$CHECK_ARTIFACTS_EXTRA"
+tmp=$(mktemp -d /tmp/cfcheck.XXXXXX)
+trap 'rm -rf "$tmp"' EXIT
+bad=0
+for f in "$@"; do
+  [ -f "$f" ] || continue
+  case "$f" in
+    *.zip|*.apk)
+      d="$tmp/$(basename "$f")"; mkdir -p "$d"; unzip -q -o "$f" -d "$d"
+      hits=$(LC_ALL=C grep -rlaE "$pat" "$d" 2>/dev/null | sed "s|$d/||" || true) ;;
+    *) hits=$(LC_ALL=C grep -laE "$pat" "$f" 2>/dev/null || true) ;;
+  esac
+  if [ -n "$hits" ]; then
+    bad=1
+    echo "FOUND in $f:"; echo "$hits" | sed 's/^/  /' | head -20
+  fi
+done
+[ $bad -eq 0 ] && echo "artifacts clean: no build paths or user name in $# files"
+exit $bad

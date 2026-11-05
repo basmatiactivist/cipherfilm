@@ -1,0 +1,50 @@
+import { useMemo, useState } from "react";
+import { FlatList, StyleSheet, useWindowDimensions, View } from "react-native";
+import { router } from "expo-router";
+import { ActivityIndicator, Appbar, Text } from "react-native-paper";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { FaceAvatar } from "../Faces";
+import { usePeople } from "../search/people";
+import { useSearchProgress } from "../search/engine";
+import { useAppTheme } from "../ui";
+import { text } from "../tokens";
+
+/** Everyone the phone found, named people first. Hidden people are behind the eye in the bar. */
+export default function People() {
+  const t = useAppTheme();
+  const inset = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const { groups } = usePeople();
+  const progress = useSearchProgress();
+  const [showHidden, setShowHidden] = useState(false);
+  const list = useMemo(() => (groups ?? []).filter((g) => !!g.person?.hidden === showHidden)
+    .sort((a, b) => Number(!!b.person?.name) - Number(!!a.person?.name) || b.items.length - a.items.length), [groups, showHidden]);
+  const cols = Math.max(3, Math.floor((width - 16) / 104));
+  const size = Math.floor((width - 32) / cols) - 24;
+  return (
+    <View style={{ flex: 1, backgroundColor: t.colors.background }}>
+      <Appbar.Header style={{ backgroundColor: t.colors.background }}>
+        <Appbar.Action icon="back" accessibilityLabel="Back" onPress={() => router.back()} />
+        <Appbar.Content title={showHidden ? "Hidden people" : "People"} titleStyle={text.page} />
+        <Appbar.Action icon={showHidden ? "people" : "lock"} accessibilityLabel={showHidden ? "Show people" : "Show hidden people"} onPress={() => setShowHidden((v) => !v)} />
+      </Appbar.Header>
+      {!groups ? <ActivityIndicator style={{ marginTop: 48 }} /> : (
+        <FlatList data={list} key={cols} numColumns={cols} keyExtractor={(g) => g.key}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: inset.bottom + 24, gap: 16, flexGrow: 1 }}
+          renderItem={({ item: g }) => <View style={{ width: (width - 32) / cols, alignItems: "center" }}><FaceAvatar group={g} size={size} count onPress={() => router.push({ pathname: "/person/[key]", params: { key: g.key } })} /></View>}
+          ListEmptyComponent={
+            <View style={st.empty}>
+              <Text variant="titleMedium" style={{ marginBottom: 8 }}>{showHidden ? "No one is hidden" : "No people yet"}</Text>
+              <Text variant="bodyMedium" style={{ textAlign: "center", color: t.colors.onSurfaceVariant, maxWidth: 320 }}>
+                {showHidden ? "People you hide stay out of search and this list." : progress.phase === "indexing" ? `Faces are found as your photos are indexed (${progress.done} of ${progress.total}).` : "Someone shows up here once they are in at least three photos."}
+              </Text>
+            </View>
+          } />
+      )}
+    </View>
+  );
+}
+
+const st = StyleSheet.create({
+  empty: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, minHeight: 300 },
+});

@@ -1,0 +1,72 @@
+name: CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  identity:
+    # Nothing pushed here may carry a real e-mail address: once on GitHub it can't be removed again.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0, persist-credentials: false }
+      - name: commits and tags use noreply addresses
+        run: scripts/check-identity.sh --committer HEAD $(git tag -l)
+  server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }  # no token left in .git for later steps
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with: { go-version: "1.27" }
+      - name: vet and test
+        working-directory: server
+        run: mkdir -p static && go vet ./... && go test ./...
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }  # no token left in .git for later steps
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with: { node-version: "26", cache: npm, cache-dependency-path: web/package-lock.json }
+      - name: install, type-check, build, test
+        working-directory: web
+        run: npm ci && npm run build && npm test
+  mobile:
+    # the Android app's TypeScript (it shares web/src/crypto) and its unit tests; the APK is built by android.yml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }  # no token left in .git for later steps
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with: { node-version: "26", cache: npm, cache-dependency-path: "mobile/package-lock.json" }
+      - name: install, type-check, test
+        run: (cd web && npm ci) && cd mobile && npm ci && npx tsc --noEmit && npm test
+  decrypt-tool:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }  # no token left in .git for later steps
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with: { go-version: "1.27" }
+      - name: vet and test
+        working-directory: tools/decrypt
+        run: go vet ./... && go test ./...
+  e2e:
+    # The whole app in a browser: the real image behind HTTPS (Caddy), Playwright, then the leak check
+    # that no plaintext reached the server's disk. Same command as on a laptop: make e2e.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }  # no token left in .git for later steps
+      - name: end-to-end tests and leak check
+        run: make e2e
+      - name: move to a new stack with the backup and restore scripts, sign in, decrypt offline
+        run: make migration-test
+      - name: keep screenshots and traces of failures
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with: { name: e2e-results, path: e2e/test-results, retention-days: 7 }

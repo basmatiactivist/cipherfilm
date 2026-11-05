@@ -1,0 +1,45 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'app.cipherfilm.cfnative'
+version = '0.1.0'
+
+android {
+  namespace "app.cipherfilm.cfnative"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+    consumerProguardFiles "proguard-rules.pro"
+    // only test builds (not signed with the release key) may let the emulator take screenshots, for checking the UI
+    buildConfigField "boolean", "TEST_BUILD", System.getenv("CF_KEYSTORE") == null ? "true" : "false"
+  }
+  buildFeatures { buildConfig true }
+  lintOptions {
+    abortOnError false
+  }
+}
+
+dependencies {
+  // JNA calls the libsodium.so that scripts/build-libsodium.sh builds into src/main/jniLibs
+  implementation "net.java.dev.jna:jna:5.19.1@aar"
+  implementation "androidx.exifinterface:exifinterface:1.4.2"
+  // the video player (CfVideoView, VideoVault.kt)
+  implementation "androidx.media3:media3-exoplayer:1.11.1"
+  implementation "androidx.media3:media3-ui:1.11.1"
+  // search on the phone: MobileCLIP, YuNet and SFace (Vision.kt)
+  implementation "com.microsoft.onnxruntime:onnxruntime-android:1.31.1"
+  // the backup starts when a new photo appears (NewMedia.kt), with the same JS task as expo-background-task's runs
+  implementation "androidx.work:work-runtime-ktx:2.12.0"
+  compileOnly "host.exp.exponent:expo.modules.backgroundtask:${new groovy.json.JsonSlurper().parse(file("../../../node_modules/expo-background-task/package.json")).version}"
+  // the app's own React Native and its OkHttp (CfNativePackage), not a second copy
+  compileOnly "com.facebook.react:react-android"
+}
+
+// a build without the library would crash at the first key derivation: stop early instead
+preBuild.doFirst {
+  if (!file("src/main/jniLibs/arm64-v8a/libsodium.so").exists()) {
+    throw new GradleException("libsodium.so is missing: run modules/cf-native/scripts/build-libsodium.sh first")
+  }
+}

@@ -1,0 +1,16 @@
+# Test instance only. Clients that connect to an IP address send no server name, so this one is the default. The Mac app
+# (mac/README.md) uses https://localhost:8443, with a certificate from the same local authority.
+{
+	default_sni 10.0.2.2
+	skip_install_trust
+}
+
+https://10.0.2.2 {
+	tls internal
+	reverse_proxy app:8080
+}
+
+https://localhost {
+	tls internal
+	reverse_proxy app:8080
+}

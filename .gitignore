@@ -1,0 +1,14 @@
+node_modules/
+web/dist/
+server/static/*
+!server/static/.gitkeep
+.env
+data/
+.DS_Store
+e2e/node_modules/
+e2e/test-results/
+/dist/
+e2e/.e2e-passwords.json
+.impeccable/critique/
+.impeccable/hook.cache.json
+.impeccable/questions/

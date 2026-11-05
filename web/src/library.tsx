@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Cancelled, discardUpload, forgetUnfinished, Item, SignedOut, loadItems, loadTrash, purgeTrash, restoreItems, setFavorite, trashItems, unfinishedUploads, uploadFile } from "./items";
 import { ApiError } from "./api";
 import { mem } from "./state";
+import { uploadQueue } from "./upqueue";
 import { haystack, matches, splitQuery } from "./search";
 import { contentSearch, vectorCount } from "./search/content";
 import { TEXT_MODELS } from "./search/rank";
@@ -118,8 +119,6 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const patch = (key: number, p: Partial<Job>) => setJobs((js) => js.map((j) => (j.key === key ? { ...j, ...p } : j)));
   // Several files at once: a single stream is limited by round trips, not by bandwidth or CPU.
   const FILES_IN_FLIGHT = 3;
-  const queue = useRef<Job[]>([]);
-  const workers = useRef(0);
   const runJob = async (j: Job) => {
     if (mem.me?.user.id !== j.owner) { patch(j.key, { state: "error", error: new SignedOut().message, retryable: false }); return; }
     patch(j.key, { state: "working", error: undefined });
@@ -131,27 +130,22 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
       // reloading the whole list after every file would grow quadratically on a big import: at most every 5 seconds
       if (Date.now() - lastRefresh.current > 5000) { lastRefresh.current = Date.now(); await refreshItems(); refreshUsage(); }
     } catch (e) {
-      if (e instanceof Cancelled) { discardUpload(j.file); return; }
+      if (e instanceof Cancelled) { discardUpload(j.file, j.owner); return; }
       // a network failure (or the phone pausing the page) is worth retrying by itself; a full quota is not
       const retryable = !(e instanceof SignedOut) && (!(e instanceof ApiError) || e.status === 0 || e.status >= 500 || e.status === 408 || e.status === 429);
       patch(j.key, { state: "error", error: msg(e), retryable });
     }
   };
-  const pump = (list: Job[]) => {
-    queue.current.push(...list);
-    while (workers.current < FILES_IN_FLIGHT && queue.current.length) {
-      workers.current++;
-      (async () => {
-        for (let j = queue.current.shift(); j; j = queue.current.shift()) if (!j.stop.cancelled) await runJob(j);
-        workers.current--;
-        if (workers.current === 0) { lastRefresh.current = Date.now(); await refreshItems(); refreshUsage(); }
-      })();
-    }
-  };
+  // bound to the account signed in when the library opened; closed when it leaves the screen (sign-out, lock), so a
+  // file still waiting never starts under the next session in this tab
+  const queue = useRef<ReturnType<typeof uploadQueue<Job>> | null>(null);
+  queue.current ??= uploadQueue<Job>(mem.me!.user.id, FILES_IN_FLIGHT, runJob, async () => { lastRefresh.current = Date.now(); await refreshItems(); refreshUsage(); });
+  useEffect(() => () => queue.current!.close(), []);
+  const pump = (list: Job[]) => queue.current!.push(list);
   /** Stops a file (at its next part), throws away what it sent, and drops it from the list. */
   const cancel = (keys: number[]) => {
     const drop = new Set(keys);
-    for (const j of jobsRef.current) if (drop.has(j.key)) { j.stop.cancelled = true; if (j.state === "error") discardUpload(j.file); }
+    for (const j of jobsRef.current) if (drop.has(j.key)) { j.stop.cancelled = true; if (j.state === "error") discardUpload(j.file, j.owner); }
     setJobs((js) => js.filter((j) => !drop.has(j.key)));
   };
   const add = (files: FileList | File[]) => {

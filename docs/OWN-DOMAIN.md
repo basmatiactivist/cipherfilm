@@ -36,4 +36,8 @@ certificate logs. Neither lets anyone outside your tailnet connect.
    Without Kopia leave out `compose.kopia.yaml`.
 5. `docker compose up -d --build`. The first certificate takes about a minute: `docker compose logs caddy`.
 
+Caddy runs as its own user (uid 10001), not as root. tailscaled lets that user fetch the tailnet name's certificate
+over its socket (`TS_PERMIT_CERT_UID`) and nothing else; `caddy-perms` hands the certificate volume to it at each
+start, so an existing setup needs no manual step. After updating, rebuild Caddy's image: `docker compose up -d --build`.
+
 To go back, drop `compose.domain.yaml` from `COMPOSE_FILE` and run `docker compose up -d --remove-orphans`.

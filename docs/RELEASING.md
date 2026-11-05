@@ -20,7 +20,8 @@ Versions follow [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`.
 
 The `Release` workflow then:
 
-1. refuses to continue if `CHANGELOG.md` has no section for the tag, or if any test fails;
+1. refuses to continue if the tagged commit is not on `master` (`git merge-base --is-ancestor`), if
+   `CHANGELOG.md` has no section for the tag, or if any test fails;
 2. builds the image for linux/amd64 and linux/arm64 and pushes it to
    `ghcr.io/<owner>/cipherfilm` as `X.Y.Z`, `X.Y`, `X` and `latest`
    (pre-release tags such as `v1.1.0-rc.1` only get their own tag), with provenance and an SBOM;
@@ -54,7 +55,7 @@ and it is shown in the admin area under Server.
 
 Dependabot opens one grouped pull request per area each week (Go server, decrypt tool, web, e2e, Dockerfile,
 compose files, GitHub Actions) and merges it itself once the full CI is green; major versions wait for a
-person. Two things it can't do alone:
+person (and a grouped pull request that a refresh turns into a major update has its auto-merge turned off again). Two things it can't do alone:
 
 - **Playwright** is pinned twice and both must match: `@playwright/test` in `e2e/package.json` and the
   `mcr.microsoft.com/playwright:vX.Y.Z-noble` image in `compose.e2e.yaml`. A pull request that bumps only one
@@ -71,8 +72,10 @@ The first image is created private by GitHub. To let others pull it, open the pa
 
 The workflows follow the usual supply-chain hardening (OpenSSF Scorecard, zizmor): every action is pinned to a
 commit hash with its version as a comment (Dependabot keeps both current), every checkout drops its token
-(`persist-credentials: false`), each job gets only the permissions it needs, a release builds without caches and
-hands the Android build only the two signing secrets, new dependency versions wait a few days (`cooldown` in
+(`persist-credentials: false`), each job gets only the permissions it needs, a release uses no Actions caches at
+all (no `actions/cache`, no cache in the `setup-*` actions, no buildx cache: the image is built with `no-cache`) and
+checks what it downloads for the Android build against pinned hashes (NDK, Gradle, libsodium), only the jobs that sign
+or push run in the `release` environment, new dependency versions wait a few days (`cooldown` in
 `.github/dependabot.yml`), release files are checked for build paths before upload, and CodeQL and Scorecard run on
 the public repository. Check the workflows after changing them:
 
@@ -89,6 +92,11 @@ Settings that live on GitHub, not in the repository, set once the repository is 
 - **Ruleset for `master`:** no force pushes or deletion; pull requests need the checks `identity`, `server`, `web`,
   `mobile`, `decrypt-tool` and `e2e`; the owner may bypass (to push directly).
 - **Ruleset for tags `v*`:** only the owner may create, move or delete them (a tag starts a release).
+- **Environment `release`** (Settings › Environments): holds the secrets `ANDROID_KEYSTORE_B64` and
+  `ANDROID_KEYSTORE_PASSWORD` (environment secrets, not repository secrets; delete any repository-level copies).
+  Deployment branches and tags: "Selected branches and tags" with only the tag rule `v*`. The Android build and the
+  image push run in it, so the signing key is out of reach of a branch, a pull request or a hand-started run on
+  anything but a release tag. Needed before the next release: without it the Android build has no signing key.
 - **Security:** secret scanning with push protection, Dependabot alerts, private vulnerability reporting.
 - The container package's visibility (above).
 

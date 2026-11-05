@@ -130,10 +130,12 @@ export class Cancelled extends Error {
   constructor() { super("Cancelled."); }
 }
 
-/** Throws away what a cancelled upload already sent, and its note for resuming. */
-export async function discardUpload(f: File): Promise<void> {
-  const p = readPending(f);
-  savePending(f, null);
+/** Throws away what a cancelled upload already sent, and its note for resuming. Only while the account that started
+ *  it is signed in: its notes went at sign-out, and the server would not let another account delete its parts. */
+export async function discardUpload(f: File, owner: string): Promise<void> {
+  if (mem.me?.user.id !== owner) return;
+  const p = readPending(owner, f);
+  savePending(owner, f, null);
   if (p) await api("DELETE", `/api/items/${p.id}`).catch(() => {});
 }
 
@@ -141,12 +143,19 @@ export async function discardUpload(f: File): Promise<void> {
 export class SignedOut extends Error {
   constructor() { super("Stopped: you signed out."); }
 }
-const pendingKey = (f: File) => `cf-upload:${mem.me!.user.id}:${f.name}:${f.size}:${f.lastModified}`;
-const readPending = (f: File): Pending | null => {
-  try { return JSON.parse(localStorage.getItem(pendingKey(f)) ?? "null"); } catch { return null; }
+/** Item ids are 32 lowercase hex characters; anything else from the server is refused before a key is bound to it. */
+export const isItemId = (id: unknown): id is string => typeof id === "string" && /^[0-9a-f]{32}$/.test(id);
+
+// the note is filed under the account that started the upload, never under whoever is signed in when it is written
+const pendingKey = (owner: string, f: File) => `cf-upload:${owner}:${f.name}:${f.size}:${f.lastModified}`;
+const readPending = (owner: string, f: File): Pending | null => {
+  try {
+    const p = JSON.parse(localStorage.getItem(pendingKey(owner, f)) ?? "null");
+    return p && isItemId(p.id) && typeof p.wrapped === "string" ? p : null;
+  } catch { return null; }
 };
-const savePending = (f: File, p: Pending | null) => {
-  try { p ? localStorage.setItem(pendingKey(f), JSON.stringify(p)) : localStorage.removeItem(pendingKey(f)); } catch { /* storage unavailable: resume across reloads is simply off */ }
+const savePending = (owner: string, f: File, p: Pending | null) => {
+  try { p ? localStorage.setItem(pendingKey(owner, f), JSON.stringify(p)) : localStorage.removeItem(pendingKey(owner, f)); } catch { /* storage unavailable: resume across reloads is simply off */ }
 };
 
 /**
@@ -159,9 +168,12 @@ export async function uploadFile(f: File, onProgress: (done: number, total: numb
   // bound to the session that started it: after a sign-out (and maybe someone else's sign-in in this tab) it stops.
   // A cancelled upload stops at the next part as well.
   const owner = mem.me!.user.id;
+  const signedIn = () => {
+    if (mem.me?.user.id !== owner || mem.masterKey !== master) throw new SignedOut();
+  };
   const mine = () => {
     if (stop?.cancelled) throw new Cancelled();
-    if (mem.me?.user.id !== owner || mem.masterKey !== master) throw new SignedOut();
+    signedIn();
   };
   const kind = kindOf(f);
   const count = segmentCount(f.size);
@@ -172,7 +184,7 @@ export async function uploadFile(f: File, onProgress: (done: number, total: numb
   let received = new Set<number>();
   let hasThumb = false;
 
-  const prev = readPending(f);
+  const prev = readPending(owner, f);
   let resumed = false;
   if (prev) {
     try {
@@ -190,9 +202,11 @@ export async function uploadFile(f: File, onProgress: (done: number, total: numb
   mine();
   if (!resumed) {
     id = (await api<{ id: string }>("POST", "/api/items", { kind, size: f.size, segment_count: count })).id;
+    signedIn(); // the account may have changed while the server answered: then no note is written at all
+    if (!isItemId(id)) throw new Error("The server sent an unexpected item id. The upload was stopped.");
     itemKey = newItemKey(s);
     wrapped = b64(s, wrapItemKey(s, itemKey, master, id));
-    savePending(f, { id, wrapped });
+    savePending(owner, f, { id, wrapped });
   }
   id = id!; itemKey = itemKey!; wrapped = wrapped!;
 
@@ -244,7 +258,7 @@ export async function uploadFile(f: File, onProgress: (done: number, total: numb
   const meta = await readMeta(f, dims);
   mine();
   await api("POST", `/api/items/${id}/finalize`, { wrapped_item_key: wrapped, meta_enc: b64(s, encryptMeta(s, meta, itemKey, id)) });
-  savePending(f, null);
+  savePending(owner, f, null);
   return id;
 }
 

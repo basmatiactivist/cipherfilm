@@ -2,13 +2,17 @@ name: Dependabot
 # Minor and patch updates from Dependabot merge themselves, but only through GitHub's own auto-merge: GitHub merges
 # when every required check of the branch rule on master has passed for the pull request's latest commit (the unit
 # tests, the browser suite, the plaintext leak check, the migration test). Major version jumps are left open with a
-# note: they can change behaviour (for the crypto libraries even the data format) and are reviewed by hand. New
-# versions only arrive after a cooldown (.github/dependabot.yml).
+# note: they can change behaviour (for the crypto libraries even the data format) and are reviewed by hand. The
+# decision is made again for every new commit on the pull request: a grouped update that Dependabot refreshes and
+# that now holds a major jump loses the auto-merge an earlier minor version armed. New versions only arrive after a
+# cooldown (.github/dependabot.yml).
 #
 # This uses the plain pull_request trigger, as GitHub documents it for Dependabot: the job runs with the pull
 # request's own token and runs none of its code. Auto-merge needs "Allow auto-merge" and the branch rule with the
 # required checks (docs/RELEASING.md, "Repository settings"); without them the merge step only adds the label.
-on: pull_request
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
 permissions:
   contents: read
 jobs:
@@ -31,4 +35,7 @@ jobs:
         if: steps.meta.outputs.update-type == 'version-update:semver-major'
         env: { GH_TOKEN: "${{ github.token }}", PR: "${{ github.event.pull_request.html_url }}" }
         run: |
+          # auto-merge stays on a pull request until it is turned off: an earlier run may have armed it
+          gh pr merge "$PR" --disable-auto || echo "auto-merge was not on"
+          gh pr edit "$PR" --remove-label automerge || true
           gh pr comment "$PR" --body "Major version update: not merged automatically. Read the changelogs, and for libsodium, x/crypto or sqlite check docs/CRYPTO.md and the test vectors before merging."

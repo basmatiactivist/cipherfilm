@@ -142,23 +142,38 @@ struct EmptyState: View {
   }
 }
 
-/** The app's mark: a photo print in ink line, locked by a teal padlock over its lower right corner. */
+/** The mark, "Photo lock" (design/icon): one padlock whose body is the photo, with the ridge and sun cut out, on the
+ *  24 grid. `shape` is shared by the in-app mark and the menu-bar icon. */
+enum PhotoLock {
+  /** Shackle and body in 24-grid units, y down, as two paths: fill the shackle normally and the body with the even-odd
+   *  rule, so the ridge and sun are cut out of the body and the shackle's legs join it without a seam. */
+  static func paths(scale s: CGFloat, dx: CGFloat = 0, dy: CGFloat = 0) -> (shackle: CGPath, body: CGPath) {
+    func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: dx + x * s, y: dy + y * s) }
+    let shackle = CGMutablePath()
+    shackle.move(to: pt(6.6, 10)); shackle.addLine(to: pt(6.6, 7))
+    shackle.addArc(center: pt(12, 7), radius: 5.4 * s, startAngle: .pi, endAngle: 0, clockwise: false)
+    shackle.addLine(to: pt(17.4, 10)); shackle.addLine(to: pt(14.4, 10)); shackle.addLine(to: pt(14.4, 7))
+    shackle.addArc(center: pt(12, 7), radius: 2.4 * s, startAngle: 0, endAngle: .pi, clockwise: true)
+    shackle.addLine(to: pt(9.6, 10)); shackle.closeSubpath()
+    let body = CGMutablePath()
+    body.addPath(CGPath(roundedRect: CGRect(x: dx + 3.6 * s, y: dy + 9.4 * s, width: 16.8 * s, height: 12.6 * s),
+                        cornerWidth: 2.2 * s, cornerHeight: 2.2 * s, transform: nil))
+    body.move(to: pt(6.2, 19.8))
+    for (x, y) in [(6.2, 18.0), (10.2, 13.6), (13.6, 17.2), (17.8, 14.4), (17.8, 19.8)] { body.addLine(to: pt(CGFloat(x), CGFloat(y))) }
+    body.closeSubpath()
+    body.addEllipse(in: CGRect(x: dx + 13.7 * s, y: dy + 10.9 * s, width: 3.4 * s, height: 3.4 * s))
+    return (shackle, body)
+  }
+}
+
+/** The app's mark in the theme's teal. */
 struct Mark: View {
   var size: CGFloat = 22
   var body: some View {
     Canvas { ctx, sz in
-      let s = sz.width / 24
-      let print = Path(roundedRect: CGRect(x: 2 * s, y: 3 * s, width: 16 * s, height: 14 * s), cornerRadius: 1.5 * s)
-      ctx.stroke(print, with: .color(Ink.ink), lineWidth: 1.8 * s)
-      var ridge = Path()
-      ridge.move(to: CGPoint(x: 4.5 * s, y: 14 * s)); ridge.addLine(to: CGPoint(x: 8.5 * s, y: 9 * s)); ridge.addLine(to: CGPoint(x: 11.5 * s, y: 12 * s))
-      ridge.addLine(to: CGPoint(x: 13.5 * s, y: 10 * s)); ridge.addLine(to: CGPoint(x: 15.5 * s, y: 12.5 * s))
-      ctx.stroke(ridge, with: .color(Ink.ink), style: StrokeStyle(lineWidth: 1.8 * s, lineCap: .round, lineJoin: .round))
-      ctx.fill(Path(roundedRect: CGRect(x: 12 * s, y: 13 * s, width: 11 * s, height: 10 * s), cornerRadius: 2 * s), with: .color(Ink.paper))
-      ctx.fill(Path(roundedRect: CGRect(x: 13 * s, y: 15.5 * s, width: 9 * s, height: 7 * s), cornerRadius: 1.4 * s), with: .color(Ink.teal))
-      var shackle = Path()
-      shackle.addArc(center: CGPoint(x: 17.5 * s, y: 15.5 * s), radius: 2.6 * s, startAngle: .degrees(180), endAngle: .degrees(0), clockwise: false)
-      ctx.stroke(shackle, with: .color(Ink.teal), lineWidth: 1.8 * s)
+      let p = PhotoLock.paths(scale: sz.width / 24)
+      ctx.fill(Path(p.shackle), with: .color(Ink.teal))
+      ctx.fill(Path(p.body), with: .color(Ink.teal), style: FillStyle(eoFill: true))
     }
     .frame(width: size, height: size)
   }
@@ -176,7 +191,7 @@ extension Date {
 
 func bytes(_ n: Int64) -> String { ByteCountFormatter.string(fromByteCount: n, countStyle: .file) }
 
-/** The menu-bar icon: the app's mark (print and padlock) as a template image at the menu bar's full height, with a dot
+/** The menu-bar icon: the app's mark (Photo lock) as a template image at the menu bar's full height, with a dot
  *  while something is being uploaded, exported or indexed. */
 enum MenuBarIcon {
   @MainActor private static var cache: [Bool: NSImage] = [:]
@@ -185,26 +200,12 @@ enum MenuBarIcon {
     if let hit = cache[busy] { return hit }
     let img = NSImage(size: NSSize(width: 22, height: 18), flipped: true) { _ in
       NSColor.black.set()
-      let print = NSBezierPath(roundedRect: NSRect(x: 1.2, y: 2.2, width: 14.6, height: 12.6), xRadius: 2.4, yRadius: 2.4)
-      print.lineWidth = 1.7
-      print.stroke()
-      let ridge = NSBezierPath()
-      ridge.move(to: NSPoint(x: 1.8, y: 12.4)); ridge.line(to: NSPoint(x: 6.2, y: 8.2)); ridge.line(to: NSPoint(x: 9.2, y: 11))
-      ridge.line(to: NSPoint(x: 11.6, y: 9.2))
-      ridge.lineWidth = 1.6; ridge.lineCapStyle = .round; ridge.lineJoinStyle = .round
-      ridge.stroke()
-      NSBezierPath(ovalIn: NSRect(x: 10.4, y: 4.4, width: 2.6, height: 2.6)).fill()
-      // the padlock over the lower right corner, cut free from the print
-      NSGraphicsContext.current?.compositingOperation = .clear
-      NSBezierPath(roundedRect: NSRect(x: 11.2, y: 7.6, width: 10.4, height: 10.4), xRadius: 2.2, yRadius: 2.2).fill()
-      NSGraphicsContext.current?.compositingOperation = .sourceOver
-      NSBezierPath(roundedRect: NSRect(x: 12.6, y: 11.4, width: 7.8, height: 6.2), xRadius: 1.4, yRadius: 1.4).fill()
-      let shackle = NSBezierPath()
-      shackle.move(to: NSPoint(x: 14.3, y: 11.6)); shackle.line(to: NSPoint(x: 14.3, y: 10.4))
-      shackle.appendArc(withCenter: NSPoint(x: 16.5, y: 10.4), radius: 2.2, startAngle: 180, endAngle: 0, clockwise: false)
-      shackle.line(to: NSPoint(x: 18.7, y: 11.6))
-      shackle.lineWidth = 1.6
-      shackle.stroke()
+      // the mark at the menu bar's full height: the 24-grid shape spans y 1.6...22, scaled to 0...17.5
+      let k: CGFloat = 0.86
+      guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
+      let p = PhotoLock.paths(scale: k, dx: 11 - 12 * k, dy: -1.6 * k)
+      ctx.addPath(p.shackle); ctx.fillPath()
+      ctx.addPath(p.body); ctx.fillPath(using: .evenOdd)
       if busy {
         NSGraphicsContext.current?.compositingOperation = .clear
         NSBezierPath(ovalIn: NSRect(x: 15.2, y: -0.6, width: 7.4, height: 7.4)).fill()

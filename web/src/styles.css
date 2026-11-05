@@ -20,7 +20,7 @@ a:hover { color: var(--teal-ink); }
 .skip:focus { left: 8px; }
 main:focus { outline: none; }
 
-/* logo: the app icon's mark (photo print and padlock) */
+/* logo: the app icon's mark ("Photo lock": a padlock whose body is the photo) */
 .mark { flex: none; width: 24px; height: 24px; color: var(--teal); }
 .brandname { font-family: var(--serif); font-size: var(--text-brand); letter-spacing: 0.005em; }
 

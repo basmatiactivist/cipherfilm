@@ -2,21 +2,24 @@
 
 Author: basmatiactivist
 
-## Chosen: variant D, "padlock corner"
+## Chosen (2.x): "Photo lock"
 
-An ink-line photo print (frame, two-peak ridge, sun) with a teal padlock over its
-lower-right corner. A paper gap separates the padlock from the print. A stranger reads
-it as "photos" and "locked" at the same moment, at 192 px and at 48 px. The padlock is
-drawn rather than taken from clip-art. The body is 1 : 0.8, the shackle is 62 % of the
-body width with a round crown, and there is a slotted keyhole. Teal is used only on the
-padlock, so the one accent means "encrypted". The mark fits the Android 66 dp safe zone
-and holds in circle, squircle and rounded-square masks.
+One teal padlock whose body is the photo: the ridge and the sun are cut out of the body, where a keyhole would be.
+It is one shape in one colour, so it never reads as two clip-arts glued together, and it says "photos, locked" at
+192 px and still "lock" at 16 px. The shackle is thick and 62 % of the body width, and the body keeps a photo's
+proportions, so it does not turn into a handbag (see variant f below). Picked from three rounds of concepts made for
+the website (kept in the website repository under `design/logo-concepts/`).
 
-Optical centring: the padlock's solid mass pulled the mark right. The mark is therefore
-shifted by `translate(-19 6)` on the 1024 canvas (the same group is used in the Android
-layers, where it is about -1.34 / +0.42 dp). After the shift, the ink-weighted centroid
-(padlock included) sits on the tile centre. The bounding-box centre is 2.3 % left of
-centre and 0.6 % above it. The favicon is shifted by `translate(-0.27 -0.27)` on its 24 grid.
+- 24 grid: shackle `M6.8 10V7.2A5.2 5.2 0 0 1 17.2 7.2V10H14.6V7.2A2.6 2.6 0 0 0 9.4 7.2V10Z`; body a 16.8 x 12.6
+  rounded rectangle (r 2.2) at 3.6, 9.4 with the ridge and the sun cut out (even-odd). The favicon redraw uses a
+  slightly thicker shackle (5.4 / 2.4) and larger cut-outs for 16 px.
+- Android: the mark at 2.3x on the 108 dp canvas, centred, inside the 66 dp safe zone; background paper; monochrome
+  is the same shape in black.
+- In code: `web/src/icons.tsx` (`Logo`) and `mac/Sources/Cipherfilm/Theme.swift` (`PhotoLock`, `Mark`, `MenuBarIcon`)
+  draw the same shapes in the theme's teal (template black in the menu bar).
+- `mac/scripts/make-icon.swift` builds `AppIcon.icns` from `icon-1024.png`.
+
+Until 1.x the icon was variant D below ("padlock corner").
 
 ## All explored variants (`variants/`, SVG plus 512, 48 and 16 px PNGs)
 

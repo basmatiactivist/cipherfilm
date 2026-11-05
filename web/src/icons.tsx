@@ -45,19 +45,13 @@ export function Icon({ name, size = 20, filled }: { name: IconName; size?: numbe
   );
 }
 
-/** The mark: a photo print locked with a padlock, as in the app icon. Used in the logo and next to the storage meter. */
+/** The mark, "Photo lock": one padlock whose body is the photo (ridge and sun cut out), as in the app icon (design/icon).
+ *  Used in the logo and next to the storage meter; drawn in the theme's teal. */
 export function Logo({ size = 24 }: { size?: number }) {
-  // the app icon's mark: a photo print, locked with a teal padlock (design/icon)
   return (
-    <svg class="mark" viewBox="0 0 24 24" width={size} height={size} fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-      <clipPath id="cf-mark-print"><rect x="1.98" y="3.48" width="14.25" height="11.25" rx="2" /></clipPath>
-      <rect x="1.98" y="3.48" width="14.25" height="11.25" rx="2" stroke="var(--ink)" stroke-width="2" />
-      <path d="M.73 12.73l5.5-4.75 3.25 2.75 6.75-4.5" stroke="var(--ink)" stroke-width="2" clip-path="url(#cf-mark-print)" />
-      <path d="M13.73 14.23v-3a3 3 0 0 1 6 0v3" stroke="var(--paper)" stroke-width="4.7" />
-      <rect x="10.18" y="11.93" width="13.1" height="10.85" rx="2.8" fill="var(--paper)" />
-      <path d="M13.73 14.23v-3a3 3 0 0 1 6 0v3" stroke="var(--teal)" stroke-width="2" />
-      <rect x="11.48" y="13.23" width="10.5" height="8.25" rx="1.5" fill="var(--teal)" />
-      <circle cx="16.73" cy="16.94" r="1.1" fill="var(--paper)" />
+    <svg class="mark" viewBox="0 0 24 24" width={size} height={size} fill="var(--teal)" aria-hidden="true" focusable="false">
+      <path d="M6.6 10V7A5.4 5.4 0 0 1 17.4 7V10H14.4V7A2.4 2.4 0 0 0 9.6 7V10Z" />
+      <path fill-rule="evenodd" d="M5.8 9.4H18.2A2.2 2.2 0 0 1 20.4 11.6V19.8A2.2 2.2 0 0 1 18.2 22H5.8A2.2 2.2 0 0 1 3.6 19.8V11.6A2.2 2.2 0 0 1 5.8 9.4ZM6.2 19.8L6.2 18L10.2 13.6L13.6 17.2L17.8 14.4L17.8 19.8ZM13.7 12.6A1.7 1.7 0 1 0 17.1 12.6A1.7 1.7 0 1 0 13.7 12.6Z" />
     </svg>
   );
 }

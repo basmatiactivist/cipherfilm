@@ -51,6 +51,21 @@ years).
 
 **Updates:** download the APK of the newer release and install it over the app.
 
+### With Obtainium (updates on their own)
+
+[Obtainium](https://obtainium.imranr.dev/) installs apps straight from their GitHub releases and keeps them up to date,
+without an app store.
+
+1. Install Obtainium (from its website, F-Droid or GitHub).
+2. In Obtainium, tap **Add app** and enter `https://github.com/basmatiactivist/cipherfilm`, or open
+   [obtainium://add/https://github.com/basmatiactivist/cipherfilm](obtainium://add/https://github.com/basmatiactivist/cipherfilm)
+   on the phone.
+3. Tap **Install**. Obtainium checks for new releases and offers each update.
+
+Every release is signed with the same key. To check it, compare the certificate's SHA-256 (Obtainium shows it, or use
+[AppVerifier](https://github.com/soupslurpr/AppVerifier)) with
+`87:D9:E9:AB:85:5B:03:E7:D7:D3:15:2F:5A:76:A4:D8:AF:B5:D3:8E:FC:A3:B9:93:2A:D9:3F:1B:A1:7C:67:12`.
+
 ## Mac
 
 File: `cipherfilm-mac-X.Y.Z.zip`, for Macs with Apple silicon and macOS 15 or newer. Intel Macs are not supported by

@@ -142,7 +142,7 @@ components:
 
 Ink on warm paper. The signed-in app is a quiet desk: a cream ground (#faf7f2), blue-black ink text, hairline rules in sand, and a single deep teal that marks everything actionable or current. The photos supply all the color; the chrome stays out of their way. Density is calm, controls are generous (44px touch targets throughout), and nothing floats, glows or casts a shadow unless it is a menu or the drag tray.
 
-The serif is a typographic signature held back for a few places: the brand name, day headings in the timeline, page titles and auth card titles, plus album names. Everything else is the system sans. The logo is the app icon's mark: a photo print in ink line (frame, ridge) locked by a solid teal padlock over its lower right corner, separated by a thin paper gap. Sources and every size live in design/icon/.
+The serif is a typographic signature held back for a few places: the brand name, day headings in the timeline, page titles and auth card titles, plus album names. Everything else is the system sans. The logo is the app icon's mark, "Photo lock": one teal padlock whose body is the photo, with the ridge and the sun cut out of it. Sources and every size live in design/icon/.
 
 **Key Characteristics:**
 - Warm paper ground, ink text, exactly one accent (deep teal).

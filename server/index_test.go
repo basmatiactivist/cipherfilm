@@ -126,7 +126,10 @@ func TestModelsAreServedOnlyFromTheirFolder(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "clip-text.onnx"), []byte("model"), 0o600)
 	os.WriteFile(filepath.Join(filepath.Dir(dir), "secret.txt"), []byte("no"), 0o600)
 	e.app.modelsDir = dir
-	c := e.client()
+	if code, _ := e.client().getRaw("/api/models/clip-text.onnx"); code != 401 {
+		t.Fatalf("model served without a session: %d", code)
+	}
+	c, _ := e.setupAdmin("admin@x.org")
 	if code, b := c.getRaw("/api/models/clip-text.onnx"); code != 200 || string(b) != "model" {
 		t.Fatalf("model: %d %q", code, b)
 	}
@@ -156,7 +159,10 @@ func TestExplicitSearchIsOffUntilTheAdminAllowsIt(t *testing.T) {
 	if nsfw(admin) || nsfw(bob) {
 		t.Fatal("explicit search on by default")
 	}
-	for _, c := range []*client{e.client(), bob, admin} {
+	if code, _ := e.client().getRaw("/api/models/nsfw-clip.onnx"); code != 401 {
+		t.Fatalf("explicit model served without a session: %d", code)
+	}
+	for _, c := range []*client{bob, admin} {
 		if code, _ := c.getRaw("/api/models/nsfw-clip.onnx"); code != 404 {
 			t.Fatalf("explicit model served without permission: %d", code)
 		}
@@ -187,7 +193,7 @@ func TestExplicitSearchIsOffUntilTheAdminAllowsIt(t *testing.T) {
 	if code, b := bob.getRaw("/api/models/nsfw-clip.onnx"); code != 200 || string(b) != "model" {
 		t.Fatalf("allowed person doesn't get the model: %d", code)
 	}
-	if code, _ := e.client().getRaw("/api/models/nsfw-clip.onnx"); code != 404 {
+	if code, _ := e.client().getRaw("/api/models/nsfw-clip.onnx"); code != 401 {
 		t.Fatal("served without a session")
 	}
 	// an admin may allow it for themselves, but still not change their own role through it

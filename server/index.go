@@ -38,7 +38,7 @@ func (a *App) indexRoutes(m *http.ServeMux) {
 	m.HandleFunc("PUT /api/me/blobs/{name}", a.auth(false, a.putUserBlob))
 	m.HandleFunc("DELETE /api/me/blobs/{name}", a.auth(false, a.deleteUserBlob))
 	// the open models the phone runs for search; public files, served so the phone needs no other site
-	m.HandleFunc("GET /api/models/{name}", a.getModel)
+	m.HandleFunc("GET /api/models/{name}", a.auth(false, a.getModel))
 }
 
 func blobOK(s string, max int) bool {
@@ -286,26 +286,17 @@ func (a *App) deleteUserBlob(w http.ResponseWriter, r *http.Request, u *user, s 
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
-// getModel serves a file from MODELS_DIR (the image ships them in /models). The app checks each file's SHA-256 against
-// the value built into it, so a changed file is never run.
-// allowsNSFW: a signed-in, active person whose admin allowed search of explicit content.
-func (a *App) allowsNSFW(r *http.Request) bool {
-	c, err := r.Cookie(cookieName)
-	if err != nil {
-		return false
-	}
-	u, _, err := a.lookupSession(c.Value)
-	return err == nil && u.NSFW
-}
-
-func (a *App) getModel(w http.ResponseWriter, r *http.Request) {
+// getModel serves a file from MODELS_DIR (the image ships them in /models) to signed-in people only, so the server
+// is not a free mirror for anyone who knows the URL. The app checks each file's SHA-256 against the value built into
+// it, so a changed file is never run.
+func (a *App) getModel(w http.ResponseWriter, r *http.Request, u *user, _ *session) {
 	name := r.PathValue("name")
 	if a.modelsDir == "" || !modelNameRe.MatchString(name) || strings.Contains(name, "..") {
 		fail(w, 404, "not found")
 		return
 	}
-	// the explicit-search model goes only to people the admin allowed it (off by default); the others are public
-	if strings.HasPrefix(name, "nsfw-") && !a.allowsNSFW(r) {
+	// the explicit-search model goes only to people the admin allowed it (off by default)
+	if strings.HasPrefix(name, "nsfw-") && !u.NSFW {
 		fail(w, 404, "not found")
 		return
 	}
@@ -323,7 +314,7 @@ func (a *App) getModel(w http.ResponseWriter, r *http.Request) {
 	// a large download on a slow connection: no fixed deadline (600 MB at 250 kB/s take 40 minutes, and a 30-minute
 	// one cut the explicit model off every time); instead each write may take up to two minutes
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Cache-Control", "public, max-age=86400")
+	w.Header().Set("Cache-Control", "private, max-age=86400") // not kept by shared caches: it needs a session
 	http.ServeContent(idleWriter{w, http.NewResponseController(w)}, r, "", st.ModTime(), f)
 }
 

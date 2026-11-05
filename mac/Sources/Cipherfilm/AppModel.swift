@@ -70,6 +70,7 @@ final class AppModel {
   func start() async {
     Outbox.clear()
     agent.setUp()
+    watchSleep()
     guard let s = UserDefaults.standard.string(forKey: "server"), let url = URL(string: s) else { phase = .noServer; return }
     use(server: url)
     do {
@@ -182,6 +183,25 @@ final class AppModel {
     }
   }
 
+  /** Lock when this Mac sleeps or its screen locks (on unless turned off in Settings), so a Mac left alone doesn't keep
+   *  the library's key in memory. */
+  static var lockOnSleep: Bool {
+    get { UserDefaults.standard.object(forKey: "lockOnSleep") as? Bool ?? true }
+    set { UserDefaults.standard.set(newValue, forKey: "lockOnSleep") }
+  }
+
+  @ObservationIgnored private var sleepWatched = false
+  private func watchSleep() {
+    guard !sleepWatched else { return }
+    sleepWatched = true
+    let go: @Sendable (Notification) -> Void = { _ in Task { @MainActor in if AppModel.lockOnSleep { AppModel.shared.lock() } } }
+    let ws = NSWorkspace.shared.notificationCenter
+    for n in [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification, NSWorkspace.sessionDidResignActiveNotification] {
+      ws.addObserver(forName: n, object: nil, queue: .main, using: go)
+    }
+    DistributedNotificationCenter.default().addObserver(forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: .main, using: go)
+  }
+
   /** Locks the library: the key leaves memory; the session stays (and with it the watched folders). */
   func lock() {
     guard phase == .unlocked else { return }
@@ -230,7 +250,7 @@ final class AppModel {
     let userId = me?.user.id
     if deleteExport { await exporter.trashEverything() }
     try? await api?.json("POST", "/api/auth/logout")
-    watcher.stop()
+    watcher.stop(forget: true)
     wipe(ended: true)
     api?.clearCookies()
     if let userId { forget(account: userId) }
@@ -252,7 +272,7 @@ final class AppModel {
     images.clear()
     Outbox.clear()
     items = []; byId = [:]; albums = []; trash = []
-    if ended { watcher.stop(); uploads = []; uploadsOwner = nil; uploadsPaused = false }
+    if ended { watcher.stop(forget: true); uploads = []; uploadsOwner = nil; uploadsPaused = false }
   }
 
   // ---- the library ----
@@ -269,7 +289,7 @@ final class AppModel {
       guard temp, !p.hasPrefix(dir.path) else { return u }
       let target = dir.appendingPathComponent(UUID().uuidString, isDirectory: true)
       do {
-        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let dest = target.appendingPathComponent(u.lastPathComponent)
         try FileManager.default.copyItem(at: u, to: dest)
         return dest

@@ -45,6 +45,14 @@ private let haveModels = models.map { FileManager.default.fileExists(atPath: $0.
     #expect(p.cropped(0, 0, 10, 3).px == p.px)
   }
 
+  /** Two empty boxes don't overlap (and don't divide by zero). */
+  @Test func iouOfEmptyBoxes() {
+    let f = Vision.Face(score: 1, x: 3, y: 3, w: 0, h: 0, pts: [])
+    #expect(Vision.iou(f, f) == 0)
+    let g = Vision.Face(score: 1, x: 0, y: 0, w: 2, h: 2, pts: [])
+    #expect(Vision.iou(g, g) == 1)
+  }
+
   @Test func halfFloats() {
     let v: [Float] = [0, 1, -1, 0.5, 0.0001, 65504, 0.33333]
     let back = Vision.unhalf(Vision.half(v))

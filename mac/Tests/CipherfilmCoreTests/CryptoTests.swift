@@ -64,6 +64,15 @@ private struct Meta: Decodable { let name: String; let size: Int64 }
     }
   }
 
+  /** A sealed item key is bound to a 16-byte item id: an id of any other length is refused before sealing. */
+  @Test func sealedKeyNeedsItemId() throws {
+    let pk = Sodium.scalarmultBase(Sodium.random(32))
+    for bad in ["", "00", String(repeating: "0", count: 34)] {
+      #expect(throws: CryptoError.self) { try Crypto.sealItemKey(Crypto.newItemKey(), pk: pk, itemId: bad) }
+    }
+    #expect(try Crypto.sealItemKey(Crypto.newItemKey(), pk: pk, itemId: String(repeating: "0", count: 32)).count == Crypto.sealedItemKeyLen)
+  }
+
   /** Sizes and counts no honest upload has are refused, not computed with (an overflow would stop the app). */
   @Test func segmentsOutOfRange() {
     let id = "0123456789abcdef0123456789abcdef", key = Crypto.newItemKey()

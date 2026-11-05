@@ -49,6 +49,19 @@ public enum Media {
     return (d, img.width, img.height)
   }
 
+  /** Decodes a picture that comes from elsewhere (the server's thumbnails and previews) at most maxPx on its long side:
+   *  one larger than any this app makes is scaled down while it is decoded, so it can't take unbounded memory. */
+  public static func decodeBounded(_ d: Data, maxPx: Int = 4096) -> CGImage? {
+    guard let src = CGImageSourceCreateWithData(d as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+          let p = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+          let w = p[kCGImagePropertyPixelWidth] as? Int, let h = p[kCGImagePropertyPixelHeight] as? Int, w > 0, h > 0 else { return nil }
+    if max(w, h) <= maxPx { return CGImageSourceCreateImageAtIndex(src, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary) }
+    return CGImageSourceCreateThumbnailAtIndex(src, 0, [
+      kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: false,
+      kCGImageSourceThumbnailMaxPixelSize: maxPx, kCGImageSourceShouldCacheImmediately: true,
+    ] as CFDictionary)
+  }
+
   public static func encodeJPEG(_ img: CGImage, quality: Double) -> Data? {
     let out = NSMutableData()
     guard let dst = CGImageDestinationCreateWithData(out, UTType.jpeg.identifier as CFString, 1, nil) else { return nil }
@@ -136,9 +149,16 @@ public enum Uploader {
   /** Uploads one file; resolves with the new item's id once the server has it. `live` throws to stop between steps. */
   public static func upload(_ url: URL, api: API, wrap: Wrap, live: @escaping @Sendable () throws -> Void = {},
                             progress: @escaping @Sendable (Int64, Int64) -> Void = { _, _ in }) async throws -> String {
-    let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
-    let size = (attrs[.size] as? NSNumber)?.int64Value ?? -1
-    let modified = (attrs[.modificationDate] as? Date) ?? Date()
+    // opened once, not following a link swapped in for the file, and its size and kind read from that open file: the
+    // parts are read from the same descriptor, so they are the file that was checked
+    let fd = open(url.resolvingSymlinksInPath().path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+    guard fd >= 0 else { throw APIError(status: -1, message: "This file can't be opened.") }
+    let fh = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+    defer { try? fh.close() }
+    var st = stat()
+    guard fstat(fd, &st) == 0, st.st_mode & S_IFMT == S_IFREG else { throw APIError(status: -1, message: "Only files can be uploaded, not folders or devices.") }
+    let size = Int64(st.st_size)
+    let modified = Date(timeIntervalSince1970: Double(st.st_mtimespec.tv_sec) + Double(st.st_mtimespec.tv_nsec) / 1e9)
     guard size >= 0 else { throw APIError(status: -1, message: "This file's size is unknown, so it can't be uploaded safely.") }
     guard size <= Media.maxFile else { throw APIError(status: -1, message: "Files over 8 GB can't be uploaded.") }
     let name = url.lastPathComponent
@@ -168,8 +188,6 @@ public enum Uploader {
       }
       let info = Task { await Media.info(url, video: kind == .video) }
 
-      let fh = try FileHandle(forReadingFrom: url)
-      defer { try? fh.close() }
       progress(0, max(size, 1))
       let done = Counter()
       try await withThrowingTaskGroup(of: Void.self) { g in

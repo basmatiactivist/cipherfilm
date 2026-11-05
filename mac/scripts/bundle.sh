@@ -25,6 +25,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/Resourc
 cp "$BIN/Cipherfilm" "$APP/Contents/MacOS/Cipherfilm"
 # the linker's debug map still names every object file by its full build path; a release needs none of it
 [ "$CONF" = "debug" ] || strip -S "$APP/Contents/MacOS/Cipherfilm"
+# the test hooks (the debug driver, the test server's CA) are compiled into debug builds only
+if [ "$CONF" != "debug" ] && strings "$APP/Contents/MacOS/Cipherfilm" | grep -qE "CF_TEST_|CFTestCA"; then echo "the release binary contains test hooks" >&2; exit 1; fi
 cp Sources/Cipherfilm/Info.plist "$APP/Contents/Info.plist"
 # the version (Xcode fills these from MARKETING_VERSION / CURRENT_PROJECT_VERSION; SwiftPM doesn't): $VERSION, else
 # the newest tag

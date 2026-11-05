@@ -7,13 +7,24 @@ import CipherfilmCore
 enum Paths {
   static let support: URL = {
     let u = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent(Bundle.main.bundleIdentifier ?? "app.cipherfilm.mac", isDirectory: true)
-    try? FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
+    try? FileManager.default.createDirectory(at: u, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: u.path)
     return u
   }()
   static let models = support.appendingPathComponent("models", isDirectory: true)
   static func account(_ userId: String) -> URL {
     let safe = ServerId.valid(userId) ? userId : "invalid"
     return support.appendingPathComponent("accounts/\(safe)", isDirectory: true)
+  }
+
+  /** A file of the account's (settings, bookkeeping, the Touch ID copy): readable by this user only, its folders too,
+   *  whatever the home folder's permissions are. */
+  static func write(_ d: Data, to f: URL) {
+    let fm = FileManager.default
+    try? fm.createDirectory(at: f.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    var p = f.deletingLastPathComponent()
+    while p.path.hasPrefix(support.path + "/") { try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: p.path); p = p.deletingLastPathComponent() }
+    if (try? d.write(to: f, options: .atomic)) != nil { try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: f.path) }
   }
 }
 
@@ -92,9 +103,7 @@ struct AccountSettings: Codable, Equatable {
   }
 
   func save(_ userId: String) {
-    let dir = Paths.account(userId)
-    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    if let d = try? JSONEncoder().encode(self) { try? d.write(to: dir.appendingPathComponent("settings.json"), options: .atomic) }
+    if let d = try? JSONEncoder().encode(self) { Paths.write(d, to: Paths.account(userId).appendingPathComponent("settings.json")) }
   }
 }
 
@@ -105,7 +114,6 @@ struct AccountFile<T: Codable> {
   var url: URL { Paths.account(userId).appendingPathComponent(name) }
   func read() -> T? { (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode(T.self, from: $0) } }
   func write(_ v: T) {
-    try? FileManager.default.createDirectory(at: Paths.account(userId), withIntermediateDirectories: true)
-    if let d = try? JSONEncoder().encode(v) { try? d.write(to: url, options: .atomic) }
+    if let d = try? JSONEncoder().encode(v) { Paths.write(d, to: url) }
   }
 }

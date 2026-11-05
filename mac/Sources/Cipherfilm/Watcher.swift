@@ -51,8 +51,11 @@ final class Watcher {
     changed() // first pass in a moment, after the library's names and sizes are written
   }
 
-  func stop() {
+  /** forget: the session is gone (sign-out, another server); nothing of the account is kept for a later pass. */
+  func stop(forget: Bool = false) {
     generation += 1
+    debounce?.cancel(); debounce = nil
+    if forget { api = nil; userId = nil; settings = AccountSettings() }
     task?.cancel(); task = nil
     timer?.invalidate(); timer = nil
     if let s = stream { FSEventStreamStop(s); FSEventStreamInvalidate(s); FSEventStreamRelease(s); stream = nil }
@@ -95,6 +98,13 @@ final class Watcher {
 
   struct Candidate: Sendable { let url: URL; let size: Int64; let modified: Date; var print: String { Crypto.fingerprint(name: url.lastPathComponent, size: size) } }
 
+  /** Not written to in the last seconds; a modification date in the future (a camera's wrong clock) counts as settled,
+   *  or the file would wait until that date. */
+  nonisolated static func settled(_ modified: Date, now: Date = Date()) -> Bool {
+    let age = now.timeIntervalSince(modified)
+    return age > 5 || age < -60
+  }
+
   nonisolated static func media(in folder: URL) -> [Candidate] {
     let keys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]
     guard let e = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { return [] }
@@ -136,7 +146,7 @@ final class Watcher {
       var todo: [Candidate] = []
       for f in folders where FileManager.default.fileExists(atPath: f.path) {
         let found = await Task.detached(priority: .utility) { Self.media(in: f.url) }.value
-        todo += found.filter { c in !known.contains(c.print) && !st.done.contains(c.print) && Date().timeIntervalSince(c.modified) > 5 }
+        todo += found.filter { c in !known.contains(c.print) && !st.done.contains(c.print) && Self.settled(c.modified) }
       }
       waiting = todo.count
       for c in todo {

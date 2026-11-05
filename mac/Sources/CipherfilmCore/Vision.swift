@@ -225,8 +225,7 @@ public final class Vision: @unchecked Sendable {
       for (i, v) in ids.prefix(77).enumerated() { padded[i] = Int32(v) }
       input = .int32(padded, [1, 77])
     }
-    let r = try text.run(input, outputs: [text.outputNames[0]])
-    return Self.normalize(Array(r[text.outputNames[0]]!.prefix(Self.clipDim)))
+    return Self.normalize(try text.vector(input, dim: Self.clipDim))
   }
 
   // ---- MobileCLIP: shortest side to 256, centre crop, 0..1, no mean/std. LAION: 224, then CLIP's mean and std ----
@@ -261,8 +260,7 @@ public final class Vision: @unchecked Sendable {
   private func clip(_ src: Pixels) throws -> [Float] {
     guard let image else { throw CryptoError.failed("this device only reads the index") }
     let (buf, P) = Self.clipInput(src, model)
-    let name = image.outputNames[0]
-    return Array(try image.run(.float(buf, [1, 3, Int64(P), Int64(P)]), outputs: [name])[name]!.prefix(Self.clipDim))
+    return try image.vector(.float(buf, [1, 3, Int64(P), Int64(P)]), dim: Self.clipDim)
   }
 
   // ---- YuNet (OpenCV zoo, 2023mar): 640x640 BGR 0..255, three strides, score = sqrt(cls * obj) ----
@@ -287,6 +285,8 @@ public final class Vision: @unchecked Sendable {
     for st in [8, 16, 32] {
       guard let cls = r["cls_\(st)"], let obj = r["obj_\(st)"], let bb = r["bbox_\(st)"], let kp = r["kps_\(st)"] else { continue }
       let cols = D / st
+      // one score, one box (4) and five points (10) per grid cell
+      guard cls.count == cols * cols, obj.count == cls.count, bb.count == 4 * cls.count, kp.count == 10 * cls.count else { throw CryptoError.failed("ONNX Runtime: unexpected face detector output") }
       for i in 0..<cls.count {
         let sc = sqrt(min(1, max(0, cls[i])) * min(1, max(0, obj[i])))
         if sc < Self.faceScore { continue }
@@ -306,7 +306,8 @@ public final class Vision: @unchecked Sendable {
   static func iou(_ a: Face, _ b: Face) -> Float {
     let x1 = max(a.x, b.x), y1 = max(a.y, b.y), x2 = min(a.x + a.w, b.x + b.w), y2 = min(a.y + a.h, b.y + b.h)
     let i = max(0, x2 - x1) * max(0, y2 - y1)
-    return i / (a.w * a.h + b.w * b.h - i)
+    let u = a.w * a.h + b.w * b.h - i
+    return u > 0 ? i / u : 0
   }
 
   // ---- SFace: the face turned upright onto ArcFace's 112x112 landmark positions, RGB 0..255 ----
@@ -345,13 +346,12 @@ public final class Vision: @unchecked Sendable {
         buf[i] = min(255, rgb.0.rounded()); buf[n + i] = min(255, rgb.1.rounded()); buf[2 * n + i] = min(255, rgb.2.rounded())
       }
     }
-    let name = s.outputNames[0]
-    return Array(try s.run(.float(buf, [1, 3, 112, 112]), outputs: [name])[name]!.prefix(Self.faceDim))
+    return try s.vector(.float(buf, [1, 3, 112, 112]), dim: Self.faceDim)
   }
 
   /** A square crop around a face (box in 0..1 of the image), for the people list. */
   public static func faceCrop(_ jpeg: Data, box: [Double], px: Int) -> CGImage? {
-    guard box.count == 4, let src = CGImageSourceCreateWithData(jpeg as CFData, nil), let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
+    guard box.count == 4, box.allSatisfy(\.isFinite), let img = Media.decodeBounded(jpeg) else { return nil }
     let W = Double(img.width), H = Double(img.height)
     let cx = (box[0] + box[2] / 2) * W, cy = (box[1] + box[3] / 2) * H
     let side = max(8, max(box[2] * W, box[3] * H) * 1.5)

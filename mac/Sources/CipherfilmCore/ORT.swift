@@ -105,13 +105,24 @@ final class OrtModel: @unchecked Sendable {
         var info: OpaquePointer?
         try ORT.check(a.GetTensorTypeAndShape(r, &info))
         var count = 0
-        try ORT.check(a.GetTensorShapeElementCount(info, &count))
+        var elem = ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED
+        let st = a.GetTensorShapeElementCount(info, &count) ?? a.GetTensorElementType(info, &elem)
         a.ReleaseTensorTypeAndShapeInfo(info)
+        try ORT.check(st)
+        // read as floats below: anything else is refused, not reinterpreted
+        guard elem == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT else { throw CryptoError.failed("ONNX Runtime: \(k) isn't a float tensor") }
         var p: UnsafeMutableRawPointer?
         try ORT.check(a.GetTensorMutableData(r, &p))
         out[k] = Array(UnsafeBufferPointer(start: p!.assumingMemoryBound(to: Float.self), count: count))
       }
       return out
     }
+  }
+
+  /** The first output's leading `dim` values (a model's embedding); fails when the output is shorter. */
+  func vector(_ input: Input, dim: Int) throws -> [Float] {
+    let name = outputNames[0]
+    guard let v = try run(input, outputs: [name])[name], v.count >= dim else { throw CryptoError.failed("ONNX Runtime: \(name) is too short") }
+    return Array(v.prefix(dim))
   }
 }

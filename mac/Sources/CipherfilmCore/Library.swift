@@ -120,11 +120,11 @@ public final class Vault: @unchecked Sendable {
     return p.pk
   }
 
-  /** Forgets the keys (lock or sign-out). */
+  /** Forgets the keys (lock or sign-out): zeroed where they are kept (a local copy would zero only itself), then let go. */
   public func close() {
     lock.withLock {
-      if var m = master { Sodium.memzero(&m) }
-      if var p = pairCache?.sk { Sodium.memzero(&p) }
+      if master != nil { Sodium.memzero(&master!) }
+      if pairCache != nil { Sodium.memzero(&pairCache!.sk) }
       master = nil; pairCache = nil
     }
   }
@@ -134,6 +134,12 @@ public final class Vault: @unchecked Sendable {
   public static func cacheRoot() -> URL {
     FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent((Bundle.main.bundleIdentifier ?? "app.cipherfilm.mac") + "/cf-ct", isDirectory: true)
   }
+
+  /** The most a list from the server (the library, the trash, the search index) may hold, and the most pages it may
+   *  come in: far above any real library (the server sends 2000 per page), so a server that never ends its list can't
+   *  keep this app reading. */
+  public static let maxListItems = 5_000_000
+  public static let maxListPages = 20_000
 
   public var cacheDir: URL? { Self.cacheDir(of: userId) }
 
@@ -145,8 +151,9 @@ public final class Vault: @unchecked Sendable {
 
   func keep(_ name: String, _ data: Data) {
     guard let dir = cacheDir else { return }
-    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    try? data.write(to: dir.appendingPathComponent(name), options: .atomic)
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    let f = dir.appendingPathComponent(name)
+    if (try? data.write(to: f, options: .atomic)) != nil { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: f.path) }
   }
 
   func cached(_ name: String) -> Data? {
@@ -200,11 +207,14 @@ public final class Vault: @unchecked Sendable {
     var raw: [RawItem] = []
     var next = ""
     var days: Int?
+    var pages = 0
     repeat {
       let q = next.isEmpty ? "" : "?after=" + (next.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? next)
       let p = try JSONDecoder().decode(Page.self, from: try await api.json("GET", path + q))
       raw += p.items
       days = p.retention_days ?? days
+      pages += 1
+      guard pages <= Self.maxListPages, raw.count <= Self.maxListItems, p.next != next || next.isEmpty else { throw APIError(status: -1, message: "The server's list doesn't end.") }
       next = p.next ?? ""
     } while !next.isEmpty
     return (raw, days)

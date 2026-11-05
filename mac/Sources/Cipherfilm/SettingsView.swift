@@ -75,6 +75,7 @@ struct GeneralSettings: View {
           }
           Text("Signing out deletes everything this Mac keeps for the account. Locking only forgets the keys; watched folders keep uploading.")
             .font(Typo.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+          Toggle("Lock when this Mac sleeps or its screen locks", isOn: Binding(get: { AppModel.lockOnSleep }, set: { AppModel.lockOnSleep = $0 }))
         } else {
           Text("Not signed in.").foregroundStyle(.secondary)
         }

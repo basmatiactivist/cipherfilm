@@ -225,12 +225,15 @@ final class SearchEngine {
   private func pull(_ vault: Vault, _ cache: inout IndexCache, pair: KeyPair, faces: Bool, all: Bool) async throws {
     var after = ""
     var fresh: [String: String] = [:]
+    var pages = 0, got = 0
     while true {
       struct Page: Decodable { struct E: Decodable { let item_id: String; let data_enc: String; let updated_at: Int64 }; let entries: [E]; let next: String? }
       let q = after.isEmpty ? "since=\(cache.since)" : "after=" + (after.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? after)
       let page = try await vault.api.get(Page.self, "/api/index?model=\(clip.family)&\(q)")
       for e in page.entries { cache.entries[e.item_id] = e.data_enc; fresh[e.item_id] = e.data_enc; cache.since = max(cache.since, e.updated_at) }
+      pages += 1; got += page.entries.count
       guard let n = page.next, !n.isEmpty else { break }
+      guard pages < Vault.maxListPages, got <= Vault.maxListItems, n != after else { throw APIError(status: -1, message: "The server's index list doesn't end.") }
       after = n
     }
     if !all && fresh.isEmpty { return }
@@ -684,7 +687,7 @@ struct IndexCache: Codable {
   }
   func write(_ v: Vault, _ family: String) {
     guard let u = Self.url(v, family) else { return }
-    try? FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try? FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
     if let d = try? JSONEncoder().encode(self) { try? d.write(to: u, options: .atomic) }
   }
   static func delete(_ v: Vault, _ family: String) { if let u = url(v, family) { try? FileManager.default.removeItem(at: u) } }

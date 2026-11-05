@@ -46,10 +46,10 @@ final class ImageStore: @unchecked Sendable {
     }
   }
 
-  /** JPEG bytes to a ready-to-draw image (decoded now, not when the grid first draws it). */
+  /** JPEG bytes to a ready-to-draw image (decoded now, not when the grid first draws it), never larger than
+   *  Media.decodeBounded allows. */
   nonisolated static func decode(_ d: Data) -> NSImage? {
-    guard let src = CGImageSourceCreateWithData(d as CFData, nil),
-          let cg = CGImageSourceCreateImageAtIndex(src, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary) else { return NSImage(data: d) }
+    guard let cg = Media.decodeBounded(d) else { return nil }
     return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
   }
 

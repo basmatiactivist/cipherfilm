@@ -2,6 +2,7 @@
 // agrees, opens at login (SMAppService). Export, watched folders and indexing run there.
 import AppKit
 import Observation
+import Security
 import ServiceManagement
 
 @MainActor @Observable
@@ -82,14 +83,36 @@ final class Agent {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
   /** One Cipherfilm at a time (two would upload, export and index the same things twice): a second launch shows the
-   *  running one's window and quits before it starts anything. */
+   *  running one's window and quits before it starts anything. Only for a running app signed like this one: another
+   *  app that merely claims the bundle id doesn't keep Cipherfilm from starting. */
   func applicationWillFinishLaunching(_ notification: Notification) {
     guard let id = Bundle.main.bundleIdentifier else { return }
     let me = ProcessInfo.processInfo.processIdentifier
-    guard let other = NSRunningApplication.runningApplications(withBundleIdentifier: id).first(where: { $0.processIdentifier != me && !$0.isTerminated }) else { return }
+    guard let other = NSRunningApplication.runningApplications(withBundleIdentifier: id)
+      .first(where: { $0.processIdentifier != me && !$0.isTerminated && Self.signedLikeThis($0.processIdentifier) }) else { return }
     DistributedNotificationCenter.default().postNotificationName(Agent.showNote, object: id, userInfo: nil, deliverImmediately: true)
     other.activate()
     exit(0)
+  }
+
+  /** The process at pid has a valid signature with this app's signing identifier and, when this build is signed by a
+   *  team, that team's certificate. */
+  static func signedLikeThis(_ pid: pid_t) -> Bool {
+    var mine: SecCode?, other: SecCode?
+    guard SecCodeCopySelf([], &mine) == errSecSuccess, let mine,
+          SecCodeCopyGuestWithAttributes(nil, [kSecGuestAttributePid: pid] as CFDictionary, [], &other) == errSecSuccess, let other else { return false }
+    var st: SecStaticCode?, info: CFDictionary?
+    guard SecCodeCopyStaticCode(mine, [], &st) == errSecSuccess, let st,
+          SecCodeCopySigningInformation(st, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
+          let d = info as? [String: Any], let ident = d[kSecCodeInfoIdentifier as String] as? String,
+          !ident.contains("\"") else { return false }
+    var rule = "identifier \"\(ident)\""
+    if let team = d[kSecCodeInfoTeamIdentifier as String] as? String, !team.contains("\"") {
+      rule = "anchor apple generic and certificate leaf[subject.OU] = \"\(team)\" and " + rule
+    }
+    var req: SecRequirement?
+    guard SecRequirementCreateWithString(rule as CFString, [], &req) == errSecSuccess, let req else { return false }
+    return SecCodeCheckValidity(other, [], req) == errSecSuccess
   }
 
   /** Set by Quit in the menu-bar panel: then the app really ends. */

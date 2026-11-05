@@ -24,7 +24,8 @@ public struct KdfParams: Codable, Sendable, Equatable {
 
 public struct KeyPair: Sendable {
   public let pk: Data
-  public let sk: Data
+  /** var so the owner can zero it where it is kept */
+  public internal(set) var sk: Data
 }
 
 public enum Crypto {
@@ -86,8 +87,10 @@ public enum Crypto {
 
   /** version(2) || crypto_box_seal(itemKey || item id as 16 bytes, pk): for uploads without the master key. */
   public static func sealItemKey(_ itemKey: Data, pk: Data, itemId: String) throws -> Data {
+    let id = try Hex.decode(itemId)
+    guard itemKey.count == 32, id.count == 16 else { throw CryptoError.failed("bad item id") }
     var pt = itemKey
-    pt.append(try Hex.decode(itemId))
+    pt.append(id)
     defer { Sodium.memzero(&pt) }
     var out = Data([2])
     out.append(try Sodium.boxSeal(pt, pk: pk))

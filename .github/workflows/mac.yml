@@ -29,19 +29,23 @@ jobs:
           X=$(ls -d /Applications/Xcode_*.app | grep -v -i beta | sort -V | tail -1)
           sudo xcode-select -s "$X"
           xcodebuild -version
-      - name: ONNX Runtime from the cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: mac/Vendor
-          key: "onnxruntime-${{ hashFiles('mac/scripts/fetch-onnxruntime.sh') }}"
+      # no Actions cache: this job builds the released app, so every input is fetched and checked here
       - name: ONNX Runtime (pinned release, checked against its SHA-256)
         run: ./scripts/fetch-onnxruntime.sh
       - name: Core tests
         run: swift test
-      - name: Xcode project
+      - name: Xcode project (XcodeGen, pinned release checked against its SHA-256)
+        env:
+          XCODEGEN: "2.46.0"
+          XCODEGEN_SHA256: "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"
         run: |
-          brew install xcodegen
-          xcodegen generate
+          curl -fsSL -o "$RUNNER_TEMP/xcodegen.zip" "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN/xcodegen.zip"
+          echo "$XCODEGEN_SHA256  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP/xcodegen-dist"
+          X=$(find "$RUNNER_TEMP/xcodegen-dist" -type f -name xcodegen -perm -u+x | head -1)
+          test -n "$X"
+          "$X" --version
+          "$X" generate
       - name: Build the app
         env:
           # v1.7.2 from the release workflow; 0.0.0 for a plain push
@@ -64,6 +68,8 @@ jobs:
           if grep -qE "allow-dyld-environment-variables|allow-unsigned-executable-memory|com.apple.security.get-task-allow" "$RUNNER_TEMP/ents.plist"; then
             cat "$RUNNER_TEMP/ents.plist"; echo "an entitlement beyond library validation"; exit 1
           fi
+          # the test hooks (the debug driver, the test server's CA) are compiled into debug builds only
+          if strings "$APP/Contents/MacOS/Cipherfilm" | grep -qE "CF_TEST_|CFTestCA"; then echo "the release binary contains test hooks"; exit 1; fi
           ("$APP/Contents/MacOS/Cipherfilm" > launch.log 2>&1 &); sleep 8
           pgrep -f "$APP/Contents/MacOS/Cipherfilm" >/dev/null || { cat launch.log; echo "the app did not start"; exit 1; }
           pkill -f "$APP/Contents/MacOS/Cipherfilm" || true

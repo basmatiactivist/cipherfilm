@@ -1,0 +1,47 @@
+Cipherfilm sichert Ihre Fotos und Videos auf einem Server, den Sie selbst betreiben, und verschlüsselt jede Datei auf Ihrem Handy, bevor sie es verlässt. Ihr Server speichert nur Chiffretext. Er kann kein einziges Bild öffnen, und niemand sonst kann es.
+
+<b>Sie brauchen Ihren eigenen Cipherfilm-Server</b>
+Cipherfilm ist die Android-App zu einem selbst gehosteten Server. Allein funktioniert sie nicht, und wir betreiben keinen Server für Sie. Der Server ist kostenlos, Open Source und läuft in Docker auf einem kleinen VPS, einem NAS oder einem Rechner zu Hause. Die Einrichtung dauert wenige Minuten und ist hier beschrieben:
+https://github.com/basmatiactivist/cipherfilm/blob/master/docs/INSTALL.md
+Betreibt schon jemand einen Cipherfilm-Server für Familie oder Freunde, bitten Sie um eine Einladung und melden Sie sich dann mit Serveradresse, E-Mail und Passwort an.
+
+<b>Auf dem Handy verschlüsselt</b>
+• Jedes Foto und Video bekommt seinen eigenen Schlüssel. Datei, Vorschaubild und Angaben (Name, Aufnahmedatum, Ort, Kamera) werden auf dem Gerät verschlüsselt.
+• Ihr Passwort verlässt das Handy nie. Die Schlüssel sind damit oder mit Ihrem Wiederherstellungsschlüssel aus 24 Wörtern gesperrt.
+• Der Server sieht, dass es Dateien gibt, wie viele und ungefähr wie groß, aber nie, was sie zeigen, wo sie aufgenommen wurden oder wie sie heißen.
+
+<b>Backup, das von selbst läuft</b>
+• Wählen Sie die Ordner, die gesichert werden. Neue Fotos und Videos werden automatisch hochgeladen, auch wenn die App geschlossen ist.
+• Legen Sie fest, ob Fotos, die schon in diesen Ordnern liegen, dazugehören, und sichern Sie auf Wunsch nur im WLAN oder beim Laden.
+• Große Videos laden weiter hoch, mit Fortschritt in der Benachrichtigung, auch wenn Sie die App verlassen.
+• Teilen Sie Fotos und Videos aus jeder App mit Cipherfilm, um sie hochzuladen.
+• Speicher freigeben: Originale, die sicher gesichert sind, vom Handy entfernen. Sie landen zuerst im Papierkorb des Handys.
+
+<b>Suche auf Ihrem eigenen Gerät</b>
+• Finden Sie Fotos nach ihrem Inhalt, etwa „beach“, „dog“ oder „snow“. Offene Modelle laufen auf Ihrem Handy; nichts wird zur Analyse irgendwohin geschickt. Suchbegriffe sind vorerst Englisch.
+• Gesichter werden zu Personen gruppiert, denen Sie Namen geben können.
+• Die Suchergebnisse liegen verschlüsselt auf Ihrem Server, damit Ihre anderen Geräte sie nicht neu berechnen müssen.
+
+<b>Eine ruhige Bibliothek</b>
+• Zeitleiste nach Aufnahmetag, Alben, Favoriten und ein Papierkorb, der sich nach 30 Tagen leert.
+• Vollbildansicht mit Videowiedergabe.
+• Originale bleiben Byte für Byte erhalten: JPEG, PNG, WebP, HEIC, MP4 und MOV.
+
+<b>Gesperrt, wenn Sie es wollen</b>
+• Entsperren mit Fingerabdruck oder Gesicht. Der Schlüssel bleibt in der sicheren Hardware des Handys.
+• Zweimal kräftig schütteln sperrt und schließt Cipherfilm sofort.
+
+<b>Privat von Grund auf</b>
+• Keine Werbung, keine Statistik, kein Tracking, keine Absturzberichte.
+• Kein Konto bei uns. Ihr Konto liegt auf Ihrem Server.
+• Open Source unter der GNU AGPL-3.0. Die Verschlüsselung nutzt libsodium, keine selbstgebaute Kryptografie.
+• Ein separates Entschlüsselungswerkzeug stellt Ihre Originale aus den Serverdaten wieder her, auch ohne die App.
+
+<b>Gut zu wissen</b>
+• Verlieren Sie Passwort und Wiederherstellungsschlüssel, kann niemand Ihre Fotos wiederherstellen. Auch der Admin des Servers kann das nicht zurücksetzen.
+• Cipherfilm ist junge Software und wurde noch nicht unabhängig auf Sicherheit geprüft. Behalten Sie eigene Backups.
+• Die App ist auf Englisch.
+• Außerdem gibt es eine Web-App, die mit dem Server kommt, und eine Mac-App.
+
+So funktioniert die Verschlüsselung und das sieht der Server trotzdem: https://cipherfilm.app/de
+Fragen: contact@cipherfilm.app

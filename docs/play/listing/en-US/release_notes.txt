@@ -1,0 +1,6 @@
+First release on Google Play.
+• Backup can now include the photos and videos already in your chosen folders, not only new ones.
+• Uploads show one notification that updates with their progress.
+• Search works right after you unlock the app.
+• The app version is shown under Account › About.
+Needs your own Cipherfilm server: https://cipherfilm.app

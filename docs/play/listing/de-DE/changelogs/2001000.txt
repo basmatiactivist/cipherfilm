@@ -1,0 +1,6 @@
+Erste Version auf Google Play.
+• Das Backup kann jetzt auch die Fotos und Videos sichern, die schon in den gewählten Ordnern liegen, nicht nur neue.
+• Uploads zeigen eine einzige Benachrichtigung, die ihren Fortschritt aktualisiert.
+• Die Suche funktioniert gleich nach dem Entsperren.
+• Die App-Version steht unter Account › About.
+Benötigt Ihren eigenen Cipherfilm-Server: https://cipherfilm.app/de

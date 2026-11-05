@@ -1,0 +1,47 @@
+Cipherfilm backs up your photos and videos to a server you run yourself, and encrypts every file on your phone before it leaves. Your server stores only ciphertext. It cannot open a single picture, and neither can anyone else.
+
+<b>You need your own Cipherfilm server</b>
+Cipherfilm is the Android app for a self-hosted server. It does not work on its own, and we do not run a server for you. The server is free, open source and runs in Docker on a small VPS, a NAS or a computer at home. Setup takes a few minutes and is described here:
+https://github.com/basmatiactivist/cipherfilm/blob/master/docs/INSTALL.md
+If someone already runs a Cipherfilm server for your family or friends, ask them for an invite, then sign in with the server address, your e-mail and your password.
+
+<b>Encrypted on your phone</b>
+• Every photo and video gets its own key. The file, its thumbnail and its details (name, date taken, place, camera) are encrypted on the device.
+• Your password never leaves the phone. The keys are locked with it or with your 24-word recovery key.
+• The server sees that files exist, how many and roughly how big, but never what they show, where they were taken or what they are called.
+
+<b>Backup that runs by itself</b>
+• Choose the folders to back up. New photos and videos are uploaded automatically, also when the app is closed.
+• Choose whether photos already in those folders are included, and limit backup to Wi-Fi or charging.
+• Large videos keep uploading with a progress notification when you leave the app.
+• Share photos and videos from any app to Cipherfilm to upload them.
+• Free up space: remove originals from the phone once they are safely backed up. They go to the phone's trash first.
+
+<b>Search on your own device</b>
+• Find photos by what is in them, such as "beach", "dog" or "snow". Open models run on your phone; nothing is sent anywhere to be analysed.
+• Faces are grouped into people you can name.
+• The search results are stored on your server encrypted, so your other devices do not have to work them out again.
+
+<b>A calm library</b>
+• Timeline sorted by the day you took each photo, albums, favourites and a trash that empties after 30 days.
+• A full-screen viewer with video playback.
+• Originals are kept byte for byte: JPEG, PNG, WebP, HEIC, MP4 and MOV.
+
+<b>Locked when you want it</b>
+• Unlock with your fingerprint or face. The key stays in the phone's secure hardware.
+• Shake the phone twice to lock and close Cipherfilm at once.
+
+<b>Private by design</b>
+• No ads, no analytics, no tracking, no crash reporting.
+• No account with us. Your account lives on your server.
+• Open source under the GNU AGPL-3.0. The encryption uses libsodium, not home-made cryptography.
+• A separate decrypt tool restores your originals from the server's data even without the app.
+
+<b>Good to know</b>
+• If you lose both your password and your recovery key, your photos cannot be recovered by anyone. Not even the server's admin can reset that.
+• Cipherfilm is young software and has not had an independent security review yet. Keep your own backups.
+• The app is in English.
+• Also available: a web app that comes with the server, and a Mac app.
+
+How the encryption works and what the server can still see: https://cipherfilm.app
+Questions: contact@cipherfilm.app

@@ -47,6 +47,8 @@ public struct Me: Codable, Sendable {
   public let wrapped_master_pw: String
   public let wrapped_privkey: String
   public let pubkey: String
+  /** shown in Settings; missing from servers before it was added */
+  public let server_version: String?
 
   /** Whether this device may compute index entries: it is the indexer, or there is none yet (the first that writes
    *  one becomes it). */

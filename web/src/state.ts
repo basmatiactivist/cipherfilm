@@ -10,6 +10,7 @@ export interface Me {
   wrapped_master_pw: string;
   wrapped_privkey: string;
   pubkey: string;
+  server_version?: string;
 }
 
 /** Key material lives only in this module's memory: a reload or tab close locks the library. */

@@ -70,6 +70,11 @@ export function Card(p: { title: string; sealed?: boolean; children: ComponentCh
   );
 }
 
+/** "Cipherfilm web 1.2.3 · server 1.2.3"; the server part only once it is known. */
+export function VersionLine({ server }: { server?: string }) {
+  return <p class="small version">Cipherfilm web {__APP_VERSION__}{server ? ` · server ${server}` : ""}</p>;
+}
+
 export function ErrorLine({ text }: { text: string }) {
   return text ? <p class="error" role="alert">{text}</p> : null;
 }

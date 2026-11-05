@@ -6,6 +6,8 @@ COPY web/package.json web/package-lock.json ./
 # no install scripts: nothing in the web build needs one, so no dependency runs code at install time
 RUN npm ci --ignore-scripts
 COPY web/ ./
+# the same version as the server binary, shown under Account (vite.config.ts)
+ARG VERSION=dev
 RUN npm run build
 
 FROM --platform=$BUILDPLATFORM golang:1.27-alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS server

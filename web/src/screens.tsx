@@ -7,7 +7,7 @@ import { BackupReport, backupState } from "./backup";
 import { explicitChosen, indexChecked, loadPeople, refreshIndex, searchFamily, setExplicit } from "./people/people";
 import { vectorCount } from "./search/content";
 import { TEXT_MODELS } from "./search/rank";
-import { Card, ErrorLine, Field, KeepButton, NewPasswordFields, Submit, fmtGB, passwordProblem, useAction } from "./components";
+import { Card, ErrorLine, Field, KeepButton, NewPasswordFields, Submit, VersionLine, fmtGB, passwordProblem, useAction } from "./components";
 
 type Nav = (to: string) => void;
 
@@ -154,6 +154,7 @@ export function Account() {
       <DevicesPanel />
       <SearchPanel />
       <StoragePanel />
+      <VersionLine server={mem.me!.server_version} />
     </div>
   );
 }

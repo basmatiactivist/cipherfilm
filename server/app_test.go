@@ -186,6 +186,20 @@ func TestSetupFlow(t *testing.T) {
 	}
 }
 
+func TestServerVersion(t *testing.T) {
+	old := version
+	version = "1.2.3"
+	t.Cleanup(func() { version = old })
+	e := newEnv(t)
+	if code, out := e.client().do("GET", "/api/setup/status", nil, false); code != 200 || out["server_version"] != "1.2.3" {
+		t.Fatalf("setup status: %d %v", code, out)
+	}
+	admin, _ := e.setupAdmin("a@x.org")
+	if code, out := admin.do("GET", "/api/me", nil, false); code != 200 || out["server_version"] != "1.2.3" {
+		t.Fatalf("me: %d %v", code, out)
+	}
+}
+
 func TestLoginAndEnumeration(t *testing.T) {
 	e := newEnv(t)
 	_, ab := e.setupAdmin("admin@x.org")

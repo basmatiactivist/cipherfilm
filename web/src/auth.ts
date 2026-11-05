@@ -50,7 +50,14 @@ export async function loadSession(): Promise<Me | null> {
   }
 }
 
-export const needsSetup = async (): Promise<boolean> => (await api<{ needs_setup: boolean }>("GET", "/api/setup/status")).needs_setup;
+/** The server's version as the setup status reported it, for the sign-in screen ("" until then). */
+export let serverVersion = "";
+
+export async function needsSetup(): Promise<boolean> {
+  const r = await api<{ needs_setup: boolean; server_version?: string }>("GET", "/api/setup/status");
+  serverVersion = r.server_version ?? "";
+  return r.needs_setup;
+}
 
 /** A new recovery key to show. A replaced key (rotation, recovery) is stored only in commit(), after the person has
  *  saved the words: if commit's response is lost, nobody is left with a key that works but was never seen. A new

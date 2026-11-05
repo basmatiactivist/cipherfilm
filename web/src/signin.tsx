@@ -1,7 +1,7 @@
 import { useState } from "preact/hooks";
 import * as auth from "./auth";
 import { mem } from "./state";
-import { Card, ErrorLine, Field, Submit, useAction } from "./components";
+import { Card, ErrorLine, Field, Submit, VersionLine, useAction } from "./components";
 
 // The two screens a returning visitor may see first; everything else in screens.tsx loads when it's needed.
 type Nav = (to: string) => void;
@@ -21,6 +21,7 @@ export function Login({ nav, onDone, notice }: { nav: Nav; onDone: () => void; n
         <Submit busy={busy} label="Sign in" busyLabel="Unlocking, this takes a second or two" />
       </form>
       <p class="aside"><a href="/recover" onClick={(e) => { e.preventDefault(); nav("/recover"); }}>Forgot your password? Use your recovery key</a></p>
+      <VersionLine server={auth.serverVersion} />
     </Card>
   );
 }

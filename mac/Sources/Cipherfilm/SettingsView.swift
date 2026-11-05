@@ -81,7 +81,7 @@ struct GeneralSettings: View {
         }
       }
       Divider()
-      Text("Cipherfilm \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") · libsodium \(Sodium.version) · ONNX Runtime \(Vision.runtimeVersion)")
+      Text("Cipherfilm \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")\(model.me?.server_version.map { " · server \($0)" } ?? "") · libsodium \(Sodium.version) · ONNX Runtime \(Vision.runtimeVersion)")
         .font(Typo.small).foregroundStyle(.tertiary)
     }
     .padding(24)

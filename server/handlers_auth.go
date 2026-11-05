@@ -63,6 +63,7 @@ func (a *App) sessionBundle(u *user, s *session) map[string]any {
 		"wrapped_master_pw": u.WrappedMasterPW,
 		"wrapped_privkey":   u.WrappedPrivkey,
 		"pubkey":            u.Pubkey,
+		"server_version":    version, // shown in the apps' settings
 	}
 }
 
@@ -71,7 +72,8 @@ func (a *App) sessionBundle(u *user, s *session) map[string]any {
 func (a *App) setupStatus(w http.ResponseWriter, r *http.Request) {
 	var n int
 	a.db.QueryRow(`SELECT COUNT(*) FROM setup_state`).Scan(&n)
-	writeJSON(w, 200, map[string]bool{"needs_setup": n > 0})
+	// the version is public anyway (the sign-in screen shows it), so it is no secret worth a login
+	writeJSON(w, 200, map[string]any{"needs_setup": n > 0, "server_version": version})
 }
 
 type setupReq struct {

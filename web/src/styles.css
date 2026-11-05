@@ -14,6 +14,7 @@ a:hover { color: var(--teal-ink); }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .icon { flex: none; }
 .small { font-size: var(--text-caption); color: var(--muted); }
+.version { margin: var(--space-4) 0 0; }
 .email { overflow-wrap: anywhere; }
 .boot { text-align: center; color: var(--muted); }
 .skip { position: absolute; left: -9999px; top: 8px; z-index: 60; padding: var(--space-3) var(--space-4); font-weight: 700; color: var(--teal); background: var(--card); border: 2px solid var(--teal); border-radius: var(--radius-control); }

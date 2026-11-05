@@ -123,8 +123,9 @@ test.describe.serial("search by what is in a photo", () => {
 
     const search = page.getByLabel("Search your photos");
     await search.fill("dog");
-    await expect(page.locator(`.tile[data-id="${item}"]`)).toBeVisible({ timeout: 240_000 }); // the 254 MB model, once
-    await expect(page.locator(".tile")).toHaveCount(1);
+    // the search is debounced, so the library still shows every tile at first; wait for the one result
+    await expect(page.locator(".tile")).toHaveCount(1, { timeout: 240_000 }); // the 254 MB model, once
+    await expect(page.locator(`.tile[data-id="${item}"]`)).toBeVisible();
 
     // off again: back to MobileCLIP, which has no vectors here, so nothing is found by content
     await page.getByRole("button", { name: "Account menu" }).click();

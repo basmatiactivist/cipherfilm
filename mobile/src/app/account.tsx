@@ -3,6 +3,7 @@ import { AppState, ScrollView, StyleSheet, View } from "react-native";
 import { router } from "expo-router";
 import { Appbar, Button, Dialog, Divider, List, Portal, ProgressBar, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import N from "../../modules/cf-native/src/CfNativeModule";
 import { api } from "../api";
 import { biometricPossible, disableBiometric, enableBiometric, forgetServer, lock, signOut, useSession } from "../session";
 import { forgetLibrary } from "../libraryStore";
@@ -28,6 +29,13 @@ export default function Account() {
     return () => sub.remove();
   }, []);
   useEffect(() => { api("GET", "/api/me/usage").then(setUsage, () => {}); }, []);
+  const [app] = useState(() => { try { const v = N.appVersion(); return v.name ? `${v.name} (${v.code})` : undefined; } catch { return undefined; } });
+  const [serverVersion, setServerVersion] = useState(me?.server_version);
+  useEffect(() => {
+    if (me?.server_version) { setServerVersion(me.server_version); return; }
+    // older sign-ins (or older servers) have it only here, if at all
+    api<{ server_version?: string }>("GET", "/api/setup/status").then((r) => setServerVersion(typeof r.server_version === "string" ? r.server_version : undefined), () => {});
+  }, [me?.server_version]);
 
   const leave = async (how: "lock" | "out" | "server") => {
     clearImages();
@@ -85,6 +93,10 @@ export default function Account() {
         <Text variant="bodySmall" style={[st.block, { color: t.colors.onSurfaceVariant }]}>
           Photos are encrypted on this phone before upload. The server only ever stores ciphertext. Password changes, invites and your recovery key are in Cipherfilm in the browser.
         </Text>
+        <Divider />
+        <List.Subheader>About</List.Subheader>
+        <List.Item title="App version" description={app ?? "Unknown"} style={st.item} />
+        <List.Item title="Server version" description={serverVersion ?? "Not reported by this server"} style={st.item} />
       </ScrollView>
       <Portal>
         <Dialog visible={confirmOut} onDismiss={() => setConfirmOut(false)}>

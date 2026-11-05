@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 import { loadCachedLibrary, loadLibrary, prefetchThumbs, pruneCache, type Item } from "./library";
 import { onWipe, session } from "./session";
 import { rememberLibrary } from "./backup";
-import { startSearch } from "./search/engine";
+import { startSearch, warmSearch } from "./search/engine";
 import { api } from "./api";
 
 // One copy of the decrypted list for the library and the viewer; reloaded after uploads.
@@ -27,6 +27,7 @@ export async function refreshLibrary() {
   try {
     // the list from the last visit first, so the grid is there at once; the server's list replaces it
     if (!items || owner !== forUser) {
+      warmSearch().catch(() => {}); // search from its copy on the phone meanwhile (search/engine.ts)
       const cached = await loadCachedLibrary();
       if (cached && current() && (!items || owner !== forUser)) { items = cached; owner = forUser; emit(); }
       // (not shown: its item keys are shared with the decrypted list, library.ts, and go with it at the next lock)

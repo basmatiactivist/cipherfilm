@@ -7,7 +7,7 @@ type Sodium = Awaited<ReturnType<typeof getSodium>>;
 import N from "../modules/cf-native/src/CfNativeModule";
 import { api, putBytes, type Remote } from "./api";
 import { session } from "./session";
-import { keepRunning, letGo } from "./keepAlive";
+import { keepRunning, letGo, onlyHolder } from "./keepAlive";
 import type { ItemMeta } from "./library";
 
 export const THUMB_PX = 640;
@@ -43,6 +43,26 @@ export const uploadsRunning = () => running;
 const idle = new Set<() => void>();
 /** Called each time the last running upload ends (the next file of a share may start right after). */
 export const onUploadsIdle = (f: () => void) => { idle.add(f); return () => { idle.delete(f); }; };
+
+// ---- the one notification for uploads from the app (a share, or Upload in Photos) ----
+
+let shownAt = 0;
+/** Updates the uploads' notification in place (the foreground service's, keepAlive.ts): which file, n of m, how far
+ *  overall. Never a notification per file. While the backup runs too, its progress shows instead. */
+export function showUploads(n: number, total: number, name: string, progress: number, force = false) {
+  const now = Date.now();
+  if (!onlyHolder("upload") || (!force && now - shownAt < 1000)) return; // Android drops updates that come faster
+  shownAt = now;
+  N.backupNotify(total === 1 ? "Uploading to Cipherfilm" : `Uploading ${Math.min(n, total)} of ${total}`, name, progress, true);
+}
+
+/** The one notification after the uploads: how many went, how many didn't. */
+export function uploadsSummary(ok: number, failed: number): { title: string; text: string } | null {
+  if (!ok && !failed) return null;
+  const went = ok === 1 ? "1 file encrypted and uploaded." : `${ok} files encrypted and uploaded.`;
+  if (!failed) return { title: "Upload done", text: went };
+  return { title: "Upload incomplete", text: `${ok ? `${went} ` : ""}${failed === 1 ? "1 file didn't upload." : `${failed} files didn't upload.`} Open Cipherfilm to try again.` };
+}
 
 export class SignedOut extends Error {
   constructor() { super("Stopped: you signed out or locked the app."); }

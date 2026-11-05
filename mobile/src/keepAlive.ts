@@ -19,5 +19,7 @@ export function letGo(holder: string) {
   N.letGo(holder);
   if (!holders.size) keepers.splice(0).forEach((done) => done());
 }
+/** Whether any upload still holds the service (and its notification). */
+export const anyHolder = () => holders.size > 0;
 /** Whether only this holder keeps the service: then its progress may show in the notification (the backup's wins). */
 export const onlyHolder = (holder: string) => holders.size === 1 && holders.has(holder);

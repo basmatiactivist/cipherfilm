@@ -102,6 +102,12 @@ class CfNativeModule : Module() {
       TransferService.release(appContext.reactContext!!, holder)
     }
     Function("keepRunningLost") { TransferService.lost() }
+    // the installed version, for Account › About
+    Function("appVersion") {
+      val ctx = appContext.reactContext!!
+      val info = ctx.packageManager.getPackageInfo(ctx.packageName, 0)
+      mapOf("name" to (info.versionName ?: ""), "code" to (if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else @Suppress("DEPRECATION") info.versionCode.toLong()).toDouble())
+    }
     Function("watchNewMedia") { on: Boolean -> NewMedia.watch(appContext.reactContext!!, on) }
     Function("retryBackupSoon") { minutes: Int -> NewMedia.retrySoon(appContext.reactContext!!, minutes.toLong().coerceIn(1, 60)) }
     Function("clearCookies") {
@@ -115,6 +121,7 @@ class CfNativeModule : Module() {
     AsyncFunction("checkModel") { path: String, sha256: String -> Models.check(File(path), sha256) }
     AsyncFunction("visionOpen") { dir: String, faces: Boolean, clip: String, indexes: Boolean -> Vision.open(dir, faces, clip, indexes) }
     Function("visionClose") { Vision.close() }
+    Function("visionState") { Vision.state() }
     AsyncFunction("visionAnalyze") { jpeg: ByteArray, faces: Boolean -> Vision.analyze(jpeg, faces) }
     AsyncFunction("visionText") { ids: List<Int> -> Vision.textVector(ids.toIntArray()) }
     AsyncFunction("faceCrop") { jpeg: ByteArray, box: List<Double>, px: Int -> if (box.size == 4) Vision.faceCrop(jpeg, box, px.coerceIn(32, 512)) else null }
@@ -123,6 +130,8 @@ class CfNativeModule : Module() {
     Function("indexHas") { item: String -> SearchIndex.has(item) }
     Function("indexCount") { SearchIndex.count() }
     Function("indexClear") { SearchIndex.clear() }
+    AsyncFunction("indexSave") { path: String, key: ByteArray, ad: ByteArray, extra: String -> SearchIndex.save(path, key, ad, extra) }
+    AsyncFunction("indexLoad") { path: String, key: ByteArray, ad: ByteArray, faces: Boolean -> SearchIndex.load(path, key, ad, faces) }
     AsyncFunction("indexSearch") { query: ByteArray, limit: Int, minScore: Double -> SearchIndex.search(query, limit, minScore) }
     AsyncFunction("indexSimilar") { item: String, limit: Int, minScore: Double -> SearchIndex.similar(item, limit, minScore) }
     Function("indexFacesOf") { item: String -> SearchIndex.facesOf(item) }

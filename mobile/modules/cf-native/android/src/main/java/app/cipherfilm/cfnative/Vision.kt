@@ -83,6 +83,12 @@ internal object Vision {
     }
   }
 
+  /** What is open: the model, and whether the text side (searching), the image side (indexing) and faces are. */
+  @Synchronized fun state(): Map<String, Any?> = mapOf(
+    "clip" to CLIPS.entries.firstOrNull { it.value === clipKind }?.key, "dir" to dir?.path,
+    "text" to (text != null), "image" to (image != null), "faces" to (det != null && rec != null),
+  )
+
   @Synchronized fun close() {
     listOf(image, text, det, rec).forEach { runCatching { it?.close() } }
     image = null; text = null; det = null; rec = null; dir = null

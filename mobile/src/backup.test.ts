@@ -41,6 +41,8 @@ vi.mock("@crypto/account", () => ({
   loginProof: async () => ({ auth: "proof", kek: new Uint8Array(32) }),
   unlockMasterKey: () => new Uint8Array(32).fill(1),
 }));
+// what the notification showed: [title, text, ongoing]
+const notes = vi.hoisted(() => [] as [string, string, boolean][]);
 // three 10-byte photos in one folder, MediaStore ids 1..3
 vi.mock("../modules/cf-native/src/CfNativeModule", () => {
   const media = [1, 2, 3].map((id) => ({ id, uri: `content://m/${id}`, name: `IMG_${id}.jpg`, size: 10, mime: "image/jpeg" }));
@@ -52,7 +54,7 @@ vi.mock("../modules/cf-native/src/CfNativeModule", () => {
       readRange: async (_u: string, _o: number, len: number) => new Uint8Array(len),
       jpeg: async () => null,
       mediaInfo: async () => ({}),
-      backupNotify: () => {}, backupNotifyCancel: () => {}, retryBackupSoon: () => {}, watchNewMedia: () => {},
+      backupNotify: (title: string, text: string, _p: number, ongoing: boolean) => { notes.push([title, text, ongoing]); }, backupNotifyCancel: () => {}, retryBackupSoon: () => {}, watchNewMedia: () => {},
       keepRunningLost: () => false, clearCookies: () => {},
     },
   };
@@ -115,6 +117,7 @@ describe("automatic backup", () => {
     store.clear(); files.clear();
     store.set("cf.server", SERVER);
     Object.assign(srv, { cookie: "alice", alive: new Set(["alice"]), log: [], hook: () => {}, items: 0 });
+    notes.length = 0;
   });
   afterEach(() => { vi.useRealTimers(); });
 
@@ -252,6 +255,74 @@ describe("automatic backup", () => {
     expect(api.server()).toBe(SERVER);
     expect(seen).toEqual([]);
     expect((await backup.loadConfig())!.enabled).toBe(false);
+  });
+
+  // The reported case: backup turned on with "only new", some photos already in the library and others not. The
+  // screen said "Everything is backed up" and choosing "also the ones already there" afterwards changed nothing.
+  it("says which older photos aren't backed up, and backs them up once asked to", async () => {
+    const { session, backup, pubkey } = await load();
+    await session.start();
+    await backup.saveConfig({ ...config(pubkey), includeExisting: false, folders: { cam: { name: "Camera", after: 3 } } });
+    await backup.rememberLibrary("alice", [{ meta: { name: "IMG_1.jpg", size: 10 } }]);
+    expect(await backup.waitingCount()).toBe(0);
+    expect(await backup.notBackedUp()).toBe(2); // IMG_2 and IMG_3: not "everything"
+    const cur = (await backup.loadConfig())!;
+    await backup.saveConfig({ ...cur, includeExisting: true, folders: backup.chooseFolders(cur, ["cam"], true, [{ id: "cam", name: "Camera", newest: 3 }]) });
+    expect(await backup.waitingCount()).toBe(3);
+    await backup.runBackup("app");
+    expect(srv.log.filter((l) => l.startsWith("finalize"))).toEqual(["finalize 01 as alice", "finalize 02 as alice"]); // files 2 and 3 only
+    expect(await backup.notBackedUp()).toBe(0);
+    expect((await backup.loadConfig())!.folders.cam.after).toBe(3);
+  });
+
+  it("applies \"photos already on the phone\" to every chosen folder, and keeps the place of the rest", async () => {
+    const { backup } = await load();
+    const phone = [{ id: "cam", name: "Camera", newest: 90 }, { id: "shots", name: "Screenshots", newest: 50 }];
+    const cur = { ...config("pk"), includeExisting: false, folders: { cam: { name: "Camera", after: 40 } } };
+    expect(backup.chooseFolders(cur, ["cam", "shots"], false, phone)).toEqual({ cam: { name: "Camera", after: 40 }, shots: { name: "Screenshots", after: 50 } });
+    expect(backup.chooseFolders(cur, ["cam", "shots"], true, phone)).toEqual({ cam: { name: "Camera", after: 0 }, shots: { name: "Screenshots", after: 0 } });
+    const all = { ...cur, includeExisting: true, folders: { cam: { name: "Camera", after: 10 } } };
+    expect(backup.chooseFolders(all, ["cam"], false, phone)).toEqual({ cam: { name: "Camera", after: 90 } });
+  });
+
+  it("a run keeps what the person changed meanwhile: a folder added, backup turned off", async () => {
+    const { session, backup, pubkey } = await load();
+    await session.start();
+    await backup.saveConfig(config(pubkey));
+    const edit = (f: (c: ReturnType<typeof config>) => void) => {
+      const c = JSON.parse(files.get("/doc/backup/config.json")!);
+      f(c);
+      files.set("/doc/backup/config.json", JSON.stringify(c));
+    };
+    let finals = 0;
+    srv.hook = (_m, path) => {
+      if (!path.endsWith("/finalize")) return;
+      if (++finals === 1) edit((c) => { (c.folders as Record<string, { name: string; after: number }>).shots = { name: "Screenshots", after: 7 }; });
+      if (finals === 2) edit((c) => { c.enabled = false; });
+    };
+    await backup.runBackup("app");
+    const c = (await backup.loadConfig())!;
+    expect(c.enabled).toBe(false); // not switched back on by the run
+    expect(c.folders).toEqual({ cam: { name: "Camera", after: 1 }, shots: { name: "Screenshots", after: 7 } });
+    expect(srv.log.filter((l) => l.startsWith("finalize"))).toHaveLength(2); // stopped once it was turned off
+  });
+
+  it("shows one notification that follows the files, then one summary", async () => {
+    const { session, backup, pubkey } = await load();
+    await session.start();
+    await backup.saveConfig(config(pubkey));
+    await backup.runBackup("app");
+    const ongoing = notes.filter((n) => n[2]);
+    expect(ongoing.map((n) => n[0])).toEqual(["Backing up 1 of 3", "Backing up 2 of 3", "Backing up 3 of 3"]);
+    expect(ongoing.map((n) => n[1])).toEqual(["IMG_1.jpg", "IMG_2.jpg", "IMG_3.jpg"]);
+    expect(notes.filter((n) => !n[2])).toEqual([["Backup done", "3 photos and videos backed up.", false]]);
+  });
+
+  it("the summary says what couldn't be backed up, and nothing when nothing happened", async () => {
+    const { backup } = await load();
+    expect(backup.backupSummary(0, 0, "Waiting for Wi-Fi.")).toBeNull();
+    expect(backup.backupSummary(1, 0)).toEqual({ title: "Backup done", text: "1 photo or video backed up." });
+    expect(backup.backupSummary(4, 2, "Your storage on the server is full.")).toEqual({ title: "Backup incomplete", text: "4 photos and videos backed up. 2 couldn't be backed up (see Backup). Stopped: Your storage on the server is full." });
   });
 
   it("a backup run leaves the app's server and token as they are", async () => {

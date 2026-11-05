@@ -4,7 +4,7 @@ import { router } from "expo-router";
 import { ActivityIndicator, Appbar, Button, Divider, List, RadioButton, Switch, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import N, { type BackupState } from "../../modules/cf-native/src/CfNativeModule";
-import { blocker, disableBackup, enableBackup, loadConfig, loadStatus, onBackupChange, rememberLibrary, runBackup, saveConfig, startAfter, waitingCount, type Config, type Status } from "../backup";
+import { blocker, chooseFolders, disableBackup, enableBackup, loadConfig, loadStatus, notBackedUp, onBackupChange, rememberLibrary, runBackup, saveConfig, startAfter, waitingCount, type Config, type Status } from "../backup";
 import { server } from "../api";
 import { libraryItems, refreshLibrary } from "../libraryStore";
 import { session } from "../session";
@@ -29,6 +29,7 @@ export default function Backup() {
   const [chosen, setChosen] = useState<Set<string>>(new Set());
   const [prefs, setPrefs] = useState(DEFAULTS);
   const [waiting, setWaiting] = useState<number | null>(null);
+  const [older, setOlder] = useState(0); // from before the backup's start in these folders, and not in the library
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
 
@@ -47,6 +48,7 @@ export default function Backup() {
       if (!c) setChosen((cur) => (cur.size ? cur : new Set(f.filter((x) => x.path.startsWith("DCIM/")).map((x) => x.id))));
     }
     setWaiting(c?.enabled ? await waitingCount() : null);
+    setOlder(c?.enabled && !c.includeExisting ? await notBackedUp().catch(() => 0) : 0);
   }, []);
 
   useEffect(() => {
@@ -58,17 +60,18 @@ export default function Backup() {
 
   const on = !!config?.enabled;
 
-  /** Saves a change of folders or conditions; newly ticked folders start where includeExisting says. */
+  /** Saves a change of folders or conditions. "Photos already on the phone" applies to every chosen folder. */
   const apply = async (next: Set<string>, p = prefs) => {
     setChosen(next); setPrefs(p);
-    if (!config) return;
-    const byId = new Map((folders ?? []).map((f) => [f.id, f]));
-    const fs: Config["folders"] = {};
-    for (const id of next) fs[id] = config.folders[id] ?? { name: byId.get(id)?.name ?? "Folder", after: startAfter(p.includeExisting, byId.get(id)?.newest ?? 0) };
-    const c = { ...config, ...p, folders: fs };
+    // read fresh, not from the screen: a run moves the folders' places on meanwhile
+    const cur = await loadConfig();
+    if (!cur) return;
+    const c = { ...cur, ...p, folders: chooseFolders(cur, next, p.includeExisting, folders ?? []) };
     await saveConfig(c);
     setConfig(c);
     setWaiting(c.enabled ? await waitingCount() : null);
+    setOlder(c.enabled && !c.includeExisting ? await notBackedUp().catch(() => 0) : 0);
+    if (c.enabled && p.includeExisting && !cur.includeExisting) runBackup("app").catch(() => {});
   };
 
   const askMedia = async () => {
@@ -127,7 +130,8 @@ export default function Backup() {
             <View style={{ flex: 1 }}>
               <Text variant="titleMedium">Back up automatically</Text>
               <Text variant="bodySmall" style={{ color: t.colors.onSurfaceVariant, marginTop: 2 }}>
-                {on ? (status?.running ? `Backing up${status.current ? ` ${status.current}` : ""}…` : waiting ? `${waiting} waiting` : "Everything is backed up") : "Off"}
+                {on ? (status?.running ? `Backing up${status.current ? ` ${status.current}` : ""}…` : waiting ? `${waiting} waiting`
+                  : older ? "New photos and videos are backed up" : device.media === "partial" ? "Everything Cipherfilm may see is backed up" : "Everything is backed up") : "Off"}
               </Text>
             </View>
             {busy ? <ActivityIndicator /> : <Switch value={on} onValueChange={toggle} accessibilityLabel="Back up automatically" />}
@@ -135,6 +139,14 @@ export default function Backup() {
           {on ? (
             <>
               {problem ? <Text variant="bodyMedium" style={{ marginTop: 12 }}>{problem}{status?.problem && status.problemAt ? ` (${fmtTime.format(status.problemAt)})` : ""}</Text> : null}
+              {older > 0 && !status?.running ? (
+                <>
+                  <Text variant="bodyMedium" style={{ marginTop: 12 }}>
+                    {older === 1 ? "1 older photo or video" : `${older} older photos and videos`} in these folders {older === 1 ? "isn't" : "aren't"} in Cipherfilm. Only new ones are backed up.
+                  </Text>
+                  <Button mode="outlined" style={{ marginTop: 8, alignSelf: "flex-start" }} onPress={() => apply(chosen, { ...prefs, includeExisting: true })}>Back up these too</Button>
+                </>
+              ) : null}
               {status?.stalled && !status.running ? <Text variant="bodyMedium" style={{ marginTop: 12 }}>The last backup stopped while working on {status.stalled}. It is tried again, at most three times, then skipped.</Text> : null}
               <Text variant="bodySmall" style={{ marginTop: 8, color: t.colors.onSurfaceVariant }}>
                 {status?.lastDone ? `Last complete: ${fmtTime.format(status.lastDone)}` : status?.lastRun ? `Last checked: ${fmtTime.format(status.lastRun)}` : "Not run yet"}
@@ -185,7 +197,7 @@ export default function Backup() {
           <RadioButton.Item label="Also the ones already in these folders" value="all" labelVariant="bodyLarge" />
         </RadioButton.Group>
         <Text variant="bodySmall" style={[st.hint, { color: t.colors.onSurfaceVariant }]}>
-          Applies to folders you tick from now on. Photos that are already in your library (same name and size) are skipped.
+          Applies to all chosen folders. Photos that are already in your library (same name and size) are skipped.
         </Text>
 
         <Divider style={{ marginTop: 8 }} />

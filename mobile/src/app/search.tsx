@@ -147,7 +147,7 @@ function Status({ p }: { p: Progress }) {
   if (p.phase === "ready" || p.phase === "off") return null;
   const text = p.phase === "download" ? `Downloading the search models · ${mb(p.done)} of ${mb(p.total)}`
     : p.phase === "waitWifi" ? `Waiting for Wi-Fi to download the search models${p.total ? ` (${mb(p.total)})` : ""}.`
-    : p.phase === "loading" ? "Getting search ready…"
+    : p.phase === "loading" ? (p.total ? `Getting search ready · ${p.done} of ${p.total}` : "Getting search ready…")
     : p.phase === "indexing" ? `Indexing for search · ${p.done} of ${p.total}`
     : `Search stopped: ${p.message ?? "something went wrong"}`;
   return (

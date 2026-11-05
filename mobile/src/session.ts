@@ -18,6 +18,8 @@ export interface Me {
   /** this phone in the device list, and the device that computes the search index ("" = none yet; docs/SEARCH.md) */
   session_id?: string;
   indexer?: string;
+  /** the server's version (older servers don't send it) */
+  server_version?: string;
 }
 
 type Phase = "starting" | "noServer" | "signedOut" | "locked" | "unlocked";

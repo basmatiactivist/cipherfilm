@@ -66,6 +66,8 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   watchNewMedia(on: boolean): void;
   /** Runs the background task once more in a few minutes (after the server couldn't be reached). */
   retryBackupSoon(minutes: number): void;
+  /** The installed app's version (versionName) and build number (versionCode). */
+  appVersion(): { name: string; code: number };
   /** Forgets the session cookie (sign-out). */
   clearCookies(): void;
 
@@ -76,6 +78,8 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   /** indexes = false: only the text model (a phone that only searches) */
   visionOpen(dir: string, faces: boolean, clip: string, indexes: boolean): Promise<void>;
   visionClose(): void;
+  /** what visionOpen has open (dir is the model folder's path) */
+  visionState(): { clip: string | null; dir: string | null; text: boolean; image: boolean; faces: boolean };
   visionAnalyze(jpeg: Bytes, faces: boolean): Promise<Analysis>;
   visionText(ids: number[]): Promise<Bytes>;
   faceCrop(jpeg: Bytes, box: number[], px: number): Promise<Bytes | null>;
@@ -84,6 +88,11 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   indexHas(item: string): boolean;
   indexCount(): { items: number; faces: number };
   indexClear(): void;
+  /** Writes the index to path, encrypted under key (32 bytes, derived from the master key) and bound to ad; extra goes
+   *  inside. Keeps nothing of the key. */
+  indexSave(path: string, key: Bytes, ad: Bytes, extra: string): Promise<void>;
+  /** Replaces the index with that copy and returns its extra; null (index unchanged) if none or it doesn't open. */
+  indexLoad(path: string, key: Bytes, ad: Bytes, faces: boolean): Promise<string | null>;
   indexSearch(query: Bytes, limit: number, minScore: number): Promise<Hit[]>;
   indexSimilar(item: string, limit: number, minScore: number): Promise<Hit[]>;
   indexFacesOf(item: string): { key: string; box: number[]; score: number }[];

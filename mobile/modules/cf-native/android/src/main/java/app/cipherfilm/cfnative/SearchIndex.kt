@@ -1,8 +1,14 @@
 package app.cipherfilm.cfnative
 
+import com.sun.jna.NativeLong
+import java.io.File
+import java.nio.ByteBuffer
+
 /**
- * The decrypted search index, in memory only: one image vector per item and the faces in it. Searching and grouping
- * faces into people run here, off the JavaScript thread. Cleared at every lock (src/search/index.ts calls clear()).
+ * The decrypted search index, in memory: one image vector per item and the faces in it. Searching and grouping
+ * faces into people run here, off the JavaScript thread. Cleared at every lock (src/search/engine.ts calls clear()).
+ * For a fast unlock, save() keeps a copy on the phone encrypted with a key derived from the master key (only the
+ * unlocked app has it), and load() reads it back after the next unlock instead of opening every entry again.
  */
 internal object SearchIndex {
   private val rows = HashMap<String, Int>()
@@ -154,6 +160,124 @@ internal object SearchIndex {
       )
     }.filter { (it["items"] as List<*>).size >= minFaces || it["person"] != null }
       .sortedByDescending { (it["items"] as List<*>).size }
+  }
+
+  // ---- the encrypted copy on the phone ----
+
+  private val MAGIC = byteArrayOf(0x43, 0x46, 0x53, 0x31) // "CFS1"
+  private const val NONCE = 24
+  private const val MAC = 16
+
+  /**
+   * Writes the index to path, encrypted (XChaCha20-Poly1305) under key and bound to ad; extra (the app's list of which
+   * entry each item has) is encrypted along with it. The plaintext exists only in memory here and is wiped, as is key.
+   */
+  fun save(path: String, key: ByteArray, ad: ByteArray, extra: String) {
+    var plain = ByteArray(0)
+    try {
+      if (key.size != 32) throw IllegalArgumentException("key")
+      plain = synchronized(this) { serialize(extra) }
+      val nonce = ByteArray(NONCE).also { Sodium.lib.randombytes_buf(it, NativeLong(NONCE.toLong())) }
+      val c = ByteArray(plain.size + MAC)
+      if (Sodium.lib.crypto_aead_xchacha20poly1305_ietf_encrypt(c, null, plain, plain.size.toLong(), ad, ad.size.toLong(), null, nonce, key) != 0) throw IllegalStateException("encrypt")
+      val f = File(path)
+      f.parentFile?.mkdirs()
+      val tmp = File(f.parentFile, ".${f.name}.tmp")
+      tmp.outputStream().use { it.write(MAGIC); it.write(nonce); it.write(c) }
+      if (!tmp.renameTo(f)) { tmp.delete(); throw IllegalStateException("rename") }
+    } finally {
+      plain.fill(0); key.fill(0)
+    }
+  }
+
+  /**
+   * Replaces the index with what save() wrote and returns its extra; null (index unchanged) when there is no copy or
+   * it doesn't open with this key and ad (another account or model, or damaged). withFaces = false leaves faces out.
+   */
+  fun load(path: String, key: ByteArray, ad: ByteArray, withFaces: Boolean): String? {
+    try {
+      if (key.size != 32) return null
+      val f = File(path)
+      if (!f.exists()) return null
+      val all = f.readBytes()
+      if (all.size < MAGIC.size + NONCE + MAC || !all.copyOfRange(0, MAGIC.size).contentEquals(MAGIC)) return null
+      val nonce = all.copyOfRange(MAGIC.size, MAGIC.size + NONCE)
+      val c = all.copyOfRange(MAGIC.size + NONCE, all.size)
+      val plain = ByteArray(c.size - MAC)
+      if (Sodium.lib.crypto_aead_xchacha20poly1305_ietf_decrypt(plain, null, null, c, c.size.toLong(), ad, ad.size.toLong(), nonce, key) != 0) return null
+      try {
+        return synchronized(this) { deserialize(plain, withFaces) }
+      } finally {
+        plain.fill(0)
+      }
+    } catch (e: Exception) {
+      return null // a copy that doesn't read is made again from the server's entries
+    } finally {
+      key.fill(0)
+    }
+  }
+
+  private fun utf(s: String) = s.toByteArray(Charsets.UTF_8)
+
+  // extra; items (id, image vector as float16); faces (key, item, score, box, vector as float16)
+  private fun serialize(extra: String): ByteArray {
+    val ex = utf(extra)
+    val idBytes = ids.map { utf(it) }
+    val faceRecs = faces.values.toList()
+    val faceBytes = faceRecs.map { utf(it.key) to utf(it.item) }
+    val size = 4 + ex.size + 4 + idBytes.sumOf { 2 + it.size + Vision.CLIP_DIM * 2 } +
+      4 + faceBytes.sumOf { (k, i) -> 2 + k.size + 2 + i.size + 4 + 4 * 8 + Vision.FACE_DIM * 2 }
+    val out = ByteArray(size)
+    val b = ByteBuffer.wrap(out).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+    b.putInt(ex.size); b.put(ex)
+    b.putInt(ids.size)
+    for (r in ids.indices) {
+      b.putShort(idBytes[r].size.toShort()); b.put(idBytes[r])
+      for (i in 0 until Vision.CLIP_DIM) b.putShort(android.util.Half.toHalf(vecs[r * Vision.CLIP_DIM + i]))
+    }
+    b.putInt(faceRecs.size)
+    faceRecs.forEachIndexed { n, f ->
+      val (k, i) = faceBytes[n]
+      b.putShort(k.size.toShort()); b.put(k)
+      b.putShort(i.size.toShort()); b.put(i)
+      b.putFloat(f.score)
+      for (x in 0 until 4) b.putDouble(f.box.getOrElse(x) { 0.0 })
+      for (x in f.emb) b.putShort(android.util.Half.toHalf(x))
+    }
+    return out
+  }
+
+  private fun deserialize(plain: ByteArray, withFaces: Boolean): String {
+    val b = ByteBuffer.wrap(plain).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+    fun str(n: Int): String { val a = ByteArray(n); b.get(a); return String(a, Charsets.UTF_8) }
+    val extra = str(b.int)
+    val n = b.int
+    if (n < 0 || n.toLong() * Vision.CLIP_DIM * 2 > plain.size) throw IllegalStateException("bad copy")
+    val newIds = ArrayList<String>(n)
+    val newRows = HashMap<String, Int>(n * 2)
+    var newVecs = FloatArray(maxOf(1024, n) * Vision.CLIP_DIM)
+    for (r in 0 until n) {
+      val id = str(b.short.toInt() and 0xffff)
+      for (i in 0 until Vision.CLIP_DIM) newVecs[r * Vision.CLIP_DIM + i] = android.util.Half.toFloat(b.short)
+      newRows[id] = r; newIds.add(id)
+    }
+    val m = b.int
+    val newFaces = LinkedHashMap<String, FaceRec>()
+    val newByItem = HashMap<String, MutableList<String>>()
+    for (x in 0 until m) {
+      val key = str(b.short.toInt() and 0xffff)
+      val item = str(b.short.toInt() and 0xffff)
+      val score = b.float
+      val box = List(4) { b.double }
+      val emb = FloatArray(Vision.FACE_DIM) { android.util.Half.toFloat(b.short) }
+      if (!withFaces) continue
+      newFaces[key] = FaceRec(key, item, emb, score, maxOf(box[2], box[3]).toFloat(), box)
+      newByItem.getOrPut(item) { mutableListOf() }.add(key)
+    }
+    clear()
+    ids.addAll(newIds); rows.putAll(newRows); vecs = newVecs
+    faces.putAll(newFaces); facesByItem.putAll(newByItem)
+    return extra
   }
 
   private fun dot(a: FloatArray, b: FloatArray): Float { var s = 0f; for (i in a.indices) s += a[i] * b[i]; return s }

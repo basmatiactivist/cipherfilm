@@ -7,7 +7,8 @@ import { useKeepAwake } from "expo-keep-awake";
 import { ActivityIndicator, Appbar, Button, ProgressBar, Snackbar, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import N from "../../modules/cf-native/src/CfNativeModule";
-import { describe, fmtSize, shareSummary, SignedOut, uploadShared, type Shared } from "../upload";
+import { describe, fmtSize, shareSummary, showUploads, SignedOut, uploadShared, uploadsSummary, type Shared } from "../upload";
+import { anyHolder, keepRunning, letGo } from "../keepAlive";
 import { useSession } from "../session";
 import { refreshLibrary } from "../libraryStore";
 import { takePicked } from "../pending";
@@ -78,21 +79,45 @@ export default function ShareScreen() {
   async function run(list: Job[]) {
     const queue = [...list];
     const results = new Map<string, boolean>();
+    // one notification for all of them, held from the first file to the last (not started again for each file), and
+    // updated with the file, n of m and the bytes of all together
+    const totalBytes = list.reduce((a, j) => a + Math.max(1, j.file.size), 0);
+    const doneBytes = new Map<string, number>();
+    const overall = () => [...doneBytes.values()].reduce((a, b) => a + b, 0) / totalBytes;
+    let started = 0;
+    keepRunning("upload", list.length === 1 ? "Uploading to Cipherfilm" : `Uploading ${list.length} files`, list[0]?.file.name ?? "");
     const worker = async () => {
       for (let j = queue.shift(); j; j = queue.shift()) {
-        patch(j.file.uri, { state: "working" });
+        const job = j;
+        patch(job.file.uri, { state: "working" });
+        showUploads(++started, list.length, job.file.name, overall(), true);
         try {
-          await uploadShared(j.file, (done) => patch(j!.file.uri, { done }), signal.current);
-          patch(j.file.uri, { state: "done", done: j.file.size });
-          results.set(j.file.uri, true);
+          await uploadShared(job.file, (done) => {
+            patch(job.file.uri, { done });
+            doneBytes.set(job.file.uri, done);
+            showUploads(started, list.length, job.file.name, overall());
+          }, signal.current);
+          patch(job.file.uri, { state: "done", done: job.file.size });
+          doneBytes.set(job.file.uri, Math.max(1, job.file.size));
+          results.set(job.file.uri, true);
         } catch (e) {
-          patch(j.file.uri, { state: "error", error: e instanceof Error ? e.message : "Upload failed." });
-          results.set(j.file.uri, false);
+          patch(job.file.uri, { state: "error", error: e instanceof Error ? e.message : "Upload failed." });
+          doneBytes.set(job.file.uri, Math.max(1, job.file.size));
+          results.set(job.file.uri, false);
           if (e instanceof SignedOut) return;
         }
       }
     };
-    await Promise.all(Array.from({ length: FILES_AT_ONCE }, worker));
+    try {
+      await Promise.all(Array.from({ length: FILES_AT_ONCE }, worker));
+    } finally {
+      letGo("upload");
+      // the progress goes with the service; this also takes it away where Android didn't allow the service
+      if (!anyHolder()) N.backupNotifyCancel();
+    }
+    const ok = [...results.values()].filter(Boolean).length;
+    const summary = signal.current.cancelled ? null : uploadsSummary(ok, results.size - ok);
+    if (summary) N.backupNotify(summary.title, summary.text, 0, false);
     forgetShare(); // handled: a lock now doesn't bring the same files up again after the unlock
     refreshLibrary();
     setFinished(true);

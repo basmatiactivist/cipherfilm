@@ -42,6 +42,8 @@ export interface Status {
   problem?: string;
   problemAt?: number;
   current?: string;
+  /** the media id a run was working on; still set at the next run means that run died on it (the app was killed or hung) */
+  attempt?: string;
   skipped: { name: string; reason: string }[];
   failures: Record<string, number>;
 }
@@ -202,7 +204,20 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
           if (outOfTime()) break outer;
           const print = await fingerprint(m.name, m.size);
           if (known.has(print)) { folder.after = m.id; await keep(); waiting--; continue; }
+          if (status.attempt === String(m.id)) { // the last run never got past this file: count that as a failed try
+            const tries = (status.failures[String(m.id)] ?? 0) + 1;
+            status.failures[String(m.id)] = tries;
+            status.attempt = undefined;
+            if (tries >= MAX_TRIES) {
+              status.skipped = [{ name: m.name, reason: "Cipherfilm stopped while reading this file" }, ...status.skipped].slice(0, 50);
+              delete status.failures[String(m.id)];
+              folder.after = m.id;
+              await keep(); await save(); waiting--;
+              continue;
+            }
+          }
           status.current = m.name;
+          status.attempt = String(m.id);
           N.backupNotify("Backing up", `${m.name} · ${waiting} left`, -1, true);
           await save();
           const file: Shared = { uri: m.uri, name: m.name, size: m.size, mime: m.mime || "application/octet-stream", deletable: false };
@@ -231,7 +246,9 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
             status.uploaded++; done++; waiting--;
             folder.after = m.id;
             await keep();
+            status.attempt = undefined;
           } catch (e) {
+            status.attempt = undefined; // a failure seen here is counted below
             const msg = e instanceof Error ? e.message : String(e);
             if (e instanceof ApiError) console.log(`backup: upload failed (${e.status}) ${e.detail}`); // ids only, no names
             if (msg === "out of time") break outer;

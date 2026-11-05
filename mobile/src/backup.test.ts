@@ -155,6 +155,36 @@ describe("automatic backup", () => {
     expect((await backup.loadStatus()).problem).toMatch(/another account/);
   });
 
+  it("a file the app keeps dying on is skipped after three runs, and the files after it are backed up", async () => {
+    const { session, backup, pubkey } = await load();
+    await session.start();
+    await backup.saveConfig(config(pubkey));
+    // two earlier runs ended (killed or hung) while working on file 1
+    files.set("/doc/backup/status.json", JSON.stringify({ running: false, uploaded: 0, skipped: [], failures: { "1": 2 }, attempt: "1" }));
+    const run = backup.runBackup("app");
+    await vi.advanceTimersByTimeAsync(5_000);
+    await run;
+    const st = await backup.loadStatus();
+    expect(st.skipped.map((x) => x.name)).toEqual(["IMG_1.jpg"]);
+    expect(st.attempt).toBeUndefined();
+    expect((await backup.loadConfig())!.folders.cam.after).toBe(3);
+    expect(srv.log.filter((l) => l.startsWith("finalize"))).toEqual(["finalize 01 as alice", "finalize 02 as alice"]); // files 2 and 3
+  });
+
+  it("one interrupted run counts as one try, and the file is tried again", async () => {
+    const { session, backup, pubkey } = await load();
+    await session.start();
+    await backup.saveConfig(config(pubkey));
+    files.set("/doc/backup/status.json", JSON.stringify({ running: false, uploaded: 0, skipped: [], failures: {}, attempt: "1" }));
+    const run = backup.runBackup("app");
+    await vi.advanceTimersByTimeAsync(5_000);
+    await run;
+    const st = await backup.loadStatus();
+    expect(st.skipped).toEqual([]);
+    expect(st.uploaded).toBe(3);
+    expect(st.failures).toEqual({});
+  });
+
   it("counts a file as backed up only after it is confirmed it went to the account", async () => {
     const { session, backup, pubkey } = await load();
     await session.start();

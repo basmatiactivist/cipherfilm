@@ -36,6 +36,7 @@ type fakeServer struct {
 	fail503    int // the next n segment PUTs answer 503
 	failAfter  int // after this many segment PUTs, every further one answers 400 (0: never)
 	expireOnce bool
+	badID      string // POST /api/items answers with this id instead of a proper one
 }
 
 type fakeItem struct {
@@ -116,6 +117,9 @@ func (f *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		f.nextID++
 		id := fmt.Sprintf("%032x", f.nextID)
+		if f.badID != "" {
+			id = f.badID
+		}
 		f.items[id] = &fakeItem{kind: req.Kind, state: "uploading", size: req.Size, count: req.SegmentCount, segs: map[int64][]byte{}}
 		reply(201, map[string]string{"id": id})
 	case len(parts) >= 4 && parts[1] == "items":
@@ -318,5 +322,31 @@ func TestWrongPasswordIsReported(t *testing.T) {
 	}
 	if _, err := newClient("http://example.org", "a@example.org", "", 2); err == nil {
 		t.Fatal("plain http accepted")
+	}
+}
+
+func TestMalformedItemIdFromTheServerIsRefused(t *testing.T) {
+	const email, password = "a@example.org", "pw"
+	fake, _ := newFake(t, email, password)
+	srv := httptest.NewTLSServer(fake)
+	defer srv.Close()
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "a.jpg"), randBytes(1000), 0o600)
+	t.Setenv("CIPHERFILM_UPLOAD_STATE", t.TempDir())
+	t.Setenv("CIPHERFILM_PASSWORD", password)
+	testClient = func(c *client) {
+		c.http.Transport = srv.Client().Transport.(*http.Transport).Clone()
+		c.backoff = func(int) time.Duration { return time.Millisecond }
+	}
+	for _, id := range []string{"./../../../../././escaped-file-b", "0123456789ABCDEF0123456789ABCDEF", "0123456789abcdef"} {
+		fake.badID = id
+		var log bytes.Buffer
+		if code, _ := run(context.Background(), options{server: srv.URL, email: email, parallel: 1, segments: 1}, dir, &log); code == 0 {
+			t.Fatalf("%q: run reported success", id)
+		}
+		if it := fake.items[id]; it == nil || it.wrapped != "" || len(it.segs) != 0 || it.thumb != nil {
+			t.Fatalf("%q: data was sent for the item", id)
+		}
+		delete(fake.items, id)
 	}
 }

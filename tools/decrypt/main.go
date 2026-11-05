@@ -177,6 +177,16 @@ type meta struct {
 
 var unsafeName = regexp.MustCompile(`[\x00-\x1f/\\:*?"<>|]`)
 
+// idRe is the id format the server issues for items and albums. Ids come from the (untrusted) database and end up in
+// paths, so anything else is refused before it is used.
+var idRe = regexp.MustCompile(`^[0-9a-f]{32}$`)
+
+// within reports whether p lies below dir, so nothing from the backup can steer a write outside --out.
+func within(dir, p string) bool {
+	r, err := filepath.Rel(dir, p)
+	return err == nil && r != "." && r != ".." && !strings.HasPrefix(r, ".."+string(filepath.Separator))
+}
+
 func safeName(n, fallback string) string {
 	n = strings.TrimSpace(unsafeName.ReplaceAllString(n, "_"))
 	n = strings.Trim(n, ". ")
@@ -232,12 +242,20 @@ func export(b *backupDir, a *account, master []byte, o options) error {
 	if !o.verify && !o.noAlbums {
 		sort.Slice(albums, func(i, j int) bool { return albums[i].ID < albums[j].ID })
 		for _, al := range albums {
+			if !idRe.MatchString(al.ID) {
+				failures = append(failures, "album "+al.ID+": unexpected album id")
+				continue
+			}
 			name, err := decryptAlbumName(mustB64(al.NameEnc), master, al.ID)
 			if err != nil {
 				failures = append(failures, "album "+al.ID+": name could not be verified")
 				continue
 			}
 			dir := filepath.Join(o.out, "Albums", safeName(name, al.ID))
+			if !within(o.out, dir) {
+				failures = append(failures, "album "+al.ID+": unexpected folder name")
+				continue
+			}
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				return err
 			}
@@ -324,7 +342,7 @@ func humanBytes(n int64) string {
 
 // restoreItem decrypts one item and writes it to Library/YYYY/YYYY-MM/name (or Trash/). It returns the relative path.
 func restoreItem(b *backupDir, it itemRow, keys *keyRing, o options, used map[string]bool) (string, int64, error) {
-	if len(it.ID) != 32 {
+	if !idRe.MatchString(it.ID) {
 		return "", 0, errors.New("unexpected item id")
 	}
 	wrapped, err := unb64(it.WrappedKey)
@@ -366,6 +384,9 @@ func restoreItem(b *backupDir, it itemRow, keys *keyRing, o options, used map[st
 	}
 	used[strings.ToLower(norm.NFC.String(rel))] = true
 	dst := filepath.Join(o.out, rel)
+	if !within(o.out, dst) {
+		return "", 0, errors.New("unexpected output path")
+	}
 	var f *os.File
 	var tmp string
 	if !o.verify {
@@ -373,7 +394,8 @@ func restoreItem(b *backupDir, it itemRow, keys *keyRing, o options, used map[st
 			return "", 0, err
 		}
 		tmp = dst + ".partial"
-		if f, err = os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644); err != nil {
+		os.Remove(tmp) // left by an interrupted run; O_EXCL then never writes through a link placed there
+		if f, err = os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644); err != nil {
 			return "", 0, err
 		}
 	}

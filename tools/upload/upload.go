@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -113,6 +114,10 @@ func (u *uploader) unclaim(key string) {
 	u.dupMu.Unlock()
 }
 
+// idRe is the item id format of the server. An id is bound into the item key and used in paths later, so the uploader
+// refuses to wrap a key for anything else.
+var idRe = regexp.MustCompile(`^[0-9a-f]{32}$`)
+
 type uploadState struct {
 	State    string  `json:"state"`
 	Size     int64   `json:"size"`
@@ -152,7 +157,7 @@ func (u *uploader) uploadOne(ctx context.Context, f *localFile) (err error) {
 	received := map[int64]bool{}
 	var hasThumb, hasPreview bool
 
-	if hasResume && resume.ID != "" {
+	if hasResume && idRe.MatchString(resume.ID) {
 		var us uploadState
 		err := u.c.do(ctx, "GET", "/api/items/"+resume.ID+"/upload", nil, &us)
 		var he *httpError
@@ -191,6 +196,9 @@ func (u *uploader) uploadOne(ctx context.Context, f *localFile) (err error) {
 				return errors.New("the server has too many unfinished uploads for this account; finish or cancel them in the web app (or wait two days), then run this again")
 			}
 			return err
+		}
+		if !idRe.MatchString(created.ID) {
+			return errors.New("the server returned an unexpected item id")
 		}
 		id = created.ID
 		itemKey = randBytes(32)

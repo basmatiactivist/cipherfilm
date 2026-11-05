@@ -3,8 +3,8 @@ package main
 import (
 	"database/sql"
 	"os"
-	"strings"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -82,5 +82,67 @@ func TestTextFromTheBackupIsCleanedInErrors(t *testing.T) {
 	_, err = b.accounts()
 	if err == nil || strings.ContainsAny(err.Error(), "\x1b\x07") {
 		t.Fatalf("error = %q", err)
+	}
+}
+
+func TestOutputStaysInsideTheOutFolder(t *testing.T) {
+	out := filepath.Join("work", "out")
+	for _, p := range []string{"Library/2024/2024-01/a.jpg", "Albums/x"} {
+		if !within(out, filepath.Join(out, p)) {
+			t.Fatalf("%s rejected", p)
+		}
+	}
+	for _, p := range []string{"", "..", "../x", "Library/../../x", "./../../../../././escaped-file-b"} {
+		if within(out, filepath.Join(out, p)) {
+			t.Fatalf("%q accepted", p)
+		}
+	}
+}
+
+// Ids in the database are not trusted: one that is not 32 lowercase hex characters must not reach a key, a blob path
+// or the output folder, even if it has the right length.
+func TestMalformedIdsAreRefused(t *testing.T) {
+	work := t.TempDir()
+	root, out := filepath.Join(work, "a", "b", "c", "d", "root"), filepath.Join(work, "o", "out")
+	os.MkdirAll(filepath.Join(root, "blobs"), 0o700)
+	os.MkdirAll(out, 0o755)
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(root, "app.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.Exec(`CREATE TABLE items (id TEXT, user_id TEXT, kind TEXT, size_bytes INTEGER, segment_count INTEGER, created_at INTEGER,
+		trashed_at INTEGER, wrapped_item_key TEXT, meta_enc TEXT, state TEXT)`)
+	db.Exec(`CREATE TABLE albums (id TEXT, user_id TEXT, name_enc TEXT, created_at INTEGER)`)
+	db.Exec(`CREATE TABLE album_items (album_id TEXT, item_id TEXT, added_at INTEGER)`)
+	bad := []string{"./../../../../newdir/escaped-a-1", "./../../../../././escaped-file-b", "0123456789ABCDEF0123456789ABCDEF", "0123456789abcdef"}
+	for _, id := range bad {
+		db.Exec(`INSERT INTO items VALUES (?, 'u', 'image', 5, 1, 0, NULL, 'AAAA', 'AAAA', 'ready')`, id)
+		db.Exec(`INSERT INTO albums VALUES (?, 'u', 'AAAA', 0)`, id)
+	}
+	db.Close()
+	b, err := openBackup(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	items, err := b.items("u")
+	if err != nil || len(items) != len(bad) {
+		t.Fatalf("items: %d %v", len(items), err)
+	}
+	keys := &keyRing{master: make([]byte, 32)}
+	for _, it := range items {
+		if _, _, err := restoreItem(b, it, keys, options{out: out}, map[string]bool{}); err == nil || err.Error() != "unexpected item id" {
+			t.Fatalf("%q: %v", it.ID, err)
+		}
+	}
+	if err := export(b, &account{ID: "u"}, make([]byte, 32), options{out: out}); err == nil {
+		t.Fatal("export reported success")
+	}
+	entries, _ := os.ReadDir(filepath.Join(work, "o"))
+	if len(entries) != 1 || entries[0].Name() != "out" {
+		t.Fatalf("something was written next to the out folder: %v", entries)
+	}
+	if albums, _ := os.ReadDir(filepath.Join(out, "Albums")); len(albums) != 0 {
+		t.Fatalf("album folders made for malformed ids: %v", albums)
 	}
 }

@@ -36,6 +36,16 @@ export function forgetDecrypted() {
   known = new Map();
 }
 
+/** Decrypted metadata comes from whichever client uploaded the item: fields the app relies on get the expected type
+ *  (an unexpected one is replaced, not trusted), and anything that isn't an object at all marks the item unreadable. */
+function wellFormed(m: ItemMeta, createdAt: number): ItemMeta {
+  if (!m || typeof m !== "object" || Array.isArray(m)) throw new Error("bad metadata");
+  if (typeof m.name !== "string") m.name = "item";
+  if (typeof m.mime !== "string") m.mime = "";
+  if (!Number.isFinite(m.capture_ts)) m.capture_ts = Number.isFinite(m.lastModified) ? m.lastModified : createdAt * 1000;
+  return m;
+}
+
 function decryptRecords(s: Sodium, raw: any[]): Item[] {
   const master = need();
   // items from the phone's background backup carry keys sealed to the account key pair, opened only if there are any
@@ -54,7 +64,7 @@ function decryptRecords(s: Sodium, raw: any[]): Item[] {
     }
     try {
       it.itemKey = unwrapAnyItemKey(s, unb64(s, x.wrapped_item_key), master, keyPair, x.id);
-      it.meta = decryptMeta<ItemMeta>(s, unb64(s, x.meta_enc), it.itemKey, x.id);
+      it.meta = wellFormed(decryptMeta<ItemMeta>(s, unb64(s, x.meta_enc), it.itemKey, x.id), x.created_at);
       if (it.meta.size !== it.size) throw new Error("size mismatch");
     } catch {
       it.broken = true;
@@ -115,7 +125,8 @@ export async function fetchOriginal(it: Item, onProgress?: (done: number, total:
     parts.push(decryptSegment(s, it.itemKey!, it.id, i, it.segment_count, it.size, ct) as BlobPart);
     onProgress?.(i + 1, it.segment_count);
   }
-  return new Blob(parts, { type: it.meta?.mime ?? "application/octet-stream" });
+  // only ever saved or zipped, never shown: the stored type is not needed and not trusted
+  return new Blob(parts, { type: "application/octet-stream" });
 }
 
 // ---- upload ----

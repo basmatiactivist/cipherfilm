@@ -1,5 +1,13 @@
-.git
+# Allowlist: the image is built from server/ and web/ only. Everything else (.env, test passwords, release files,
+# local data) never reaches the builder, even if a later COPY gets broader.
+*
+!server/
+!web/
 **/node_modules
+**/.env*
+**/*.pem
+**/*.key
+**/*.p12
+**/*.jks
 web/dist
 server/static
-data

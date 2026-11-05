@@ -53,23 +53,29 @@ export function decryptSegment(s: Sodium, itemKey: Uint8Array, itemId: string, i
   const wantPlain = total === 0 ? 0 : segmentPlainLen(total, i);
   if (i < 0 || i >= count || count !== segmentCount(total) || wantPlain < 0 || blob.length !== cipherLen(wantPlain)) throw new Error("segment failed verification");
   const key = subkey(s, itemKey, CTX.itemSeg, i);
-  const state = s.crypto_secretstream_xchacha20poly1305_init_pull(blob.subarray(0, HEADER), key);
-  const ad = adFor(s, itemId, i, count, total);
   const out = new Uint8Array(wantPlain);
-  let o = HEADER;
-  let w = 0;
-  const FINAL = s.crypto_secretstream_xchacha20poly1305_TAG_FINAL;
-  for (;;) {
-    const end = Math.min(blob.length, o + CHUNK + ABYTES);
-    const r = s.crypto_secretstream_xchacha20poly1305_pull(state, blob.subarray(o, end), ad);
-    if (!r) throw new Error("segment failed verification");
-    out.set(r.message, w);
-    w += r.message.length;
-    o = end;
-    if (r.tag === FINAL) break;
-    if (o >= blob.length) throw new Error("segment truncated");
+  try {
+    const state = s.crypto_secretstream_xchacha20poly1305_init_pull(blob.subarray(0, HEADER), key);
+    const ad = adFor(s, itemId, i, count, total);
+    let o = HEADER;
+    let w = 0;
+    const FINAL = s.crypto_secretstream_xchacha20poly1305_TAG_FINAL;
+    for (;;) {
+      const end = Math.min(blob.length, o + CHUNK + ABYTES);
+      const r = s.crypto_secretstream_xchacha20poly1305_pull(state, blob.subarray(o, end), ad);
+      if (!r) throw new Error("segment failed verification");
+      out.set(r.message, w);
+      w += r.message.length;
+      o = end;
+      if (r.tag === FINAL) break;
+      if (o >= blob.length) throw new Error("segment truncated");
+    }
+    if (o !== blob.length || w !== wantPlain) throw new Error("segment failed verification");
+    return out;
+  } catch (e) {
+    s.memzero(out); // whatever was opened of a segment that failed is not left behind
+    throw e;
+  } finally {
+    s.memzero(key);
   }
-  if (o !== blob.length || w !== wantPlain) throw new Error("segment failed verification");
-  s.memzero(key);
-  return out;
 }

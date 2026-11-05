@@ -32,6 +32,7 @@ services:
     network_mode: service:tailscale
     depends_on: [tailscale]
     environment:
+      LISTEN_ADDR: "127.0.0.1:8080"   # only Serve (and Caddy) in this namespace reach it, not tailnet peers directly
       TRUST_PROXY: "0"   # Tailscale Serve does not document X-Forwarded-For, so per-IP limits are not used here
 
 volumes:

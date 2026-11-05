@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path"
@@ -70,7 +71,12 @@ func bodyLimit(next http.Handler) http.Handler {
 
 func healthcheck(addr string) int {
 	c := http.Client{Timeout: 3 * time.Second}
-	resp, err := c.Get("http://127.0.0.1" + addr + "/healthz")
+	// only the port: LISTEN_ADDR may name a host too (127.0.0.1:8080)
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return 1
+	}
+	resp, err := c.Get("http://127.0.0.1:" + port + "/healthz")
 	if err != nil || resp.StatusCode != 200 {
 		return 1
 	}

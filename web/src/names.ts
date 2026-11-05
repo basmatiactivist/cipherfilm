@@ -1,9 +1,12 @@
 /** File names inside ZIPs and download headers. */
 const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
 
-export function safeName(n: string): string {
-  // control characters, bidirectional overrides (they can make "photo\u202Egpj.exe" read as a picture) and path characters
-  let cleaned = n.replace(/[\u0000-\u001f\u007f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "").replace(/[\\/:*?"<>|]/g, "_").replace(/^\.+/, "").replace(/[. ]+$/, "").trim().slice(0, 200);
+export function safeName(n: unknown): string {
+  // control characters, bidirectional marks and overrides (they can make "photo\u202Egpj.exe" read as a picture),
+  // invisible zero-width characters and path characters; trailing dots and spaces again after the cut to 200
+  let cleaned = (typeof n === "string" ? n : "")
+    .replace(/[\u0000-\u001f\u007f\u061c\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, "").replace(/[\\/:*?"<>|]/g, "_")
+    .replace(/^\.+/, "").replace(/[. ]+$/, "").trim().slice(0, 200).replace(/[. ]+$/, "");
   if (RESERVED.test(cleaned)) cleaned = "_" + cleaned; // Windows device names
   return cleaned || "file";
 }

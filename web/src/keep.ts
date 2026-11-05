@@ -30,8 +30,12 @@ async function idb<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBReq
 const b64 = (u: Uint8Array) => btoa(String.fromCharCode(...u));
 const unb64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 
+// counts every forget: a keepKey still running when the tab locks or signs out must not store the key afterwards
+let generation = 0;
+
 /** Remembers the master key for reloads of this tab (best effort: without IndexedDB the password is asked again). */
 export async function keepKey(userId: string, master: Uint8Array): Promise<void> {
+  const started = generation;
   try {
     let k = await idb<CryptoKey | undefined>("readonly", (s) => s.get(userId));
     if (!k) {
@@ -40,6 +44,7 @@ export async function keepKey(userId: string, master: Uint8Array): Promise<void>
     }
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: new TextEncoder().encode(userId) }, k, new Uint8Array(master)));
+    if (generation !== started) return;
     sessionStorage.setItem(SLOT, JSON.stringify({ u: userId, iv: b64(iv), ct: b64(ct) }));
   } catch { /* not kept: a reload asks for the password */ }
 }
@@ -62,6 +67,7 @@ export async function keptKey(userId: string): Promise<Uint8Array | null> {
 
 /** Lock: this tab forgets the kept key (the password is needed again). */
 export function forgetKept(): void {
+  generation++;
   try { sessionStorage.removeItem(SLOT); } catch { /* nothing kept */ }
 }
 

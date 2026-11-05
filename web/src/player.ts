@@ -45,5 +45,8 @@ export function forgetStream(id: string) { params.delete(id); }
 
 export function clearPlayer() {
   params.clear();
-  navigator.serviceWorker?.controller?.postMessage({ type: "clear" });
+  if (typeof navigator === "undefined" || !navigator.serviceWorker) return;
+  navigator.serviceWorker.controller?.postMessage({ type: "clear" });
+  // a page the worker doesn't control (a hard reload) still reaches it for the other tabs it holds keys for
+  navigator.serviceWorker.getRegistration().then((r) => r?.active?.postMessage({ type: "clear" }), () => {});
 }

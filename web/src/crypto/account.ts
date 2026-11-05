@@ -80,7 +80,8 @@ export async function recoveryProof(s: Sodium, words: string) {
   const { recAuth, recWrap } = recoveryParts(s, recoveryKey);
   const proof = b64(s, recAuth);
   s.memzero(recAuth);
-  return { recovery_auth: proof, recWrap, recoveryKey };
+  s.memzero(recoveryKey);
+  return { recovery_auth: proof, recWrap }; // the caller zeroes recWrap once it opened the master key
 }
 
 export function unlockWithRecovery(s: Sodium, email: string, recWrap: Uint8Array, wrappedMasterRecovery: string): Uint8Array {
@@ -92,12 +93,16 @@ export async function finishRecovery(s: Sodium, email: string, masterKey: Uint8A
   const owner = normEmail(email);
   const newRecoveryKey = s.randombytes_buf(32);
   const { recAuth, recWrap } = recoveryParts(s, newRecoveryKey);
-  const body = {
-    ...(await rewrapForPassword(s, email, masterKey, newPassword, kdf)),
-    new_wrapped_master_recovery: b64(s, seal(s, masterKey, recWrap, LABEL.masterRecovery, owner)),
-    new_recovery_verifier: b64(s, recAuth),
-  };
-  return { body, recoveryWords: await keyToWords(newRecoveryKey) };
+  try {
+    const body = {
+      ...(await rewrapForPassword(s, email, masterKey, newPassword, kdf)),
+      new_wrapped_master_recovery: b64(s, seal(s, masterKey, recWrap, LABEL.masterRecovery, owner)),
+      new_recovery_verifier: b64(s, recAuth),
+    };
+    return { body, recoveryWords: await keyToWords(newRecoveryKey) };
+  } finally {
+    for (const k of [newRecoveryKey, recAuth, recWrap]) s.memzero(k);
+  }
 }
 
 /** A fresh recovery key for an existing account: new wrap of the master key plus a new verifier. The old key stops working. */

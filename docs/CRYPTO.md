@@ -80,9 +80,15 @@ Failure policy: any AEAD failure aborts decryption for that object, nothing is r
 - Password change: verify current, derive new `authKey`/`KEK` with a fresh salt, re-wrap `masterKey`, upload, invalidate other sessions. Data is not re-encrypted.
 - Recovery: user enters e-mail + 24 words; client derives `recoveryAuth`, server verifies, returns `wrapped_master_recovery`; client unwraps `masterKey`, sets a new password (new salt, new wrap), and **rotates the recovery key** (new `wrapped_master_recovery` + new verifier) shown once again.
 
-## 6. Session key storage (open question Q4)
+## 6. Session key storage (web)
 
-Default: `masterKey` in a JS closure in a dedicated worker, never in storage. Optional "remember on this device": `masterKey` wrapped with a non-extractable WebCrypto AES-GCM key stored in IndexedDB.
+`masterKey` lives in the page's memory (`web/src/state.ts`, on the main thread), never in storage in the clear. To
+survive a reload of the same tab (`web/src/keep.ts`), it is encrypted at unlock with AES-256-GCM under a random,
+non-extractable WebCrypto key that the browser keeps in IndexedDB (one per account, the user id as associated data);
+the ciphertext goes into `sessionStorage`, which belongs to that tab only. A reload finds both and checks that the key
+opens the account's private key before using it; a closed tab or a new one finds no ciphertext and asks for the
+password. Lock deletes the ciphertext; sign-out, an ended session and a sign-out from another device delete the
+IndexedDB keys of every account as well. A key that is still being stored when the tab locks is not written.
 
 ## 7. Randomness and memory hygiene
 

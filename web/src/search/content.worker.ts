@@ -2,7 +2,7 @@
 // thread), downloads the text model once from this server into the browser's cache (checked against its SHA-256 every
 // time it is opened), turns the query into a vector with ONNX Runtime (WebAssembly, one thread) and ranks.
 import * as ort from "onnxruntime-web/wasm";
-import { unhalf } from "../people/faces";
+import { allFinite, unhalf } from "../people/faces";
 import { Tokenizer } from "./tokenizer";
 import { embed } from "./embed";
 import { Family, Hit, MODEL_CACHE, TEXT_MODELS, TOKENIZER, familyOf, normalize, rank } from "./rank";
@@ -87,7 +87,8 @@ self.onmessage = async (e: MessageEvent<Req>) => {
     for (const x of r.entries) {
       remove(x.item);
       const f = familyOf(x.m);
-      if (f && x.clip && x.clip.length >= 1024) vectors[f].set(x.item, normalize(unhalf(x.clip)));
+      const v = f && x.clip && x.clip.length >= 1024 ? unhalf(x.clip) : null;
+      if (f && v && allFinite(v)) vectors[f].set(x.item, normalize(v));
     }
   } else if (r.t === "remove") r.items.forEach(remove);
   else {

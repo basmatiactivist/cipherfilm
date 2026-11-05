@@ -2,6 +2,7 @@
 # Caddy serves both names and forwards to the app. Plain HTTP and the admin API are off.
 {
 	admin off
+	default_bind 127.0.0.1 # only Tailscale Serve reaches it, not the tailnet address directly
 	auto_https disable_redirects
 	http_port 8081
 	https_port 4443

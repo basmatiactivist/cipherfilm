@@ -41,7 +41,14 @@ case "$cmd" in
     if grep -v '^[-d]' "$L/long" >/dev/null; then echo "Archiv enthaelt Links oder Geraete" >&2; exit 1; fi
     if grep -Ev '^(backup|blobs)(/|$)' "$L/names" >/dev/null; then echo "Archiv hat unerwartete Eintraege" >&2; exit 1; fi
     docker compose stop app >/dev/null
-    TS="$(date +%Y%m%d-%H%M%S)"; rm -rf .restore-tmp && mkdir .restore-tmp && tar -xf "$FILE" -C .restore-tmp
+    # privat entpacken (wie die eigenen Ordner des Servers) und danach pruefen, was wirklich ausgepackt wurde: das
+    # Archiv kann sich seit der Liste oben geaendert haben (z. B. auf einem geteilten oder externen Laufwerk)
+    umask 077
+    TS="$(date +%Y%m%d-%H%M%S)"; rm -rf .restore-tmp && mkdir .restore-tmp && tar -xf "$FILE" --no-same-owner -C .restore-tmp
+    if [ -n "$(find .restore-tmp ! -type f ! -type d | head -1)" ] || [ -n "$(find .restore-tmp -mindepth 1 -maxdepth 1 ! -name backup ! -name blobs | head -1)" ] \
+      || [ ! -f .restore-tmp/backup/app.db ] || [ ! -f .restore-tmp/backup/secret ]; then
+      rm -rf .restore-tmp; docker compose start app >/dev/null; echo "Archiv hat sich beim Entpacken als unsicher erwiesen; nichts ersetzt" >&2; exit 1
+    fi
     mv data "data.vorher-$TS"; mkdir data
     if [ -d .restore-tmp/blobs ]; then mv .restore-tmp/blobs data/blobs; fi; mv .restore-tmp/backup/app.db data/app.db; mv .restore-tmp/backup/secret data/secret; rm -rf .restore-tmp
     # vor dem Start: alle Sitzungen beenden und dem Papierkorb der Sicherung frische 30 Tage geben

@@ -63,8 +63,9 @@ function App() {
   };
   useEffect(() => {
     const ended = () => {
+      // an ended session is a sign-out by the server: the same is forgotten (kept keys, search models, upload notes)
       forgetKeys();
-      mem.me = null;
+      auth.forgetLocal();
       setNotice("Your session has ended. Please sign in again.");
       history.replaceState(null, "", "/");
       setScreen({ n: "login" });

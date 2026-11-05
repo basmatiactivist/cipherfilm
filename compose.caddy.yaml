@@ -3,7 +3,7 @@
 # Cipherfilm stays safe on the public internet only if you keep the admin invite-only (the default) and keep it updated.
 services:
   caddy:
-    image: ${CADDY_IMAGE:-caddy:2-alpine}
+    image: ${CADDY_IMAGE:-caddy:2.11.7-alpine}   # a fixed version: the app relies on how it sets X-Forwarded-For
     restart: unless-stopped
     ports:
       - "80:80"
@@ -16,10 +16,18 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on: [app]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]   # ports 80 and 443
     security_opt: ["no-new-privileges:true"]
+    pids_limit: 256
+    mem_limit: 256m
   app:
     environment:
       TRUST_PROXY: "1"
+      # the app also refuses other names itself, and takes X-Forwarded-For only for requests to these names
+      PUBLIC_HOSTS: "${SITE_ADDRESS:?set SITE_ADDRESS in .env, e.g. photos.example.com}"
 
 volumes:
   caddy_data:

@@ -23,10 +23,11 @@ services:
       PUBLIC_HOSTS: "${DOMAIN:?set DOMAIN in .env, e.g. photos.example.com}"
 
   caddy:
-    image: caddy:2-alpine
+    image: caddy:2.11.7-alpine   # a fixed version: the app relies on how it sets X-Forwarded-For
     restart: unless-stopped
-    # The app sets its own security headers; Caddy only gets the certificate, terminates TLS and forwards.
-    command: caddy reverse-proxy --from ${DOMAIN} --to app:8080
+    # The app sets its own security headers; Caddy only gets the certificate, terminates TLS and forwards, with the
+    # real client address as the only X-Forwarded-For entry.
+    command: 'caddy reverse-proxy --from ${DOMAIN} --to app:8080 --header-up "X-Forwarded-For: {http.request.remote.host}"'
     ports:
       - "80:80"
       - "443:443"
@@ -35,7 +36,13 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on: [app]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]   # ports 80 and 443
     security_opt: ["no-new-privileges:true"]
+    pids_limit: 256
+    mem_limit: 256m
 
 volumes:
   data:

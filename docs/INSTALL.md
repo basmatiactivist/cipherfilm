@@ -8,6 +8,10 @@ check your download:
 shasum -a 256 -c SHA256SUMS --ignore-missing      # macOS and Linux
 ```
 
+`SHA256SUMS` comes from the same place as the files, so it shows a download is complete, not who made it. Files
+built by the release workflow also carry a signed build provenance; with the GitHub CLI:
+`gh attestation verify cipherfilm-android-X.Y.Z.apk --repo basmatiactivist/cipherfilm`.
+
 You need a **server** first; the apps connect to it. None of the apps is in a store yet, so they are installed from
 the files below.
 

@@ -8,7 +8,9 @@ login. Nothing is published on the host.
 
 What it saves is what `backup.sh` saves: `backup/` (a consistent database snapshot and the server secret) and
 `blobs/` (the encrypted files). The live database is skipped; a nightly run first writes the snapshot, then Kopia
-saves, so every file the snapshot refers to is in the backup. Everything in it was ciphertext already.
+saves, so every file the snapshot refers to is in the backup. The photos, videos and their metadata in it are
+ciphertext already, but the database snapshot also holds e-mail addresses, password verifiers and wrapped keys, and
+`backup/` holds the server secret: keep the repository password and the off-site store as private as the server.
 
 ## Set up
 

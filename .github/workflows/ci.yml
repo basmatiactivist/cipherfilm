@@ -6,14 +6,28 @@ permissions:
   contents: read
 jobs:
   identity:
-    # Nothing pushed here may carry a real e-mail address: once on GitHub it can't be removed again.
-    if: github.event_name == 'push'
+    # Nothing pushed here may carry a real e-mail address: once on GitHub it can't be removed again. A pull request is
+    # checked over its own commits, so the required check means something before the merge too.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0, persist-credentials: false }
       - name: commits and tags use noreply addresses
-        run: scripts/check-identity.sh --committer HEAD $(git tag -l)
+        if: github.event_name == 'push'
+        # full ref names (refs/tags/...), so no tag name is ever read as an option
+        run: git for-each-ref --format='%(refname)' refs/tags | xargs scripts/check-identity.sh --committer HEAD
+      - name: the pull request's commits use noreply addresses
+        if: github.event_name == 'pull_request'
+        env: { BASE: "${{ github.event.pull_request.base.sha }}", HEAD: "${{ github.event.pull_request.head.sha }}" }
+        run: scripts/check-identity.sh --committer "$BASE..$HEAD"
+  tokens:
+    # the generated token files in web/, mobile/ and mac/ match design/tokens/tokens.json
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }  # no token left in .git for later steps
+      - name: design tokens are up to date
+        run: make tokens-check
   server:
     runs-on: ubuntu-latest
     steps:
@@ -33,7 +47,7 @@ jobs:
         with: { node-version: "26", cache: npm, cache-dependency-path: web/package-lock.json }
       - name: install, type-check, build, test
         working-directory: web
-        run: npm ci && npm run build && npm test
+        run: npm ci --ignore-scripts && npm run build && npm test   # no dependency runs code at install time
   mobile:
     # the Android app's TypeScript (it shares web/src/crypto) and its unit tests; the APK is built by android.yml
     runs-on: ubuntu-latest
@@ -43,7 +57,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with: { node-version: "26", cache: npm, cache-dependency-path: "mobile/package-lock.json" }
       - name: install, type-check, test
-        run: (cd web && npm ci) && cd mobile && npm ci && npx tsc --noEmit && npm test
+        run: (cd web && npm ci --ignore-scripts) && cd mobile && npm ci && npx tsc --noEmit && npm test
   decrypt-tool:
     runs-on: ubuntu-latest
     steps:

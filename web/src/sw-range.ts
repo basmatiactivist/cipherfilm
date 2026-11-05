@@ -31,10 +31,12 @@ export function sliceFor(seg: number, r: ByteRange, segLen: number): [number, nu
   return [Math.max(0, r.start - base), Math.min(segLen, r.end - base + 1)];
 }
 
+/** The type a video is played under: always one of a few video types, whatever the stored metadata says, so the bytes
+ *  can never be handed to the browser as a page or an image. */
 export const playMime = (mime: string, name: string): string => {
   const n = name.toLowerCase();
   if (/^video\/(mp4|webm|ogg)$/.test(mime)) return mime;
-  if (mime === "video/quicktime" || /\.(mov|m4v|mp4)$/.test(n)) return "video/mp4";
   if (n.endsWith(".webm")) return "video/webm";
-  return mime || "video/mp4";
+  if (n.endsWith(".ogv")) return "video/ogg";
+  return "video/mp4"; // QuickTime and everything else: browsers play what they can of it as MP4
 };

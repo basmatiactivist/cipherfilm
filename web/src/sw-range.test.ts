@@ -49,4 +49,7 @@ describe("playMime", () => {
     expect(playMime("", "clip.webm")).toBe("video/webm");
     expect(playMime("video/webm", "x")).toBe("video/webm");
   });
+  test("never anything but a video type", () => {
+    for (const m of ["text/html", "image/svg+xml", "application/xhtml+xml", "video/x-anything", ""]) expect(playMime(m, "clip.html")).toBe("video/mp4");
+  });
 });

@@ -17,5 +17,6 @@ services:
     environment:
       LISTEN_ADDR: ":8080"
       TRUST_PROXY: "0"
+      PUBLIC_HOSTS: fotocrypt.orb.local   # requests for any other name (DNS rebinding) are refused
     labels:
       dev.orbstack.domains: fotocrypt.orb.local

@@ -15,6 +15,10 @@ export function unhalf(b: Uint8Array): Float32Array {
   return out;
 }
 
+/** False for a vector with NaN or infinite parts: such an entry would make every score with it NaN and the order of
+ *  results depend on the sort, so it is left out of search and grouping. */
+export const allFinite = (v: Float32Array) => v.every(Number.isFinite);
+
 export interface FaceFound { box: number[]; score: number; emb: Uint8Array }
 export interface Cover { key: string; item: string; box: number[] }
 export interface FaceGroup { person?: string; faces: string[]; items: string[]; cover?: Cover }
@@ -38,8 +42,10 @@ export class FaceIndex {
     const keys: string[] = [];
     fs.forEach((f, k) => {
       if (f.emb.length < FACE_DIM * 2 || f.box.length !== 4) return;
+      const emb = unhalf(f.emb.subarray(0, FACE_DIM * 2));
+      if (!allFinite(emb) || !f.box.every(Number.isFinite) || !Number.isFinite(f.score)) return;
       const key = `${item}:${k}`;
-      this.faces.set(key, { key, item, emb: unhalf(f.emb.subarray(0, FACE_DIM * 2)), score: Math.fround(f.score), size: Math.fround(Math.max(f.box[2], f.box[3])), box: f.box });
+      this.faces.set(key, { key, item, emb, score: Math.fround(f.score), size: Math.fround(Math.max(f.box[2], f.box[3])), box: f.box });
       keys.push(key);
     });
     if (keys.length) this.byItem.set(item, keys);

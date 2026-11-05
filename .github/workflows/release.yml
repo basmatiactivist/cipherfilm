@@ -42,7 +42,7 @@ jobs:
       - name: Server tests
         run: mkdir -p server/static && cd server && go vet ./... && go test ./...
       - name: Web tests
-        run: cd web && npm ci && npm run build && npm test
+        run: cd web && npm ci --ignore-scripts && npm run build && npm test
       - name: Decrypt tool tests
         run: cd tools/decrypt && go vet ./... && go test ./...
       - name: Uploader tests
@@ -69,7 +69,19 @@ jobs:
       attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with: { persist-credentials: false }  # no token left in .git for later steps
+        with: { persist-credentials: false, fetch-depth: 0 }  # every release tag, for the order check below
+      - name: Which floating tags this release may move
+        id: order
+        # a fix for an older line (v2.0.9 after v2.3.0) must not move :2 or :latest back to older code: X.Y, X and
+        # latest move only when this is the highest release in that line (pre-releases never move them)
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          # the highest final release whose version starts with $1 ("2.3.", "2." or "" for all)
+          rel() { git tag -l 'v[0-9]*' | sed 's/^v//' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | awk -v p="$1" 'index($0, p) == 1' | sort -V | tail -1; }
+          top() { case "$v" in *-*) echo false ;; *) [ "$(rel "$1")" = "$v" ] && echo true || echo false ;; esac; }
+          major="${v%%.*}"; rest="${v#*.}"; minor="$major.${rest%%.*}"
+          { echo "minor=$(top "$minor.")"; echo "major=$(top "$major.")"; echo "latest=$(top "")"; } >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
@@ -82,12 +94,12 @@ jobs:
         with:
           images: ${{ env.IMAGE }}
           flavor: latest=false
-          # v1.2.3 -> 1.2.3, 1.2, 1, latest (pre-releases like v1.2.3-rc.1 get only their own tag)
+          # v1.2.3 -> 1.2.3, and 1.2, 1, latest where it is the newest (pre-releases like v1.2.3-rc.1 get only their own tag)
           tags: |
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}},enable=${{ !contains(github.ref_name, '-') }}
-            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ steps.order.outputs.minor == 'true' }}
+            type=semver,pattern={{major}},enable=${{ steps.order.outputs.major == 'true' }}
+            type=raw,value=latest,enable=${{ steps.order.outputs.latest == 'true' }}
           labels: |
             org.opencontainers.image.title=Cipherfilm
             org.opencontainers.image.description=Self-hosted, end-to-end encrypted photo and video gallery
@@ -126,7 +138,7 @@ jobs:
           cd tools/decrypt
           for t in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 windows/amd64; do
             os=${t%/*}; arch=${t#*/}; ext=""; [ "$os" = windows ] && ext=".exe"
-            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags="-s -w" -o ../../dist/cipherfilm-decrypt-$os-$arch$ext .
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags="-s -w" -o "../../dist/cipherfilm-decrypt-$os-$arch$ext" .
           done
           cd ../upload
           for arch in arm64 amd64; do
@@ -157,6 +169,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write       # signing the provenance of the attached files
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }  # no token left in .git for later steps
@@ -168,7 +182,7 @@ jobs:
         if: ${{ needs.mac.result == 'success' }}
         with: { name: mac-app, path: dist }
       - name: Checksums for everything attached
-        run: cd dist && rm -f SHA256SUMS && sha256sum * > SHA256SUMS
+        run: cd dist && rm -f SHA256SUMS && sha256sum -- * > SHA256SUMS
       - name: Release notes from CHANGELOG.md
         run: |
           v="${GITHUB_REF_NAME#v}"
@@ -187,9 +201,17 @@ jobs:
           } >> notes.md
       - name: No build paths or names in the files (docs/RELEASING.md)
         run: scripts/check-artifacts.sh dist/*
+      - name: Sign the build provenance of every attached file (GitHub only offers this for public repositories)
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with: { subject-path: "dist/*" }
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # the tag must still point at the commit that was built: a tag moved during the run is not released
+          ref=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$GITHUB_REF_NAME" --jq '.object.type + " " + .object.sha')
+          sha="${ref#* }"; [ "${ref% *}" = tag ] && sha=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$sha" --jq .object.sha)
+          [ "$sha" = "$(git rev-parse HEAD)" ] || { echo "$GITHUB_REF_NAME moved to $sha during the run: not released"; exit 1; }
           pre=""; case "$GITHUB_REF_NAME" in *-*) pre="--prerelease";; esac
           gh release create "$GITHUB_REF_NAME" dist/* --title "Cipherfilm ${GITHUB_REF_NAME#v}" --notes-file notes.md $pre --verify-tag

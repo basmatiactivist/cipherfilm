@@ -15,6 +15,9 @@ describe("names", () => {
     expect(safeName("CON.txt")).toBe("_CON.txt");
     expect(safeName("nul")).toBe("_nul");
     expect(safeName("report. . ")).toBe("report");
+    expect(safeName("a\u200bb\u200d\ufeffc\u061c.jpg")).toBe("abc.jpg");
+    expect(safeName("x".repeat(199) + " .jpg")).toBe("x".repeat(199)); // no trailing space after the cut
+    expect(safeName(42)).toBe("file");
   });
   test("dedupe keeps every file, case-insensitively", () => {
     expect(dedupe(["a.jpg", "a.jpg", "A.JPG", "b", "b"])).toEqual(["a.jpg", "a (1).jpg", "A (2).JPG", "b", "b (1)"]);

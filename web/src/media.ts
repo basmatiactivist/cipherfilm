@@ -43,15 +43,21 @@ export async function readMeta(f: File, dims?: { width: number; height: number; 
 
 interface Decoded { source: CanvasImageSource; width: number; height: number; duration?: number; close: () => void }
 
+/** HEIC photos are a few MB; anything this large is not decoded for a thumbnail (it still uploads). */
+const HEIC_MAX_BYTES = 256 * 1024 * 1024;
+
 async function decodeHeic(f: File): Promise<Decoded> {
+  if (f.size > HEIC_MAX_BYTES) throw new Error("HEIC file is too large to preview");
   const worker = new Worker(new URL("./heic.worker.ts", import.meta.url), { type: "module" });
   try {
     const buf = await f.arrayBuffer();
     const r = await new Promise<{ width: number; height: number; buffer: ArrayBuffer }>((res, rej) => {
-      worker.onmessage = (e) => (e.data.ok ? res(e.data) : rej(new Error(e.data.error)));
-      worker.onerror = () => rej(new Error("HEIC decoder failed to start"));
+      const t = setTimeout(() => rej(new Error("HEIC decode timed out")), 60_000); // like a video frame: give up, upload anyway
+      worker.onmessage = (e) => { clearTimeout(t); e.data.ok ? res(e.data) : rej(new Error(e.data.error)); };
+      worker.onerror = () => { clearTimeout(t); rej(new Error("HEIC decoder failed to start")); };
       worker.postMessage(buf, [buf]);
     });
+    if (!(r.width > 0 && r.height > 0) || r.width * r.height > MAX_PIXELS || r.buffer.byteLength !== r.width * r.height * 4) throw new Error("image is too large to preview");
     const canvas = document.createElement("canvas");
     canvas.width = r.width;
     canvas.height = r.height;

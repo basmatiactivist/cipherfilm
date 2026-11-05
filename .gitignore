@@ -3,6 +3,14 @@ web/dist/
 server/static/*
 !server/static/.gitkeep
 .env
+.env.*
+!.env.example
+# keys and keystores never belong in the repository
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
 data/
 .DS_Store
 e2e/node_modules/

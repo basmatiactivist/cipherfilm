@@ -16,6 +16,8 @@ const cache = new Map<string, Uint8Array>(); // tiny LRU of decrypted segments
 const pending = new Map<string, Promise<Uint8Array>>();
 const CACHE_MAX = 8;
 const AHEAD = 3; // segments fetched ahead of playback: a 4 MB segment per round trip is too slow on a far-away server
+// counts every "clear": a segment still being decrypted when the page clears is not put back into the cache
+let generation = 0;
 
 interface Entry extends Params { id: string; name: string; mtime: number }
 interface Job { kind: "file" | "zip"; name: string; entries: Entry[]; expires: number }
@@ -25,7 +27,7 @@ const JOB_TTL = 10 * 60_000;
 sw.addEventListener("install", () => sw.skipWaiting());
 sw.addEventListener("activate", (e: any) => e.waitUntil(sw.clients.claim()));
 sw.addEventListener("message", (e: any) => {
-  if (e.data?.type === "clear") { params.clear(); cache.clear(); pending.clear(); jobs.clear(); }
+  if (e.data?.type === "clear") { generation++; params.clear(); cache.clear(); pending.clear(); jobs.clear(); }
   if (e.data?.type === "job") {
     for (const [t, j] of jobs) if (j.expires < Date.now()) jobs.delete(t);
     jobs.set(e.data.token, { ...e.data.job, expires: Date.now() + JOB_TTL });
@@ -59,7 +61,9 @@ async function askPage(id: string, clientId: string): Promise<Params | null> {
 }
 
 async function segment(id: string, p: Held, n: number): Promise<Uint8Array> {
-  const k = id + ":" + n;
+  // keyed by the item key too: a cached segment is only ever served to a caller that holds the key it was opened with
+  const k = `${id}:${n}:${p.key}`;
+  const started = generation;
   const hit = cache.get(k);
   if (hit) { cache.delete(k); cache.set(k, hit); return hit; }
   let job = pending.get(k);
@@ -70,10 +74,11 @@ async function segment(id: string, p: Held, n: number): Promise<Uint8Array> {
       const res = await fetch(`/api/items/${id}/segments/${n}`, { credentials: "same-origin" });
       if (!res.ok) throw new Error("segment unavailable");
       const plain = decryptSegment(s, p.itemKey, id, n, p.count, p.size, new Uint8Array(await res.arrayBuffer()));
+      if (generation !== started) return plain;
       cache.set(k, plain);
       while (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value as string);
       return plain;
-    })().finally(() => pending.delete(k));
+    })().finally(() => { if (pending.get(k) === job) pending.delete(k); });
     pending.set(k, job);
   }
   return job;

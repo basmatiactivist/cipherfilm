@@ -52,8 +52,10 @@ export async function loadSession(): Promise<Me | null> {
 
 export const needsSetup = async (): Promise<boolean> => (await api<{ needs_setup: boolean }>("GET", "/api/setup/status")).needs_setup;
 
-/** A new recovery key that is shown before it is stored. The server only learns it in commit(), after the person has
- *  saved the words: if commit's response is lost, nobody is left with a key that works but was never seen. */
+/** A new recovery key to show. A replaced key (rotation, recovery) is stored only in commit(), after the person has
+ *  saved the words: if commit's response is lost, nobody is left with a key that works but was never seen. A new
+ *  account's key is stored with the account itself (storedKey: commit does nothing); closing the tab before saving it
+ *  leaves a key never seen, which a new one under Account replaces. */
 export interface PendingKey { words: string[]; email: string; commit: () => Promise<void> }
 
 /** Runs send; if it fails, the request may still have gone through with only the response lost. verify checks that
@@ -177,6 +179,7 @@ export async function changePassword(current: string, next: string): Promise<voi
   const s = await getSodium();
   const me = mem.me!;
   if (!mem.masterKey) throw new Error("Unlock your library first.");
+  assertSaneKdf(me.kdf);
   const { auth } = await loginProof(s, current, me.kdf);
   const ch = await rewrapForPassword(s, me.user.email, mem.masterKey, next);
   try {
@@ -206,6 +209,8 @@ export async function recoverStart(email: string, words: string): Promise<Recove
     masterKey = unlockWithRecovery(s, e, p.recWrap, r.wrapped_master_recovery);
   } catch {
     throw new Error("This recovery key doesn't unlock the account.");
+  } finally {
+    s.memzero(p.recWrap);
   }
   return { email: e, ticket: r.ticket, masterKey };
 }
@@ -225,6 +230,7 @@ export async function rotateRecoveryKey(currentPassword: string): Promise<Pendin
   const s = await getSodium();
   const me = mem.me!;
   if (!mem.masterKey) throw new Error("Unlock your library first.");
+  assertSaneKdf(me.kdf);
   const { auth, kek } = await loginProof(s, currentPassword, me.kdf);
   try {
     unlockMasterKey(s, me.user.email, kek, me.wrapped_master_pw); // a typo shows here, not after the words

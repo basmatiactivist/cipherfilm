@@ -65,8 +65,8 @@ export function Invite({ token, onKeys, nav }: { token: string; onKeys: (k: auth
   );
 }
 
-/** Shows a new recovery key and stores it only on Continue, after "I've saved it": until then the previous key (if
- *  any) keeps working, and a key that works but was never shown can't exist. */
+/** Shows a new recovery key; a replacement is stored only on Continue, after "I've saved it", so until then the
+ *  previous key keeps working. A new account's key was stored with the account (auth.PendingKey). */
 export function RecoveryKey({ pending, onDone, title = "Save your recovery key", replacing = false }: { pending: auth.PendingKey; onDone: () => void; title?: string; replacing?: boolean }) {
   const { words, email } = pending;
   const [saved, setSaved] = useState(false);

@@ -74,6 +74,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const gPending = useRef(0);
   const [fileDrag, setFileDrag] = useState(false);
   const [tileDrag, setTileDrag] = useState(false);
+  const tileDragging = useRef(false); // read by drop handlers, which may run before a state update has rendered
   const [usage, setUsage] = useState<{ used_bytes: number; quota_bytes: number; unlimited: boolean } | null>(null);
   const lastRefresh = useRef(0);
   const nextKey = useRef(1);
@@ -206,8 +207,8 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
       const files = Array.from(e.dataTransfer!.files).filter(isMedia);
       if (files.length) add(files);
     };
-    const start = (e: DragEvent) => { if ((e.target as Element | null)?.closest?.(".tile")) setTileDrag(true); };
-    const end = () => setTileDrag(false);
+    const start = (e: DragEvent) => { if ((e.target as Element | null)?.closest?.(".tile")) { tileDragging.current = true; setTileDrag(true); } };
+    const end = () => { setTileDrag(false); setTimeout(() => { tileDragging.current = false; }); }; // after a drop handler ran
     window.addEventListener("dragenter", over);
     window.addEventListener("dragover", over);
     window.addEventListener("dragleave", leave);
@@ -222,7 +223,14 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const dropTarget = (act: (ids: string[]) => void) => ({
     onDragOver: (e: DragEvent) => { if (e.dataTransfer?.types.includes(DRAG_TYPE)) { e.preventDefault(); e.stopPropagation(); (e.currentTarget as HTMLElement).classList.add("over"); } },
     onDragLeave: (e: DragEvent) => (e.currentTarget as HTMLElement).classList.remove("over"),
-    onDrop: (e: DragEvent) => { e.preventDefault(); e.stopPropagation(); (e.currentTarget as HTMLElement).classList.remove("over"); setTileDrag(false); act(readDragIds(e)); },
+    onDrop: (e: DragEvent) => {
+      e.preventDefault(); e.stopPropagation(); (e.currentTarget as HTMLElement).classList.remove("over"); setTileDrag(false);
+      // only a drag that started on a tile in this page, and only items this library has loaded: a drag from another
+      // window or site carrying the same data type is ignored
+      if (!tileDragging.current) return;
+      tileDragging.current = false;
+      act(readDragIds(e).filter((id) => byId.has(id)));
+    },
   });
 
   const active = jobs.filter((j) => j.state !== "done");
@@ -595,7 +603,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
                 <div class="toolbar">
                   {confirmPurge === "all" ? (
                     <div class="warning" role="alertdialog" aria-label="Empty the trash?">
-                      <p><strong>Delete {trash.length === 1 ? "the 1 item" : `all ${trash.length} items`} in the trash forever?</strong> This can't be undone.</p>
+                      <p><strong>Delete {trash.length === 1 ? "the 1 item" : `all ${trash.length} items`} in the trash forever?</strong>{trashItemsShown.length < trash.length && ` That includes ${trash.length - trashItemsShown.length} not shown by your search.`} This can't be undone.</p>
                       <div class="row"><button class="btn danger small" onClick={() => purge(trash.map((it) => it.id))}>Empty trash</button><KeepButton label="Keep" onClick={() => setConfirmPurge(null)} /></div>
                     </div>
                   ) : (

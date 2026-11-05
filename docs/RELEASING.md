@@ -23,11 +23,15 @@ The `Release` workflow then:
 1. refuses to continue if the tagged commit is not on `master` (`git merge-base --is-ancestor`), if
    `CHANGELOG.md` has no section for the tag, or if any test fails;
 2. builds the image for linux/amd64 and linux/arm64 and pushes it to
-   `ghcr.io/<owner>/cipherfilm` as `X.Y.Z`, `X.Y`, `X` and `latest`
-   (pre-release tags such as `v1.1.0-rc.1` only get their own tag), with provenance and an SBOM;
+   `ghcr.io/<owner>/cipherfilm` as `X.Y.Z`, and as `X.Y`, `X` and `latest` only where it is the highest release
+   (a fix for an older line, `v2.0.9` after `v2.3.0`, gets `2.0.9` and `2.0` but leaves `2` and `latest` alone;
+   pre-release tags such as `v1.1.0-rc.1` only get their own tag), with provenance and an SBOM;
 3. builds the offline decrypt tool for macOS, Linux and Windows plus `SHA256SUMS`;
 4. builds the Android APK and the Mac app (`cipherfilm-mac-X.Y.Z.zip`, unsigned);
-5. creates the GitHub Release with the changelog section as notes and everything attached.
+5. creates the GitHub Release with the changelog section as notes and everything attached, after checking that the
+   tag still points at the commit that was built. On the public repository every attached file also gets a signed
+   build provenance (`gh attestation verify <file> --repo <owner>/cipherfilm`): `SHA256SUMS` sits next to the files
+   it covers, so it only catches a damaged download, while the attestation shows the file came from this workflow.
 
 GitHub's macOS arm64 runners are sometimes unavailable for a long time ("not acquired by Runner … capacity
 constraints"). The release then goes out without the Mac app. Build it locally from the tagged commit and attach it:
@@ -39,6 +43,9 @@ ditto -c -k --keepParent "build/Cipherfilm.app" cipherfilm-mac-X.Y.Z.zip
 ../scripts/check-artifacts.sh cipherfilm-mac-X.Y.Z.zip   # must say "clean"
 gh release upload vX.Y.Z cipherfilm-mac-X.Y.Z.zip   # then add its line to SHA256SUMS
 ```
+
+A Mac app attached this way has no build provenance (it was not built by the workflow). Say so in the release notes,
+and attach it only from the tagged commit, built on your own machine.
 
 **Nothing built on a personal machine goes up without `scripts/check-artifacts.sh`.** Compilers write source and
 cache paths into binaries, and on a Mac those start with the home folder, which is named after the person. Releases
@@ -89,8 +96,9 @@ Settings that live on GitHub, not in the repository, set once the repository is 
 - **Actions › General:** workflow permissions "Read repository contents"; Actions may not create or approve pull
   requests; fork pull requests from outside collaborators need approval before their workflows run.
 - **Allow auto-merge** (General), so Dependabot's minor and patch updates merge once the required checks pass.
-- **Ruleset for `master`:** no force pushes or deletion; pull requests need the checks `identity`, `server`, `web`,
-  `mobile`, `decrypt-tool` and `e2e`; the owner may bypass (to push directly).
+- **Ruleset for `master`:** no force pushes or deletion; pull requests need the checks `identity` (it checks the
+  pull request's own commits), `tokens`, `server`, `web`, `mobile`, `decrypt-tool` and `e2e`; the owner may bypass
+  (to push directly).
 - **Ruleset for tags `v*`:** only the owner may create, move or delete them (a tag starts a release).
 - **Environment `release`** (Settings › Environments): holds the secrets `ANDROID_KEYSTORE_B64` and
   `ANDROID_KEYSTORE_PASSWORD` (environment secrets, not repository secrets; delete any repository-level copies).

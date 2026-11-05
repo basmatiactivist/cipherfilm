@@ -57,7 +57,8 @@ docker compose logs app | grep "FIRST-TIME SETUP"
    (and MagicDNS). Serve needs the certificates.
 2. Create an **auth key** (Settings → Keys). A one-off key is enough: it is only used the first time
    (`TS_AUTH_ONCE=true`, and the node's state is kept in the `cipherfilm_tsstate` volume).
-3. In `.env`: `COMPOSE_FILE=compose.yaml:compose.tailscale.yaml`, `TS_AUTHKEY=…`, `TS_HOSTNAME=photos`.
+3. In `.env`: `COMPOSE_FILE=compose.yaml:compose.tailscale.yaml`, `TS_AUTHKEY=…`, `TS_HOSTNAME=photos`, and
+   `PUBLIC_HOSTS=photos.<your-tailnet>.ts.net` (recommended: the app then refuses requests for any other name).
 4. `docker compose up -d --build`. The site is at `https://photos.<your-tailnet>.ts.net`.
 
 The app shares the Tailscale container's network, so nothing is published on the host.
@@ -74,12 +75,16 @@ host needs no open ports except SSH; see [docs/SERVER-HARDENING.md](docs/SERVER-
 
 ### B. Your own reverse proxy
 
-1. `.env`: `COMPOSE_FILE=compose.yaml:compose.proxy.yaml` (optionally `APP_PORT=8080`).
+1. `.env`: `COMPOSE_FILE=compose.yaml:compose.proxy.yaml`, `PUBLIC_HOSTS=photos.example.com` (the name your proxy
+   serves; required) and optionally `APP_PORT=8080`.
 2. Point your proxy at `http://127.0.0.1:8080`. Requirements:
    - **Forward `Host` and add `X-Forwarded-For`.** Login rate limits use the client address; with exactly one
      proxy in front, leave `TRUST_PROXY=1`. Behind a Cloudflare Tunnel or several proxies set
      `TRUST_PROXY=0`. Then every client looks like the same source, so a stranger's failed logins can block *new*
      browsers for up to 15 minutes; browsers that have signed in before are not affected (device cookie).
+     `X-Forwarded-For` is only believed for requests to a name in `PUBLIC_HOSTS` and from an address in
+     `TRUSTED_PROXIES` (default: loopback and private networks, which covers a proxy on the same host; set it to your
+     proxy's address or CIDR if it sits elsewhere).
    - Allow request bodies of at least **5 MB** (encrypted parts are about 4.2 MB).
    - **Don't add or change security headers.** The app sets its own strict Content-Security-Policy, HSTS and others.
    - Plain HTTP between proxy and app is fine, as long as they are on the same host.
@@ -184,8 +189,9 @@ lost device, make an invite link, status). A password can't be reset from the se
 | Setting | Where | Default | Meaning |
 |---|---|---|---|
 | `COMPOSE_FILE` | `.env` | | which deployment option |
-| `TRUST_PROXY` | env / `.env` | `0`; `1` for options B and C | trust the last `X-Forwarded-For` entry from exactly one proxy |
-| `PUBLIC_HOSTS` | `.env` | empty (any) | names the app answers for, e.g. `photos.example.com`; others get 421 |
+| `TRUST_PROXY` | env / `.env` | `0`; `1` for options B and C | trust the last `X-Forwarded-For` entry from exactly one proxy; needs `PUBLIC_HOSTS` |
+| `TRUSTED_PROXIES` | `.env` | empty (loopback and private networks) | addresses or CIDRs whose `X-Forwarded-For` is believed, comma-separated |
+| `PUBLIC_HOSTS` | `.env` | empty (any); required with `TRUST_PROXY=1` (option B; set from `SITE_ADDRESS` in C) | names the app answers for, e.g. `photos.example.com` or `photos.<tailnet>.ts.net`; others get 421 |
 | `DATA_VOLUME` | `.env` | `cipherfilm_data` | Docker volume for database and files |
 | `LISTEN_ADDR`, `DATA_DIR` | app env | `:8080`, `/data` | inside the container |
 
@@ -300,7 +306,7 @@ Moving to a server later is a backup, a copy and `scripts/restore.sh`: step by s
 ## Status and honest limits
 
 Cipherfilm is young software written with the help of AI agents. It has not been reviewed by an independent human security
-reviewer. Three rounds of AI-agent source audits found and fixed a number of issues; their results are summarised in
+reviewer. Four rounds of AI-agent source audits found and fixed a number of issues; their results are summarised in
 [SECURITY.md](SECURITY.md). Do not rely on it for anything where losing the data or leaking it would be catastrophic, and keep
 your own backups. Not tested: large libraries (tens of thousands of photos), the Caddy overlay on a real
 server, and iOS Safari uploads at scale.

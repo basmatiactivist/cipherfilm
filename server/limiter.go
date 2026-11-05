@@ -118,6 +118,13 @@ func reserve(slots ...slot) (*attempt, bool) {
 	return at, true
 }
 
+// refund returns the attempt to every bucket, for a request that was turned away before anything was checked.
+func (at *attempt) refund() {
+	for _, s := range at.slots {
+		s.l.give(s.key)
+	}
+}
+
 // success is called after the credential was verified: per-account buckets reset, shared buckets are refunded.
 func (at *attempt) success() {
 	for _, s := range at.slots {

@@ -36,7 +36,7 @@ var (
 func (a *App) indexRoutes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/items/favorite", a.auth(false, a.setFavorite))
 	m.HandleFunc("PUT /api/items/{id}/index", a.auth(false, a.putIndex))
-	m.HandleFunc("GET /api/index", a.auth(false, a.listIndex))
+	m.HandleFunc("GET /api/index", a.auth(false, a.listing(a.listIndex)))
 	m.HandleFunc("DELETE /api/index", a.auth(false, a.clearIndex))
 	m.HandleFunc("GET /api/me/blobs/{name}", a.auth(false, a.getUserBlob))
 	m.HandleFunc("PUT /api/me/blobs/{name}", a.auth(false, a.putUserBlob))
@@ -209,15 +209,17 @@ func (a *App) listIndex(w http.ResponseWriter, r *http.Request, u *user, s *sess
 	defer rows.Close()
 	out := []map[string]any{}
 	next := ""
-	for rows.Next() {
+	sent := 0 // bytes of encrypted fields on this page
+	for sent < pageBytes && rows.Next() {
 		var id, data string
 		var at int64
 		if rows.Scan(&id, &data, &at) == nil {
 			out = append(out, map[string]any{"item_id": id, "data_enc": data, "updated_at": at})
 			next = fmt.Sprintf("%d.%s", at, id)
+			sent += len(data)
 		}
 	}
-	if len(out) < indexPage {
+	if len(out) < indexPage && sent < pageBytes {
 		next = ""
 	}
 	writeJSON(w, 200, map[string]any{"entries": out, "next": next, "now": a.now().UnixMilli()})

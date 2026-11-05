@@ -31,7 +31,13 @@ const (
 	orphanGrace      = 10 * time.Minute
 	trashRetention   = 30 * 24 * time.Hour
 	itemOverhead     = 4 << 10 // what a finished item costs beyond its files (database row, directory), on the quota
+	diskBlock        = 4 << 10 // files take whole blocks on disk: the unused rest of each file's last block is charged
 )
+
+// blockSlack is what a file of n bytes takes on disk beyond n.
+func blockSlack(n int64) int64 {
+	return (diskBlock - n%diskBlock) % diskBlock
+}
 
 var idRe = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
@@ -61,7 +67,7 @@ func expectedSegmentLen(total, n int64) int64 {
 
 func (a *App) itemRoutes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/items", a.auth(false, a.createItem))
-	m.HandleFunc("GET /api/items", a.auth(false, a.listItems))
+	m.HandleFunc("GET /api/items", a.auth(false, a.listing(a.listItems)))
 	m.HandleFunc("GET /api/items/{id}/upload", a.auth(false, a.uploadState))
 	m.HandleFunc("PUT /api/items/{id}/segments/{n}", a.auth(false, a.putSegment))
 	m.HandleFunc("PUT /api/items/{id}/thumb", a.auth(false, a.putAux("thumb", maxThumbBytes, "has_thumb")))
@@ -73,7 +79,7 @@ func (a *App) itemRoutes(m *http.ServeMux) {
 	m.HandleFunc("DELETE /api/items/{id}", a.auth(false, a.abortItem))
 	m.HandleFunc("POST /api/items/trash", a.auth(false, a.trashItems(true)))
 	m.HandleFunc("POST /api/items/restore", a.auth(false, a.trashItems(false)))
-	m.HandleFunc("GET /api/trash", a.auth(false, a.listTrash))
+	m.HandleFunc("GET /api/trash", a.auth(false, a.listing(a.listTrash)))
 	m.HandleFunc("POST /api/trash/purge", a.auth(false, a.purgeTrash))
 }
 
@@ -448,8 +454,21 @@ func (a *App) finalizeItem(w http.ResponseWriter, r *http.Request, u *user, s *s
 		fail(w, 409, "not all parts have been uploaded yet")
 		return
 	}
-	// the encrypted metadata and the item's own overhead count toward the quota too
+	// the encrypted metadata, the item's own overhead and the blocks its files take count toward the quota too, so
+	// many tiny items cost what they take on disk
 	extra := int64(len(req.MetaEnc)+len(req.WrappedItemKey)) + itemOverhead
+	var thumb, preview int64
+	a.db.QueryRow(`SELECT thumb_bytes,preview_bytes FROM items WHERE id=?`, it.ID).Scan(&thumb, &preview)
+	extra += blockSlack(thumb) + blockSlack(preview)
+	if rows, err := a.db.Query(`SELECT bytes FROM segments WHERE item_id=?`, it.ID); err == nil {
+		for rows.Next() {
+			var n int64
+			if rows.Scan(&n) == nil {
+				extra += blockSlack(n)
+			}
+		}
+		rows.Close()
+	}
 	release, ok := a.reserveBytes(u.ID, extra)
 	if !ok {
 		fail(w, 413, "this would go over your storage limit")
@@ -464,9 +483,41 @@ func (a *App) finalizeItem(w http.ResponseWriter, r *http.Request, u *user, s *s
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
-// listPage bounds one list response: a library is fetched page by page (?after=<next of the previous page>), so its
-// size never decides how much memory one request takes.
-var listPage = 2000 // a var for the test of paging
+// listPage and pageBytes bound one list response, in rows and in the bytes of their encrypted fields: a library is
+// fetched page by page (?after=<next of the previous page>), so its size never decides how much memory one request
+// takes. listPerUser bounds how many pages of one account are built and sent at a time; more wait their turn.
+var (
+	// vars for the tests of paging
+	listPage  = 2000
+	pageBytes = 4 << 20
+)
+
+const (
+	listPerUser   = 4
+	listWriteTime = 5 * time.Minute
+)
+
+// listing runs a list handler in its turn (see listPerUser). A client that stops reading is cut off after
+// listWriteTime, so it cannot hold its turn and its page for ever.
+func (a *App) listing(h func(http.ResponseWriter, *http.Request, *user, *session)) func(http.ResponseWriter, *http.Request, *user, *session) {
+	return func(w http.ResponseWriter, r *http.Request, u *user, s *session) {
+		a.listMu.Lock()
+		turn := a.lists[u.ID]
+		if turn == nil {
+			turn = make(chan struct{}, listPerUser)
+			a.lists[u.ID] = turn
+		}
+		a.listMu.Unlock()
+		select {
+		case turn <- struct{}{}:
+			defer func() { <-turn }()
+		case <-r.Context().Done():
+			return
+		}
+		http.NewResponseController(w).SetWriteDeadline(time.Now().Add(listWriteTime))
+		h(w, r, u, s)
+	}
+}
 
 // pageAfter reads the ?after cursor: "<timestamp>.<id>" of the last item on the previous page.
 func pageAfter(r *http.Request) (ts int64, id string, has, ok bool) {
@@ -500,16 +551,18 @@ func (a *App) listItems(w http.ResponseWriter, r *http.Request, u *user, s *sess
 	defer rows.Close()
 	out := []map[string]any{}
 	next := ""
-	for rows.Next() {
+	sent := 0 // bytes of encrypted fields on this page
+	for sent < pageBytes && rows.Next() {
 		var id, kind, key, meta string
 		var size, count, created int64
 		var th, pv, fav bool
 		if rows.Scan(&id, &kind, &size, &count, &key, &meta, &th, &pv, &created, &fav) == nil {
 			out = append(out, map[string]any{"id": id, "kind": kind, "size": size, "segment_count": count, "wrapped_item_key": key, "meta_enc": meta, "has_thumb": th, "has_preview": pv, "created_at": created, "favorite": fav})
 			next = fmt.Sprintf("%d.%s", created, id)
+			sent += len(key) + len(meta)
 		}
 	}
-	if len(out) < listPage {
+	if len(out) < listPage && sent < pageBytes {
 		next = ""
 	}
 	var left int64
@@ -668,16 +721,18 @@ func (a *App) listTrash(w http.ResponseWriter, r *http.Request, u *user, s *sess
 	defer rows.Close()
 	out := []map[string]any{}
 	next := ""
-	for rows.Next() {
+	sent := 0 // bytes of encrypted fields on this page
+	for sent < pageBytes && rows.Next() {
 		var id, kind, key, meta string
 		var size, count, created, trashed int64
 		var th, pv bool
 		if rows.Scan(&id, &kind, &size, &count, &key, &meta, &th, &pv, &created, &trashed) == nil {
 			out = append(out, map[string]any{"id": id, "kind": kind, "size": size, "segment_count": count, "wrapped_item_key": key, "meta_enc": meta, "has_thumb": th, "has_preview": pv, "created_at": created, "trashed_at": trashed, "purge_at": trashed + int64(trashRetention.Seconds())})
 			next = fmt.Sprintf("%d.%s", trashed, id)
+			sent += len(key) + len(meta)
 		}
 	}
-	if len(out) < listPage {
+	if len(out) < listPage && sent < pageBytes {
 		next = ""
 	}
 	writeJSON(w, 200, map[string]any{"items": out, "next": next, "retention_days": int(trashRetention.Hours() / 24)})

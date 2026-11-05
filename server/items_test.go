@@ -2,10 +2,12 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -48,10 +50,14 @@ func finalizeBody() map[string]any {
 	return map[string]any{"wrapped_item_key": rb(wrappedLen), "meta_enc": rb(80)}
 }
 
-// finalizeCharge is what finalizing with finalizeBody adds to the quota.
-func finalizeCharge() int64 {
+// finalizeCharge is what finalizing with finalizeBody adds to the quota, for an item with files of these sizes.
+func finalizeCharge(files ...int64) int64 {
 	b := finalizeBody()
-	return int64(len(b["wrapped_item_key"].(string))+len(b["meta_enc"].(string))) + itemOverhead
+	n := int64(len(b["wrapped_item_key"].(string))+len(b["meta_enc"].(string))) + itemOverhead
+	for _, f := range files {
+		n += blockSlack(f)
+	}
+	return n
 }
 
 func TestUploadResumeAndFinalize(t *testing.T) {
@@ -95,7 +101,7 @@ func TestUploadResumeAndFinalize(t *testing.T) {
 	// stored bytes counted exactly once per segment (+thumb)
 	var stored int64
 	e.app.db.QueryRow(`SELECT stored_bytes FROM items WHERE id=?`, id).Scan(&stored)
-	if want := int64(len(seg0)+len(seg1)+500) + finalizeCharge(); stored != want {
+	if want := int64(len(seg0)+len(seg1)+500) + finalizeCharge(int64(len(seg0)), int64(len(seg1)), 500); stored != want {
 		t.Fatalf("stored_bytes %d want %d", stored, want)
 	}
 	// no more uploads after finalize
@@ -302,5 +308,67 @@ func TestFinalizeTakesAnItemKeySealedByTheBackup(t *testing.T) {
 		if code, _ := admin.do("POST", "/api/items/"+id+"/finalize", map[string]any{"wrapped_item_key": rb(tc.n), "meta_enc": rb(80)}, true); code != tc.want {
 			t.Errorf("key of %d bytes: %d, want %d", tc.n, code, tc.want)
 		}
+	}
+}
+
+// A page is bounded by the bytes of its encrypted fields too, not only by its number of rows; following next still
+// returns everything. And only a few pages of one account are built at a time.
+func TestListPagesAreBoundedInBytes(t *testing.T) {
+	defer func(n int) { pageBytes = n }(pageBytes)
+	pageBytes = 5000
+	e := newEnv(t)
+	admin, _ := e.setupAdmin("admin@x.org")
+	var uid string
+	e.app.db.QueryRow(`SELECT id FROM users`).Scan(&uid)
+	e.app.db.Exec(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i < 30)
+		INSERT INTO items(id,user_id,kind,size_bytes,segment_count,created_at,state,wrapped_item_key,meta_enc,trashed_at)
+		SELECT printf('%032x', i),?,'image',0,1,i,'ready','k',printf('%01000d', 0),CASE WHEN i%2=0 THEN i END FROM n`, uid)
+	e.app.db.Exec(`INSERT INTO item_index(item_id,user_id,model,data_enc,updated_at) SELECT id,user_id,'',meta_enc,created_at FROM items`)
+	for path, want := range map[string]int{"/api/items": 15, "/api/trash": 15, "/api/index?since=0": 30} {
+		seen, next := 0, ""
+		for {
+			p := path
+			if next != "" {
+				p = strings.Split(path, "?")[0] + "?after=" + next
+			}
+			code, out := admin.do("GET", p, nil, false)
+			if code != 200 {
+				t.Fatalf("%s: %d", p, code)
+			}
+			rows, _ := out["items"].([]any)
+			if rows == nil {
+				rows = out["entries"].([]any)
+			}
+			if len(rows) > 5 {
+				t.Fatalf("%s: page of %d rows of 1000 bytes", path, len(rows))
+			}
+			seen += len(rows)
+			if next, _ = out["next"].(string); next == "" {
+				break
+			}
+		}
+		if seen != want {
+			t.Fatalf("%s: %d rows, want %d", path, seen, want)
+		}
+	}
+
+	// with all of the account's turns taken, a page waits; a free turn lets it through
+	turn := make(chan struct{}, listPerUser)
+	for i := 0; i < listPerUser; i++ {
+		turn <- struct{}{}
+	}
+	e.app.listMu.Lock()
+	e.app.lists[uid] = turn
+	e.app.listMu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", e.srv.URL+"/api/items", nil)
+	if resp, err := admin.c.Do(req); err == nil {
+		resp.Body.Close()
+		t.Fatalf("a page was sent while the account had no turn left: %d", resp.StatusCode)
+	}
+	<-turn
+	if code, _ := admin.do("GET", "/api/items", nil, false); code != 200 {
+		t.Fatalf("with a free turn: %d", code)
 	}
 }

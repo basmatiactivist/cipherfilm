@@ -173,7 +173,8 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 	ip := limiterIP(a.clientIP(r))
 	u, err := a.userByEmail(email)
 	slots := []slot{{a.loginIP, "login|" + ip, false}, {a.loginAcct, "login|" + email + "|" + ip, true}}
-	if err == nil && a.knownDevice(r, u) {
+	known := err == nil && a.knownDevice(r, u)
+	if known {
 		// a browser that signed in before is limited per account, not per source (see device.go)
 		slots = []slot{{a.loginDev, "login|" + u.ID, true}}
 	}
@@ -186,8 +187,13 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		hash = u.AuthHash
 	}
-	good := verifySecret(hash, req.Auth) && err == nil && u.Status == "active"
-	if !good {
+	good, busy := verifySecretCtx(r.Context(), !known, hash, req.Auth)
+	if busy != nil {
+		at.refund()
+		failBusy(w)
+		return
+	}
+	if !(good && err == nil && u.Status == "active") {
 		fail(w, 401, "wrong e-mail or password")
 		return
 	}
@@ -202,6 +208,12 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, a.sessionBundle(u, ss))
+}
+
+// failBusy answers a credential check that could not get its turn (or whose client has gone).
+func failBusy(w http.ResponseWriter) {
+	w.Header().Set("Retry-After", "5")
+	fail(w, 503, "the server is busy, try again in a moment")
 }
 
 func (a *App) logout(w http.ResponseWriter, r *http.Request, u *user, s *session) {
@@ -365,7 +377,8 @@ func (a *App) recoverStart(w http.ResponseWriter, r *http.Request) {
 	ip := limiterIP(a.clientIP(r))
 	u, err := a.userByEmail(email)
 	slots := []slot{{a.loginIP, "recover|" + ip, false}, {a.loginAcct, "recover|" + email + "|" + ip, true}}
-	if err == nil && a.knownDevice(r, u) {
+	known := err == nil && a.knownDevice(r, u)
+	if known {
 		// like login: a browser that signed in before is limited per account, not per source
 		slots = []slot{{a.loginDev, "recover|" + u.ID, true}}
 	}
@@ -378,7 +391,13 @@ func (a *App) recoverStart(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		hash = u.RecoveryHash
 	}
-	if !(verifySecret(hash, req.RecoveryAuth) && err == nil && u.Status == "active") {
+	good, busy := verifySecretCtx(r.Context(), !known, hash, req.RecoveryAuth)
+	if busy != nil {
+		at.refund()
+		failBusy(w)
+		return
+	}
+	if !(good && err == nil && u.Status == "active") {
 		fail(w, 401, "e-mail or recovery key is wrong")
 		return
 	}

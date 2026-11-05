@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -621,4 +622,101 @@ func TestLimiterIPAndClientIPEdgeCases(t *testing.T) {
 	if got := a.clientIP(r); got != "8.8.8.8" {
 		t.Fatalf("clientIP = %q, want the proxy's own entry", got)
 	}
+}
+
+// X-Forwarded-For counts only from the proxy: by default a loopback or private peer, or the TRUSTED_PROXIES given.
+func TestForwardedForOnlyFromTheProxy(t *testing.T) {
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("X-Forwarded-For", "6.6.6.6")
+	a := &App{trustProxy: true}
+	for peer, want := range map[string]string{"127.0.0.1:1": "6.6.6.6", "172.18.0.5:1": "6.6.6.6", "198.51.100.7:1": "198.51.100.7"} {
+		r.RemoteAddr = peer
+		if got := a.clientIP(r); got != want {
+			t.Fatalf("peer %s: %s, want %s", peer, got, want)
+		}
+	}
+	a.proxies, _ = trustedProxies("10.0.0.2, 2001:db8::/32")
+	for peer, want := range map[string]string{"10.0.0.2:1": "6.6.6.6", "[2001:db8::5]:1": "6.6.6.6", "10.0.0.3:1": "10.0.0.3"} {
+		r.RemoteAddr = peer
+		if got := a.clientIP(r); got != want {
+			t.Fatalf("peer %s: %s, want %s", peer, got, want)
+		}
+	}
+	if _, err := trustedProxies("not-an-address"); err == nil {
+		t.Fatal("a bad TRUSTED_PROXIES entry was accepted")
+	}
+}
+
+// Without PUBLIC_HOSTS any name may reach the app (DNS rebinding), so TRUST_PROXY=1 is not honoured then.
+func TestTrustProxyNeedsPublicHosts(t *testing.T) {
+	t.Setenv("TRUST_PROXY", "1")
+	a, err := newApp(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.db.Close()
+	if a.trustProxy {
+		t.Fatal("X-Forwarded-For trusted without PUBLIC_HOSTS")
+	}
+	t.Setenv("PUBLIC_HOSTS", "photos.example.org")
+	if a, err = newApp(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	defer a.db.Close()
+	if !a.trustProxy {
+		t.Fatal("TRUST_PROXY=1 with PUBLIC_HOSTS not honoured")
+	}
+	r := httptest.NewRequest("POST", "/api/auth/login", strings.NewReader("{}"))
+	r.Host = "rebind.attacker.test:8080"
+	w := httptest.NewRecorder()
+	a.handler().ServeHTTP(w, r)
+	if w.Code != http.StatusMisdirectedRequest {
+		t.Fatalf("foreign host: %d", w.Code)
+	}
+}
+
+// With every Argon2 slot busy, sign-ins from unknown browsers queue only so far and then get 503 at once, and one
+// whose client has gone leaves the queue without being checked.
+func TestCredentialChecksQueueOnlySoFar(t *testing.T) {
+	e := newEnv(t)
+	e.setupAdmin("admin@x.org")
+	for i := 0; i < cap(argonSlots); i++ {
+		argonSlots <- struct{}{}
+	}
+	t.Cleanup(func() {
+		for i := 0; i < cap(argonSlots); i++ {
+			<-argonSlots
+		}
+	})
+	waitFor := func(n int32) {
+		t.Helper()
+		for end := time.Now().Add(3 * time.Second); argonWaiting.Load() != n; time.Sleep(10 * time.Millisecond) {
+			if time.Now().After(end) {
+				t.Fatalf("waiting: %d, want %d", argonWaiting.Load(), n)
+			}
+		}
+	}
+	// a client that gives up leaves the queue
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	b, _ := json.Marshal(map[string]string{"email": "admin@x.org", "auth": rb(32)})
+	req, _ := http.NewRequestWithContext(ctx, "POST", e.srv.URL+"/api/auth/login", bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	if resp, err := e.srv.Client().Do(req); err == nil {
+		resp.Body.Close()
+		t.Fatalf("checked although no slot was free: %d", resp.StatusCode)
+	}
+	waitFor(0)
+	// a full queue turns the next one away at once
+	qctx, qcancel := context.WithCancel(context.Background())
+	for i := 0; i < maxArgonWaiting; i++ {
+		go argonTurn(qctx, true)
+	}
+	waitFor(maxArgonWaiting)
+	start := time.Now()
+	if code, _ := e.client().do("POST", "/api/auth/login", map[string]string{"email": "admin@x.org", "auth": rb(32)}, false); code != 503 || time.Since(start) > 2*time.Second {
+		t.Fatalf("full queue: %d after %v", code, time.Since(start))
+	}
+	qcancel()
+	waitFor(0)
 }

@@ -190,7 +190,7 @@ func TestFinishedItemsChargeTheirMetadata(t *testing.T) {
 	}
 	var stored int64
 	e.app.db.QueryRow(`SELECT stored_bytes FROM items WHERE id=?`, id).Scan(&stored)
-	if want := cipherLen(0) + finalizeCharge(); stored != want {
+	if want := cipherLen(0) + finalizeCharge(cipherLen(0)); stored != want {
 		t.Fatalf("stored_bytes %d, want %d", stored, want)
 	}
 }
@@ -235,5 +235,24 @@ func TestIndexAndUserBlobsCountTowardTheQuota(t *testing.T) {
 	}
 	if code, _ := bob.do("PUT", "/api/me/blobs/people", map[string]any{"data_enc": rb(2000), "version": 1}, true); code != 413 {
 		t.Fatalf("people over quota: %d", code)
+	}
+}
+
+// A finished item is charged the whole disk blocks its files take, so many tiny items cannot take far more of the
+// disk than the quota they use.
+func TestTinyItemsChargeTheirDiskBlocks(t *testing.T) {
+	e := newEnv(t)
+	admin, _ := e.setupAdmin("admin@x.org")
+	id := e.newItem(admin, 0)
+	admin.put("/api/items/"+id+"/segments/0", randBytes(int(cipherLen(0))))
+	admin.put("/api/items/"+id+"/thumb", randBytes(41))
+	admin.put("/api/items/"+id+"/preview", randBytes(41))
+	if code, _ := admin.do("POST", "/api/items/"+id+"/finalize", finalizeBody(), true); code != 200 {
+		t.Fatalf("finalize: %d", code)
+	}
+	var stored int64
+	e.app.db.QueryRow(`SELECT stored_bytes FROM items WHERE id=?`, id).Scan(&stored)
+	if stored < 4*4096 { // three files and the item's directory, a block each
+		t.Fatalf("a minimal item is charged %d bytes", stored)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -35,6 +36,7 @@ type App struct {
 	modelsDir  string // MODELS_DIR: the search models the phone downloads; empty: none
 	secret     []byte // HMAC key for fake KDF params; persisted in data dir
 	trustProxy bool
+	proxies    []netip.Prefix  // TRUSTED_PROXIES: the peers whose X-Forwarded-For counts; empty: loopback and private
 	hosts      map[string]bool // PUBLIC_HOSTS; empty: any
 	dummyHash  string
 	loginIP    *limiter
@@ -44,8 +46,10 @@ type App struct {
 	resMu      sync.Mutex       // guards reserved
 	auxMu      sync.Mutex       // pairs a thumbnail or preview count with its file
 	reserved   map[string]int64 // in-flight upload bytes per user
-	acceptMu   sync.Mutex       // one invite acceptance at a time (see inviteAccept)
-	adminMu    sync.Mutex       // serialises admin changes to accounts (see adminGuard)
+	listMu     sync.Mutex
+	lists      map[string]chan struct{} // per user: the list pages being built and sent (see listing)
+	acceptMu   sync.Mutex               // one invite acceptance at a time (see inviteAccept)
+	adminMu    sync.Mutex               // serialises admin changes to accounts (see adminGuard)
 	now        func() time.Time
 }
 
@@ -84,19 +88,70 @@ func newApp(dataDir string) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	proxies, err := trustedProxies(os.Getenv("TRUSTED_PROXIES"))
+	if err != nil {
+		return nil, err
+	}
 	dummy, _ := hashSecret(b64.EncodeToString(randBytes(32)))
 	a := &App{
 		db: db, dataDir: dataDir, secret: secret, dummyHash: dummy,
 		modelsDir:  os.Getenv("MODELS_DIR"),
 		trustProxy: os.Getenv("TRUST_PROXY") == "1",
+		proxies:    proxies,
 		hosts:      publicHosts(os.Getenv("PUBLIC_HOSTS")),
 		loginIP:    newLimiter(15*time.Minute, 30),
 		loginAcct:  newLimiter(15*time.Minute, 10),
 		loginDev:   newLimiter(15*time.Minute, 20),
 		now:        time.Now,
 		reserved:   map[string]int64{},
+		lists:      map[string]chan struct{}{},
+	}
+	// Without PUBLIC_HOSTS a page on any name that resolves to the app (DNS rebinding) is served as its own origin,
+	// and could pick its own X-Forwarded-For; the header is then not trusted at all.
+	if len(a.hosts) == 0 {
+		a.trustProxy = false
 	}
 	return a, nil
+}
+
+// trustedProxies reads TRUSTED_PROXIES: addresses or CIDR ranges, separated by commas or spaces.
+func trustedProxies(v string) ([]netip.Prefix, error) {
+	var out []netip.Prefix
+	for _, f := range strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ' ' }) {
+		p, err := netip.ParsePrefix(f)
+		if err != nil {
+			addr, err2 := netip.ParseAddr(f)
+			if err2 != nil {
+				return nil, fmt.Errorf("TRUSTED_PROXIES: %q is not an address or range", f)
+			}
+			p = netip.PrefixFrom(addr.Unmap(), addr.Unmap().BitLen())
+		}
+		out = append(out, p.Masked())
+	}
+	return out, nil
+}
+
+// fromProxy says whether the peer is the trusted proxy: one of TRUSTED_PROXIES, or by default a loopback or private
+// address (a proxy on the same host or Docker network), never a peer from the internet.
+func (a *App) fromProxy(remoteAddr string) bool {
+	h, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		h = remoteAddr
+	}
+	addr, err := netip.ParseAddr(h)
+	if err != nil {
+		return false
+	}
+	addr = addr.Unmap()
+	if len(a.proxies) == 0 {
+		return addr.IsLoopback() || addr.IsPrivate()
+	}
+	for _, p := range a.proxies {
+		if p.Contains(addr) {
+			return true
+		}
+	}
+	return false
 }
 
 func loadSecret(path string) ([]byte, error) {
@@ -126,7 +181,7 @@ func (a *App) initSetup() error {
 }
 
 func (a *App) clientIP(r *http.Request) string {
-	if a.trustProxy {
+	if a.trustProxy && a.fromProxy(r.RemoteAddr) {
 		// Exactly one trusted proxy is assumed. It appends the address it saw, so the LAST entry is the one it
 		// vouches for; earlier entries are whatever the client sent and can be forged.
 		// a proxy may add its own header line instead of extending the client's: the last line, last entry is the proxy's

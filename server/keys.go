@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync/atomic"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -19,10 +21,34 @@ const (
 // multiply memory past the container limit; excess requests wait for a slot.
 var argonSlots = make(chan struct{}, 4)
 
+// Sign-in and recovery from unknown browsers wait in a short queue: when it is full they are turned away at once,
+// so a flood cannot build a backlog that every other sign-in waits behind. Known browsers are never turned away.
+const maxArgonWaiting = 16
+
+var argonWaiting atomic.Int32
+
+var errBusy = errors.New("busy")
+
 func argonKey(secret, salt []byte) []byte {
 	argonSlots <- struct{}{}
 	defer func() { <-argonSlots }()
 	return argon2.IDKey(secret, salt, srvT, srvM, 1, 32)
+}
+
+// argonTurn waits for an Argon2 slot for a credential check, and gives up when the client has gone (the work would
+// be for nobody) or, if capped, when too many are already waiting.
+func argonTurn(ctx context.Context, capped bool) (release func(), err error) {
+	if n := argonWaiting.Add(1); capped && n > maxArgonWaiting {
+		argonWaiting.Add(-1)
+		return nil, errBusy
+	}
+	defer argonWaiting.Add(-1)
+	select {
+	case argonSlots <- struct{}{}:
+		return func() { <-argonSlots }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 func hashSecret(secretB64 string) (string, error) {
@@ -36,21 +62,33 @@ func hashSecret(secretB64 string) (string, error) {
 }
 
 func verifySecret(stored, secretB64 string) bool {
+	good, _ := verifySecretCtx(context.Background(), false, stored, secretB64)
+	return good
+}
+
+// verifySecretCtx is verifySecret for a request: err is set when no slot was had (see argonTurn), and nothing was
+// checked.
+func verifySecretCtx(ctx context.Context, capped bool, stored, secretB64 string) (bool, error) {
 	secret, err := b64.DecodeString(secretB64)
 	if err != nil || len(secret) != 32 {
-		return false
+		return false, nil
 	}
 	p := strings.SplitN(stored, "$", 2)
 	if len(p) != 2 {
-		return false
+		return false, nil
 	}
 	salt, e1 := b64.DecodeString(p[0])
 	want, e2 := b64.DecodeString(p[1])
 	if e1 != nil || e2 != nil {
-		return false
+		return false, nil
 	}
-	got := argonKey(secret, salt)
-	return subtle.ConstantTimeCompare(got, want) == 1
+	release, err := argonTurn(ctx, capped)
+	if err != nil {
+		return false, err
+	}
+	defer release()
+	got := argon2.IDKey(secret, salt, srvT, srvM, 1, 32)
+	return subtle.ConstantTimeCompare(got, want) == 1, nil
 }
 
 type kdfParams struct {

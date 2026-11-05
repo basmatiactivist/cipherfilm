@@ -79,7 +79,7 @@ func TestBrokenRetryKeepsTheStoredSegment(t *testing.T) {
 	}
 	var stored int64
 	e.app.db.QueryRow(`SELECT stored_bytes FROM items WHERE id=?`, id).Scan(&stored)
-	if want := int64(len(seg0)+len(seg1)) + finalizeCharge(); stored != want {
+	if want := int64(len(seg0)+len(seg1)) + finalizeCharge(int64(len(seg0)), int64(len(seg1))); stored != want {
 		t.Fatalf("stored_bytes=%d, want %d: retries were counted twice", stored, want)
 	}
 	if r, _ := checkDB(e.app.db, e.app.dataDir); len(r.MissingBlobs) != 0 {

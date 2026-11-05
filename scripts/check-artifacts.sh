@@ -12,6 +12,14 @@ pat="$HOME|/Users/$user|/home/$user|$user"
 # CHECK_ARTIFACTS_ONLY_EXTRA=1: look only for the extra words (the Play bundle keeps unstripped libraries and debug
 # symbols, which name the CI machine's build folder; that names nobody, so there only a person's home is looked for)
 [ "${CHECK_ARTIFACTS_ONLY_EXTRA:-}" = 1 ] && pat="${CHECK_ARTIFACTS_EXTRA:?CHECK_ARTIFACTS_ONLY_EXTRA needs CHECK_ARTIFACTS_EXTRA}"
+# CHECK_ARTIFACTS_ALLOW: matches that are fine (on GitHub's machines every build path is /home/runner or /Users/runner)
+allow="${CHECK_ARTIFACTS_ALLOW:-}"
+# files under $1 (a file or a folder) with a match of $pat that $allow doesn't cover
+matching() {
+  LC_ALL=C grep -rlaE "$pat" "$1" 2>/dev/null | while IFS= read -r m; do
+    if [ -z "$allow" ] || LC_ALL=C grep -aoE "$pat" "$m" | LC_ALL=C grep -qvE "$allow"; then echo "$m"; fi
+  done
+}
 tmp=$(mktemp -d /tmp/cfcheck.XXXXXX)
 trap 'rm -rf "$tmp"' EXIT
 bad=0
@@ -24,8 +32,8 @@ for f in "$@"; do
   case "$f" in
     *.zip|*.apk|*.aab)
       d="$tmp/$(basename "$f")"; mkdir -p "$d"; unzip -q -o "$f" -d "$d"
-      hits=$(LC_ALL=C grep -rlaE "$pat" "$d" 2>/dev/null | sed "s|$d/||" || true) ;;
-    *) hits=$(LC_ALL=C grep -laE "$pat" "$f" 2>/dev/null || true) ;;
+      hits=$(matching "$d" | sed "s|$d/||" || true) ;;
+    *) hits=$(matching "$f" || true) ;;
   esac
   n=$((n + 1))
   if [ -n "$hits" ]; then

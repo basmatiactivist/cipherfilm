@@ -205,11 +205,13 @@ jobs:
             echo "Attached below: the Mac app (\`cipherfilm-mac-${v}.zip\`, Apple silicon, macOS 15 or newer; not signed by Apple yet, so the first start needs System Settings › Privacy & Security › Open Anyway), the Android app (\`cipherfilm-android-${v}.apk\`, arm64, Android 7 or newer; \`cipherfilm-play-${v}.aab\` is the same app as uploaded to Google Play, signed with the upload key), the offline decrypt tool (macOS, Linux, Windows), the Mac uploader (\`cipherfilm-upload-darwin-arm64\` / \`-amd64\`) and \`SHA256SUMS\`."
           } >> notes.md
       - name: No build paths or names in the files (docs/RELEASING.md)
-        run: |
-          set -- $(ls dist/* | grep -v '[.]aab$')
-          scripts/check-artifacts.sh "$@"
-          # the Play bundle: no person's home folder (a bundle built on a Mac or PC would show one)
-          CHECK_ARTIFACTS_ONLY_EXTRA=1 CHECK_ARTIFACTS_EXTRA='/Users/|/home/[a-z]+/(Desktop|Documents|Downloads)|[A-Z]:\\Users\\' scripts/check-artifacts.sh dist/*.aab
+        # built on GitHub's machines, where every build path is the CI user's (/home/runner, /Users/runner) and names
+        # nobody; what must never be in a release is a person's home folder, so look for any other one
+        env:
+          CHECK_ARTIFACTS_ONLY_EXTRA: "1"
+          CHECK_ARTIFACTS_EXTRA: '/Users/[A-Za-z0-9._-]+|/home/[A-Za-z0-9._-]+|[A-Z]:\\Users\\[A-Za-z0-9._-]+'
+          CHECK_ARTIFACTS_ALLOW: '^(/Users/runner|/home/runner|/Users/Shared|/home/linuxbrew)$'
+        run: scripts/check-artifacts.sh dist/*
       - name: Sign the build provenance of every attached file (GitHub only offers this for public repositories)
         if: ${{ !github.event.repository.private }}
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2

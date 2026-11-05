@@ -23,6 +23,8 @@ if [ "$CONF" = "debug" ]; then APP="build/Cipherfilm Dev.app"; else APP="build/C
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/Resources"
 cp "$BIN/Cipherfilm" "$APP/Contents/MacOS/Cipherfilm"
+# the linker's debug map still names every object file by its full build path; a release needs none of it
+[ "$CONF" = "debug" ] || strip -S "$APP/Contents/MacOS/Cipherfilm"
 cp Sources/Cipherfilm/Info.plist "$APP/Contents/Info.plist"
 # the version (Xcode fills these from MARKETING_VERSION / CURRENT_PROJECT_VERSION; SwiftPM doesn't): $VERSION, else
 # the newest tag

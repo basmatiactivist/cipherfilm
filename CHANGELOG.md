@@ -5,6 +5,17 @@ All notable changes to Cipherfilm are listed here. The format follows
 [Semantic Versioning](https://semver.org/). The release workflow copies the section of the tagged
 version into the GitHub release notes, so a release cannot be published without an entry here.
 
+## [2.0.1] - 2026-11-05
+
+### Changed
+- New logo and app icon, "Photo lock": one teal padlock whose body is the photo. It replaces the photo-plus-padlock
+  mark in the web app (logo, favicon, home-screen icon), the Android app icon (including the themed icon) and the Mac
+  app, Dock and menu-bar icons.
+
+### Added
+- `docs/INSTALL.md`: where to download each part and how to install it, independent of the version.
+- `deploy/quickstart/compose.yaml`: the released image behind Caddy with automatic HTTPS, from one file.
+
 ## [2.0.0] - 2026-11-05
 
 The project is now called **Cipherfilm**. The encryption format is unchanged: every photo, album, search index and

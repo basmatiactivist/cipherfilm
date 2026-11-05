@@ -14,8 +14,12 @@ async function encode(bmp: ImageBitmap, maxPx: number, quality: number): Promise
 }
 
 self.onmessage = async (e: MessageEvent<Req>) => {
-  const { id, file, thumbPx, previewPx, maxPixels } = e.data;
+  // a dedicated worker only hears from the page that created it (origin empty); refuse anything else
+  if (e.origin && e.origin !== self.location.origin) return;
+  const { id, file, thumbPx, previewPx, maxPixels } = (e.data ?? {}) as Partial<Req>;
   try {
+    if (!(file instanceof Blob) || !(typeof thumbPx === "number" && thumbPx > 0) || !(typeof previewPx === "number" && previewPx > 0) ||
+      !(typeof maxPixels === "number" && maxPixels > 0)) throw new Error("bad request");
     const bmp = await createImageBitmap(file);
     try {
       if (bmp.width * bmp.height > maxPixels) throw new Error("image is too large to preview");

@@ -3,7 +3,7 @@ import { attachment, dedupe, safeName } from "./names";
 
 describe("names", () => {
   test("safeName strips paths, control characters and leading dots", () => {
-    expect(safeName("../../etc/passwd")).toBe("_.._etc_passwd".replace("_.._", "_.._")); // slashes replaced, never a path
+    expect(safeName("../../etc/passwd")).toBe("_.._etc_passwd"); // slashes replaced and leading dots dropped, never a path
     expect(safeName("a/b\\c:d.jpg")).toBe("a_b_c_d.jpg");
     expect(safeName("\u0000\n.hidden")).toBe("hidden");
     expect(safeName("   ")).toBe("file");

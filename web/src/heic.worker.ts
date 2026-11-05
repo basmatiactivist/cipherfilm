@@ -2,7 +2,10 @@ import lib from "libheif-js/wasm-bundle";
 
 /** Decodes a HEIC/HEIF file to RGBA. Runs under a CSP that forbids network access (see server/main.go). */
 self.onmessage = async (e: MessageEvent<ArrayBuffer>) => {
+  // a dedicated worker only hears from the page that created it (origin empty); refuse anything else
+  if (e.origin && e.origin !== self.location.origin) return;
   try {
+    if (!(e.data instanceof ArrayBuffer)) throw new Error("unreadable HEIC");
     const img = new lib.HeifDecoder().decode(e.data)[0];
     if (!img) throw new Error("unreadable HEIC");
     const width = img.get_width(), height = img.get_height();

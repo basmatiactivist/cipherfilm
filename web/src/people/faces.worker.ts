@@ -10,11 +10,13 @@ export type Req =
 const idx = new FaceIndex();
 
 self.onmessage = (e: MessageEvent<Req>) => {
+  // a dedicated worker only hears from the page that created it (origin empty); refuse anything else
+  if (e.origin && e.origin !== self.location.origin) return;
   const r = e.data;
-  if (r.t === "put") for (const x of r.entries) idx.put(x.item, x.faces);
-  else if (r.t === "remove") for (const x of r.items) idx.remove(x);
-  else if (r.t === "clear") idx.clear();
-  else {
+  if (r?.t === "put" && Array.isArray(r.entries)) for (const x of r.entries) idx.put(x.item, x.faces);
+  else if (r?.t === "remove" && Array.isArray(r.items)) for (const x of r.items) idx.remove(x);
+  else if (r?.t === "clear") idx.clear();
+  else if (r?.t === "cluster") {
     try {
       self.postMessage({ id: r.id, ok: true, groups: idx.cluster(r.threshold, r.anchors, r.rejects, r.minFaces) });
     } catch (err) {

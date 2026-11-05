@@ -26,11 +26,22 @@ const JOB_TTL = 10 * 60_000;
 
 sw.addEventListener("install", () => sw.skipWaiting());
 sw.addEventListener("activate", (e: any) => e.waitUntil(sw.clients.claim()));
+const ITEM_ID = /^[0-9a-f]{32}$/;
+const isCount = (n: unknown): n is number => Number.isSafeInteger(n) && (n as number) >= 0;
+const isEntry = (e: any): e is Entry =>
+  !!e && typeof e.id === "string" && ITEM_ID.test(e.id) && typeof e.key === "string" && isCount(e.size) && isCount(e.count) &&
+  typeof e.mime === "string" && typeof e.name === "string" && typeof e.mtime === "number";
+
 sw.addEventListener("message", (e: any) => {
+  // only this app's own pages hand over keys and jobs
+  if (e.origin !== location.origin) return;
   if (e.data?.type === "clear") { generation++; params.clear(); cache.clear(); pending.clear(); jobs.clear(); }
   if (e.data?.type === "job") {
+    const { token, job } = e.data;
+    if (typeof token !== "string" || !token || !job || (job.kind !== "file" && job.kind !== "zip") || typeof job.name !== "string" ||
+      !Array.isArray(job.entries) || !job.entries.length || !job.entries.every(isEntry)) return;
     for (const [t, j] of jobs) if (j.expires < Date.now()) jobs.delete(t);
-    jobs.set(e.data.token, { ...e.data.job, expires: Date.now() + JOB_TTL });
+    jobs.set(token, { kind: job.kind, name: job.name, entries: job.entries, expires: Date.now() + JOB_TTL });
     e.ports[0]?.postMessage("ok");
   }
 });
@@ -68,10 +79,11 @@ async function segment(id: string, p: Held, n: number): Promise<Uint8Array> {
   if (hit) { cache.delete(k); cache.set(k, hit); return hit; }
   let job = pending.get(k);
   if (!job) {
+    if (!ITEM_ID.test(id) || !isCount(n)) throw new Error("segment unavailable");
     job = (async () => {
       const s = await getSodium();
       p.itemKey ??= unb64(s, p.key);
-      const res = await fetch(`/api/items/${id}/segments/${n}`, { credentials: "same-origin" });
+      const res = await fetch(`/api/items/${encodeURIComponent(id)}/segments/${encodeURIComponent(n)}`, { credentials: "same-origin" });
       if (!res.ok) throw new Error("segment unavailable");
       const plain = decryptSegment(s, p.itemKey, id, n, p.count, p.size, new Uint8Array(await res.arrayBuffer()));
       if (generation !== started) return plain;
@@ -86,7 +98,7 @@ async function segment(id: string, p: Held, n: number): Promise<Uint8Array> {
 
 async function serve(event: any, url: URL): Promise<Response> {
   const id = url.pathname.slice("/sw/stream/".length);
-  if (!/^[0-9a-f]{32}$/.test(id)) return new Response("not found", { status: 404 });
+  if (!ITEM_ID.test(id)) return new Response("not found", { status: 404 });
   let p = params.get(id);
   if (!p) {
     const got = await askPage(id, event.clientId);

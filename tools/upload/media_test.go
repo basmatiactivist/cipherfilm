@@ -94,30 +94,27 @@ func bmff(typ string, payload ...[]byte) []byte {
 	return append(append(be32(8+len(body)), typ...), body...)
 }
 
-func TestExifFromEveryContainer(t *testing.T) {
-	tb := tiffBlock()
-	checkExif(t, "tiff", tb)
+// exifSamples wraps the same TIFF block in every container readExif knows.
+func exifSamples() (tb, jpg, png, webp, heic []byte) {
+	tb = tiffBlock()
 
 	app1 := append([]byte("Exif\x00\x00"), tb...)
-	jpg := append([]byte{0xFF, 0xD8, 0xFF, 0xE0, 0, 4, 0, 0, 0xFF, 0xE1}, binary.BigEndian.AppendUint16(nil, uint16(len(app1)+2))...)
+	jpg = append([]byte{0xFF, 0xD8, 0xFF, 0xE0, 0, 4, 0, 0, 0xFF, 0xE1}, binary.BigEndian.AppendUint16(nil, uint16(len(app1)+2))...)
 	jpg = append(append(jpg, app1...), 0xFF, 0xD9)
-	checkExif(t, "jpeg", jpg)
 
-	png := []byte("\x89PNG\r\n\x1a\n")
+	png = []byte("\x89PNG\r\n\x1a\n")
 	png = append(append(append(png, be32(13)...), "IHDR"...), make([]byte, 13+4)...)
 	png = append(append(append(png, be32(len(tb))...), "eXIf"...), tb...)
 	png = append(png, 0, 0, 0, 0)
-	checkExif(t, "png", png)
 
 	chunk := append([]byte("EXIF"), binary.LittleEndian.AppendUint32(nil, uint32(len(app1)))...)
 	chunk = append(chunk, app1...)
 	if len(app1)%2 == 1 {
 		chunk = append(chunk, 0)
 	}
-	webp := append(append([]byte("RIFF"), binary.LittleEndian.AppendUint32(nil, uint32(4+len(chunk)))...), "WEBP"...)
+	webp = append(append([]byte("RIFF"), binary.LittleEndian.AppendUint32(nil, uint32(4+len(chunk)))...), "WEBP"...)
 	webp = append(append(webp, []byte("VP8X\x0a\x00\x00\x00")...), make([]byte, 10)...)
 	webp = append(webp, chunk...)
-	checkExif(t, "webp", webp)
 
 	// HEIC: ftyp, meta { hdlr, iinf { infe(1, "Exif") }, iloc (item 1 → the Exif bytes in mdat) }, mdat
 	item := append(be32(6), append([]byte("Exif\x00\x00"), tb...)...)
@@ -131,7 +128,16 @@ func TestExifFromEveryContainer(t *testing.T) {
 		return bmff("meta", []byte{0, 0, 0, 0}, bmff("hdlr", make([]byte, 24)), iinf, ilocFor(off))
 	}
 	start := len(ftyp) + len(meta(0)) + 8
-	heic := append(append(ftyp, meta(start)...), bmff("mdat", item)...)
+	heic = append(append(ftyp, meta(start)...), bmff("mdat", item)...)
+	return tb, jpg, png, webp, heic
+}
+
+func TestExifFromEveryContainer(t *testing.T) {
+	tb, jpg, png, webp, heic := exifSamples()
+	checkExif(t, "tiff", tb)
+	checkExif(t, "jpeg", jpg)
+	checkExif(t, "png", png)
+	checkExif(t, "webp", webp)
 	checkExif(t, "heic", heic)
 
 	if _, err := readExif(bytes.NewReader([]byte("not an image at all")), 19); err == nil {
@@ -144,9 +150,11 @@ func TestExifFromEveryContainer(t *testing.T) {
 	}
 }
 
-func TestVideoHeader(t *testing.T) {
-	created := time.Date(2023, 12, 24, 17, 0, 0, 0, time.UTC)
-	mvhd := append([]byte{0, 0, 0, 0}, be32(int(created.Unix()+2082844800))...)
+var videoCreated = time.Date(2023, 12, 24, 17, 0, 0, 0, time.UTC)
+
+// videoSample is a QuickTime header: rotated 90°, 1920×1080, 12 s long.
+func videoSample() []byte {
+	mvhd := append([]byte{0, 0, 0, 0}, be32(int(videoCreated.Unix()+2082844800))...)
 	mvhd = append(append(append(append(mvhd, be32(0)...), be32(600)...), be32(600*12)...), make([]byte, 80)...)
 	tkhd := make([]byte, 84)
 	binary.BigEndian.PutUint32(tkhd[40:], 0)
@@ -154,12 +162,16 @@ func TestVideoHeader(t *testing.T) {
 	binary.BigEndian.PutUint32(tkhd[76:], 1920<<16)
 	binary.BigEndian.PutUint32(tkhd[80:], 1080<<16)
 	mov := append(bmff("ftyp", []byte("qt  "), be32(0)), bmff("mdat", make([]byte, 100))...)
-	mov = append(mov, bmff("moov", bmff("mvhd", mvhd), bmff("trak", bmff("tkhd", tkhd)))...)
+	return append(mov, bmff("moov", bmff("mvhd", mvhd), bmff("trak", bmff("tkhd", tkhd)))...)
+}
+
+func TestVideoHeader(t *testing.T) {
+	mov := videoSample()
 	v, err := readVideo(bytes.NewReader(mov), int64(len(mov)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !v.Created.Equal(created) || v.Width != 1080 || v.Height != 1920 || v.Duration != 12 {
+	if !v.Created.Equal(videoCreated) || v.Width != 1080 || v.Height != 1920 || v.Duration != 12 {
 		t.Fatalf("%+v", v)
 	}
 }

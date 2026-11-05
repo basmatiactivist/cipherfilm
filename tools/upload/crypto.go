@@ -26,6 +26,7 @@ const (
 	ssABytes  = 17
 	metaPad   = 256
 	wrapNonce = 24
+	maxSealed = 1 << 30 // wrapped keys, metadata, thumbnails and previews: far below this, and the size arithmetic stays in range
 
 	tagMessage = 0
 	tagFinal   = 3
@@ -96,6 +97,9 @@ func seal(plain, key []byte, label, owner string) []byte {
 }
 
 func sealWithNonce(plain, key []byte, label, owner string, nonce []byte) []byte {
+	if len(plain) > maxSealed {
+		panic("seal: plaintext too large")
+	}
 	aead, err := chacha20poly1305.NewX(key)
 	if err != nil {
 		panic(err)
@@ -135,6 +139,9 @@ func unwrapItemKey(wrapped, master []byte, itemID string) ([]byte, error) {
 
 // pad is libsodium's sodium_pad (ISO/IEC 7816-4): 0x80, then zeros up to a multiple of the block size.
 func pad(b []byte, block int) []byte {
+	if block <= 0 || block > maxSealed || len(b) > maxSealed {
+		panic("pad: size out of range")
+	}
 	n := len(b) + block - len(b)%block
 	out := make([]byte, n)
 	copy(out, b)

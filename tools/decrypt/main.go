@@ -16,6 +16,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"golang.org/x/term"
 	"golang.org/x/text/unicode/norm"
@@ -198,7 +199,11 @@ func safeName(n, fallback string) string {
 		if len(ext) > 16 {
 			ext = ""
 		}
-		n = n[:200-len(ext)] + ext
+		cut := 200 - len(ext)
+		for i := 1; i < utf8.UTFMax && !utf8.RuneStart(n[cut]); i++ { // never split a character
+			cut--
+		}
+		n = n[:cut] + ext
 	}
 	return n
 }

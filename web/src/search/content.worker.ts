@@ -82,16 +82,18 @@ async function session(family: Family, progress: (done: number, total: number) =
 function remove(item: string) { vectors.mcs2.delete(item); vectors.laionb32.delete(item); }
 
 self.onmessage = async (e: MessageEvent<Req>) => {
+  // a dedicated worker only hears from the page that created it (origin empty); refuse anything else
+  if (e.origin && e.origin !== self.location.origin) return;
   const r = e.data;
-  if (r.t === "put") {
+  if (r?.t === "put" && Array.isArray(r.entries)) {
     for (const x of r.entries) {
       remove(x.item);
       const f = familyOf(x.m);
       const v = f && x.clip && x.clip.length >= 1024 ? unhalf(x.clip) : null;
       if (f && v && allFinite(v)) vectors[f].set(x.item, normalize(v));
     }
-  } else if (r.t === "remove") r.items.forEach(remove);
-  else {
+  } else if (r?.t === "remove" && Array.isArray(r.items)) r.items.forEach(remove);
+  else if (r?.t === "search" && typeof r.q === "string" && Object.hasOwn(TEXT_MODELS, r.family)) {
     const post = (m: Res) => self.postMessage(m);
     try {
       const s = await session(r.family, (done, total) => post({ id: r.id, t: "progress", done, total }));

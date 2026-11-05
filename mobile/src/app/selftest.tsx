@@ -1,7 +1,9 @@
 // Development check: the app's crypto (shared web code on native libsodium) must read exactly what the web client
-// wrote. Decrypts the committed test vectors (made by the web app) and round-trips fresh data. Open cipherfilm://selftest.
+// wrote. Decrypts the committed test vectors (made by the web app) and round-trips fresh data. Open cipherfilm://selftest
+// (development builds only: a release bundle has no vectors, metro.config.js, and the link leads to the start).
 import { useEffect, useState } from "react";
 import { ScrollView } from "react-native";
+import { Redirect } from "expo-router";
 import { Text } from "react-native-paper";
 import { getSodium, unb64 } from "@crypto/sodium";
 import { loginProof, recoveryProof, unlockMasterKey, unlockWithRecovery } from "@crypto/account";
@@ -47,6 +49,10 @@ async function run(log: (s: string) => void) {
 }
 
 export default function SelfTest() {
+  return __DEV__ ? <Run /> : <Redirect href="/" />;
+}
+
+function Run() {
   const [lines, setLines] = useState<string[]>([]);
   useEffect(() => {
     const log = (l: string) => { console.log("SELFTEST " + l); setLines((x) => [...x, l]); };

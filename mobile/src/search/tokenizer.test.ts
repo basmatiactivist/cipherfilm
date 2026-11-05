@@ -29,4 +29,11 @@ describe("CLIP tokenizer", () => {
     for (const [text, ids] of Object.entries(expected)) expect(t.encode(text), text).toEqual(ids);
     expect(t.encode("word ".repeat(200))).toHaveLength(77);
   });
+
+  it("never takes an id from an object's built-in keys", () => {
+    // merges that build "constructor" as one part of a longer word; it is not in the vocabulary
+    const merges = ["c o", "co n", "con s", "cons t", "const r", "constr u", "constru c", "construc t", "construct o", "constructo r"];
+    const t = new Tokenizer({ model: { vocab: { "x</w>": 7 }, merges } });
+    expect(t.encode("constructorx")).toEqual([49406, 7, 49407]);
+  });
 });

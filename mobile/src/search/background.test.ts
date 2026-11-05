@@ -8,7 +8,7 @@ vi.mock("../session", () => ({ savedServer: async () => st.saved }));
 vi.mock("./settings", () => ({ loadSettings: async () => st.settings, saveSettings: async () => st.settings }));
 vi.mock("./models", () => ({ haveModels: async () => true, modelPath: () => "/models" }));
 vi.mock("./engine", () => ({
-  localFile: () => ({ exists: true, text: async () => JSON.stringify(st.local), write: async () => {} }),
+  localFile: () => ({ exists: true, text: async () => JSON.stringify(st.local), write: async (v: string) => { st.local = JSON.parse(v); } }),
   analyzeBytes: async () => ({ m: "mobileclip-s2" }),
 }));
 vi.mock("@crypto/search", () => ({ sealIndexEntry: () => new Uint8Array(8) }));
@@ -53,6 +53,16 @@ describe("background indexing", () => {
     expect(st.sent).toEqual(["GET https://a.test/api/me", "PUT https://a.test/api/items/:id/index csrf-bg"]);
     expect(api.server()).toBe("https://app.test");
     expect(api.csrfToken()).toBe("csrf-app");
+  });
+
+  it("skips an item a run died on instead of trying it at every run", async () => {
+    st.saved = "https://a.test";
+    st.local = { ...(st.local as object), attempt: ID };
+    const { runBackgroundIndex } = await import("./background");
+    expect(await runBackgroundIndex()).toBe(0);
+    expect(st.sent.filter((r) => r.startsWith("PUT"))).toEqual([]);
+    expect(st.local).toMatchObject({ done: [ID] });
+    expect((st.local as { attempt?: string }).attempt).toBeUndefined();
   });
 
   it("does nothing for a server the app no longer uses", async () => {

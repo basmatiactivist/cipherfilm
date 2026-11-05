@@ -74,6 +74,16 @@ export function Gallery({ items, error, loading, onRefresh, header, empty, botto
   const [asking, setAsking] = useState<ExtraAction | null>(null);
   const selecting = selected.size > 0;
 
+  // only what is shown stays selected (a new search, an item gone): every action and the count are about what is seen
+  useEffect(() => {
+    setSelected((s) => {
+      if (!s.size) return s;
+      const shown = new Set((items ?? []).map((i) => i.id));
+      const kept = [...s].filter((id) => shown.has(id));
+      return kept.length === s.size ? s : new Set(kept);
+    });
+  }, [items]);
+
   // the system Back gesture ends a selection first
   useFocusEffect(useCallback(() => {
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {

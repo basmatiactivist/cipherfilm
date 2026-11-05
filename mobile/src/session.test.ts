@@ -88,3 +88,16 @@ describe("ending or locking a session", () => {
     expect(libraryStore.libraryItems()).toHaveLength(0);
   });
 });
+
+describe("password-hashing settings from the server", () => {
+  const good = { alg: "argon2id13" as const, v: 1 as const, ops: 3, mem: 256 * 1024 * 1024, salt: "AAAAAAAAAAAAAAAAAAAAAA" };
+
+  it("takes the usual settings and refuses anything else before a password is hashed", async () => {
+    const { assertSaneKdf } = await import("./session");
+    expect(() => assertSaneKdf(good)).not.toThrow();
+    for (const bad of [
+      { ...good, alg: "argon2i13" }, { ...good, v: 2 }, { ...good, ops: 1 }, { ...good, ops: 2.5 }, { ...good, mem: 16 * 1024 * 1024 },
+      { ...good, mem: "268435456" }, { ...good, salt: "AAAA" }, { ...good, salt: "AAAAAAAAAAAAAAAAAAAAA=" }, { ...good, salt: undefined },
+    ]) expect(() => assertSaneKdf(bad as any), JSON.stringify(bad)).toThrow(/unexpected password-hashing/);
+  });
+});

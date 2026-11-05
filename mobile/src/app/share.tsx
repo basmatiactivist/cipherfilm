@@ -32,6 +32,7 @@ export default function ShareScreen() {
   const [asking, setAsking] = useState(false);
   const started = useRef(false);
   const signal = useRef({ cancelled: false });
+  const shared = useRef<string[]>([]); // the share this screen shows, by its links
 
   // signed out or locked: sign in or unlock first, then come back here (the shared files wait)
   useEffect(() => {
@@ -51,6 +52,7 @@ export default function ShareScreen() {
       sources = getSharedPayloads()
         .filter((p) => p.value && /^content:\/\//.test(p.value) && p.shareType !== "text" && p.shareType !== "url")
         .map((p) => ({ uri: p.value!, hint: { mime: p.mimeType } }));
+      shared.current = sources.map((x) => x.uri);
     }
     if (!sources.length) { if (from === "picker") router.back(); return; }
     started.current = true;
@@ -91,6 +93,7 @@ export default function ShareScreen() {
       }
     };
     await Promise.all(Array.from({ length: FILES_AT_ONCE }, worker));
+    forgetShare(); // handled: a lock now doesn't bring the same files up again after the unlock
     refreshLibrary();
     setFinished(true);
     // picked here: straight to Android's own confirmation (one for all, with previews), only for files that are safely
@@ -120,16 +123,23 @@ export default function ShareScreen() {
 
   const [removed, setRemoved] = useState(false);
   async function removeFromPhone(uris: string[]) {
-    const ok = await N.deleteFromLibrary(uris);
+    // into the phone's own trash, as Free up space does: restorable for 30 days
+    const ok = await N.trashFromLibrary(uris);
     setRemoved(ok);
-    setNote(ok ? `Removed ${uris.length === 1 ? "1 item" : `${uris.length} items`} from this phone.` : "Kept on this phone.");
+    setNote(ok ? `Moved ${uris.length === 1 ? "1 item" : `${uris.length} items`} to the phone's trash.` : "Kept on this phone.");
   }
 
+  // only the share shown here: one that arrived since (another app shared again) stays for its own screen
+  const forgetShare = () => {
+    if (from === "picker") return;
+    const now = getSharedPayloads().map((p) => p.value ?? "");
+    if (now.length && now.every((u) => shared.current.includes(u))) clearSharedPayloads();
+  };
 
   // a share opens on top of whatever was on screen: Done leaves only the library, so Back then leaves the app
   const close = () => {
     signal.current.cancelled = true;
-    if (from !== "picker") clearSharedPayloads();
+    forgetShare();
     if (router.canDismiss()) router.dismissAll();
     router.replace("/library");
   };

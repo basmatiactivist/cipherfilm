@@ -36,19 +36,22 @@ private class SodiumFailed(what: String) : CodedException("ERR_SODIUM", "$what f
 /**
  * Thin bindings to libsodium with the same names and arguments as libsodium.js, so the app runs
  * the web client's crypto code unchanged; plus the few phone things only Android does well: reading shared files in
- * ranges, thumbnails, EXIF, and deleting from the photo library with the system's own confirmation.
+ * ranges, thumbnails, EXIF, and moving photos to the phone's trash with the system's own confirmation.
  * No cryptography is implemented here; Sodium.kt maps libsodium's C functions.
  */
 class CfNativeModule : Module() {
   private val na get() = Sodium.lib
   private val resolver get() = appContext.reactContext!!.contentResolver
-  private var pendingDelete: Promise? = null
+  private var pendingTrash: Promise? = null
   private var pendingPick: Promise? = null
   private var pendingShare: Promise? = null
+  private var shared: List<Uri> = emptyList() // what the last share gave other apps access to
 
   private fun check(rc: Int, what: String) { if (rc != 0) throw SodiumFailed(what) }
   private fun n(v: Int) = NativeLong(v.toLong())
   private fun len(b: ByteArray?) = (b?.size ?: 0).toLong()
+  /** Output sizes are checked before the buffer is made, instead of relying on libsodium refusing them afterwards. */
+  private fun bounded(v: Int, range: IntRange, what: String) { if (v !in range) throw SodiumFailed(what) }
 
   /** No screenshots or screen recordings of the library, and the app switcher shows the icon, not the last screen. */
   private fun protect(activity: Activity?) {
@@ -159,19 +162,22 @@ class CfNativeModule : Module() {
 
     // ---- libsodium (same names and argument order as libsodium.js) ----
     Function("sodium_version_string") { na.sodium_version_string() }
-    Function("randombytes_buf") { size: Int -> ByteArray(size).also { na.randombytes_buf(it, n(size)) } }
+    Function("randombytes_buf") { size: Int -> bounded(size, 0..(16 shl 20), "randombytes"); ByteArray(size).also { na.randombytes_buf(it, n(size)) } }
     Function("memcmp") { a: ByteArray, b: ByteArray -> a.size == b.size && na.sodium_memcmp(a, b, n(a.size)) == 0 }
     Function("crypto_hash_sha256") { m: ByteArray -> ByteArray(32).also { check(na.crypto_hash_sha256(it, m, len(m)), "sha256") } }
     Function("crypto_generichash") { outLen: Int, m: ByteArray, key: ByteArray? ->
+      bounded(outLen, 16..64, "generichash")
       ByteArray(outLen).also { check(na.crypto_generichash(it, n(outLen), m, len(m), key, n(key?.size ?: 0)), "generichash") }
     }
     Function("crypto_pwhash") { outLen: Int, password: ByteArray, salt: ByteArray, ops: Long, mem: Long, alg: Int ->
       if (salt.size != 16) throw SodiumFailed("pwhash salt") // the C function reads exactly 16 bytes
+      bounded(outLen, 16..64, "pwhash")
       ByteArray(outLen).also { check(na.crypto_pwhash(it, outLen.toLong(), password, len(password), salt, ops, NativeLong(mem), alg), "pwhash") }
     }
     Function("crypto_kdf_derive_from_key") { outLen: Int, id: Long, ctx: String, key: ByteArray ->
       val c = ctx.toByteArray(Charsets.US_ASCII)
       if (c.size != 8 || key.size != 32) throw SodiumFailed("kdf")
+      bounded(outLen, 16..64, "kdf")
       ByteArray(outLen).also { check(na.crypto_kdf_derive_from_key(it, n(outLen), id, c, key), "kdf") }
     }
     Function("crypto_box_keypair") {
@@ -224,11 +230,13 @@ class CfNativeModule : Module() {
       mapOf("state" to state, "message" to m, "tag" to tag[0].toInt())
     }
     Function("pad") { buf: ByteArray, block: Int ->
+      bounded(block, 1..65536, "pad")
       val work = buf.copyOf(buf.size + block); val out = NativeLongByReference()
       check(na.sodium_pad(out, work, n(buf.size), n(block), n(work.size)), "pad")
       work.copyOf(out.value.toInt())
     }
     Function("unpad") { buf: ByteArray, block: Int ->
+      bounded(block, 1..65536, "unpad")
       val out = NativeLongByReference()
       check(na.sodium_unpad(out, buf, n(buf.size), n(block)), "unpad")
       buf.copyOf(out.value.toInt())
@@ -345,7 +353,9 @@ class CfNativeModule : Module() {
     AsyncFunction("shareFiles") { paths: List<String>, mimes: List<String>, promise: Promise ->
       val activity = appContext.currentActivity ?: run { promise.resolve(false); return@AsyncFunction }
       val ctx = activity.applicationContext
-      val uris = paths.map { FileProvider.getUriForFile(ctx, ctx.packageName + ".SharingFileProvider", File(Uri.parse(it).path!!)) }
+      val uris = paths.map { FileProvider.getUriForFile(ctx, ctx.packageName + ".SharingFileProvider", outboxFile(it)) }
+      revokeShared()
+      shared = uris
       val mime = mimes.distinct().singleOrNull() ?: if (mimes.all { it.startsWith("image/") }) "image/*" else if (mimes.all { it.startsWith("video/") }) "video/*" else "*/*"
       val send = if (uris.size == 1) Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uris[0])
         else Intent(Intent.ACTION_SEND_MULTIPLE).putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
@@ -358,6 +368,8 @@ class CfNativeModule : Module() {
         .putExtra(Intent.EXTRA_EXCLUDE_COMPONENTS, arrayOf(activity.componentName)) // not back into Cipherfilm itself
       activity.startActivityForResult(chooser, SHARE_REQUEST)
     }.runOnQueue(expo.modules.kotlin.functions.Queues.MAIN)
+    // when the outbox is emptied: the apps shared with can no longer read those files, whatever they were called
+    Function("revokeShared") { revokeShared() }
 
     // Puts a decrypted copy into the phone's photo library (Pictures/Cipherfilm or Movies/Cipherfilm).
     AsyncFunction("saveToLibrary") { path: String, name: String, mime: String ->
@@ -371,7 +383,7 @@ class CfNativeModule : Module() {
       }
       val uri = resolver.insert(collection, values) ?: throw CodedException("ERR_SAVE", "couldn't save to the photo library", null)
       try {
-        resolver.openOutputStream(uri)!!.use { out -> File(Uri.parse(path).path!!).inputStream().use { it.copyTo(out) } }
+        resolver.openOutputStream(uri)!!.use { out -> outboxFile(path).inputStream().use { it.copyTo(out) } }
         resolver.update(uri, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
       } catch (e: Exception) {
         resolver.delete(uri, null, null)
@@ -380,26 +392,17 @@ class CfNativeModule : Module() {
       uri.toString()
     }
 
-    // ---- deleting from the phone ----
-    // Android asks the person itself (MediaStore.createDeleteRequest); resolves true only if they agreed.
-    AsyncFunction("deleteFromLibrary") { uris: List<String>, promise: Promise ->
-      val media = uris.mapNotNull { mediaUri(Uri.parse(it)) }
-      val activity = appContext.currentActivity
-      if (media.isEmpty() || activity == null || Build.VERSION.SDK_INT < 30) { promise.resolve(false); return@AsyncFunction }
-      pendingDelete?.resolve(false)
-      pendingDelete = promise
-      val req = MediaStore.createDeleteRequest(resolver, media)
-      activity.startIntentSenderForResult(req.intentSender, DELETE_REQUEST, null, 0, 0, 0)
-    }.runOnQueue(expo.modules.kotlin.functions.Queues.MAIN)
-    // "Free up space": into the phone's own trash (Android keeps it 30 days), after the system's confirmation
+    // ---- removing from the phone ----
+    // Shared-in photos and "Free up space": into the phone's own trash (Android keeps it 30 days), after the system's
+    // own confirmation; resolves true only if the person agreed.
     AsyncFunction("trashFromLibrary") { uris: List<String>, promise: Promise ->
       val media = uris.mapNotNull { mediaUri(Uri.parse(it)) }
       val activity = appContext.currentActivity
       if (media.isEmpty() || activity == null || Build.VERSION.SDK_INT < 30) { promise.resolve(false); return@AsyncFunction }
-      pendingDelete?.resolve(false)
-      pendingDelete = promise
+      pendingTrash?.resolve(false)
+      pendingTrash = promise
       val req = MediaStore.createTrashRequest(resolver, media, true)
-      activity.startIntentSenderForResult(req.intentSender, DELETE_REQUEST, null, 0, 0, 0)
+      activity.startIntentSenderForResult(req.intentSender, TRASH_REQUEST, null, 0, 0, 0)
     }.runOnQueue(expo.modules.kotlin.functions.Queues.MAIN)
     OnActivityResult { _, payload ->
       if (payload.requestCode == PICK_REQUEST) {
@@ -416,17 +419,17 @@ class CfNativeModule : Module() {
         pendingShare?.resolve(true)
         pendingShare = null
       }
-      if (payload.requestCode == DELETE_REQUEST) {
-        pendingDelete?.resolve(payload.resultCode == Activity.RESULT_OK)
-        pendingDelete = null
+      if (payload.requestCode == TRASH_REQUEST) {
+        pendingTrash?.resolve(payload.resultCode == Activity.RESULT_OK)
+        pendingTrash = null
       }
     }
   }
 
   /**
-   * The photo library entry behind a shared or picked URI, for deleting it from the phone: the library's own URI, or the
+   * The photo library entry behind a shared or picked URI, for removing it from the phone: the library's own URI, or the
    * library entry with the local photo picker's id. Only MediaStore's own URIs count; a library URI inside another
-   * app's URI names something that app never gave us. Nothing is deleted on this alone: Android's delete request shows
+   * app's URI names something that app never gave us. Nothing is removed on this alone: Android's trash request shows
    * the person previews of exactly these photos and needs their OK.
    */
   private fun mediaUri(u: Uri): Uri? {
@@ -443,6 +446,20 @@ class CfNativeModule : Module() {
     return ContentUris.withAppendedId((if (video) MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL) else MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)), id)
   }
 
+  /** Only the decrypted copies in the outbox (src/outbox.ts) ever leave the app, never another of its files. */
+  private fun outboxFile(path: String): File {
+    val root = File(appContext.reactContext!!.cacheDir, "cf-out").canonicalFile
+    val f = File(Uri.parse(path).path ?: "").canonicalFile
+    if (!f.path.startsWith(root.path + File.separator)) throw CodedException("ERR_OUTBOX", "not a file prepared for sharing", null)
+    return f
+  }
+
+  private fun revokeShared() {
+    val ctx = appContext.reactContext ?: return
+    shared.forEach { runCatching { ctx.revokeUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION) } }
+    shared = emptyList()
+  }
+
   private fun parseExifDate(v: String, offset: String?): Long? = try {
     val f = SimpleDateFormat("yyyy:MM:dd HH:mm:ss", Locale.US)
     if (offset != null && Regex("^[+-]\\d\\d:\\d\\d$").matches(offset)) f.timeZone = TimeZone.getTimeZone("GMT$offset")
@@ -453,5 +470,5 @@ class CfNativeModule : Module() {
     SimpleDateFormat("yyyyMMdd'T'HHmmss.SSS'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }.parse(v)?.time
   } catch (_: Exception) { null }
 
-  companion object { private const val DELETE_REQUEST = 0x5056; private const val PICK_REQUEST = 0x5057; private const val SHARE_REQUEST = 0x5058; private const val PHOTO_PICKER = "com.android.providers.media.photopicker" }
+  companion object { private const val PICK_REQUEST = 0x5057; private const val SHARE_REQUEST = 0x5058; private const val TRASH_REQUEST = 0x5059; private const val PHOTO_PICKER = "com.android.providers.media.photopicker" }
 }

@@ -101,9 +101,11 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   thumbsClearImages(): void;
   forgetThumbs(): void;
   pickMedia(): Promise<string[]>;
+  /** only files in the outbox (cache/cf-out, outbox.ts) */
   shareFiles(paths: string[], mimes: string[]): Promise<boolean>;
+  /** takes back the read access the last share gave */
+  revokeShared(): void;
   saveToLibrary(path: string, name: string, mime: string): Promise<string>;
-  deleteFromLibrary(uris: string[]): Promise<boolean>;
   trashFromLibrary(uris: string[]): Promise<boolean>;
 }
 

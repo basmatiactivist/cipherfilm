@@ -44,6 +44,8 @@ export interface Status {
   current?: string;
   /** the media id a run was working on; still set at the next run means that run died on it (the app was killed or hung) */
   attempt?: string;
+  /** the file the last run stopped on that way, shown on the Backup screen until a run gets through */
+  stalled?: string;
   skipped: { name: string; reason: string }[];
   failures: Record<string, number>;
 }
@@ -105,12 +107,13 @@ export const startAfter = (includeExisting: boolean, newest: number) => (include
 // ---- duplicates: what the library already has (name and size), refreshed while it is unlocked ----
 
 
-/** Called with the decrypted library: photos that are already there (shared in, or uploaded from a computer) are skipped. */
-export async function rememberLibrary(items: { meta?: { name: string; size: number } }[]) {
+/** Called with the decrypted library: photos that are already there (shared in, or uploaded from a computer) are skipped.
+ *  Only the library of the account the backup is for counts: another account's photos are no reason to skip one. */
+export async function rememberLibrary(userId: string, items: { meta?: { name: string; size: number } }[]) {
   const c = await loadConfig();
-  if (!c?.enabled) return;
+  if (!c?.enabled || c.userId !== userId) return;
   const prints = await Promise.all(items.filter((i) => i.meta).map((i) => fingerprint(i.meta!.name, i.meta!.size)));
-  await writeJson(KNOWN(), prints);
+  await writeJson(KNOWN(), { userId, prints });
 }
 
 // ---- the run ----
@@ -156,6 +159,7 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
   const keep = async () => { if (current()) await saveConfig(c); };
   let deadline = trigger === "background" ? Date.now() + BACKGROUND_BUDGET : Infinity;
   let held = false, holding = false;
+  if (status.attempt && status.current) status.stalled = status.current; // the last run died on this one
   status.running = true; status.lastRun = Date.now(); status.problem = undefined; status.problemAt = undefined; status.current = undefined;
   await save();
   let done = 0;
@@ -186,8 +190,8 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
 
     const s = await getSodium();
     const pk = unb64(s, c.pubkey);
-    const kept = await readJson<string[]>(KNOWN(), []);
-    const known = new Set(Array.isArray(kept) ? kept : []);
+    const kept = await readJson<{ userId?: string; prints?: string[] }>(KNOWN(), {});
+    const known = new Set(kept.userId === c.userId && Array.isArray(kept.prints) ? kept.prints : []);
     let waiting = 0;
     for (const [bucket, f] of Object.entries(c.folders)) waiting += await N.countFolderAfter(bucket, f.after);
     if (!waiting) return;
@@ -273,7 +277,7 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
         }
       }
     }
-    if (current()) await writeJson(KNOWN(), [...known]);
+    if (current()) await writeJson(KNOWN(), { userId: c.userId, prints: [...known] });
     if (!status.problem && waiting <= 0) status.lastDone = Date.now();
   } catch (e) {
     status.problem = e instanceof Error ? e.message : String(e);
@@ -283,6 +287,7 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
     if (status.problem && /reach|connect/i.test(status.problem) && current()) N.retryBackupSoon(3);
     console.log(`backup (${trigger}): ${done} uploaded${status.problem ? `, stopped: ${status.problem}` : ""}`); // no names, no keys
     status.running = false; status.current = undefined;
+    if (!status.attempt) status.stalled = undefined; // got past it (a run that dies never gets here)
     await save();
     running = false;
     if (holding) letGo("backup");

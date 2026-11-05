@@ -191,6 +191,7 @@ export async function startSearch(library: Item[]) {
           if (!live()) return;
           const enc = b64(s, sealIndexEntry(s, entry, pk, it.id));
           await api("PUT", `/api/items/${it.id}/index`, { data_enc: enc, model: entry.m }); // the tag, see docs/SEARCH.md
+          if (!live()) return; // locked or signed out while it was sent: the index was emptied and stays so
           cache.entries[it.id] = enc;
           await put(s, it.id, entry, st.faces);
           changed++;

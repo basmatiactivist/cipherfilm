@@ -54,10 +54,16 @@ export async function runBackgroundIndex(): Promise<number> {
   if (backgroundBlocker(st) || !st.server || !st.pubkey || !st.userId) return 0;
   const f = localFile();
   if (!f.exists) return 0;
-  let local: { userId: string; prints: Record<string, string>; done: string[] };
+  // attempt: the item a run was working on; still set at the next run means that run died on it (killed or hung)
+  let local: { userId: string; prints: Record<string, string>; done: string[]; attempt?: string };
   try { local = JSON.parse(await f.text()); } catch { return 0; }
   const clip = st.clip ?? "mobileclip-s2";
   if (local.userId !== st.userId || !(await haveModels(st.faces, clip))) return 0;
+  if (local.attempt) { // not tried here again: the app indexes it from the server's preview when it is opened
+    local.done.push(local.attempt);
+    local.attempt = undefined;
+    await f.write(JSON.stringify(local)).catch(() => {});
+  }
   const done = new Set(local.done);
   const deadline = Date.now() + BUDGET;
   let n = 0;
@@ -80,14 +86,17 @@ export async function runBackgroundIndex(): Promise<number> {
     await N.visionOpen(modelPath(), st.faces, clip, true);
     for (const t of todo) {
       if (Date.now() > deadline || backgroundBlocker(st)) break;
+      local.attempt = t.id;
+      await f.write(JSON.stringify(local));
       try {
         await indexFile(s, t.id, t.uri, t.video, st.faces, pk, clip, to);
         local.done.push(t.id);
         n++;
-        if (n % 20 === 0) await f.write(JSON.stringify(local));
       } catch (e) {
         if (e instanceof ApiError && e.code === "not_indexer") { await saveSettings({ indexes: false }); break; }
         if (e instanceof ApiError && (e.status === 0 || e.status === 401 || e.status >= 500)) break;
+      } finally {
+        local.attempt = undefined;
       }
     }
     await f.write(JSON.stringify(local));

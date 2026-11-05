@@ -37,9 +37,12 @@ export const kindOf = (f: Pick<Shared, "mime" | "name">): "image" | "video" | "o
   f.mime.startsWith("video/") || /\.(mp4|mov|m4v|3gp|webm)$/i.test(f.name) ? "video"
     : f.mime.startsWith("image/") || /\.(jpe?g|png|webp|heic|heif|gif|dng)$/i.test(f.name) ? "image" : "other";
 
-/** Uploads in progress: the app doesn't lock itself while one runs. */
+/** Uploads in progress: the app doesn't lock itself while one runs (but once they are over, _layout.tsx). */
 let running = 0;
 export const uploadsRunning = () => running;
+const idle = new Set<() => void>();
+/** Called each time the last running upload ends (the next file of a share may start right after). */
+export const onUploadsIdle = (f: () => void) => { idle.add(f); return () => { idle.delete(f); }; };
 
 export class SignedOut extends Error {
   constructor() { super("Stopped: you signed out or locked the app."); }
@@ -65,6 +68,7 @@ export async function uploadShared(f: Shared, onProgress: (done: number, total: 
   } finally {
     running--;
     letGo("upload");
+    if (!running) idle.forEach((f) => f());
   }
 }
 

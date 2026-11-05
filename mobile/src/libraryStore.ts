@@ -9,9 +9,10 @@ import { api } from "./api";
 let items: Item[] | null = null;
 let error: string | undefined;
 let loading = false;
+let loadedAt = 0; // when the server's list last arrived (not the cached one)
 const subs = new Set<() => void>();
-let snap: { items: Item[] | null; error?: string; loading: boolean } = { items, error, loading };
-const emit = () => { snap = { items, error, loading }; subs.forEach((f) => f()); };
+let snap: { items: Item[] | null; error?: string; loading: boolean; loadedAt: number } = { items, error, loading, loadedAt };
+const emit = () => { snap = { items, error, loading, loadedAt }; subs.forEach((f) => f()); };
 
 export const useLibrary = () => useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => snap);
 export const libraryItems = () => (items && owner === session().me?.user.id && session().masterKey ? items : []);
@@ -35,12 +36,13 @@ export async function refreshLibrary() {
     if (!current()) { list.forEach((i) => i.itemKey?.fill(0)); return; }
     items = list;
     owner = forUser;
+    loadedAt = Date.now();
     prefetchThumbs(list);
     setTimeout(() => pruneCache(new Set(list.map((i) => i.id))), 2000);
     // the rest waits until the grid is on screen and scrolling: both read the whole list on the JS thread
     setTimeout(() => {
       if (!current()) return;
-      rememberLibrary(list).catch(() => {}); // the backup skips what is already here
+      rememberLibrary(forUser, list).catch(() => {}); // the backup skips what is already here
       startSearch(list).catch(() => {}); // search: the index for what is new
     }, 1500);
   } catch (e) {
@@ -52,7 +54,7 @@ export async function refreshLibrary() {
 
 export function forgetLibrary() {
   items?.forEach((i) => i.itemKey?.fill(0)); // the unwrapped item keys leave memory with the list
-  items = null; owner = ""; error = undefined; emit();
+  items = null; owner = ""; error = undefined; loadedAt = 0; emit();
 }
 
 // a lock, sign-out or account change takes the decrypted list along

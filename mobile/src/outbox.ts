@@ -1,7 +1,8 @@
 // Decrypted copies for leaving the app: sharing to another app, or saving into the phone's own photo library. They are
 // written to one folder in the app's cache, which Android never backs up and other apps can't list; a share hands out
-// read access to exactly the shared files. The folder is emptied before every new share, when the app starts, and when
-// it comes back after a while (the receiving app may still be reading right after the share sheet closes).
+// read access to exactly the shared files. The folder is emptied (and that access taken back) before every new share,
+// when the app starts, and when it comes back after a while (the receiving app may still be reading right after the
+// share sheet closes).
 import { Directory, File, Paths } from "expo-file-system";
 import { getSodium } from "@crypto/sodium";
 import { decryptSegment } from "@crypto/file";
@@ -15,6 +16,7 @@ const KEEP_FOR = 15 * 60 * 1000;
 let lastShare = 0;
 
 export function clearOutbox() {
+  try { N.revokeShared(); } catch { /* nothing shared */ }
   try { const d = OUT(); if (d.exists) d.delete(); } catch { /* nothing to remove */ }
 }
 

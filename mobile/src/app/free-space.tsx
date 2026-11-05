@@ -20,7 +20,10 @@ const gb = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${Math.max
 export default function FreeSpace() {
   const t = useAppTheme();
   const inset = useSafeAreaInsets();
-  const { items } = useLibrary();
+  const { items, error: libraryError, loadedAt } = useLibrary();
+  // decided on the server's list as it is now, never a cached or older one (trashed elsewhere meanwhile)
+  const [opened] = useState(Date.now);
+  const fresh = loadedAt >= opened && !libraryError;
   const [media, setMedia] = useState<PhoneMedia[] | null>(null);
   const [access, setAccess] = useState(() => N.backupState().media);
   const [age, setAge] = useState("0");
@@ -40,14 +43,14 @@ export default function FreeSpace() {
   }, []);
   useEffect(() => {
     scan();
-    if (!items) refreshLibrary();
+    refreshLibrary();
     const sub = AppState.addEventListener("change", (s) => { if (s === "active") scan(); });
     return () => sub.remove();
   }, [scan]);
 
   // what is safely in the library: same name and size as a finished, verified item
   useEffect(() => {
-    if (!media || !items) return;
+    if (!media || !items || !fresh) return;
     let live = true;
     (async () => {
       const prints = new Set<string>();
@@ -57,7 +60,7 @@ export default function FreeSpace() {
       if (live) setMatched(out);
     })();
     return () => { live = false; };
-  }, [media, items]);
+  }, [media, items, fresh]);
 
   const days = AGES.find((a) => a.key === age)!.days;
   const folders = useMemo(() => {
@@ -109,6 +112,8 @@ export default function FreeSpace() {
             <Text variant="bodyMedium">To find photos on this phone that are already in Cipherfilm, allow access to photos and videos.</Text>
             <Button mode="contained" onPress={askMedia} style={st.button}>Allow</Button>
           </View>
+        ) : !matched && libraryError ? (
+          <View style={{ padding: 16 }}><Problem>{`Your library couldn't be loaded, so nothing is offered for removal. ${libraryError}`}</Problem></View>
         ) : !matched ? (
           <View style={{ alignItems: "center", padding: 32 }}><ActivityIndicator /><Text variant="bodyMedium" style={{ marginTop: 12 }}>Comparing this phone with your library…</Text></View>
         ) : (

@@ -9,6 +9,8 @@ module.exports = function withReleaseSigning(config) {
     g = g.replace(/signingConfigs \{\n(\s+)debug \{/, (m, ind) => `signingConfigs {
 ${ind}release {
 ${ind}    if (System.getenv("CF_KEYSTORE")) {
+${ind}        // a tree prebuilt for a test build trusts the local test CA (withTestCA.js): never signed with the release key
+${ind}        if (file("src/main/res/raw/cf_test_ca.pem").exists()) throw new GradleException("android/ was prebuilt with CF_TEST_CA: run expo prebuild --clean before a release build")
 ${ind}        storeFile file(System.getenv("CF_KEYSTORE"))
 ${ind}        storePassword System.getenv("CF_KEYSTORE_PASSWORD")
 ${ind}        keyAlias "cipherfilm"

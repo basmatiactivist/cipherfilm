@@ -68,8 +68,11 @@ const bioNoName = (userId: string) => `cf.bioNo.${userId}`; // "Not now" to fing
 const PROMPT = "Unlock Cipherfilm";
 
 /** Same bounds as the server and the web client: a server can't talk the app into weak or absurd Argon2 settings. */
-function assertSaneKdf(k: KdfParams) {
-  if (!(k.ops >= 2 && k.ops <= 10 && k.mem >= 32 * 1024 * 1024 && k.mem <= 1024 * 1024 * 1024)) {
+export function assertSaneKdf(k: KdfParams) {
+  const ok = k.alg === "argon2id13" && k.v === 1 && Number.isInteger(k.ops) && Number.isInteger(k.mem)
+    && k.ops >= 2 && k.ops <= 10 && k.mem >= 32 * 1024 * 1024 && k.mem <= 1024 * 1024 * 1024
+    && typeof k.salt === "string" && /^[A-Za-z0-9_-]{22}$/.test(k.salt); // 16 bytes, base64url
+  if (!ok) {
     throw new Error("The server sent unexpected password-hashing settings. Sign-in was stopped for your safety.");
   }
 }

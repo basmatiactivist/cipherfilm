@@ -58,6 +58,8 @@ vi.mock("../modules/cf-native/src/CfNativeModule", () => {
   };
 });
 
+const KDF = vi.hoisted(() => ({ alg: "argon2id13", v: 1, ops: 2, mem: 64 * 1024 * 1024, salt: "AAAAAAAAAAAAAAAAAAAAAA" }));
+
 // The server(s): one cookie jar, as on the phone. A sign-in replaces the session cookie.
 const srv = vi.hoisted(() => ({
   cookie: "", // whose session the cookie holds
@@ -76,7 +78,7 @@ vi.mock("expo/fetch", () => ({
     const hooked = srv.hook(method, path, who);
     if (hooked) return hooked;
     if (path === "/api/setup/status") return json(200, {});
-    if (path === "/api/auth/params") { srv.log.push(`${u.origin} params`); return json(200, { ops: 2, mem: 64 * 1024 * 1024 }); }
+    if (path === "/api/auth/params") { srv.log.push(`${u.origin} params`); return json(200, KDF); }
     if (path === "/api/auth/login") {
       const user = JSON.parse(init.body!).email.split("@")[0];
       srv.log.push(`${u.origin} login ${user}`);
@@ -91,7 +93,7 @@ vi.mock("expo/fetch", () => ({
     return json(200, {});
   },
 }));
-const me = (user: string) => ({ user: { id: user, email: `${user}@x.test`, role: "user" }, csrf: `csrf-${user}`, kdf: { ops: 2, mem: 64 * 1024 * 1024 }, wrapped_master_pw: "", wrapped_privkey: "", pubkey: "" });
+const me = (user: string) => ({ user: { id: user, email: `${user}@x.test`, role: "user" }, csrf: `csrf-${user}`, kdf: KDF, wrapped_master_pw: "", wrapped_privkey: "", pubkey: "" });
 
 async function load() {
   vi.resetModules();
@@ -183,6 +185,43 @@ describe("automatic backup", () => {
     expect(st.skipped).toEqual([]);
     expect(st.uploaded).toBe(3);
     expect(st.failures).toEqual({});
+  });
+
+  it("skips what the backup's own account has, never what another account's library has", async () => {
+    const { session, backup, pubkey } = await load();
+    const { fingerprint } = await import("./prints");
+    await session.start();
+    await backup.saveConfig(config(pubkey));
+    await backup.rememberLibrary("bob", [{ meta: { name: "IMG_1.jpg", size: 10 } }]);
+    expect(files.has("/doc/backup/known.json")).toBe(false);
+    // a list written for another account (by an older version) is not used either
+    files.set("/doc/backup/known.json", JSON.stringify({ userId: "bob", prints: [await fingerprint("IMG_2.jpg", 10)] }));
+    await backup.runBackup("app");
+    expect(srv.log.filter((l) => l.startsWith("finalize"))).toHaveLength(3);
+    expect(JSON.parse(files.get("/doc/backup/known.json")!).userId).toBe("alice");
+  });
+
+  it("skips a photo the account's library already has", async () => {
+    const { session, backup, pubkey } = await load();
+    await session.start();
+    await backup.saveConfig(config(pubkey));
+    await backup.rememberLibrary("alice", [{ meta: { name: "IMG_1.jpg", size: 10 } }]);
+    await backup.runBackup("app");
+    expect(srv.log.filter((l) => l.startsWith("finalize"))).toEqual(["finalize 01 as alice", "finalize 02 as alice"]); // files 2 and 3
+    expect((await backup.loadConfig())!.folders.cam.after).toBe(3);
+  });
+
+  it("says which file the last run stopped on until a run gets past it", async () => {
+    const { session, backup, pubkey } = await load();
+    await session.start();
+    await backup.saveConfig(config(pubkey));
+    files.set("/doc/backup/status.json", JSON.stringify({ running: false, uploaded: 0, skipped: [], failures: {}, attempt: "1", current: "IMG_1.jpg" }));
+    srv.hook = (_m, path) => (path === "/api/me" ? new Response("{}", { status: 401 }) : undefined);
+    await backup.runBackup("app");
+    expect((await backup.loadStatus()).stalled).toBe("IMG_1.jpg"); // this run never reached it
+    srv.hook = () => {};
+    await backup.runBackup("app");
+    expect((await backup.loadStatus()).stalled).toBeUndefined();
   });
 
   it("counts a file as backed up only after it is confirmed it went to the account", async () => {

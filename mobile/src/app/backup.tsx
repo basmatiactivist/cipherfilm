@@ -101,7 +101,7 @@ export default function Backup() {
       await enableBackup(me, server(), masterKey, { ...prefs, folders: fs });
       // what the library already has, before the first run: those photos aren't uploaded again
       await refreshLibrary();
-      await rememberLibrary(libraryItems());
+      await rememberLibrary(me.user.id, libraryItems());
       if (!N.backupState().notifications) await askNotifications();
       runBackup("app").catch(() => {});
     } catch (e) {
@@ -135,6 +135,7 @@ export default function Backup() {
           {on ? (
             <>
               {problem ? <Text variant="bodyMedium" style={{ marginTop: 12 }}>{problem}{status?.problem && status.problemAt ? ` (${fmtTime.format(status.problemAt)})` : ""}</Text> : null}
+              {status?.stalled && !status.running ? <Text variant="bodyMedium" style={{ marginTop: 12 }}>The last backup stopped while working on {status.stalled}. It is tried again, at most three times, then skipped.</Text> : null}
               <Text variant="bodySmall" style={{ marginTop: 8, color: t.colors.onSurfaceVariant }}>
                 {status?.lastDone ? `Last complete: ${fmtTime.format(status.lastDone)}` : status?.lastRun ? `Last checked: ${fmtTime.format(status.lastRun)}` : "Not run yet"}
                 {status?.uploaded ? ` · ${status.uploaded} backed up so far` : ""}

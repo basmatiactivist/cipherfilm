@@ -11,6 +11,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import java.io.File
 import java.io.IOException
 import java.nio.ByteBuffer
@@ -34,6 +35,8 @@ internal object Thumbs {
   private const val BATCH = 100 // the server's limit
   private const val WINDOW_MS = 15L
   private const val NETS = 3 // batch requests at the same time
+  private const val MAX_THUMB = 256L shl 10 // the server's limit for one thumbnail
+  private const val MAX_PIXELS = 2048.0 * 2048 // a decoded thumbnail is never larger than this, whatever the JPEG claims
 
   /** One view's wish for one thumbnail; [wanted] goes false when the tile scrolls away or shows another item. */
   class Ask(val id: String, val px: Int, val view: Boolean, val done: (Bitmap?) -> Unit) {
@@ -68,7 +71,8 @@ internal object Thumbs {
   private val listeners = mutableListOf<java.lang.ref.WeakReference<() -> Unit>>()
 
   fun setup(server: String, csrf: String, dir: String?) {
-    this.server = server.trimEnd('/')
+    // the session cookie goes only over https, as for videos (videoSource)
+    this.server = if (server.startsWith("https://")) server.trimEnd('/') else ""
     this.csrf = csrf
     this.dir = dir?.let { File(if (it.startsWith("file:")) android.net.Uri.parse(it).path ?: return else it) }
   }
@@ -230,7 +234,7 @@ internal object Thumbs {
   private class Gone : IOException()
 
   private fun request(path: String): Request.Builder =
-    Request.Builder().url(server + path).apply { CookieManager.getInstance().getCookie(server)?.let { header("Cookie", it) } }
+    if (server.isEmpty()) throw IOException("no https server") else Request.Builder().url(server + path).apply { CookieManager.getInstance().getCookie(server)?.let { header("Cookie", it) } }
 
   private fun many(ids: List<String>): List<ByteArray?> {
     val body = ids.joinToString(",", "{\"item_ids\":[", "]}") { "\"$it\"" }.toRequestBody("application/json".toMediaType())
@@ -238,13 +242,22 @@ internal object Thumbs {
     client.newCall(req).execute().use { res ->
       if (res.code == 404 || res.code == 405) throw Gone()
       if (!res.isSuccessful) throw IOException("thumbs: HTTP ${res.code}")
-      return split(res.body?.bytes() ?: throw IOException("thumbs: empty"), ids.size)
+      return split(bounded(res, ids.size * (MAX_THUMB + 4)), ids.size)
     }
   }
 
   private fun one(id: String): ByteArray? = try {
-    client.newCall(request("/api/items/$id/thumb").build()).execute().use { res -> if (res.isSuccessful) res.body?.bytes() else null }
+    client.newCall(request("/api/items/$id/thumb").build()).execute().use { res -> if (res.isSuccessful) bounded(res, MAX_THUMB) else null }
   } catch (e: IOException) { null }
+
+  /** The response body, refused as soon as it is longer than [max]: a server can't make the app run out of memory. */
+  fun bounded(res: Response, max: Long): ByteArray {
+    val body = res.body ?: throw IOException("empty response")
+    if (body.contentLength() > max) throw IOException("response too large")
+    val src = body.source()
+    if (src.request(max + 1)) throw IOException("response too large")
+    return src.buffer.readByteArray()
+  }
 
   /** For each id in the order asked: u32 big-endian length and the ciphertext, or 0xFFFFFFFF for none. */
   fun split(b: ByteArray, n: Int): List<ByteArray?> {
@@ -293,7 +306,8 @@ internal object Thumbs {
       val views = asks.filter { it.view && it.wanted }
       if (views.isEmpty()) { drop(id, g); return }
       val bmp = decode(plain, views.maxOf { if (it.px <= 0) Int.MAX_VALUE else it.px }) // 0: whole
-      if (bmp != null && g == gen) bitmaps.put(id, bmp)
+      // under the lock clear() takes: a bitmap decoded while the library locks is never cached after it
+      if (bmp != null) synchronized(keys) { if (g == gen) bitmaps.put(id, bmp) }
       deliver(id, g, bmp)
     } finally {
       plain.fill(0)
@@ -314,8 +328,10 @@ internal object Thumbs {
       val w = info.size.width
       val h = info.size.height
       // as small as the tile allows (it is cropped to a square: the shorter side fills it), never larger than it is
-      val s = if (px <= 0) 1.0 else minOf(1.0, px.toDouble() / minOf(w, h))
+      var s = if (px <= 0) 1.0 else minOf(1.0, px.toDouble() / minOf(w, h))
+      val pixels = w.toDouble() * h * s * s
+      if (pixels > MAX_PIXELS) s *= Math.sqrt(MAX_PIXELS / pixels) // whole (px 0) or a very long sliver
       if (s < 1.0) d.setTargetSize(maxOf(1, (w * s).toInt()), maxOf(1, (h * s).toInt()))
     }
-  } catch (e: Exception) { null }
+  } catch (e: Exception) { null } catch (e: OutOfMemoryError) { null }
 }

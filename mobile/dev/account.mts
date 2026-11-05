@@ -1,8 +1,9 @@
 // Creates the first account on the local test instance (mobile/dev/compose.yaml) with the web client's own crypto and
-// prints the login. From web/ (for its node_modules):
+// prints the login (CF_TEST_PASSWORD, or a new random password: nothing well-known). From web/ (for its node_modules):
 //   docker compose -f ../mobile/dev/compose.yaml exec -T proxy cat /data/caddy/pki/authorities/local/root.crt > /tmp/cftest-ca.pem
 //   CF_CA=/tmp/cftest-ca.pem CF_SETUP_TOKEN=<token from: docker compose -f ../mobile/dev/compose.yaml logs app> npx tsx ../mobile/dev/account.mts
 import { readFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { request } from "node:https";
 import { checkServerIdentity } from "node:tls";
 import { getSodium } from "../../web/src/crypto/sodium";
@@ -12,7 +13,7 @@ const token = process.env.CF_SETUP_TOKEN;
 const ca = process.env.CF_CA;
 if (!token || !ca) throw new Error("set CF_SETUP_TOKEN and CF_CA");
 const email = "tester@example.org";
-const password = "test-password-123";
+const password = process.env.CF_TEST_PASSWORD || "pw-" + randomBytes(12).toString("base64url");
 const s = await getSodium();
 const acc = await createAccount(s, email, password);
 const body = JSON.stringify({ setup_token: token, email: normEmail(email), ...acc.bundle });

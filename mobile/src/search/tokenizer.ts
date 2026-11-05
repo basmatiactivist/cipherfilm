@@ -54,13 +54,13 @@ export function words(text: string): string[] {
 }
 
 export class Tokenizer {
-  private vocab: Record<string, number>;
+  private vocab: Map<string, number>; // a Map: no inherited keys ("constructor") become ids
   private ranks = new Map<string, number>();
   private bytes = byteChars();
   private cache = new Map<string, number[]>();
 
   constructor(json: { model: { vocab: Record<string, number>; merges: (string | [string, string])[] } }) {
-    this.vocab = json.model.vocab;
+    this.vocab = new Map(Object.entries(json.model.vocab));
     json.model.merges.forEach((m, i) => this.ranks.set(typeof m === "string" ? m : m.join(" "), i));
   }
 
@@ -82,7 +82,7 @@ export class Tokenizer {
       }
       parts = next;
     }
-    const ids = parts.map((p) => this.vocab[p]).filter((v): v is number => v !== undefined);
+    const ids = parts.map((p) => this.vocab.get(p)).filter((v): v is number => typeof v === "number");
     this.cache.set(word, ids);
     return ids;
   }

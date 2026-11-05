@@ -28,6 +28,7 @@ internal object Models {
       val c = URL(url).openConnection() as HttpURLConnection
       try {
         c.connectTimeout = 20_000; c.readTimeout = 60_000
+        c.instanceFollowRedirects = false // the cookie below stays with the app's own server
         if (have > 0) c.setRequestProperty("Range", "bytes=$have-")
         // the session cookie: the explicit-search models (nsfw-*) are only served to people allowed them
         runCatching { android.webkit.CookieManager.getInstance().getCookie(url) }.getOrNull()?.let { c.setRequestProperty("Cookie", it) }

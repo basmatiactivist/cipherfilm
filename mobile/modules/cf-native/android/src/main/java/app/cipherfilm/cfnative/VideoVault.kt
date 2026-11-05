@@ -117,7 +117,7 @@ internal object Segments {
     val req = Request.Builder().url(url).apply { CookieManager.getInstance().getCookie(src.server)?.let { header("Cookie", it) } }.build()
     client.newCall(req).execute().use { res ->
       if (!res.isSuccessful) throw IOException("segment $i: HTTP ${res.code}")
-      return res.body?.bytes() ?: throw IOException("segment $i: empty")
+      return Thumbs.bounded(res, cipherLen(SEG).toLong())
     }
   }
 

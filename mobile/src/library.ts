@@ -44,7 +44,7 @@ let known = new Map<string, { w: string; m: string; master: Uint8Array; key?: Ui
 function decrypt(s: Sodium, master: Uint8Array, pair: () => KeyPair, x: any): Item {
   const it: Item = { id: x.id, kind: x.kind, size: x.size, segment_count: x.segment_count, created_at: x.created_at, has_thumb: x.has_thumb, has_preview: x.has_preview, trashed_at: x.trashed_at, purge_at: x.purge_at, favorite: !!x.favorite };
   const k = known.get(x.id);
-  if (k && k.master === master && k.w === x.wrapped_item_key && k.m === x.meta_enc && k.key && k.meta) {
+  if (k && k.master === master && k.w === x.wrapped_item_key && k.m === x.meta_enc && k.key && k.meta && k.meta.size === x.size) {
     it.itemKey = k.key; it.meta = k.meta;
     return it;
   }

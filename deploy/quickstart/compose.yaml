@@ -1,0 +1,45 @@
+# Cipherfilm in one file: the released image plus Caddy for automatic HTTPS (Let's Encrypt).
+# Needs a DNS name pointing at this machine and ports 80 and 443 reachable. Put the name in .env:
+#   DOMAIN=photos.example.com
+# then: docker compose up -d && docker compose logs app | grep "FIRST-TIME SETUP"
+# Private use without open ports (Tailscale) or behind your own proxy: see the README in the repository.
+name: cipherfilm
+
+services:
+  app:
+    image: ghcr.io/basmatiactivist/cipherfilm:${CIPHERFILM_TAG:-2}
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 256
+    mem_limit: 768m
+    volumes:
+      - data:/data
+    environment:
+      LISTEN_ADDR: ":8080"
+      TRUST_PROXY: "1"              # exactly one proxy in front: Caddy
+      PUBLIC_HOSTS: "${DOMAIN:?set DOMAIN in .env, e.g. photos.example.com}"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    # The app sets its own security headers; Caddy only gets the certificate, terminates TLS and forwards.
+    command: caddy reverse-proxy --from ${DOMAIN} --to app:8080
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [app]
+    security_opt: ["no-new-privileges:true"]
+
+volumes:
+  data:
+    name: cipherfilm_data
+  caddy_data:
+    name: cipherfilm_caddy_data
+  caddy_config:

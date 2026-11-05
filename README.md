@@ -22,6 +22,8 @@ How the encryption works, and what the server still learns, is in [docs/CRYPTO.m
 [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md). Please read the threat model: a web app can only protect you
 from someone who controls the server if you trust the code the server delivers.
 
+**Download and install** (server, web, Android, Mac, tools): [docs/INSTALL.md](docs/INSTALL.md).
+
 ## Requirements
 
 - Docker with the Compose plugin (`docker compose`) on a Linux or macOS machine (amd64 or arm64).

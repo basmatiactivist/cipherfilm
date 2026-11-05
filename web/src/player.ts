@@ -11,7 +11,8 @@ const params = new Map<string, Params>();
 // The Service Worker asks the page for an item's key when it needs one (e.g. after the worker was restarted).
 if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("message", (e) => {
-    if (e.data?.type === "need-key" && e.ports[0]) e.ports[0].postMessage(params.get(e.data.id) ?? null);
+    if (e.origin !== location.origin) return; // only this app's own worker
+    if (e.data?.type === "need-key" && typeof e.data.id === "string" && e.ports[0]) e.ports[0].postMessage(params.get(e.data.id) ?? null);
   });
 }
 

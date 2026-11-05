@@ -35,6 +35,7 @@ Mitigations (reduce, not remove):
 - All assets self-hosted: no CDNs, external fonts, analytics or telemetry.
 - Few, pinned dependencies with lockfile + integrity hashes; builds are not yet reproducible and no bundle hash is published.
 - **Not implemented:** Subresource Integrity, service-worker pinning of the bundle hash and a published bundle hash. SRI on a same-origin script adds little against a compromised server, which serves the HTML too, so none of these would stop an active malicious operator; do not rely on the client to detect a swapped bundle.
+- Pages are also sent with `X-Frame-Options: DENY`, for browsers older than `frame-ancestors`; the HEIC policy below applies only to files under `/heic/` after the path is resolved.
 - Admin, as the person most able to ship bad code, is in the same trust position as the server operator; family members should know this.
 
 ### HEIC decoder exception
@@ -51,9 +52,9 @@ The app needs a trusted HTTPS front (Tailscale Serve, your own proxy, or the bun
 - Compromised client device or malicious browser extension defeats E2EE (keys live in memory there).
 - XSS in the app would expose in-memory keys; mitigated by CSP, no `innerHTML` with data, and decrypted names rendered as text only.
 - Browsers can keep decrypted blobs in memory / disk cache: we use `Cache-Control: no-store` on API responses and revoke object URLs.
-- Denial of service by an authenticated user: storage is bounded by the per-user quota, which is reserved atomically before an upload body is read and also covers thumbnails, previews, search index entries and the people list (only the model families and document names the apps use are accepted); each finished item is also charged the disk blocks its files take (whole 4 KiB blocks per file plus 4 KiB for its row and directory), so many tiny items cost what they take on disk; open unfinished uploads are capped at 50 per user. List pages (`/api/items`, `/api/trash`, `/api/index`) stop at about 4 MiB of encrypted data, at most 4 of one account's pages are built at a time, and a client that stops reading one is cut off after 5 minutes. Connection count and slow request bodies are not capped by the app (no read timeout), so a fronting proxy should limit them.
-- No 2FA in v1 (a stolen password plus access to the tailnet is enough to log in).
-- Tailscale ACLs are the first line of defence (only intended devices reach the host); the app does not trust the network.
+- Denial of service by an authenticated user: storage is bounded by the per-user quota, which is reserved atomically before an upload body is read and also covers thumbnails, previews, search index entries and the people list (only the model families and document names the apps use are accepted); each finished item is also charged the disk blocks its files take (whole 4 KiB blocks per file plus 4 KiB for its row and directory), so many tiny items cost what they take on disk; open unfinished uploads are capped at 50 per user. List pages (`/api/items`, `/api/trash`, `/api/index`) stop at about 4 MiB of encrypted data, at most 4 of one account's pages are built at a time, and a client that stops reading one is cut off after 5 minutes. Request headers must arrive within 10 seconds and bodies within a deadline (30 seconds for JSON, 15 minutes per upload part); the number of connections is not capped by the app, so a fronting proxy should limit it.
+- No 2FA in v1: a stolen password is enough to log in. With the Tailscale option the thief also needs a device on the tailnet; with the public options (quickstart, Caddy, your own proxy) the login is reachable from anywhere.
+- With the Tailscale option its ACLs are the first line of defence (only intended devices reach the host). On the public options only the login rate limits and the Argon2 cost stand in front of the accounts. Either way the app does not trust the network.
 
 ## Residual-risk summary
 Strong against: data-at-rest compromise, curious admin, cross-user access, ciphertext tampering. Not strong against: a malicious server operator shipping hostile JS, a compromised user device, weak passwords combined with a stolen database.

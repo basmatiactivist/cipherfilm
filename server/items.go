@@ -335,17 +335,20 @@ func (a *App) putSegment(w http.ResponseWriter, r *http.Request, u *user, s *ses
 	defer tx.Rollback()
 	// on failure the transaction is rolled back before cleanupIfGone asks the pool for another connection: while it
 	// is open it holds one connection and SQLite's write lock, and enough such waits at once would stall every request
+	// the charge is the difference to what is recorded now: two uploads of the same part at once count it once
+	prev = 0
+	tx.QueryRow(`SELECT bytes FROM segments WHERE item_id=? AND n=?`, it.ID, n).Scan(&prev)
 	if _, err := tx.Exec(`INSERT INTO segments(item_id,n,bytes) VALUES (?,?,?) ON CONFLICT(item_id,n) DO UPDATE SET bytes=excluded.bytes`, it.ID, n, got); err != nil {
 		tx.Rollback()
 		a.cleanupIfGone(it.ID) // the item was deleted while the body was streaming: do not leave the file behind
 		fail(w, 500, "server error")
 		return
 	}
-	res, err := tx.Exec(`UPDATE items SET stored_bytes = stored_bytes + ? WHERE id=?`, got-prev, it.ID)
+	res, err := tx.Exec(`UPDATE items SET stored_bytes = stored_bytes + ? WHERE id=? AND state='uploading'`, got-prev, it.ID)
 	if rowsAffected(res, err) != 1 {
 		tx.Rollback()
 		a.cleanupIfGone(it.ID)
-		fail(w, 500, "server error")
+		fail(w, 409, "this upload is no longer open")
 		return
 	}
 	if err := tx.Commit(); err != nil {
@@ -608,13 +611,19 @@ func (a *App) abortItem(w http.ResponseWriter, r *http.Request, u *user, s *sess
 		fail(w, 409, "only unfinished uploads can be discarded")
 		return
 	}
-	a.db.Exec(`DELETE FROM items WHERE id=? AND user_id=?`, it.ID, u.ID)
+	// only while still unfinished: an upload finalized meanwhile goes through the trash like any other item
+	res, err := a.db.Exec(`DELETE FROM items WHERE id=? AND user_id=? AND state='uploading'`, it.ID, u.ID)
+	if rowsAffected(res, err) != 1 {
+		fail(w, 409, "only unfinished uploads can be discarded")
+		return
+	}
 	a.removeBlobs(it.ID)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
 // janitor removes abandoned uploads.
 func (a *App) janitor() {
+	a.sweepTemps(a.now())
 	for {
 		a.sweepStale()
 		a.purgeExpiredTrash()
@@ -789,6 +798,17 @@ func (a *App) purgeExpiredTrash() {
 
 // sweepOrphans removes blob directories that no items row refers to (left behind by a write that raced with a
 // delete, or by a crash). A grace period spares directories of uploads that are still being written.
+// sweepTemps removes the half-written files (.tmp-*) that a crash left in item directories: any made before this
+// process started belongs to no upload. Run once at startup.
+func (a *App) sweepTemps(started time.Time) {
+	tmps, _ := filepath.Glob(filepath.Join(a.dataDir, "blobs", "*", "*", ".tmp-*"))
+	for _, p := range tmps {
+		if fi, err := os.Lstat(p); err == nil && fi.ModTime().Before(started) {
+			os.Remove(p)
+		}
+	}
+}
+
 func (a *App) sweepOrphans() {
 	root := filepath.Join(a.dataDir, "blobs")
 	shards, err := os.ReadDir(root)

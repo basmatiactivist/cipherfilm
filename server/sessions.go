@@ -3,7 +3,6 @@ package main
 import (
 	"net/http"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -80,7 +79,7 @@ func (a *App) liveIndexer(u *user) string {
 		return ""
 	}
 	var n int
-	a.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE pub=? AND user_id=?`, u.Indexer, u.ID).Scan(&n)
+	a.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE pub=? AND user_id=? AND expires_at>=?`, u.Indexer, u.ID, a.now().Unix()).Scan(&n)
 	if n == 0 {
 		return ""
 	}
@@ -92,8 +91,8 @@ func (a *App) mayIndex(u *user, s *session) bool {
 	if u.Indexer == s.Pub {
 		return true
 	}
-	res, err := a.db.Exec(`UPDATE users SET indexer=? WHERE id=? AND (indexer='' OR indexer=? OR NOT EXISTS (SELECT 1 FROM sessions WHERE pub=users.indexer AND user_id=users.id))`,
-		s.Pub, u.ID, s.Pub)
+	res, err := a.db.Exec(`UPDATE users SET indexer=? WHERE id=? AND (indexer='' OR indexer=? OR NOT EXISTS (SELECT 1 FROM sessions WHERE pub=users.indexer AND user_id=users.id AND expires_at>=?))`,
+		s.Pub, u.ID, s.Pub, a.now().Unix())
 	if rowsAffected(res, err) == 1 {
 		u.Indexer = s.Pub
 		return true
@@ -134,7 +133,7 @@ func (a *App) endSession(w http.ResponseWriter, r *http.Request, u *user, s *ses
 	}
 	var device string
 	a.db.QueryRow(`SELECT device FROM sessions WHERE pub=? AND user_id=?`, id, u.ID).Scan(&device)
-	a.remember(`SELECT id_hash FROM sessions WHERE pub=? AND user_id=?`, id, u.ID)
+	a.remember(`pub=? AND user_id=?`, id, u.ID)
 	res, err := a.db.Exec(`DELETE FROM sessions WHERE pub=? AND user_id=?`, id, u.ID)
 	if rowsAffected(res, err) != 1 {
 		fail(w, 404, "not found")
@@ -145,7 +144,7 @@ func (a *App) endSession(w http.ResponseWriter, r *http.Request, u *user, s *ses
 }
 
 func (a *App) endOtherSessions(w http.ResponseWriter, r *http.Request, u *user, s *session) {
-	a.remember(`SELECT id_hash FROM sessions WHERE user_id=? AND pub<>?`, u.ID, s.Pub)
+	a.remember(`user_id=? AND pub<>?`, u.ID, s.Pub)
 	res, err := a.db.Exec(`DELETE FROM sessions WHERE user_id=? AND pub<>?`, u.ID, s.Pub)
 	if err != nil {
 		fail(w, 500, "server error")
@@ -159,11 +158,12 @@ func (a *App) endOtherSessions(w http.ResponseWriter, r *http.Request, u *user, 
 }
 
 // remember keeps the hashes of sessions about to be signed out from another device (for a year), so such a device
-// learns it was signed out on purpose and deletes what it keeps, instead of only asking to sign in again.
-func (a *App) remember(query string, args ...any) {
+// learns it was signed out on purpose and deletes what it keeps, instead of only asking to sign in again. where
+// selects the sessions; it is always a fixed condition, with the values passed as args.
+func (a *App) remember(where string, args ...any) {
 	now := a.now()
 	a.db.Exec(`DELETE FROM revoked_sessions WHERE at < ?`, now.Add(-365*24*time.Hour).Unix())
-	a.db.Exec(`INSERT OR IGNORE INTO revoked_sessions(id_hash,at) `+strings.Replace(query, "SELECT id_hash", "SELECT id_hash,"+strconv.FormatInt(now.Unix(), 10), 1), args...)
+	a.db.Exec(`INSERT OR IGNORE INTO revoked_sessions(id_hash,at) SELECT id_hash,? FROM sessions WHERE `+where, append([]any{now.Unix()}, args...)...)
 }
 
 func (a *App) revoked(token string) bool {

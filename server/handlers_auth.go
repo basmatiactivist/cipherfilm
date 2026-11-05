@@ -102,7 +102,8 @@ func (a *App) setup(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 	var want string
-	if err := tx.QueryRow(`SELECT token_hash FROM setup_state WHERE id=1`).Scan(&want); err != nil {
+	// only while there is no account yet: one made on the console first ends the setup, even before a restart
+	if err := tx.QueryRow(`SELECT token_hash FROM setup_state WHERE id=1 AND NOT EXISTS (SELECT 1 FROM users)`).Scan(&want); err != nil {
 		fail(w, 404, "setup is already complete")
 		return
 	}
@@ -266,7 +267,7 @@ func (a *App) changePassword(w http.ResponseWriter, r *http.Request, u *user, s 
 	defer tx.Rollback()
 	// only if the password is still the one just checked: when two devices change it at the same moment, the second
 	// would otherwise overwrite the first and leave a password that neither person typed last
-	res, err := tx.Exec(`UPDATE users SET kdf=?, auth_hash=?, wrapped_master_pw=? WHERE id=? AND auth_hash=?`, req.NewKDF.json(), ah, req.NewWrappedMasterPW, u.ID, u.AuthHash)
+	res, err := tx.Exec(`UPDATE users SET kdf=?, auth_hash=?, wrapped_master_pw=? WHERE id=? AND auth_hash=? AND status='active'`, req.NewKDF.json(), ah, req.NewWrappedMasterPW, u.ID, u.AuthHash)
 	if err != nil {
 		fail(w, 500, "server error")
 		return
@@ -422,6 +423,12 @@ func (a *App) recoverFinish(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
+	// a malformed request is refused before the ticket is used up, so it does not cost the person their recovery
+	if req.NewKDF.validate() != nil || checkLen(req.NewAuth, 32) != nil || checkLen(req.NewRecoveryVerifier, 32) != nil ||
+		checkLen(req.NewWrappedMasterPW, wrappedLen) != nil || checkLen(req.NewWrappedMasterRec, wrappedLen) != nil {
+		fail(w, 400, "invalid request")
+		return
+	}
 	key := sha256hex(req.Ticket)
 	v, ok := a.tickets.LoadAndDelete(key) // single use
 	t, _ := v.(ticket)
@@ -431,11 +438,6 @@ func (a *App) recoverFinish(w http.ResponseWriter, r *http.Request) {
 	}
 	if u, err := a.userByID(t.userID); err != nil || u.Status != "active" {
 		fail(w, 403, "recovery session expired, start again")
-		return
-	}
-	if req.NewKDF.validate() != nil || checkLen(req.NewAuth, 32) != nil || checkLen(req.NewRecoveryVerifier, 32) != nil ||
-		checkLen(req.NewWrappedMasterPW, wrappedLen) != nil || checkLen(req.NewWrappedMasterRec, wrappedLen) != nil {
-		fail(w, 400, "invalid request")
 		return
 	}
 	ah, e1 := hashSecret(req.NewAuth)

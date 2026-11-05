@@ -13,6 +13,7 @@ type limiter struct {
 	max    int
 	m      map[string]*entry
 	now    func() time.Time
+	swept  time.Time // last sweep of expired entries
 }
 
 type entry struct {
@@ -38,19 +39,27 @@ func (l *limiter) fail(key string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	t := l.now()
-	if len(l.m) > 10000 {
-		for k, e := range l.m {
-			if t.After(e.reset) {
-				delete(l.m, k)
-			}
-		}
-	}
+	l.sweep(t)
 	e := l.m[key]
 	if e == nil || t.After(e.reset) {
 		e = &entry{reset: t.Add(l.window)}
 		l.m[key] = e
 	}
 	e.count++
+}
+
+// sweep drops expired entries once the map is large, at most once a minute: a sweep walks the whole map under the
+// lock, and doing that on every call would make each request as slow as the number of sources seen.
+func (l *limiter) sweep(t time.Time) {
+	if len(l.m) <= 10000 || t.Sub(l.swept) < time.Minute {
+		return
+	}
+	l.swept = t
+	for k, e := range l.m {
+		if t.After(e.reset) {
+			delete(l.m, k)
+		}
+	}
 }
 
 func (l *limiter) clear(key string) {
@@ -65,13 +74,7 @@ func (l *limiter) take(key string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	t := l.now()
-	if len(l.m) > 10000 {
-		for k, e := range l.m {
-			if t.After(e.reset) {
-				delete(l.m, k)
-			}
-		}
-	}
+	l.sweep(t)
 	e := l.m[key]
 	if e == nil || t.After(e.reset) {
 		e = &entry{reset: t.Add(l.window)}

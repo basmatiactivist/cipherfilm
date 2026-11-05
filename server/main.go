@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -27,12 +28,14 @@ const cspHeic = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval' 'unsaf
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		if strings.HasPrefix(r.URL.Path, "/heic/") {
+		// by the path the file server will serve (an escaped "/heic/..%2fsw.js" is not a HEIC worker file)
+		if strings.HasPrefix(path.Clean("/"+r.URL.Path), "/heic/") {
 			h.Set("Content-Security-Policy", cspHeic)
 		} else {
 			h.Set("Content-Security-Policy", csp)
 		}
 		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY") // frame-ancestors 'none' for browsers that predate it
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("Cross-Origin-Opener-Policy", "same-origin")
 		h.Set("Cross-Origin-Resource-Policy", "same-origin")

@@ -11,7 +11,7 @@ const maxAlbumBatch = 500
 const maxAlbumEntries = 200000
 
 func (a *App) albumRoutes(m *http.ServeMux) {
-	m.HandleFunc("GET /api/albums", a.auth(false, a.listAlbums))
+	m.HandleFunc("GET /api/albums", a.auth(false, a.listing(a.listAlbums)))
 	m.HandleFunc("POST /api/albums", a.auth(false, a.createAlbum))
 	m.HandleFunc("PATCH /api/albums/{id}", a.auth(false, a.renameAlbum))
 	m.HandleFunc("DELETE /api/albums/{id}", a.auth(false, a.deleteAlbum))

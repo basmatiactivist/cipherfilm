@@ -16,12 +16,16 @@ think the impact is. Expect an answer within a few days; this is a small project
 
 ## Audit status
 
-The code was reviewed in three rounds by AI agents working from the source (reconnaissance, hunting, independent verification).
+The code was reviewed in four rounds by AI agents working from the source (reconnaissance, hunting, independent verification).
 Every confirmed finding was fixed and covered by a regression test. In total: round 1 found 8 records (5 low, 1 medium,
 2 needing deployment validation), round 2 found 3 (a medium and a low, plus one that depends on the deployment), round 3 found 4 (all low or informational:
 a last-administrator race, a selection bug that could trash hidden photos, concurrent invite acceptance, a stale README claim).
 This is **not** an independent human audit and not a guarantee that no issues remain. Scope of round 3 was the code
-added since round 2; the Tailscale and Caddy overlays were never exercised on a real server.
+added since round 2. Round 4 covered the whole repository again and found 8 records (1 medium, 6 low, 1 informational: quota
+accounting of the search index, two account or server mix-ups in the Android app, the activity log, recovery behind a shared address,
+sign-outs lost by a restore, paths in the decrypt tool, a stale rate-limit claim), plus 23 whose impact depends on the
+deployment or a platform fact; the server-side ones of those were hardened too. The Tailscale and Caddy overlays were never
+exercised on a real server.
 
 ## Supported versions
 

@@ -237,8 +237,12 @@ func cliRole(role string) func(*App, io.Writer, []string) error {
 		if role == "user" {
 			q = a.defaultQuota()
 		}
-		if _, err := a.db.Exec(`UPDATE users SET role=?, quota_bytes=? WHERE id=?`, role, q, u.ID); err != nil {
+		res, err := a.db.Exec(`UPDATE users SET role=?, quota_bytes=? WHERE id=? AND (?='admin' OR `+keepsAdmin+`)`, role, q, u.ID, role)
+		if err != nil {
 			return err
+		}
+		if rowsAffected(res, nil) != 1 {
+			return errors.New("this is the only active administrator: make someone else an administrator first")
 		}
 		a.audit(consoleActor, "role changed", u.Email, role)
 		fmt.Fprintf(out, "%s is now %s\n", u.Email, map[string]string{"admin": "an administrator", "user": "an ordinary user"}[role])
@@ -255,8 +259,12 @@ func cliStatusTo(status string) func(*App, io.Writer, []string) error {
 		if status == "disabled" && lastAdmin(a, u) {
 			return errors.New("this is the only active administrator: make someone else an administrator first")
 		}
-		if _, err := a.db.Exec(`UPDATE users SET status=? WHERE id=?`, status, u.ID); err != nil {
+		res, err := a.db.Exec(`UPDATE users SET status=? WHERE id=? AND (?='active' OR `+keepsAdmin+`)`, status, u.ID, status)
+		if err != nil {
 			return err
+		}
+		if rowsAffected(res, nil) != 1 {
+			return errors.New("this is the only active administrator: make someone else an administrator first")
 		}
 		if status == "disabled" {
 			a.db.Exec(`DELETE FROM sessions WHERE user_id=?`, u.ID)
@@ -284,9 +292,9 @@ func cliDeleteUser(a *App, out io.Writer, args []string) error {
 		return fmt.Errorf("this deletes %s and its %d photos and videos for good, and nobody can bring them back.\nRun it again with --yes to do it", u.Email, n)
 	}
 	ids := a.itemIDs(u.ID)
-	res, err := a.db.Exec(`DELETE FROM users WHERE id=?`, u.ID)
+	res, err := a.db.Exec(`DELETE FROM users WHERE id=? AND `+keepsAdmin, u.ID)
 	if rowsAffected(res, err) != 1 {
-		return errors.New("the account could not be deleted")
+		return errors.New("the account could not be deleted (it may be the only active administrator)")
 	}
 	for _, id := range ids {
 		a.removeBlobs(id)
@@ -374,7 +382,7 @@ func cliSignOut(a *App, out io.Writer, args []string) error {
 		return err
 	}
 	if hasFlag(args, "--wipe") { // the devices are told so and delete what they keep (sessions.go)
-		a.remember(`SELECT id_hash FROM sessions WHERE user_id=?`, u.ID)
+		a.remember(`user_id=?`, u.ID)
 	}
 	res, err := a.db.Exec(`DELETE FROM sessions WHERE user_id=?`, u.ID)
 	if err != nil {

@@ -97,6 +97,10 @@ type patchReq struct {
 // adminGuard serialises administrative changes to accounts and re-checks, under the lock, that the caller is still an
 // active administrator and that the change would not remove the last one. Without it, two admins who act on each other
 // at the same moment both pass the per-request role check and can leave the server with no administrator.
+// keepsAdmin holds for a row whose change or removal still leaves an active administrator. In the UPDATE or DELETE
+// itself it makes the rule atomic, also when the console and the web change accounts at the same moment.
+const keepsAdmin = `(role<>'admin' OR status<>'active' OR EXISTS (SELECT 1 FROM users o WHERE o.role='admin' AND o.status='active' AND o.id<>users.id))`
+
 func (a *App) adminGuard(w http.ResponseWriter, caller *user, target *user, removesAdmin bool) bool {
 	cur, err := a.userByID(caller.ID)
 	if err != nil || cur.Role != "admin" || cur.Status != "active" {
@@ -145,7 +149,11 @@ func (a *App) adminPatchUser(w http.ResponseWriter, r *http.Request, u *user, s 
 		a.audit(u.Email, map[bool]string{true: "explicit search allowed", false: "explicit search turned off"}[*req.NSFW], target.Email, "")
 	}
 	if req.Status != nil {
-		a.db.Exec(`UPDATE users SET status=? WHERE id=?`, *req.Status, id)
+		res, err := a.db.Exec(`UPDATE users SET status=? WHERE id=? AND (?='active' OR `+keepsAdmin+`)`, *req.Status, id, *req.Status)
+		if rowsAffected(res, err) != 1 {
+			fail(w, http.StatusConflict, "at least one active administrator must remain")
+			return
+		}
 		a.audit(u.Email, map[string]string{"active": "enabled", "disabled": "disabled"}[*req.Status], target.Email, "")
 		if *req.Status == "disabled" {
 			a.db.Exec(`DELETE FROM sessions WHERE user_id=?`, id)
@@ -165,7 +173,11 @@ func (a *App) adminPatchUser(w http.ResponseWriter, r *http.Request, u *user, s 
 		if req.QuotaBytes != nil {
 			q = *req.QuotaBytes // an explicit limit in the same request wins
 		}
-		a.db.Exec(`UPDATE users SET role=?, quota_bytes=? WHERE id=?`, *req.Role, q, id)
+		res, err := a.db.Exec(`UPDATE users SET role=?, quota_bytes=? WHERE id=? AND (?='admin' OR `+keepsAdmin+`)`, *req.Role, q, id, *req.Role)
+		if rowsAffected(res, err) != 1 {
+			fail(w, http.StatusConflict, "at least one active administrator must remain")
+			return
+		}
 		a.audit(u.Email, "role changed", target.Email, *req.Role)
 	}
 	writeJSON(w, 200, map[string]bool{"ok": true})
@@ -188,9 +200,9 @@ func (a *App) adminDeleteUser(w http.ResponseWriter, r *http.Request, u *user, s
 		return
 	}
 	ids := a.itemIDs(id)
-	res, err := a.db.Exec(`DELETE FROM users WHERE id=?`, id)
+	res, err := a.db.Exec(`DELETE FROM users WHERE id=? AND `+keepsAdmin, id)
 	if rowsAffected(res, err) != 1 {
-		fail(w, 404, "not found")
+		fail(w, http.StatusConflict, "at least one active administrator must remain")
 		return
 	}
 	for _, it := range ids {

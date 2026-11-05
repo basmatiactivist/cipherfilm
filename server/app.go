@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -154,11 +155,17 @@ func (a *App) fromProxy(remoteAddr string) bool {
 	return false
 }
 
+// loadSecret reads the HMAC secret, or makes one when there is none. A file that exists but cannot be read is an
+// error, not a reason to replace it: a new secret signs out every known browser and changes the fake salts.
 func loadSecret(path string) ([]byte, error) {
-	if b, err := os.ReadFile(path); err == nil && len(b) == 32 {
+	b, err := os.ReadFile(path)
+	if err == nil && len(b) == 32 {
 		return b, nil
 	}
-	b := randBytes(32)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	b = randBytes(32)
 	return b, os.WriteFile(path, b, 0o600)
 }
 
@@ -187,8 +194,9 @@ func (a *App) clientIP(r *http.Request) string {
 		// a proxy may add its own header line instead of extending the client's: the last line, last entry is the proxy's
 		if vals := r.Header.Values("X-Forwarded-For"); len(vals) > 0 {
 			parts := strings.Split(vals[len(vals)-1], ",")
-			if last := strings.TrimSpace(parts[len(parts)-1]); last != "" {
-				return last
+			// only an address counts: anything else would let the sender invent new limiter keys
+			if last, err := netip.ParseAddr(strings.TrimSpace(parts[len(parts)-1])); err == nil {
+				return last.String()
 			}
 		}
 	}
@@ -331,6 +339,10 @@ func (a *App) startSession(w http.ResponseWriter, r *http.Request, userID, authH
 	}
 	if rowsAffected(res, nil) != 1 {
 		return nil, errCredentialsChanged
+	}
+	// the browser's previous session, if it had one, is replaced by this one: end it rather than leave it valid
+	if c, err := r.Cookie(cookieName); err == nil {
+		a.db.Exec(`DELETE FROM sessions WHERE id_hash=?`, sha256hex(c.Value))
 	}
 	setSessionCookie(w, tok)
 	a.db.Exec(`UPDATE users SET last_login_at=? WHERE id=?`, now.Unix(), userID)

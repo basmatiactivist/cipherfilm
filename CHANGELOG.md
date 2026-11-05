@@ -5,9 +5,37 @@ All notable changes to Cipherfilm are listed here. The format follows
 [Semantic Versioning](https://semver.org/). The release workflow copies the section of the tagged
 version into the GitHub release notes, so a release cannot be published without an entry here.
 
-## [Unreleased]
+## [2.1.0] - 2026-11-06
+
+A security release: a fourth full source audit (whole repository, with servers exposed to the public internet as the
+threat model) and every finding fixed, plus what Google Play needs. **Operators:** behind your own reverse proxy
+(`compose.proxy.yaml`, `compose.caddy.yaml`) `PUBLIC_HOSTS` is now required, and `X-Forwarded-For` is only trusted
+from `TRUSTED_PROXIES` (default: loopback and private addresses). The Caddy of the own-domain setup runs as a normal
+user now; it fixes its volume's owner on start.
+
+### Security
+- Search models are only downloaded by signed-in people.
+- Storage limits also count the search index and the people list; tiny files are charged the disk blocks they take;
+  list pages are capped in size and per account.
+- Sign-in: a bounded queue for password checks, recovery limited per account for known browsers, `X-Forwarded-For`
+  only from a trusted proxy, setup closed once an account exists, signing in again ends the previous session.
+- The admin activity log can no longer be flushed by users' own sign-outs; a restore keeps device sign-outs made after
+  the snapshot.
+- Android: a running backup stops when the account or server changes, background jobs never move the app's server,
+  shared files are confirmed before upload, deletion only for the phone's own photos, size checks in native code.
+- Mac: hardened runtime, upload queue bound to its account, validated ids, names, sizes and segment counts, bounded
+  downloads and image decoding, locks when the Mac sleeps or the screen locks.
+- Web: upload queue bound to its account, origin checks for workers and the service worker, stricter metadata checks.
+- Tools: the decrypt tool keeps every file inside `--out` and checks ids; the uploader refuses odd server answers.
+- Releases: no build caches, only tags on `master`, signing keys in a protected environment, provenance attestations
+  for every file, Caddy and base images pinned.
 
 ### Added
+- The installed version of the app and of the server is shown (Account in the web app and on Android, Settings on the
+  Mac).
+- Android: search is ready seconds after unlocking, from an encrypted copy of the index on the phone (bound to the
+  account, deleted at sign-out).
+- Install and update the Android app with [Obtainium](https://obtainium.imranr.dev/) (docs/INSTALL.md).
 - **Delete your own account:** Account › Delete account in the web app, the Android app and the Mac app (Settings ›
   General). After the password it deletes the account with all its photos, videos, albums, people and search data
   from the server, signs out every device, and each device deletes what it keeps. The only active administrator
@@ -18,6 +46,13 @@ version into the GitHub release notes, so a release cannot be published without 
 - Releases also attach `cipherfilm-play-X.Y.Z.aab`, the bundle for Google Play (signed with the upload key; the app
   is signed by the same key as the APK), and every Android build is checked for 16 KB memory pages.
   `make play-aab VERSION=X.Y.Z` builds the bundle locally.
+
+### Fixed
+- Android: "Also the ones already on the phone" applies to every chosen folder, so older photos are backed up; the
+  Backup screen counts older photos that aren't in Cipherfilm instead of saying everything is backed up. A file the
+  backup keeps failing on no longer blocks the ones after it.
+- Android: one upload notification that updates (file, n of m, progress) and one summary at the end.
+- Android: sign-in works again with the app built since 2.0.1.
 
 ### Changed
 - Android 7 to 12: the app can read the photo library again (`READ_EXTERNAL_STORAGE`, only up to Android 12), so

@@ -54,7 +54,7 @@ jobs:
           v="${VERSION#v}"
           xcodebuild -project Cipherfilm.xcodeproj -scheme CipherfilmApp -configuration Release \
             -destination 'platform=macOS,arch=arm64' -derivedDataPath build/dd \
-            CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
             MARKETING_VERSION="${v%%-*}" CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" build
           APP="build/dd/Build/Products/Release/Cipherfilm.app"
           test -x "$APP/Contents/MacOS/Cipherfilm"

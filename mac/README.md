@@ -40,14 +40,17 @@ Tests: `./scripts/test.sh` (set `CF_MODELS=<folder with the five model files>` f
 
 ## Testing against the throwaway server
 
-Never the real server or library. Start `mobile/dev/compose.yaml` and create the test account (`mobile/dev/account.mts`),
-then:
+Never the real server or library. Start `mobile/dev/compose.yaml` and create the test account with a password of your
+own (`mobile/dev/account.mts` makes up a random one when `CF_TEST_PASSWORD` isn't set; then use the one it prints):
 
 ```bash
+export CF_TEST_PASSWORD="$(openssl rand -base64 18)"   # the same shell for the account and the tests below
 docker compose -f mobile/dev/compose.yaml exec -T proxy cat /data/caddy/pki/authorities/local/root.crt > /tmp/cftest-ca.pem
+(cd web && CF_CA=/tmp/cftest-ca.pem CF_SETUP_TOKEN=<token from: docker compose -f ../mobile/dev/compose.yaml logs app> \
+  CF_TEST_PASSWORD="$CF_TEST_PASSWORD" npx tsx ../mobile/dev/account.mts)
 cd mac && ./scripts/bundle.sh debug   # builds "Cipherfilm Dev", separate from a release build
 CF_AUTOTEST=1 CF_TEST_CA=/tmp/cftest-ca.pem CF_TEST_SERVER=https://localhost:8443 \
-  CF_TEST_EMAIL=tester@example.org CF_TEST_PASSWORD=test-password-123 \
+  CF_TEST_EMAIL=tester@example.org CF_TEST_PASSWORD="$CF_TEST_PASSWORD" \
   CF_TEST_DIR=<scratch folder with an upload/ subfolder of test files> CF_SNAPSHOTS=<folder> \
   "build/Cipherfilm Dev.app/Contents/MacOS/Cipherfilm"
 ```
@@ -70,6 +73,6 @@ CF_MODELS=<models> CF_LAION_REF=/tmp/laion-ref.json ./scripts/test.sh --filter L
 Android parity of the search vectors:
 
 ```bash
-CF_TEST_SERVER=https://localhost:8443 CF_TEST_CA=/tmp/cftest-ca.pem CF_TEST_PASSWORD=test-password-123 \
+CF_TEST_SERVER=https://localhost:8443 CF_TEST_CA=/tmp/cftest-ca.pem CF_TEST_PASSWORD="$CF_TEST_PASSWORD" \
   CF_MODELS=<models> ./scripts/test.sh --filter AndroidParity
 ```

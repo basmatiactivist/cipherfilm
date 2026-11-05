@@ -285,3 +285,30 @@ export async function signOut() {
   setCsrf("");
   set({ phase: "signedOut", me: null, masterKey: null, biometric: false, notice: undefined });
 }
+
+/** Deletes the account and everything in it from the server, for good (Account › Delete account), after checking the
+ *  password here first. Then the phone forgets everything, as at sign-out. The server refuses for its only admin. */
+export async function deleteAccount(password: string) {
+  const s = await getSodium();
+  const me = state.me;
+  if (!me) throw new Error("Sign in first.");
+  assertSaneKdf(me.kdf);
+  const { auth, kek } = await loginProof(s, password, me.kdf);
+  try {
+    s.memzero(unlockMasterKey(s, me.user.email, kek, me.wrapped_master_pw));
+  } catch {
+    throw new Error("That password isn't right.");
+  } finally {
+    s.memzero(kek);
+  }
+  await api("DELETE", "/api/me", { current_auth: auth });
+  await SecureStore.deleteItemAsync(keyName(me.user.id));
+  await SecureStore.deleteItemAsync(bioName(me.user.id));
+  await SecureStore.deleteItemAsync(bioNoName(me.user.id));
+  wipe("ended");
+  await forgetAccount();
+  handedOver();
+  if (state.masterKey) state.masterKey.fill(0);
+  setCsrf("");
+  set({ phase: "signedOut", me: null, masterKey: null, biometric: false, notice: "Your account and everything in it were deleted from the server." });
+}

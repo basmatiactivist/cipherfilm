@@ -11,9 +11,10 @@ import { session } from "../session";
 import { Icon, type IconName } from "../icons";
 import { Problem, SwitchItem, useAppTheme } from "../ui";
 import { radius, text } from "../tokens";
+import { useMediaDisclosure } from "../disclosure";
+import { isPlayBuild } from "../store";
 
 type MediaFolder = Awaited<ReturnType<typeof N.mediaFolders>>[number];
-const P = PermissionsAndroid.PERMISSIONS;
 const fmtTime = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 
 const DEFAULTS = { wifiOnly: true, chargingOnly: false, includeExisting: false };
@@ -32,6 +33,7 @@ export default function Backup() {
   const [older, setOlder] = useState(0); // from before the backup's start in these folders, and not in the library
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const disclosure = useMediaDisclosure();
 
   const refresh = useCallback(async () => {
     const st = N.backupState();
@@ -74,15 +76,15 @@ export default function Backup() {
     if (c.enabled && p.includeExisting && !cur.includeExisting) runBackup("app").catch(() => {});
   };
 
+  // the disclosure first, then Android's prompt (on Android 14, with "only some" again: it lets the person change which)
   const askMedia = async () => {
-    const want = [P.READ_MEDIA_IMAGES, P.READ_MEDIA_VIDEO, P.ACCESS_MEDIA_LOCATION];
-    if (device.sdk >= 34) want.push("android.permission.READ_MEDIA_VISUAL_USER_SELECTED" as never);
-    const r = await PermissionsAndroid.requestMultiple(want);
-    if (Object.values(r).includes(PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN)) N.openAppSettings();
+    await disclosure.ask("backup");
     await refresh();
   };
   const askNotifications = async () => {
-    const r = await PermissionsAndroid.request(P.POST_NOTIFICATIONS);
+    // before Android 13 there is no prompt: notifications are switched off in the app settings
+    if (device.sdk < 33) { N.openAppSettings(); return; }
+    const r = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
     if (r === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) N.openAppSettings();
     await refresh();
   };
@@ -91,7 +93,6 @@ export default function Backup() {
     setError(undefined); setBusy(true);
     try {
       if (on) { await disableBackup(); return; }
-      if (device.sdk < 33) throw new Error("Automatic backup needs Android 13 or newer. You can still share photos to Cipherfilm.");
       if (device.media === "none") { await askMedia(); if (N.backupState().media === "none") throw new Error("Allow access to photos and videos first."); }
       const { me, masterKey } = session();
       if (!me || !masterKey) throw new Error("Unlock your library first.");
@@ -158,17 +159,23 @@ export default function Backup() {
           ) : null}
         </View>
         <View style={{ paddingHorizontal: 16 }}><Problem>{error}</Problem></View>
+        {disclosure.dialog}
 
         <List.Subheader>Android settings</List.Subheader>
         <Check ok={device.media === "full"} warn={device.media === "partial"} icon="photos" title="Access to photos and videos"
-          text={device.media === "full" ? "Allowed" : device.media === "partial" ? "Only some photos are allowed. Choose \"Allow all\" so new photos are found." : "Needed to find new photos"}
-          action={device.media === "full" ? undefined : ["Allow", device.media === "partial" ? N.openAppSettings : askMedia]} />
-        <Check ok={device.location} icon="info" title="Where photos were taken"
+          text={device.media === "full" ? "Allowed" : device.media === "partial" ? "Only the photos you chose are backed up, and new photos aren't found. Choose \"Allow all\" for automatic backup." : "Needed to find new photos"}
+          action={device.media === "full" ? undefined : [device.media === "partial" ? "Change" : "Allow", askMedia]} />
+        {device.sdk >= 29 ? <Check ok={device.location} icon="info" title="Where photos were taken"
           text={device.location ? "Kept in the backup (encrypted)" : "Without this, Android removes the location from photos before the app sees them"}
-          action={device.location ? undefined : ["Allow", askMedia]} />
+          action={device.location ? undefined : ["Allow", askMedia]} /> : null}
         <Check ok={device.batteryExempt} icon="lock" title="Run in the background"
           text={device.batteryExempt ? "Android lets the backup run when the app is closed" : "Battery optimisation pauses the backup when the app is closed"}
           action={device.batteryExempt ? undefined : ["Allow", () => N.askBatteryExemption()]} />
+        {!device.batteryExempt && isPlayBuild() ? (
+          <Text variant="bodySmall" style={[st.hint, { color: t.colors.onSurfaceVariant }]}>
+            "Allow" opens Android's battery optimisation list: choose "All apps", then Cipherfilm, then "Don't optimise".
+          </Text>
+        ) : null}
         <Check ok={device.notifications} icon="upload" title="Notifications"
           text={device.notifications ? "You see the progress while it backs up" : "Shows the progress, and tells you if you need to sign in again"}
           action={device.notifications ? undefined : ["Allow", askNotifications]} />

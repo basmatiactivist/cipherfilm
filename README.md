@@ -230,6 +230,17 @@ No 2FA. No sharing between users. No server-side thumbnails or transcoding (the 
 The server learns who has accounts, how many items they have, their sizes and when they were uploaded.
 Large downloads were tested only at small sizes. This code has not had an independent security review.
 
+## Deleting your account
+
+Everyone can delete their own account: **Account › Delete account** in the web app, the Android app and the Mac app
+(Settings › General). It asks for the password, then deletes the account with all its photos, videos, albums, people
+and search data from the server at once (`DELETE /api/me` with the current sign-in proof, as for a password change),
+signs out every device, and each device deletes what it keeps. The only active administrator has to make someone
+else an administrator first. Copies of the whole server an administrator made (`scripts/backup.sh`, Kopia) follow
+their own retention. An administrator can also delete an account (Admin › Users, or `delete-user EMAIL --yes`,
+[docs/SERVER-COMMANDS.md](docs/SERVER-COMMANDS.md)). The Cipherfilm developer holds no account data: accounts exist
+only on the server your administrator runs.
+
 ## Admin area
 
 **Admin** (visible to administrators only) shows who is on the server and how much they use, last sign-in per person, open invites (revocable), a default storage limit for new people, per-person limits, role changes (make someone an administrator or a regular user), server status (disk, data size, signed-in devices, last backup) and a log of recent admin actions. None of it exposes photos, album names or file names.

@@ -33,7 +33,7 @@ vi.mock("expo-background-task", () => ({ registerTaskAsync: async () => {}, unre
 vi.mock("expo-task-manager", () => ({ defineTask: () => {} }));
 vi.mock("react-native", () => ({ Platform: { constants: { Model: "Test" } }, AppState: { currentState: "active" } }));
 vi.mock("./keepAlive", () => ({ keepRunning: () => false, letGo: () => {}, onlyHolder: () => false }));
-vi.mock("./search/background", () => ({ indexUploaded: async () => {}, runBackgroundIndex: async () => 0 }));
+vi.mock("./search/background", () => ({ indexUploaded: async () => {}, rememberUploaded: async () => {}, runBackgroundIndex: async () => 0 }));
 vi.mock("./search/settings", () => ({ loadSettings: async () => ({ enabled: false, background: false }), forgetSettings: () => {} }));
 // sign-in without Argon2: the proof and the master key are fixed stand-ins
 vi.mock("@crypto/account", () => ({

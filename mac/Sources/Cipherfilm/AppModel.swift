@@ -260,6 +260,22 @@ final class AppModel {
     phase = .signedOut
   }
 
+  /** Account › Delete Account: the server deletes the account and everything in it; then this Mac forgets it all, as at
+   *  sign-out (the exported copies stay: they are the person's files now). */
+  func deleteAccount(password: String) async throws {
+    guard let me, let api else { return }
+    try await Account.delete(api: api, me: me, password: password)
+    watcher.stop(forget: true)
+    wipe(ended: true)
+    api.clearCookies()
+    forget(account: me.user.id)
+    self.me = nil
+    settings = AccountSettings()
+    api.csrf = ""
+    phase = .signedOut
+    notice = "Your account and everything in it were deleted from the server."
+  }
+
   /** Everything derived from the master key goes; "ended" also drops the encrypted cache's owner state. */
   private func wipe(ended: Bool) {
     refreshTimer?.invalidate(); refreshTimer = nil

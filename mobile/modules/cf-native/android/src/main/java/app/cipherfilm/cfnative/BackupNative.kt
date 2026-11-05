@@ -31,12 +31,17 @@ internal object BackupNative {
 
   private fun granted(ctx: Context, p: String) = ContextCompat.checkSelfPermission(ctx, p) == PackageManager.PERMISSION_GRANTED
 
-  /** "full", "partial" (Android 14's "selected photos only") or "none". */
+  /** "full", "partial" (Android 14's "selected photos only") or "none". Up to Android 12 the storage permission
+   *  (declared with maxSdkVersion 32) opens the whole library. */
   fun mediaAccess(ctx: Context): String = when {
-    Build.VERSION.SDK_INT >= 33 && granted(ctx, Manifest.permission.READ_MEDIA_IMAGES) && granted(ctx, Manifest.permission.READ_MEDIA_VIDEO) -> "full"
+    Build.VERSION.SDK_INT < 33 -> if (granted(ctx, Manifest.permission.READ_EXTERNAL_STORAGE)) "full" else "none"
+    granted(ctx, Manifest.permission.READ_MEDIA_IMAGES) && granted(ctx, Manifest.permission.READ_MEDIA_VIDEO) -> "full"
     Build.VERSION.SDK_INT >= 34 && granted(ctx, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) -> "partial"
     else -> "none"
   }
+
+  /** Whether what the app reads keeps the photos' location: before Android 10 always, after only with ACCESS_MEDIA_LOCATION. */
+  private fun location(ctx: Context) = Build.VERSION.SDK_INT < 29 || granted(ctx, Manifest.permission.ACCESS_MEDIA_LOCATION)
 
   fun state(ctx: Context): Map<String, Any> {
     val cm = ctx.getSystemService(ConnectivityManager::class.java)
@@ -53,7 +58,7 @@ internal object BackupNative {
       "batteryExempt" to (pm?.isIgnoringBatteryOptimizations(ctx.packageName) == true),
       "powerSave" to (pm?.isPowerSaveMode == true),
       "media" to mediaAccess(ctx),
-      "location" to granted(ctx, Manifest.permission.ACCESS_MEDIA_LOCATION),
+      "location" to location(ctx),
       "notifications" to NotificationManagerCompat.from(ctx).areNotificationsEnabled(),
       "sdk" to Build.VERSION.SDK_INT,
     )
@@ -67,16 +72,28 @@ internal object BackupNative {
   }
 
   private val FILES get() = MediaStore.Files.getContentUri("external")
-  private const val VISUAL = "${MediaStore.Files.FileColumns.MEDIA_TYPE} IN (${MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE}, ${MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO}) AND ${MediaStore.MediaColumns.IS_PENDING} = 0"
+  // photos and videos, without files still being written (IS_PENDING exists from Android 10)
+  private val VISUAL = "${MediaStore.Files.FileColumns.MEDIA_TYPE} IN (${MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE}, ${MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO})" +
+    if (Build.VERSION.SDK_INT >= 29) " AND ${MediaStore.MediaColumns.IS_PENDING} = 0" else ""
+
+  /** The folder below the storage's root ("DCIM/Camera/"): RELATIVE_PATH from Android 10, from the file's path before. */
+  @Suppress("DEPRECATION")
+  private val PATH_COLUMN = if (Build.VERSION.SDK_INT >= 29) MediaStore.MediaColumns.RELATIVE_PATH else MediaStore.MediaColumns.DATA
+  private fun relativePath(v: String?): String {
+    if (v == null || Build.VERSION.SDK_INT >= 29) return v ?: ""
+    val root = android.os.Environment.getExternalStorageDirectory().absolutePath.trimEnd('/') + "/"
+    val dir = v.substringBeforeLast('/', "") + "/"
+    return if (dir.startsWith(root)) dir.removePrefix(root) else ""
+  }
 
   /** Every folder on the phone that holds photos or videos (Camera, Screenshots, WhatsApp Images, ...), largest first. */
   fun folders(ctx: Context): List<Map<String, Any?>> {
-    val cols = arrayOf(MediaStore.MediaColumns.BUCKET_ID, MediaStore.MediaColumns.BUCKET_DISPLAY_NAME, MediaStore.MediaColumns.RELATIVE_PATH, MediaStore.Files.FileColumns._ID)
+    val cols = arrayOf(MediaStore.MediaColumns.BUCKET_ID, MediaStore.MediaColumns.BUCKET_DISPLAY_NAME, PATH_COLUMN, MediaStore.Files.FileColumns._ID)
     val byId = LinkedHashMap<String, MutableMap<String, Any?>>()
     ctx.contentResolver.query(FILES, cols, VISUAL, null, null)?.use { c ->
       while (c.moveToNext()) {
         val bucket = c.getString(0) ?: continue
-        val f = byId.getOrPut(bucket) { mutableMapOf("id" to bucket, "name" to (c.getString(1) ?: "Unnamed"), "path" to (c.getString(2) ?: ""), "count" to 0, "newest" to 0.0) }
+        val f = byId.getOrPut(bucket) { mutableMapOf("id" to bucket, "name" to (c.getString(1) ?: "Unnamed"), "path" to relativePath(c.getString(2)), "count" to 0, "newest" to 0.0) }
         f["count"] = (f["count"] as Int) + 1
         f["newest"] = maxOf(f["newest"] as Double, c.getLong(3).toDouble())
       }
@@ -94,15 +111,23 @@ internal object BackupNative {
       MediaStore.Files.FileColumns._ID, MediaStore.Files.FileColumns.MEDIA_TYPE, MediaStore.MediaColumns.DISPLAY_NAME,
       MediaStore.MediaColumns.SIZE, MediaStore.MediaColumns.MIME_TYPE,
     )
-    val q = android.os.Bundle().apply {
-      putString(android.content.ContentResolver.QUERY_ARG_SQL_SELECTION, "$VISUAL AND ${MediaStore.MediaColumns.BUCKET_ID} = ? AND ${MediaStore.Files.FileColumns._ID} > ?")
-      putStringArray(android.content.ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, arrayOf(bucket, afterId.toString()))
-      putString(android.content.ContentResolver.QUERY_ARG_SQL_SORT_ORDER, "${MediaStore.Files.FileColumns._ID} ASC")
-      putInt(android.content.ContentResolver.QUERY_ARG_LIMIT, limit)
-    }
-    val original = granted(ctx, Manifest.permission.ACCESS_MEDIA_LOCATION)
+    val where = "$VISUAL AND ${MediaStore.MediaColumns.BUCKET_ID} = ? AND ${MediaStore.Files.FileColumns._ID} > ?"
+    val args = arrayOf(bucket, afterId.toString())
+    val order = "${MediaStore.Files.FileColumns._ID} ASC"
+    // a limit: query arguments from Android 11, "LIMIT" after the sort order before (which Android 11 refuses)
+    val cursor = if (Build.VERSION.SDK_INT >= 30) {
+      val q = android.os.Bundle().apply {
+        putString(android.content.ContentResolver.QUERY_ARG_SQL_SELECTION, where)
+        putStringArray(android.content.ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, args)
+        putString(android.content.ContentResolver.QUERY_ARG_SQL_SORT_ORDER, order)
+        putInt(android.content.ContentResolver.QUERY_ARG_LIMIT, limit)
+      }
+      ctx.contentResolver.query(FILES, cols, q, null)
+    } else ctx.contentResolver.query(FILES, cols, where, args, "$order LIMIT $limit")
+    // the original file (GPS included) needs ACCESS_MEDIA_LOCATION from Android 10; before, every file is original
+    val original = Build.VERSION.SDK_INT >= 29 && granted(ctx, Manifest.permission.ACCESS_MEDIA_LOCATION)
     val out = mutableListOf<Map<String, Any?>>()
-    ctx.contentResolver.query(FILES, cols, q, null)?.use { c ->
+    cursor?.use { c ->
       while (c.moveToNext()) {
         val id = c.getLong(0)
         val video = c.getInt(1) == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO
@@ -139,12 +164,21 @@ internal object BackupNative {
   fun countAfter(ctx: Context, bucket: String, afterId: Long): Int =
     ctx.contentResolver.query(FILES, arrayOf(MediaStore.Files.FileColumns._ID), "$VISUAL AND ${MediaStore.MediaColumns.BUCKET_ID} = ? AND ${MediaStore.Files.FileColumns._ID} > ?", arrayOf(bucket, afterId.toString()), null)?.use { it.count } ?: 0
 
-  /** The system's own "Allow to run in the background?" dialog for this app. */
+  /** Whether this build declares REQUEST_IGNORE_BATTERY_OPTIMIZATIONS: the GitHub build does, the Play build doesn't
+   *  (CF_STORE=play, app.config.js), because Play allows that direct request only for a few kinds of apps. */
+  private fun mayAskDirectly(ctx: Context): Boolean = runCatching {
+    @Suppress("DEPRECATION")
+    val info = ctx.packageManager.getPackageInfo(ctx.packageName, PackageManager.GET_PERMISSIONS)
+    info.requestedPermissions?.contains(Manifest.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS) == true
+  }.getOrDefault(false)
+
+  /** The system's own "Allow to run in the background?" dialog for this app where the build may ask for it; otherwise
+   *  (and if that fails) Android's list of battery optimisations, where the person picks Cipherfilm themselves. */
   fun askBatteryExemption(ctx: Context) {
+    val list = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    if (!mayAskDirectly(ctx)) { runCatching { ctx.startActivity(list) }.onFailure { openAppSettings(ctx) }; return }
     val i = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${ctx.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    runCatching { ctx.startActivity(i) }.onFailure {
-      ctx.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-    }
+    runCatching { ctx.startActivity(i) }.onFailure { runCatching { ctx.startActivity(list) }.onFailure { openAppSettings(ctx) } }
   }
 
   fun openAppSettings(ctx: Context) {

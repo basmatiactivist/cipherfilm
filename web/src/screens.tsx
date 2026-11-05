@@ -154,6 +154,7 @@ export function Account() {
       <DevicesPanel />
       <SearchPanel />
       <StoragePanel />
+      <DeleteAccount />
       <VersionLine server={mem.me!.server_version} />
     </div>
   );
@@ -181,6 +182,37 @@ function ChangePassword() {
         {done && <p class="ok" role="status">Password changed.</p>}
         <Submit busy={busy} label="Change password" busyLabel="Working, this takes a second or two" />
       </form>
+    </Acc>
+  );
+}
+
+/** Deletes the account and everything in it from this server, for good (Google Play's account deletion rule, too). */
+function DeleteAccount() {
+  const [open, setOpen] = useState(false);
+  const [cur, setCur] = useState("");
+  const [sure, setSure] = useState(false);
+  const { busy, error, run } = useAction();
+  return (
+    <Acc icon="trash" title="Delete account" sub="Remove your account and all your photos from this server">
+      <p class="warning">This deletes your account and <strong>all your photos, videos, albums, people and search data</strong> from this server, at once and for good. Nobody can bring them back, not even an administrator. Every device is signed out and deletes what it keeps.</p>
+      <p>Download anything you want to keep first. Copies of the whole server that an administrator made (a server backup) follow their own schedule.</p>
+      {mem.me!.user.role === "admin" && <p class="hint">If you are the only administrator, make someone else an administrator first.</p>}
+      {!open ? (
+        <button class="btn secondary warn" onClick={() => setOpen(true)}>Delete my account…</button>
+      ) : (
+        <form onSubmit={(e) => {
+          e.preventDefault();
+          run(async () => { await auth.deleteAccount(cur); window.dispatchEvent(new Event("cf-account-deleted")); });
+        }}>
+          <Field label="Your password" id="del-password" type="password" value={cur} onInput={setCur} autocomplete="current-password" autofocus />
+          <label class="check"><input type="checkbox" checked={sure} onChange={(e) => setSure((e.target as HTMLInputElement).checked)} /> I understand that my photos and videos are deleted for good</label>
+          <ErrorLine text={error} />
+          <div class="row">
+            <button type="submit" class="btn danger" disabled={busy || !sure || !cur}>{busy ? "Deleting…" : "Delete account for good"}</button>
+            <button type="button" class="btn secondary" onClick={() => { setOpen(false); setCur(""); setSure(false); }}>Cancel</button>
+          </div>
+        </form>
+      )}
     </Acc>
   );
 }

@@ -49,6 +49,12 @@ per device, because all devices share one index: it is stored as `"explicit": tr
 - `laion-b32` if `me.user.nsfw` **and** the people document has `explicit: true`;
 - `mobileclip-s2` otherwise (also when the admin later withdraws the permission).
 
+The Android app from Google Play (built with `CF_STORE=play`, `mobile/src/store.ts`) never offers explicit search
+and always uses `mobileclip-s2`, whatever the account chose; the server's permission stays as it is, and the APK from
+the GitHub releases, the web app and the Mac app keep the option. On an account that chose explicit search, a Play
+phone searches the standard model's entries; if it is the indexing device, it builds those (and the other devices
+see explicit search filled only by whichever of them indexes).
+
 Every index write (`PUT /api/items/{id}/index`) carries the entry's tag in the clear as `"model"` (the entry itself
 stays sealed). Where explicit search is allowed, the server takes writes only with it (409 otherwise): an app from
 before explicit search would take the other model's entries for outdated and overwrite them, back and forth; it is
@@ -168,9 +174,13 @@ made-up entries, which could make a photo show up in a search where it doesn't b
 - **While the app is open and unlocked:** downloads the models if needed, fetches the entries other devices made,
   then indexes every photo and video in the library that has none (from the decrypted preview, two at a time).
 - **In the background** (the backup's WorkManager task, about every 15 minutes when Android allows; by default only
-  while charging): a photo the backup just uploaded is indexed from the phone's own file right away; photos on the
-  phone that are in the library but not indexed yet are indexed from the phone's files. Photos that exist only on the
-  server need the master key and wait for the app.
+  while charging): photos on the phone that are in the library but not indexed yet are indexed from the phone's
+  files. A photo the backup just uploaded is indexed from the phone's own file right away when the run is a plain
+  WorkManager run; a run that holds the upload service (`TransferService`, a `dataSync` foreground service for
+  transfers only, as Google Play requires) only notes it, and the next background run indexes it. Photos that exist
+  only on the server need the master key and wait for the app.
+- Indexing never runs in a foreground service: only the model download does (a transfer). With the app closed, the
+  app's own indexing of server-only photos pauses until it is opened again.
 - Android may delay background work. Allowing Cipherfilm to run in the background (battery optimisation) makes it
   reliable on most phones; some makers (Samsung, Xiaomi, Huawei) need "Unrestricted" in the app's battery settings.
 

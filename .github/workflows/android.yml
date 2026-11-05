@@ -1,9 +1,11 @@
 name: Android
-# Builds the signed APK. Called by the release workflow for a tag; can also be run by hand on a v* tag (Actions >
+# Builds the signed APK (GitHub releases, Obtainium; signed with the app signing key) and the Android App Bundle for
+# Google Play (CF_STORE=play, signed with the upload key; Play App Signing re-signs it with the same app signing key,
+# docs/RELEASING.md), and checks both for 16 KB memory pages. Called by the release workflow for a tag; can also be run by hand on a v* tag (Actions >
 # Android > Run workflow) to check the build without releasing. No Actions caches at all: what goes into the signed
 # app is fetched fresh and checked against a pinned hash (the NDK and Gradle here, libsodium in its build script, npm
 # through the lockfile), so nothing another job left behind can slip in. The signing key is a secret of the "release"
-# environment (docs/RELEASING.md).
+# environment (docs/RELEASING.md), and so is the upload key.
 on:
   workflow_call:
     inputs:
@@ -22,6 +24,8 @@ env:
   GRADLE_DIST: gradle-9.4.1-bin.zip
   GRADLE_SHA256: 2ab2958f2a1e51120c326cad6f385153bb11ee93b3c216c5fccebfdfbb7ec6cb
   VERSION: ${{ inputs.version }}
+  # the app signing key's certificate (docs/RELEASING.md); Play App Signing signs with the same key
+  RELEASE_CERT_SHA256: 87d9e9ab855b03e7d7d3152f5a76a4d8afb5d38efca3b9932ad93f1ba17c6712
 jobs:
   apk:
     runs-on: ubuntu-latest
@@ -56,6 +60,8 @@ jobs:
           grep -qx "distributionUrl=https\\\\://services.gradle.org/distributions/$GRADLE_DIST" "$props" \
             || { echo "the wrapper wants another Gradle: pin its hash in android.yml"; grep distributionUrl "$props"; exit 1; }
           echo "distributionSha256Sum=$GRADLE_SHA256" >> "$props"
+          # the Play build's prebuild writes the wrapper again: it must be this one, the one validated below
+          sha256sum mobile/android/gradle/wrapper/gradle-wrapper.jar | cut -d" " -f1 > "$RUNNER_TEMP/wrapper.sha256"
       - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
         with: { cache-disabled: true, validate-wrappers: true }  # the wrapper jar must be one Gradle released
       - name: Build and sign the APK
@@ -69,5 +75,40 @@ jobs:
           CF_VERSION="${VERSION#v}" CF_KEYSTORE="$RUNNER_TEMP/release.p12" ./gradlew assembleRelease \
             -PreactNativeArchitectures=arm64-v8a --parallel --console=plain
           mkdir -p ../../dist && cp app/build/outputs/apk/release/app-release.apk "../../dist/cipherfilm-android-${VERSION#v}.apk"
+      - name: Native project for Google Play
+        # CF_STORE=play: no REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, no explicit search model (app.config.js, src/store.ts)
+        run: |
+          cd mobile
+          CF_STORE=play CF_VERSION="${VERSION#v}" npx expo prebuild --platform android --clean --no-install
+          props=android/gradle/wrapper/gradle-wrapper.properties
+          grep -qx "distributionUrl=https\\\\://services.gradle.org/distributions/$GRADLE_DIST" "$props" \
+            || { echo "the wrapper wants another Gradle: pin its hash in android.yml"; grep distributionUrl "$props"; exit 1; }
+          echo "distributionSha256Sum=$GRADLE_SHA256" >> "$props"
+          [ "$(sha256sum android/gradle/wrapper/gradle-wrapper.jar | cut -d" " -f1)" = "$(cat "$RUNNER_TEMP/wrapper.sha256")" ] \
+            || { echo "the Play build's Gradle wrapper differs from the validated one"; exit 1; }
+      - name: Build the App Bundle for Google Play, signed with the upload key
+        env:
+          UPLOAD_KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
+          CF_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+        run: |
+          echo "$UPLOAD_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/upload.p12"
+          trap 'rm -f "$RUNNER_TEMP/upload.p12"' EXIT
+          cd mobile/android
+          CF_VERSION="${VERSION#v}" CF_KEYSTORE="$RUNNER_TEMP/upload.p12" CF_KEY_ALIAS=upload ./gradlew bundleRelease \
+            -PreactNativeArchitectures=arm64-v8a --parallel --console=plain
+          ../scripts/check-play-manifest.sh app
+          cp app/build/outputs/bundle/release/app-release.aab "../../dist/cipherfilm-play-${VERSION#v}.aab"
+      - name: Signatures (APK with the app signing key, AAB with the upload key)
+        run: |
+          bt="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          apk=$("$bt/apksigner" verify --print-certs dist/cipherfilm-android-*.apk | sed -n 's/.*certificate SHA-256 digest: //p' | head -1)
+          aab=$(keytool -printcert -jarfile dist/cipherfilm-play-*.aab | sed -n 's/^[[:space:]]*SHA256: //p' | head -1 | tr -d : | tr A-F a-f)
+          echo "APK: $apk"; echo "AAB: $aab"
+          [ "$apk" = "$RELEASE_CERT_SHA256" ] || { echo "the APK is not signed with the app signing key"; exit 1; }
+          [ -n "$aab" ] && [ "$aab" != "$RELEASE_CERT_SHA256" ] || { echo "the AAB must be signed with the upload key, not the app signing key"; exit 1; }
+      - name: 16 KB memory pages (Google Play)
+        run: |
+          ZIPALIGN="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)/zipalign" ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$NDK" \
+            mobile/scripts/check-page-size.sh dist/cipherfilm-android-*.apk dist/cipherfilm-play-*.aab
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with: { name: android-app, path: dist/ }

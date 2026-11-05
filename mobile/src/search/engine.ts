@@ -23,6 +23,7 @@ import { downloadModels, downloadSize, dropOtherModels, family, haveModels, mode
 import { loadSettings, saveSettings, settingsDir, type SearchSettings } from "./settings";
 import { keepRunning, letGo, onlyHolder } from "../keepAlive";
 import { Tokenizer } from "./tokenizer";
+import { explicitSearchOffered } from "../store";
 
 export type Phase = "off" | "waitWifi" | "download" | "loading" | "indexing" | "ready" | "error";
 export interface Progress { phase: Phase; done: number; total: number; message?: string }
@@ -60,7 +61,8 @@ const good = (tag: string | undefined, faces: boolean) => tag === modelTag(clip,
  *  so all their devices use one index); MobileCLIP otherwise. */
 export async function accountClip(): Promise<Clip> {
   const { me, masterKey } = session();
-  if (!me?.user.nsfw || !masterKey) return "mobileclip-s2";
+  // the Play build never uses it (src/store.ts): it searches with MobileCLIP whatever the account chose
+  if (!me?.user.nsfw || !explicitSearchOffered() || !masterKey) return "mobileclip-s2";
   const s = await getSodium();
   try {
     const r = await api<{ data_enc: string }>("GET", "/api/me/blobs/people");
@@ -187,8 +189,10 @@ export function warmSearch(): Promise<void> {
 
 const pause = () => new Promise((r) => setTimeout(r, 0));
 
-// While it downloads the models or indexes, the app keeps running when it leaves the screen: the foreground service
-// and its notification (as for uploads, keepAlive.ts), so neither stops until the app is opened again.
+// While it downloads the models, the app keeps running when it leaves the screen: the foreground service (a data
+// transfer, as for uploads, keepAlive.ts) and its notification. Indexing is not a transfer and never runs in that
+// service: it goes on while the app is open (and when Android lets the process run), and the background task
+// (background.ts, WorkManager without a foreground service) does what is on the phone.
 let held = false;
 let shownAt = 0;
 function hold(title: string, text: string) {
@@ -243,6 +247,7 @@ export async function startSearch(library: Item[]) {
         set({ phase: "download", done, total });
         show("Downloading the search model", `${mbs(done)} of ${mbs(total)}`, done, total);
       }, indexes);
+      release(); // the download is done: indexing doesn't keep the service (above)
       if (!live()) return;
     }
     if (!ready) set({ phase: "loading", done: 0, total: 0 });
@@ -281,7 +286,7 @@ export async function startSearch(library: Item[]) {
     const total = ids.size;
     let done = total - todo.length;
     set({ phase: todo.length ? "indexing" : "ready", done, total, message: undefined });
-    if (todo.length) { hold("Indexing for search", `${done} of ${total}`); await openVision(st, true); }
+    if (todo.length) await openVision(st, true);
     const pk = unb64(s, me.pubkey);
     if (!s.memcmp(pk, pair!.pk)) throw new Error("Your account's keys don't match.");
     let since = 0, notIndexer = false;
@@ -302,7 +307,7 @@ export async function startSearch(library: Item[]) {
           if (e instanceof ApiError && e.code === "not_indexer") { notIndexer = true; todo.length = 0; return; }
         }
         done++;
-        if (++since % 10 === 0) { set({ done }); show("Indexing for search", `${done} of ${total}`, done, total); }
+        if (++since % 10 === 0) set({ done });
         if (since % 50 === 0) { await writeCache(cache); await rememberForBackground(library, st); }
         if (since % 200 === 0) await saveCopy(master);
       }

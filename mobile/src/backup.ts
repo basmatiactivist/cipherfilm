@@ -17,7 +17,7 @@ import { api, ApiError, remote, type Remote } from "./api";
 import { uploadFile, type Shared } from "./upload";
 import { keepRunning, letGo } from "./keepAlive";
 import { fingerprint } from "./prints";
-import { indexUploaded, runBackgroundIndex } from "./search/background";
+import { indexUploaded, rememberUploaded, runBackgroundIndex } from "./search/background";
 import { forgetSettings, loadSettings } from "./search/settings";
 import { onSessionChange, onSignOut, savedServer } from "./session";
 
@@ -302,7 +302,10 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
             }
             // counted as backed up only once it is certain the file went to c.userId
             await stillMine();
-            await indexUploaded(s, id, m.uri, (m.mime ?? "").startsWith("video/"), pk, to); // for search, while the file is at hand
+            // for search: at once while the file is at hand, but never inside the upload service (a data transfer,
+            // Google Play's foreground service rules): then the next background run indexes it
+            if (held) await rememberUploaded(c.userId, print, id);
+            else await indexUploaded(s, id, m.uri, (m.mime ?? "").startsWith("video/"), pk, to);
             known.add(print);
             delete status.failures[String(m.id)];
             status.uploaded++; done++;

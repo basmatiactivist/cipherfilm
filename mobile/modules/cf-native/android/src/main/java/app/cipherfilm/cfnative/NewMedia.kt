@@ -14,7 +14,7 @@ import expo.modules.backgroundtask.BackgroundTaskConsumer
 import expo.modules.interfaces.taskManager.TaskServiceProviderHelper
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitAll
-import java.time.Duration
+import java.util.concurrent.TimeUnit
 
 /**
  * Starts the backup a few seconds after a new photo or video appears, instead of waiting for the next periodic run:
@@ -51,7 +51,7 @@ object NewMedia {
   fun retrySoon(ctx: Context, minutes: Long) {
     if (!prefs(ctx).getBoolean("on", false)) return
     val req = OneTimeWorkRequestBuilder<Work>().setInputData(workDataOf("catchUp" to true))
-      .setInitialDelay(Duration.ofMinutes(minutes))
+      .setInitialDelay(minutes, TimeUnit.MINUTES) // not java.time: Android 7 has none
       .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).build()
     runCatching { WorkManager.getInstance(ctx).enqueueUniqueWork(NOW, ExistingWorkPolicy.REPLACE, req) }
   }
@@ -65,8 +65,8 @@ object NewMedia {
     val constraints = Constraints.Builder()
       .addContentUriTrigger(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true)
       .addContentUriTrigger(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true)
-      .setTriggerContentUpdateDelay(Duration.ofSeconds(3)) // a burst of photos starts one run
-      .setTriggerContentMaxDelay(Duration.ofSeconds(20))
+      .setTriggerContentUpdateDelay(3, TimeUnit.SECONDS) // a burst of photos starts one run
+      .setTriggerContentMaxDelay(20, TimeUnit.SECONDS)
       .setRequiredNetworkType(NetworkType.CONNECTED)
       .build()
     val req = OneTimeWorkRequestBuilder<Work>().setConstraints(constraints).build()

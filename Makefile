@@ -1,4 +1,4 @@
-.PHONY: bench loadbench up down reset test tokens tokens-check test-server test-web lock e2e e2e-down migration-test leakcheck prod-config multiarch decrypt-test decrypt-tool upload-test upload-tool upload-e2e
+.PHONY: bench loadbench up down reset test tokens tokens-check test-server test-web lock e2e e2e-down migration-test leakcheck prod-config multiarch decrypt-test decrypt-tool upload-test upload-tool upload-e2e play-aab
 up:        ## build and start; app at https://cipherfilm.orb.local
 	docker compose -f compose.dev.yaml up -d --build --wait
 	@echo "https://cipherfilm.orb.local"
@@ -92,3 +92,7 @@ loadbench: ## first thumbnails after a reload and lightbox paging, throttled to 
 	mkdir -p e2e/test-results
 	SETUP_TOKEN="$$($(E2E) logs app | grep -o 'token: .*' | tail -1 | cut -c8-)" $(E2E) run --rm -e LOADBENCH="$(or $(LOADBENCH),run)" playwright sh -c 'npm ci --silent && npx playwright test zzzzzzzzloadbench'
 	@cat e2e/test-results/loadbench.txt
+
+play-aab:       ## the Google Play App Bundle, signed with the local upload key, into dist/ (VERSION=X.Y.Z; mobile/scripts/build-play-aab.sh)
+	@test -n "$(VERSION)" || (echo "usage: make play-aab VERSION=X.Y.Z" && exit 1)
+	VERSION="$(VERSION)" mobile/scripts/build-play-aab.sh

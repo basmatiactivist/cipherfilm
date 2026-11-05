@@ -77,9 +77,21 @@ function App() {
       history.replaceState(null, "", "/");
       setScreen({ n: "login" });
     };
+    const deleted = () => {
+      forgetKeys();
+      auth.forgetLocal();
+      setNotice("Your account and everything in it were deleted from this server.");
+      history.replaceState(null, "", "/");
+      setScreen({ n: "login" });
+    };
     window.addEventListener("cf-session-ended", ended);
     window.addEventListener("cf-session-revoked", revoked);
-    return () => { window.removeEventListener("cf-session-ended", ended); window.removeEventListener("cf-session-revoked", revoked); };
+    window.addEventListener("cf-account-deleted", deleted);
+    return () => {
+      window.removeEventListener("cf-session-ended", ended);
+      window.removeEventListener("cf-session-revoked", revoked);
+      window.removeEventListener("cf-account-deleted", deleted);
+    };
   }, []);
   useEffect(() => { route(); window.onpopstate = () => { if (mem.masterKey && location.pathname === "/") return; route(); }; }, []);
 

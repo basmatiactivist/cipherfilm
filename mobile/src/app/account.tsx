@@ -5,11 +5,11 @@ import { Appbar, Button, Dialog, Divider, List, Portal, ProgressBar, Text } from
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import N from "../../modules/cf-native/src/CfNativeModule";
 import { api } from "../api";
-import { biometricPossible, disableBiometric, enableBiometric, forgetServer, lock, signOut, useSession } from "../session";
+import { biometricPossible, deleteAccount, disableBiometric, enableBiometric, forgetServer, lock, signOut, useSession } from "../session";
 import { forgetLibrary } from "../libraryStore";
 import { clearImages } from "../library";
 import { Icon } from "../icons";
-import { Problem, SwitchItem, useAppTheme } from "../ui";
+import { Field, Problem, SwitchItem, useAppTheme } from "../ui";
 import { setShake, useShake } from "../shake";
 import { text } from "../tokens";
 
@@ -22,6 +22,11 @@ export default function Account() {
   const [usage, setUsage] = useState<{ used_bytes: number; quota_bytes: number; unlimited: boolean }>();
   const [error, setError] = useState<string>();
   const [confirmOut, setConfirmOut] = useState(false);
+  // Delete account: a warning, then the password (checked here first, then sent as the sign-in proof)
+  const [del, setDel] = useState<"" | "warn" | "password">("");
+  const [delPw, setDelPw] = useState("");
+  const [delBusy, setDelBusy] = useState(false);
+  const [delError, setDelError] = useState<string>();
   const [bioOk, setBioOk] = useState(() => biometricPossible());
   const shake = useShake();
   useEffect(() => {
@@ -44,6 +49,21 @@ export default function Account() {
     else if (how === "out") await signOut();
     else { await signOut(); await forgetServer(); }
     router.replace("/");
+  };
+  const closeDel = () => { if (!delBusy) { setDel(""); setDelPw(""); setDelError(undefined); } };
+  const doDelete = async () => {
+    setDelError(undefined); setDelBusy(true);
+    try {
+      await deleteAccount(delPw);
+      setDel(""); setDelPw("");
+      clearImages();
+      forgetLibrary();
+      router.replace("/");
+    } catch (e) {
+      setDelError(e instanceof Error ? e.message : "That didn't work.");
+    } finally {
+      setDelBusy(false);
+    }
   };
   const toggleBio = async () => {
     setError(undefined);
@@ -89,6 +109,8 @@ export default function Account() {
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="lock" color={t.colors.primary} /></View>} onPress={() => leave("lock")} style={st.item} />
         <List.Item title="Sign out" description="Ends the session and deletes what this phone keeps for your account"
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="logout" color={t.colors.primary} /></View>} onPress={() => setConfirmOut(true)} style={st.item} />
+        <List.Item title="Delete account" titleStyle={{ color: t.colors.error }} description="Deletes your account and all your photos from the server, for good"
+          descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="trash" color={t.colors.error} /></View>} onPress={() => setDel("warn")} style={st.item} />
         <Divider />
         <Text variant="bodySmall" style={[st.block, { color: t.colors.onSurfaceVariant }]}>
           Photos are encrypted on this phone before upload. The server only ever stores ciphertext. Password changes, invites and your recovery key are in Cipherfilm in the browser.
@@ -107,6 +129,29 @@ export default function Account() {
             <Button onPress={() => { setConfirmOut(false); leave("out"); }}>Sign out</Button>
             <Button onPress={() => { setConfirmOut(false); leave("server"); }}>Sign out and change address</Button>
             <Button onPress={() => setConfirmOut(false)}>Cancel</Button>
+          </Dialog.Actions>
+        </Dialog>
+        <Dialog visible={del === "warn"} onDismiss={closeDel}>
+          <Dialog.Title>Delete your account?</Dialog.Title>
+          <Dialog.Content>
+            <Text variant="bodyMedium">This deletes your account and all your photos, videos, albums, people and search data from {server.replace(/^https:\/\//, "")}, at once and for good. Nobody can bring them back, not even an administrator. Every device is signed out.</Text>
+            <Text variant="bodyMedium" style={{ marginTop: 12 }}>Photos still on this phone stay on it. Save anything else you want to keep first.</Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={closeDel}>Cancel</Button>
+            <Button textColor={t.colors.error} onPress={() => setDel("password")}>Continue</Button>
+          </Dialog.Actions>
+        </Dialog>
+        <Dialog visible={del === "password"} onDismiss={closeDel}>
+          <Dialog.Title>Enter your password</Dialog.Title>
+          <Dialog.Content>
+            <Field label="Password" value={delPw} onChangeText={setDelPw} secureTextEntry textContentType="password" autoComplete="current-password" autoFocus
+              hint={delBusy ? "Checking your password, this takes a second or two" : undefined} />
+            <Problem>{delError}</Problem>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={closeDel} disabled={delBusy}>Cancel</Button>
+            <Button textColor={t.colors.error} onPress={doDelete} loading={delBusy} disabled={delBusy || !delPw}>Delete for good</Button>
           </Dialog.Actions>
         </Dialog>
       </Portal>

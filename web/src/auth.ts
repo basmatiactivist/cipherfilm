@@ -200,6 +200,22 @@ export async function changePassword(current: string, next: string): Promise<voi
   mem.me = { ...me, kdf: ch.new_kdf, wrapped_master_pw: ch.new_wrapped_master_pw };
 }
 
+/** Deletes the account for good, after checking the password here first (a typo shows before anything is sent), then
+ *  forgets everything this browser keeps. The server refuses for the only administrator. */
+export async function deleteAccount(password: string): Promise<void> {
+  const s = await getSodium();
+  const me = mem.me!;
+  assertSaneKdf(me.kdf);
+  const { auth, kek } = await loginProof(s, password, me.kdf);
+  try {
+    s.memzero(unlockMasterKey(s, me.user.email, kek, me.wrapped_master_pw));
+  } catch {
+    throw new Error("That password isn't right.");
+  }
+  await api("DELETE", "/api/me", { current_auth: auth });
+  forgetLocal();
+}
+
 export interface RecoveryHandle {
   email: string;
   ticket: string;

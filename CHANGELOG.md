@@ -5,6 +5,30 @@ All notable changes to Cipherfilm are listed here. The format follows
 [Semantic Versioning](https://semver.org/). The release workflow copies the section of the tagged
 version into the GitHub release notes, so a release cannot be published without an entry here.
 
+## [Unreleased]
+
+### Added
+- **Delete your own account:** Account › Delete account in the web app, the Android app and the Mac app (Settings ›
+  General). After the password it deletes the account with all its photos, videos, albums, people and search data
+  from the server, signs out every device, and each device deletes what it keeps. The only active administrator
+  must make someone else an administrator first. Server: `DELETE /api/me` with the current sign-in proof and the
+  CSRF token, recorded in the admin log.
+- Android: before Android asks for access to photos (Backup, Free up space), the app says what it reads and where it
+  goes (only to your own server, encrypted), with Continue / Not now.
+- Releases also attach `cipherfilm-play-X.Y.Z.aab`, the bundle for Google Play (signed with the upload key; the app
+  is signed by the same key as the APK), and every Android build is checked for 16 KB memory pages.
+  `make play-aab VERSION=X.Y.Z` builds the bundle locally.
+
+### Changed
+- Android 7 to 12: the app can read the photo library again (`READ_EXTERNAL_STORAGE`, only up to Android 12), so
+  automatic backup works there too; before, it needed Android 13. Free up space still needs Android 11.
+- Android 14 and later: "Allow limited access" works throughout; Backup backs up the photos you chose and offers to
+  change the choice, Free up space finds the chosen ones.
+- Android: search indexing no longer runs in the upload service (a foreground service for transfers only). Photos
+  the backup uploads with the service running are indexed by the next background run instead.
+- The Android app from Google Play doesn't ask Android directly to ignore battery optimisation (it opens the list in
+  Android's settings) and doesn't offer explicit search. The APK from GitHub keeps both.
+
 ## [2.0.1] - 2026-11-05
 
 ### Changed

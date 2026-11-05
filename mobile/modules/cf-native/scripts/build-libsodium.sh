@@ -30,5 +30,9 @@ LIB=libsodium-android-armv8-a+crypto/lib/libsodium.so
 if "$NM" -D --undefined-only "$LIB" | grep -v "@" | grep -q .; then
   echo "libsodium.so has unresolved internal symbols:" >&2; "$NM" -D --undefined-only "$LIB" | grep -v "@" >&2; exit 1
 fi
+# Google Play needs 16 KB pages on 64-bit (docs/play/REQUIREMENTS.md §1.4): every LOAD segment aligned to 2**14
+if ! "$TOOLS/llvm-readelf" -lW "$LIB" | awk '$1 == "LOAD" { print $NF }' | { while read -r a; do [ $((a)) -ge 16384 ] || exit 1; done; }; then
+  echo "libsodium.so is not 16 KB aligned:" >&2; "$TOOLS/llvm-readelf" -lW "$LIB" | grep LOAD >&2; exit 1
+fi
 cp "$LIB" "$OUT/arm64-v8a/libsodium.so"
 echo "libsodium $VERSION built for: $(ls "$OUT" | tr '\n' ' ')"

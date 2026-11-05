@@ -178,6 +178,8 @@ jobs:
         with: { name: decrypt-tool, path: dist }
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with: { name: android-app, path: dist }
+      - name: The Android app and its Play bundle are both there
+        run: ls "dist/cipherfilm-android-${GITHUB_REF_NAME#v}.apk" "dist/cipherfilm-play-${GITHUB_REF_NAME#v}.aab"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: ${{ needs.mac.result == 'success' }}
         with: { name: mac-app, path: dist }
@@ -197,7 +199,7 @@ jobs:
             echo
             echo "Image: \`ghcr.io/${GITHUB_REPOSITORY}:${v}\` (linux/amd64, linux/arm64), with provenance and SBOM. See the README for setup and updating."
             echo
-            echo "Attached below: the Mac app (\`cipherfilm-mac-${v}.zip\`, Apple silicon, macOS 15 or newer; not signed by Apple yet, so the first start needs System Settings › Privacy & Security › Open Anyway), the Android app (\`cipherfilm-android-${v}.apk\`, arm64, Android 7 or newer), the offline decrypt tool (macOS, Linux, Windows), the Mac uploader (\`cipherfilm-upload-darwin-arm64\` / \`-amd64\`) and \`SHA256SUMS\`."
+            echo "Attached below: the Mac app (\`cipherfilm-mac-${v}.zip\`, Apple silicon, macOS 15 or newer; not signed by Apple yet, so the first start needs System Settings › Privacy & Security › Open Anyway), the Android app (\`cipherfilm-android-${v}.apk\`, arm64, Android 7 or newer; \`cipherfilm-play-${v}.aab\` is the same app as uploaded to Google Play, signed with the upload key), the offline decrypt tool (macOS, Linux, Windows), the Mac uploader (\`cipherfilm-upload-darwin-arm64\` / \`-amd64\`) and \`SHA256SUMS\`."
           } >> notes.md
       - name: No build paths or names in the files (docs/RELEASING.md)
         run: scripts/check-artifacts.sh dist/*

@@ -387,6 +387,18 @@ public enum Account {
     }
   }
 
+  /** Deletes the account and everything in it on the server, for good, after checking the password here first (a
+   *  typo shows before anything is sent). The server refuses for its only administrator. */
+  public static func delete(api: API, me: Me, password: String) async throws {
+    try Crypto.assertSaneKdf(me.kdf)
+    var (auth, kek) = try Crypto.deriveFromPassword(password, me.kdf)
+    defer { Sodium.memzero(&auth); Sodium.memzero(&kek) }
+    do { var key = try Crypto.unlockMasterKey(email: me.user.email, kek: kek, wrappedMasterPw: me.wrapped_master_pw); Sodium.memzero(&key) } catch {
+      throw APIError(status: -1, message: "That password isn't right.")
+    }
+    _ = try await api.json("DELETE", "/api/me", body: ["current_auth": B64.encode(auth)])
+  }
+
   /** A master key is only accepted if it opens something the server keeps sealed under it. */
   public static func keyFits(me: Me, key: Data) -> Bool {
     (try? Crypto.open(B64.decode(me.wrapped_privkey), key: key, label: Label.privkey, owner: Crypto.normEmail(me.user.email))) != nil

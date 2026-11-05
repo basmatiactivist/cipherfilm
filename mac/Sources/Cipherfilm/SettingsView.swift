@@ -40,6 +40,7 @@ struct NeedsUnlock: View {
 struct GeneralSettings: View {
   @Environment(AppModel.self) private var model
   @State private var signOut = false
+  @State private var deleteAccount = false
   @State private var touchError: String?
 
   var body: some View {
@@ -72,6 +73,8 @@ struct GeneralSettings: View {
           HStack {
             Button("Lock") { model.lock() }.disabled(model.phase != .unlocked)
             Button("Sign Out…") { signOut = true }
+            Spacer()
+            Button("Delete Account…", role: .destructive) { deleteAccount = true }
           }
           Text("Signing out deletes everything this Mac keeps for the account. Locking only forgets the keys; watched folders keep uploading.")
             .font(Typo.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -86,6 +89,44 @@ struct GeneralSettings: View {
     }
     .padding(24)
     .sheet(isPresented: $signOut) { SignOutSheet().environment(model) }
+    .sheet(isPresented: $deleteAccount) { DeleteAccountSheet().environment(model) }
+  }
+}
+
+/** Deletes the account and everything in it from the server, for good, after a warning and the password. */
+struct DeleteAccountSheet: View {
+  @Environment(AppModel.self) private var model
+  @Environment(\.dismiss) private var dismiss
+  @State private var password = ""
+  @State private var sure = false
+  @State private var busy = false
+  @State private var error: String?
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      Text("Delete your account?").font(Typo.dialog)
+      Text("This deletes your account and all your photos, videos, albums, people and search data from \(model.serverName), at once and for good. Nobody can bring them back, not even an administrator. Every device is signed out and deletes what it keeps.")
+        .font(Typo.body).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
+      Text("Exported copies on this Mac stay where they are.").font(Typo.caption).foregroundStyle(Ink.faint)
+      SecureField("Your password", text: $password).textContentType(.password)
+      Toggle("I understand that my photos and videos are deleted for good", isOn: $sure).toggleStyle(.checkbox)
+      if let error { Text(error).font(Typo.caption).foregroundStyle(Ink.danger) }
+      HStack {
+        Spacer()
+        Button("Cancel") { dismiss() }.buttonStyle(SecondaryButton()).keyboardShortcut(.cancelAction).disabled(busy)
+        Button(busy ? "Deleting…" : "Delete Account") {
+          busy = true; error = nil
+          Task {
+            do { try await model.deleteAccount(password: password); dismiss() } catch {
+              self.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+            busy = false
+          }
+        }.buttonStyle(PrimaryButton()).disabled(busy || !sure || password.isEmpty)
+      }
+    }
+    .padding(24).frame(width: 460)
+    .background(Ink.card)
   }
 }
 

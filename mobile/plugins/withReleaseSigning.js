@@ -1,5 +1,7 @@
 // Signs release builds with the key named by CF_KEYSTORE (the release workflow writes it from a secret); without it
-// a release build is signed with the debug key, for local testing only.
+// a release build is signed with the debug key, for local testing only. CF_KEY_ALIAS picks the key in it: "cipherfilm"
+// (the app signing key, for the GitHub APK) unless set, "upload" for the AAB uploaded to Google Play (Play App Signing
+// re-signs it with the app signing key; docs/RELEASING.md). CF_KEY_PASSWORD defaults to the keystore's password.
 const { withAppBuildGradle } = require("expo/config-plugins");
 
 module.exports = function withReleaseSigning(config) {
@@ -13,8 +15,8 @@ ${ind}        // a tree prebuilt for a test build trusts the local test CA (with
 ${ind}        if (file("src/main/res/raw/cf_test_ca.pem").exists()) throw new GradleException("android/ was prebuilt with CF_TEST_CA: run expo prebuild --clean before a release build")
 ${ind}        storeFile file(System.getenv("CF_KEYSTORE"))
 ${ind}        storePassword System.getenv("CF_KEYSTORE_PASSWORD")
-${ind}        keyAlias "cipherfilm"
-${ind}        keyPassword System.getenv("CF_KEYSTORE_PASSWORD")
+${ind}        keyAlias System.getenv("CF_KEY_ALIAS") ?: "cipherfilm"
+${ind}        keyPassword System.getenv("CF_KEY_PASSWORD") ?: System.getenv("CF_KEYSTORE_PASSWORD")
 ${ind}    }
 ${ind}}
 ${ind}debug {`);

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -22,6 +23,7 @@ func (a *App) routes() http.Handler {
 	m.HandleFunc("POST /api/auth/logout", a.auth(false, a.logout))
 	m.HandleFunc("GET /api/me", a.auth(false, a.me))
 	m.HandleFunc("POST /api/auth/password", a.auth(false, a.changePassword))
+	m.HandleFunc("DELETE /api/me", a.auth(false, a.deleteMe))
 	m.HandleFunc("POST /api/auth/recovery-key", a.auth(false, a.newRecoveryKey))
 	m.HandleFunc("GET /api/me/usage", a.auth(false, a.usage))
 	m.HandleFunc("POST /api/auth/recover/start", a.recoverStart)
@@ -292,6 +294,86 @@ func (a *App) changePassword(w http.ResponseWriter, r *http.Request, u *user, s 
 	if nu, err := a.userByID(u.ID); err == nil {
 		a.setDevice(w, nu) // the old device cookie is bound to the old password hash
 	}
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+// ---- deleting one's own account ----
+
+type deleteMeReq struct {
+	CurrentAuth string `json:"current_auth"`
+}
+
+// deleteMe deletes the signed-in account for good, with the same proof as a password change: its photos and videos,
+// albums, search index, people and every session (the other devices learn they were signed out on purpose and wipe
+// what they keep). The last active administrator can't: someone else must be made administrator first.
+func (a *App) deleteMe(w http.ResponseWriter, r *http.Request, u *user, s *session) {
+	var req deleteMeReq
+	if !readJSON(w, r, &req) {
+		return
+	}
+	at, ok := reserve(slot{a.loginAcct, "delete|" + u.ID, true})
+	if !ok {
+		fail(w, 429, "too many attempts, try later")
+		return
+	}
+	if !verifySecret(u.AuthHash, req.CurrentAuth) {
+		fail(w, 403, "that password isn't right")
+		return
+	}
+	// with the admin changes: an admin deleting or demoting the other one at the same moment must not leave none
+	a.adminMu.Lock()
+	defer a.adminMu.Unlock()
+	if cur, err := a.userByID(u.ID); err == nil && lastAdmin(a, cur) {
+		at.success()
+		fail(w, http.StatusConflict, "you are the only administrator: make someone else an administrator first, then delete your account")
+		return
+	}
+	tx, err := a.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		fail(w, 500, "server error")
+		return
+	}
+	defer tx.Rollback()
+	var ids []string
+	rows, err := tx.Query(`SELECT id FROM items WHERE user_id=?`, u.ID)
+	if err != nil {
+		fail(w, 500, "server error")
+		return
+	}
+	for rows.Next() {
+		var id string
+		if rows.Scan(&id) == nil {
+			ids = append(ids, id)
+		}
+	}
+	rows.Close()
+	// so the other devices learn they were signed out on purpose (not only that the session ended) and wipe their copy;
+	// this one wipes its own when the answer comes
+	if _, err := tx.Exec(`INSERT OR IGNORE INTO revoked_sessions(id_hash,at) SELECT id_hash,? FROM sessions WHERE user_id=? AND id_hash<>?`, a.now().Unix(), u.ID, s.IDHash); err != nil {
+		fail(w, 500, "server error")
+		return
+	}
+	// only with the password just checked (a change or recovery meanwhile wins), and never the last active admin
+	res, err := tx.Exec(`DELETE FROM users WHERE id=? AND auth_hash=? AND `+keepsAdmin, u.ID, u.AuthHash)
+	if err != nil {
+		fail(w, 500, "server error")
+		return
+	}
+	if rowsAffected(res, err) != 1 {
+		fail(w, 409, "your password or role was just changed; sign in again and try once more")
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		fail(w, 500, "server error")
+		return
+	}
+	at.success()
+	for _, id := range ids {
+		a.removeBlobs(id)
+	}
+	a.revokeTickets(u.ID)
+	a.audit(u.Email, "deleted own account", u.Email, strconv.Itoa(len(ids))+" items")
+	clearCookie(w)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 

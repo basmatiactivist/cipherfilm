@@ -10,6 +10,7 @@ import { libraryItems } from "../libraryStore";
 import { scheduleBackground } from "../backup";
 import { forgetSearch, indexesHere, indexHere, startSearch, stopSearch, useSearchProgress } from "../search/engine";
 import { loadPeople, setExplicit } from "../search/people";
+import { explicitSearchOffered } from "../store";
 import { deleteModels, downloadSize } from "../search/models";
 import { loadSettings, onSettingsChange, pinAccount, saveSettings, type SearchSettings } from "../search/settings";
 import { Problem, SwitchItem, useAppTheme } from "../ui";
@@ -25,7 +26,7 @@ export default function SearchSettingsScreen() {
   // explicit search: offered only where an admin allowed it; the choice is the account's (docs/SEARCH.md). The
   // account is fetched again here, so a permission the admin gave since sign-in shows at once.
   const me = useSession().me;
-  const allowed = !!me?.user.nsfw;
+  const allowed = !!me?.user.nsfw && explicitSearchOffered(); // never in the Play build (src/store.ts)
   const [fresh, setFresh] = useState(false);
   const [explicit, setExplicitState] = useState<boolean | null>(null);
   // the device that computes the index, when it isn't this phone (docs/SEARCH.md "One device indexes")
@@ -68,7 +69,7 @@ export default function SearchSettingsScreen() {
       // the permission as it is now, then always the question where it is allowed
       const now = await refreshMe().catch(() => session().me);
       setBusy(false);
-      if (now?.user.nsfw) { loadPeople().then((d) => setExplicitState(!!d.explicit), () => {}); setChoose(true); return; }
+      if (now?.user.nsfw && explicitSearchOffered()) { loadPeople().then((d) => setExplicitState(!!d.explicit), () => {}); setChoose(true); return; }
     }
     setChoose(false);
     setBusy(true); setError(undefined);
@@ -165,7 +166,7 @@ export default function SearchSettingsScreen() {
 
         <Divider style={{ marginTop: 8 }} />
         <List.Subheader>In the background</List.Subheader>
-        <SwitchItem title="Also when the app is closed" description="New photos are done during the backup; others on this phone about every 15 minutes, when Android allows."
+        <SwitchItem title="Also when the app is closed" description="Photos on this phone, about every 15 minutes when Android allows, and after a backup."
           value={s.background} onValueChange={(v) => change({ background: v }, false)} />
         <SwitchItem title="Only while charging" description="Recommended: indexing takes battery." disabled={!s.background}
           value={s.chargingOnly} onValueChange={(v) => change({ chargingOnly: v }, false)} />
@@ -176,7 +177,7 @@ export default function SearchSettingsScreen() {
 
         <Divider style={{ marginTop: 8 }} />
         <Text variant="bodySmall" style={[st.hint, { color: t.colors.onSurfaceVariant, marginTop: 12 }]}>
-          Everything runs on this phone, with open models from your own server (MobileCLIP for what is in a photo, YuNet and SFace for faces). The results are encrypted before they are stored, so your other devices don't have to redo them; the server never learns what your photos show or who is in them. Photos that are only on the server are indexed while the app is unlocked, also in the background with a notification.
+          Everything runs on this phone, with open models from your own server (MobileCLIP for what is in a photo, YuNet and SFace for faces). The results are encrypted before they are stored, so your other devices don't have to redo them; the server never learns what your photos show or who is in them. Photos that are only on the server are indexed while the app is open and unlocked.
         </Text>
       </ScrollView>
       <Portal>

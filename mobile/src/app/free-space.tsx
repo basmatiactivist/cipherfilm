@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AppState, PermissionsAndroid, ScrollView, StyleSheet, View } from "react-native";
+import { AppState, ScrollView, StyleSheet, View } from "react-native";
 import { router } from "expo-router";
 import { ActivityIndicator, Appbar, Button, Dialog, Divider, List, Portal, RadioButton, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -9,8 +9,8 @@ import { fingerprint } from "../prints";
 import { Icon } from "../icons";
 import { Problem, useAppTheme } from "../ui";
 import { radius, text } from "../tokens";
+import { useMediaDisclosure } from "../disclosure";
 
-const P = PermissionsAndroid.PERMISSIONS;
 const DAY = 86400_000;
 const AGES = [{ key: "0", label: "All of them", days: 0 }, { key: "30", label: "Older than 30 days", days: 30 }, { key: "90", label: "Older than 3 months", days: 90 }, { key: "365", label: "Older than a year", days: 365 }];
 const gb = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${Math.max(n > 0 ? 1 : 0, Math.round(n / 1e6))} MB`);
@@ -33,6 +33,9 @@ export default function FreeSpace() {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<{ n: number; bytes: number } | null>(null);
   const [error, setError] = useState<string>();
+  const disclosure = useMediaDisclosure();
+  // Android's own trash (with its confirmation) exists from Android 11; before that, nothing is removed from here
+  const [canTrash] = useState(() => N.backupState().sdk >= 30);
 
   const scan = useCallback(async () => {
     const st = N.backupState();
@@ -75,9 +78,9 @@ export default function FreeSpace() {
   const bytes = chosen.reduce((n, m) => n + m.size, 0);
   const total = (media ?? []).reduce((n, m) => n + m.size, 0);
 
+  // the disclosure first, then Android's prompt
   const askMedia = async () => {
-    const r = await PermissionsAndroid.requestMultiple([P.READ_MEDIA_IMAGES, P.READ_MEDIA_VIDEO]);
-    if (Object.values(r).includes(PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN)) N.openAppSettings();
+    await disclosure.ask("freeSpace");
     scan();
   };
 
@@ -128,8 +131,14 @@ export default function FreeSpace() {
                   </Text>
                 </View>
               </View>
-              {access === "partial" ? <Text variant="bodySmall" style={{ marginTop: 8 }}>Cipherfilm sees only some of your photos. Allow all photos in the app settings to find the rest.</Text> : null}
-              <Button mode="contained" icon="trash" disabled={!chosen.length || busy} loading={busy} onPress={() => setAsking(true)} style={st.button}>Remove from this phone</Button>
+              {access === "partial" ? (
+                <>
+                  <Text variant="bodySmall" style={{ marginTop: 8 }}>Cipherfilm sees only the photos you chose. Allow more to find the rest.</Text>
+                  <Button mode="outlined" compact onPress={askMedia} style={{ marginTop: 8, alignSelf: "flex-start" }}>Choose photos</Button>
+                </>
+              ) : null}
+              {!canTrash ? <Text variant="bodySmall" style={{ marginTop: 8 }}>Removing photos from here needs Android 11 or newer. Delete them in your gallery app instead.</Text> : null}
+              <Button mode="contained" icon="trash" disabled={!chosen.length || busy || !canTrash} loading={busy} onPress={() => setAsking(true)} style={st.button}>Remove from this phone</Button>
             </View>
             {done ? <Text variant="bodyMedium" style={st.hint}>Moved {done.n} ({gb(done.bytes)}) to the phone's trash. Android removes them for good after 30 days; until then you can restore them in your gallery app.</Text> : null}
             <View style={{ paddingHorizontal: 16 }}><Problem>{error}</Problem></View>
@@ -156,6 +165,7 @@ export default function FreeSpace() {
           </>
         )}
       </ScrollView>
+      {disclosure.dialog}
       <Portal>
         <Dialog visible={asking} onDismiss={() => setAsking(false)}>
           <Dialog.Title>Remove {chosen.length} from this phone?</Dialog.Title>

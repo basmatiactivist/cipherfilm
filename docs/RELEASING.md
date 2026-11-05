@@ -27,7 +27,10 @@ The `Release` workflow then:
    (a fix for an older line, `v2.0.9` after `v2.3.0`, gets `2.0.9` and `2.0` but leaves `2` and `latest` alone;
    pre-release tags such as `v1.1.0-rc.1` only get their own tag), with provenance and an SBOM;
 3. builds the offline decrypt tool for macOS, Linux and Windows plus `SHA256SUMS`;
-4. builds the Android APK and the Mac app (`cipherfilm-mac-X.Y.Z.zip`, unsigned);
+4. builds the Android APK (`cipherfilm-android-X.Y.Z.apk`, signed with the app signing key), the Google Play App
+   Bundle (`cipherfilm-play-X.Y.Z.aab`, `CF_STORE=play`, signed with the upload key; see "Google Play" below), checks
+   both for 16 KB memory pages (`mobile/scripts/check-page-size.sh`) and the Play manifest
+   (`mobile/scripts/check-play-manifest.sh`), and builds the Mac app (`cipherfilm-mac-X.Y.Z.zip`, unsigned);
 5. creates the GitHub Release with the changelog section as notes and everything attached, after checking that the
    tag still points at the commit that was built. On the public repository every attached file also gets a signed
    build provenance (`gh attestation verify <file> --repo <owner>/cipherfilm`): `SHA256SUMS` sits next to the files
@@ -57,6 +60,29 @@ Gradle cache paths), then run the check. CI builds don't have the problem (their
 
 The version is baked into the image: `docker run --rm ghcr.io/<owner>/cipherfilm:2 version`,
 and it is shown in the admin area under Server.
+
+## Google Play
+
+The Play build differs from the GitHub APK only by `CF_STORE=play` at prebuild (`mobile/app.config.js`): no
+`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` (the app opens Android's battery optimisation list instead of the direct
+dialog) and no explicit search model (`mobile/src/store.ts`, docs/SEARCH.md). Requirements and the Play Console forms:
+[docs/play/REQUIREMENTS.md](play/REQUIREMENTS.md).
+
+Signing (Play App Signing, option B there): the **app signing key** is the existing release key
+(`ANDROID_KEYSTORE_B64`, alias `cipherfilm`, certificate SHA-256
+`87d9e9ab855b03e7d7d3152f5a76a4d8afb5d38efca3b9932ad93f1ba17c6712`), given to Google once with PEPK before the first
+open-testing or production release, so Play and GitHub installs update each other. The bundle is signed with a
+separate **upload key** (`ANDROID_UPLOAD_KEYSTORE_B64` / `ANDROID_UPLOAD_KEYSTORE_PASSWORD` in the `release`
+environment, alias `upload`); Google can reset a lost upload key, never the app signing key. `withReleaseSigning`
+takes the key from `CF_KEYSTORE`, `CF_KEYSTORE_PASSWORD`, `CF_KEY_ALIAS` (default `cipherfilm`) and
+`CF_KEY_PASSWORD` (default: the keystore password). `android.yml` fails if the APK isn't signed with the app signing
+key or the bundle is.
+
+The first upload, before any release built a bundle: `make play-aab VERSION=X.Y.Z` builds it locally the same way,
+with the upload key in `~/.cipherfilm-android-signing` (`upload.p12`, `upload-password.txt`), into `dist/`. As with a
+local APK, build from a worktree outside the home folder with `GRADLE_USER_HOME` outside it too (the script runs
+`scripts/check-artifacts.sh` on the bundle). Each upload needs a new versionCode (`major*1e6+minor*1e3+patch`): a
+rejected upload uses its number up.
 
 ## Dependencies
 
@@ -101,7 +127,9 @@ Settings that live on GitHub, not in the repository, set once the repository is 
   (to push directly).
 - **Ruleset for tags `v*`:** only the owner may create, move or delete them (a tag starts a release).
 - **Environment `release`** (Settings › Environments): holds the secrets `ANDROID_KEYSTORE_B64` and
-  `ANDROID_KEYSTORE_PASSWORD` (environment secrets, not repository secrets; delete any repository-level copies).
+  `ANDROID_KEYSTORE_PASSWORD` (the app signing key) and `ANDROID_UPLOAD_KEYSTORE_B64` and
+  `ANDROID_UPLOAD_KEYSTORE_PASSWORD` (the Google Play upload key, alias `upload`) (environment secrets, not repository
+  secrets; delete any repository-level copies).
   Deployment branches and tags: "Selected branches and tags" with only the tag rule `v*`. The Android build and the
   image push run in it, so the signing key is out of reach of a branch, a pull request or a hand-started run on
   anything but a release tag. Needed before the next release: without it the Android build has no signing key.

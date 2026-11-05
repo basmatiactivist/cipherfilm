@@ -41,6 +41,22 @@ export async function indexUploaded(s: Sodium, id: string, uri: string, video: b
   }
 }
 
+/**
+ * A file the backup uploaded while it held the upload service (TransferService, a data transfer): it isn't indexed
+ * there, but noted for the next background run, which indexes it without that service (runBackgroundIndex). Only
+ * where background search is on (the app writes local.json then) and for the same account.
+ */
+export async function rememberUploaded(userId: string, print: string, id: string) {
+  try {
+    const f = localFile();
+    if (!f.exists) return;
+    const local = JSON.parse(await f.text()) as { userId?: string; prints?: Record<string, string> };
+    if (local.userId !== userId || !local.prints) return;
+    local.prints[print] = id;
+    await f.write(JSON.stringify(local));
+  } catch { /* the app indexes it from the server's preview */ }
+}
+
 async function indexFile(s: Sodium, id: string, uri: string, video: boolean, faces: boolean, pubkey: Uint8Array, clip: Clip, to: Remote) {
   const img = await N.jpeg(uri, video, 2048, 90);
   if (!img) return;

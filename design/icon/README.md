@@ -60,5 +60,3 @@ keyhole are transparent cut-outs.
 - `favicon.svg`, `favicon-32.png`: a 24-grid redraw for 16 px. It has a simpler ridge, no
   sun, a larger padlock and heavier strokes, on a paper tile so it holds on dark tabs.
 - `favicon-180.png`: apple-touch icon (`icon.svg` at 180 px).
-- `preview.png`: masks at 192 and 48 px on light and dark backgrounds, the favicon on
-  tabs, and the themed (monochrome) icon.

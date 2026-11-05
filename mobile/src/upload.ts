@@ -5,7 +5,7 @@ import { cipherLen, encryptSegment, segmentCount, segmentPlainLen, SEG_PLAIN } f
 import { encryptMeta, encryptPreview, encryptThumb, newItemKey, wrapItemKey } from "@crypto/item";
 type Sodium = Awaited<ReturnType<typeof getSodium>>;
 import N from "../modules/cf-native/src/CfNativeModule";
-import { api, putBytes } from "./api";
+import { api, putBytes, type Remote } from "./api";
 import { session } from "./session";
 import { keepRunning, letGo } from "./keepAlive";
 import type { ItemMeta } from "./library";
@@ -14,6 +14,7 @@ export const THUMB_PX = 640;
 export const PREVIEW_PX = 2048;
 const SEGMENTS_IN_FLIGHT = 2;
 const MAX_FILE = 8 * 1024 ** 3;
+const ITEM_ID = /^[0-9a-f]{32}$/;
 
 export interface Shared { uri: string; name: string; size: number; mime: string; deletable: boolean }
 
@@ -21,6 +22,15 @@ export interface Shared { uri: string; name: string; size: number; mime: string;
 export async function describe(uri: string, hint?: { name?: string | null; size?: number | null; mime?: string | null }): Promise<Shared> {
   const st = await N.stat(uri);
   return { uri, name: st.name || hint?.name || "photo", size: st.size >= 0 ? st.size : hint?.size ?? -1, mime: st.mime || hint?.mime || "application/octet-stream", deletable: st.deletable };
+}
+
+export const fmtSize = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`);
+
+/** What a share from another app would upload, and into which account: shown before anything is sent. */
+export function shareSummary(files: Pick<Shared, "size">[], email: string): string {
+  const total = files.reduce((a, f) => a + Math.max(0, f.size), 0);
+  const what = files.length === 1 ? "1 file" : `${files.length} files`;
+  return `${what} (${fmtSize(total)}) shared from another app, to be encrypted and uploaded to the library of ${email}.`;
 }
 
 export const kindOf = (f: Pick<Shared, "mime" | "name">): "image" | "video" | "other" =>
@@ -59,13 +69,15 @@ export async function uploadShared(f: Shared, onProgress: (done: number, total: 
 }
 
 /** The upload itself. wrap() locks the new item key: under the master key, or sealed to the account's public key by
- *  the background backup. mine() throws to stop between steps. */
-export async function uploadFile(f: Shared, s: Sodium, wrap: (itemKey: Uint8Array, id: string) => Uint8Array, mine: () => void, onProgress: (done: number, total: number) => void): Promise<string> {
+ *  the background backup. mine() throws to stop between steps. The backup passes its own server in to. */
+export async function uploadFile(f: Shared, s: Sodium, wrap: (itemKey: Uint8Array, id: string) => Uint8Array, mine: () => void, onProgress: (done: number, total: number) => void, to?: Remote): Promise<string> {
   if (f.size < 0) throw new Error("Android didn't say how big this file is, so it can't be uploaded safely.");
   if (f.size > MAX_FILE) throw new Error("Files over 8 GB can't be uploaded.");
   const kind = kindOf(f);
   const count = segmentCount(f.size);
-  const id = (await api<{ id: string }>("POST", "/api/items", { kind, size: f.size, segment_count: count })).id;
+  const id = (await api<{ id: string }>("POST", "/api/items", { kind, size: f.size, segment_count: count }, to)).id;
+  // the id is bound into the wrapped key and every part, and goes into the paths below: only one of the server's own form
+  if (typeof id !== "string" || !ITEM_ID.test(id)) throw new Error("The server answered with an invalid item id.");
   const itemKey = newItemKey(s);
   const wrapped = b64(s, wrap(itemKey, id));
   try {
@@ -78,7 +90,7 @@ export async function uploadFile(f: Shared, s: Sodium, wrap: (itemKey: Uint8Arra
         if (!t || !p) return;
         dims = { width: p.width, height: p.height };
         mine();
-        await Promise.all([putBytes(`/api/items/${id}/thumb`, encryptThumb(s, t.bytes, itemKey, id)), putBytes(`/api/items/${id}/preview`, encryptPreview(s, p.bytes, itemKey, id))]);
+        await Promise.all([putBytes(`/api/items/${id}/thumb`, encryptThumb(s, t.bytes, itemKey, id), to), putBytes(`/api/items/${id}/preview`, encryptPreview(s, p.bytes, itemKey, id), to)]);
       } catch (e) {
         if (e instanceof SignedOut) throw e;
       }
@@ -96,7 +108,7 @@ export async function uploadFile(f: Shared, s: Sodium, wrap: (itemKey: Uint8Arra
       const ct = encryptSegment(s, itemKey, id, i, count, f.size, plain);
       plain.fill(0);
       if (ct.length !== cipherLen(len)) throw new Error("internal size error");
-      const put: Promise<void> = putBytes(`/api/items/${id}/segments/${i}`, ct)
+      const put: Promise<void> = putBytes(`/api/items/${id}/segments/${i}`, ct, to)
         .then(() => { done += len; onProgress(Math.min(done, f.size), f.size || 1); }, (e) => { failure ??= e; })
         .finally(() => { inflight.delete(put); });
       inflight.add(put);
@@ -115,11 +127,11 @@ export async function uploadFile(f: Shared, s: Sodium, wrap: (itemKey: Uint8Arra
       ...(info.lat != null && info.lon != null ? { gps: { lat: info.lat, lon: info.lon } } : {}),
     };
     mine();
-    await api("POST", `/api/items/${id}/finalize`, { wrapped_item_key: wrapped, meta_enc: b64(s, encryptMeta(s, meta, itemKey, id)) });
+    await api("POST", `/api/items/${id}/finalize`, { wrapped_item_key: wrapped, meta_enc: b64(s, encryptMeta(s, meta, itemKey, id)) }, to);
     return id;
   } catch (e) {
     // an unfinished upload is discarded right away instead of waiting two days for the server's cleanup
-    api("DELETE", `/api/items/${id}`).catch(() => {});
+    api("DELETE", `/api/items/${id}`, undefined, to).catch(() => {});
     throw e;
   } finally {
     s.memzero(itemKey);

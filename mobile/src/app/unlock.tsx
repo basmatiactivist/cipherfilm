@@ -30,6 +30,7 @@ export default function Unlock() {
       <Column>
         <Title>Unlock your library</Title>
         <Lead>{me?.user.email}</Lead>
+        {then === "share" ? <Text variant="bodyMedium" style={{ marginBottom: 16 }}>Another app shared something with Cipherfilm. After unlocking you see what it is, and nothing is uploaded until you choose to.</Text> : null}
         <Problem>{error}</Problem>
         {biometric ? <Button mode="contained" icon="fingerprint" onPress={bio} disabled={busy} contentStyle={{ height: 48 }} style={{ marginBottom: 24 }}>Use fingerprint</Button> : null}
         <Field label="Password" value={password} onChangeText={setPassword} secureTextEntry textContentType="password" autoComplete="current-password" returnKeyType="go" onSubmitEditing={go}

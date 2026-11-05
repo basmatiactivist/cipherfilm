@@ -6,11 +6,12 @@ import { AppState } from "react-native";
 import { getSodium, b64, unb64, type Sodium } from "@crypto/sodium";
 import { sealIndexEntry } from "@crypto/search";
 import N from "../../modules/cf-native/src/CfNativeModule";
-import { api, ApiError, setCsrf, setServer } from "../api";
+import { api, ApiError, remote, type Remote } from "../api";
+import { savedServer } from "../session";
 import { fingerprint } from "../prints";
 import { haveModels, modelPath, type Clip } from "./models";
 import { loadSettings, saveSettings, type SearchSettings } from "./settings";
-import { localFile, toEntry } from "./engine";
+import { analyzeBytes, localFile } from "./engine";
 
 const BUDGET = 6 * 60_000;
 
@@ -25,29 +26,27 @@ export function backgroundBlocker(st: SearchSettings): string | undefined {
   return undefined;
 }
 
-/** Indexes one file just uploaded by the backup, while it is still at hand. Errors are ignored: the app redoes it. */
-export async function indexUploaded(s: Sodium, id: string, uri: string, video: boolean, pubkey: Uint8Array) {
+/** Indexes one file just uploaded by the backup (to its server), while it is still at hand. Errors are ignored: the app redoes it. */
+export async function indexUploaded(s: Sodium, id: string, uri: string, video: boolean, pubkey: Uint8Array, to: Remote) {
   try {
     const st = await loadSettings();
     const clip = st.clip ?? "mobileclip-s2";
     const why = backgroundBlocker(st) ?? (!(await haveModels(st.faces, clip)) ? "models missing" : undefined);
     if (why) { if (why !== "off") console.log(`search index (upload): later, ${why}`); return; }
     await N.visionOpen(modelPath(), st.faces, clip, true);
-    await indexFile(s, id, uri, video, st.faces, pubkey, clip);
+    await indexFile(s, id, uri, video, st.faces, pubkey, clip, to);
   } catch (e) {
     if (e instanceof ApiError && e.code === "not_indexer") await saveSettings({ indexes: false }).catch(() => {});
     console.log(`search index (upload): skipped, ${e instanceof Error ? e.message : e}`); // the app indexes it later
   }
 }
 
-async function indexFile(s: Sodium, id: string, uri: string, video: boolean, faces: boolean, pubkey: Uint8Array, clip: Clip) {
+async function indexFile(s: Sodium, id: string, uri: string, video: boolean, faces: boolean, pubkey: Uint8Array, clip: Clip, to: Remote) {
   const img = await N.jpeg(uri, video, 2048, 90);
   if (!img) return;
-  const a = await N.visionAnalyze(img.bytes, faces);
-  img.bytes.fill(0);
-  const entry = toEntry(s, a, faces, clip);
+  const entry = await analyzeBytes(img.bytes, faces, clip); // wipes the bytes; an unusable picture gets an empty entry
   // the tag in the clear too: where explicit search is allowed the server takes entries only with it (docs/SEARCH.md)
-  await api("PUT", `/api/items/${id}/index`, { data_enc: b64(s, sealIndexEntry(s, entry, pubkey, id)), model: entry.m });
+  await api("PUT", `/api/items/${id}/index`, { data_enc: b64(s, sealIndexEntry(s, entry, pubkey, id)), model: entry.m }, to);
 }
 
 export async function runBackgroundIndex(): Promise<number> {
@@ -63,10 +62,12 @@ export async function runBackgroundIndex(): Promise<number> {
   const deadline = Date.now() + BUDGET;
   let n = 0;
   try {
-    setServer(st.server);
-    const me = await api<{ user: { id: string }; csrf: string }>("GET", "/api/me");
+    if (st.server !== (await savedServer())) return 0; // settings of a server the app no longer uses
+    // its own server and token: the app's are left alone
+    const to = remote(st.server);
+    const me = await api<{ user: { id: string }; csrf: string }>("GET", "/api/me", undefined, to);
     if (me.user.id !== st.userId) return 0;
-    setCsrf(me.csrf);
+    to.csrf = me.csrf;
     const s = await getSodium();
     const pk = unb64(s, st.pubkey);
     const media = await N.phoneMedia();
@@ -80,7 +81,7 @@ export async function runBackgroundIndex(): Promise<number> {
     for (const t of todo) {
       if (Date.now() > deadline || backgroundBlocker(st)) break;
       try {
-        await indexFile(s, t.id, t.uri, t.video, st.faces, pk, clip);
+        await indexFile(s, t.id, t.uri, t.video, st.faces, pk, clip, to);
         local.done.push(t.id);
         n++;
         if (n % 20 === 0) await f.write(JSON.stringify(local));

@@ -424,23 +424,23 @@ class CfNativeModule : Module() {
   }
 
   /**
-   * The photo library entry behind a shared or picked URI, for deleting it from the phone: the library's own URI, the
-   * one the Google Photos provider wraps, or the library entry with the photo picker's id. Nothing is deleted on this
-   * alone: Android's delete request shows the person previews of exactly these photos and needs their OK.
+   * The photo library entry behind a shared or picked URI, for deleting it from the phone: the library's own URI, or the
+   * library entry with the local photo picker's id. Only MediaStore's own URIs count; a library URI inside another
+   * app's URI names something that app never gave us. Nothing is deleted on this alone: Android's delete request shows
+   * the person previews of exactly these photos and needs their OK.
    */
   private fun mediaUri(u: Uri): Uri? {
-    val first = u.pathSegments.firstOrNull()
-    if (u.authority == MediaStore.AUTHORITY && first?.startsWith("picker") != true) {
+    if (u.scheme != "content" || u.authority != MediaStore.AUTHORITY) return null
+    val seg = u.pathSegments
+    if (seg.firstOrNull()?.startsWith("picker") != true) {
       return u.takeIf { runCatching { ContentUris.parseId(it) }.isSuccess }
     }
-    val inner = Uri.decode(u.toString()).substringAfter("content://media/", "")
-    Regex("^(external[^/]*/(images|video)/media/\\d+)").find(inner)?.let { return Uri.parse("content://media/" + it.groupValues[1]) }
-    if (u.authority == MediaStore.AUTHORITY) {
-      val id = u.lastPathSegment?.toLongOrNull() ?: return null
-      val video = resolver.getType(u)?.startsWith("video/") == true
-      return ContentUris.withAppendedId((if (video) MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL) else MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)), id)
-    }
-    return null
+    // content://media/picker[_get_content]/<user>/<provider>/media/<id>: only this user's photos on the phone itself
+    // (the picker's cloud providers and other profiles number theirs differently)
+    if (seg.size != 5 || seg[1] != (android.os.Process.myUid() / 100_000).toString() || seg[2] != PHOTO_PICKER || seg[3] != "media") return null
+    val id = seg[4].toLongOrNull() ?: return null
+    val video = resolver.getType(u)?.startsWith("video/") == true
+    return ContentUris.withAppendedId((if (video) MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL) else MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)), id)
   }
 
   private fun parseExifDate(v: String, offset: String?): Long? = try {
@@ -453,5 +453,5 @@ class CfNativeModule : Module() {
     SimpleDateFormat("yyyyMMdd'T'HHmmss.SSS'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }.parse(v)?.time
   } catch (_: Exception) { null }
 
-  companion object { private const val DELETE_REQUEST = 0x5056; private const val PICK_REQUEST = 0x5057; private const val SHARE_REQUEST = 0x5058 }
+  companion object { private const val DELETE_REQUEST = 0x5056; private const val PICK_REQUEST = 0x5057; private const val SHARE_REQUEST = 0x5058; private const val PHOTO_PICKER = "com.android.providers.media.photopicker" }
 }

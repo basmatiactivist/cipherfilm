@@ -7,7 +7,7 @@ import { useKeepAwake } from "expo-keep-awake";
 import { ActivityIndicator, Appbar, Button, ProgressBar, Snackbar, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import N from "../../modules/cf-native/src/CfNativeModule";
-import { describe, SignedOut, uploadShared, type Shared } from "../upload";
+import { describe, fmtSize, shareSummary, SignedOut, uploadShared, type Shared } from "../upload";
 import { useSession } from "../session";
 import { refreshLibrary } from "../libraryStore";
 import { takePicked } from "../pending";
@@ -17,18 +17,19 @@ import { radius, text } from "../tokens";
 
 interface Job { file: Shared; state: "queued" | "working" | "done" | "error"; done: number; error?: string }
 const FILES_AT_ONCE = 2;
-const fmtSize = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`);
 
-/** Photos shared from another app: encrypted and uploaded here, then (if the person wants) removed from the phone. */
+/** Photos shared from another app: shown with the account they would go to, and once the person says so encrypted and
+ *  uploaded here, then (if they want) removed from the phone. Picked files (Upload in Photos) start at once. */
 export default function ShareScreen() {
   const t = useAppTheme();
   const inset = useSafeAreaInsets();
-  const { phase } = useSession();
+  const { phase, me } = useSession();
   const { from } = useLocalSearchParams<{ from?: string }>();
   const [jobs, setJobs] = useState<Job[] | null>(null);
   const [problem, setProblem] = useState<string>();
   const [note, setNote] = useState<string>();
   const [finished, setFinished] = useState(false);
+  const [asking, setAsking] = useState(false);
   const started = useRef(false);
   const signal = useRef({ cancelled: false });
 
@@ -58,7 +59,9 @@ export default function ShareScreen() {
         const files = await Promise.all(sources.map((x) => describe(x.uri, x.hint)));
         const list: Job[] = files.map((file) => ({ file, state: "queued", done: 0 }));
         setJobs(list);
-        await run(list);
+        // another app chose these: nothing is sent until the person has seen what and where, and taps Upload
+        if (from === "picker") await run(list);
+        else setAsking(true);
       } catch (e) {
         // usually the other app didn't pass on the permission to read the file (or the file is gone)
         console.log("share: couldn't read", e);
@@ -90,11 +93,16 @@ export default function ShareScreen() {
     await Promise.all(Array.from({ length: FILES_AT_ONCE }, worker));
     refreshLibrary();
     setFinished(true);
-    // straight to Android's own confirmation (one for all, with previews): only files that are safely on the server,
-    // and that Android lets us remove; failed ones always stay
+    // picked here: straight to Android's own confirmation (one for all, with previews), only for files that are safely
+    // on the server and that Android lets us remove; failed ones always stay. A share waits for Remove from phone.
     const removable = list.filter((j) => results.get(j.file.uri) && j.file.deletable).map((j) => j.file.uri);
-    if (removable.length) await removeFromPhone(removable);
+    if (from === "picker" && removable.length) await removeFromPhone(removable);
   }
+
+  const upload = async () => {
+    setAsking(false);
+    await run(jobs ?? []);
+  };
 
   const retry = async () => {
     const failed = (jobs ?? []).filter((j) => j.state === "error").map((j) => ({ ...j, state: "queued" as const, done: 0, error: undefined }));
@@ -129,19 +137,21 @@ export default function ShareScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: t.colors.background }}>
       <Appbar.Header style={{ backgroundColor: t.colors.background }}>
-        <Appbar.Action icon="x" accessibilityLabel={finished ? "Close" : "Stop and close"} onPress={close} />
-        <Appbar.Content title={problem ? "Couldn't upload" : finished ? (failed.length ? "Some didn't upload" : "Uploaded") : "Uploading"} titleStyle={text.page} />
+        <Appbar.Action icon="x" accessibilityLabel={finished ? "Close" : asking ? "Cancel" : "Stop and close"} onPress={close} />
+        <Appbar.Content title={problem ? "Couldn't upload" : asking ? "Upload to Cipherfilm?" : finished ? (failed.length ? "Some didn't upload" : "Uploaded") : "Uploading"} titleStyle={text.page} />
       </Appbar.Header>
       <View style={st.summary}>
         <Problem>{problem}</Problem>
         {jobs ? (
           <>
             <Text variant="bodyLarge" style={{ marginBottom: 8 }}>
-              {finished
+              {asking
+                ? shareSummary(all.map((j) => j.file), me?.user.email ?? "this account")
+                : finished
                 ? `${done.length} of ${all.length} safely in Cipherfilm${failed.length ? `, ${failed.length} failed` : ""}.`
                 : `Encrypting and uploading ${all.length === 1 ? "1 file" : `${all.length} files`}. Keep the app open.`}
             </Text>
-            {finished ? null : <ProgressBar progress={progress} color={t.colors.primary} style={{ height: 5, borderRadius: 3, backgroundColor: t.colors.outlineVariant }} />}
+            {finished || asking ? null : <ProgressBar progress={progress} color={t.colors.primary} style={{ height: 5, borderRadius: 3, backgroundColor: t.colors.outlineVariant }} />}
           </>
         ) : !problem ? (
           <View style={st.wait}><ActivityIndicator /><Text variant="bodyMedium" style={{ marginLeft: 12 }}>Reading what you shared</Text></View>
@@ -152,9 +162,14 @@ export default function ShareScreen() {
         keyExtractor={(j) => j.file.uri}
         contentContainerStyle={{ paddingBottom: inset.bottom + 96 }}
         ItemSeparatorComponent={() => <View style={[st.rule, { backgroundColor: t.colors.outlineVariant }]} />}
-        renderItem={({ item: j }) => <Row job={j} />}
+        renderItem={({ item: j }) => <Row job={j} asking={asking} />}
       />
-      {finished ? (
+      {asking ? (
+        <View style={[st.actions, { paddingBottom: inset.bottom + 16, backgroundColor: t.colors.background, borderTopColor: t.colors.outlineVariant }]}>
+          <Button mode="outlined" onPress={close} style={{ flex: 1 }} contentStyle={{ height: 48 }}>Cancel</Button>
+          <Button mode="contained" onPress={upload} style={{ flex: 1 }} contentStyle={{ height: 48 }}>Upload</Button>
+        </View>
+      ) : finished ? (
         <View style={[st.actions, { paddingBottom: inset.bottom + 16, backgroundColor: t.colors.background, borderTopColor: t.colors.outlineVariant }]}>
           {failed.length && !failed.some((j) => j.error?.startsWith("Stopped")) ? <Button mode="outlined" onPress={retry} style={{ flex: 1 }} contentStyle={{ height: 48 }}>Try again</Button> : null}
           {!removed && deletable.length ? <Button mode="outlined" onPress={() => removeFromPhone(deletable.map((j) => j.file.uri))} style={{ flex: 1 }} contentStyle={{ height: 48 }}>Remove from phone</Button> : null}
@@ -166,7 +181,7 @@ export default function ShareScreen() {
   );
 }
 
-function Row({ job }: { job: Job }) {
+function Row({ job, asking }: { job: Job; asking: boolean }) {
   const t = useAppTheme();
   const { file, state } = job;
   const pct = file.size ? Math.round((job.done / file.size) * 100) : 0;
@@ -178,7 +193,7 @@ function Row({ job }: { job: Job }) {
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text variant="bodyMedium" numberOfLines={1}>{file.name}</Text>
         <Text variant="bodySmall" style={{ color: state === "error" ? t.colors.error : t.colors.onSurfaceVariant }} numberOfLines={2}>
-          {state === "error" ? job.error : state === "done" ? `${fmtSize(file.size)} · encrypted and uploaded` : state === "working" ? `${pct} % of ${fmtSize(file.size)}` : `${fmtSize(file.size)} · waiting`}
+          {state === "error" ? job.error : state === "done" ? `${fmtSize(file.size)} · encrypted and uploaded` : state === "working" ? `${pct} % of ${fmtSize(file.size)}` : asking ? fmtSize(file.size) : `${fmtSize(file.size)} · waiting`}
         </Text>
       </View>
       <View style={st.state}>

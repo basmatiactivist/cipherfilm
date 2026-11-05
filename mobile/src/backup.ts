@@ -13,13 +13,13 @@ import { getSodium, b64, unb64 } from "@crypto/sodium";
 import { accountKeyPair, sealItemKey } from "@crypto/item";
 import { normEmail } from "@crypto/account";
 import N from "../modules/cf-native/src/CfNativeModule";
-import { api, ApiError, setCsrf, setServer } from "./api";
+import { api, ApiError, remote, type Remote } from "./api";
 import { uploadFile, type Shared } from "./upload";
 import { keepRunning, letGo } from "./keepAlive";
 import { fingerprint } from "./prints";
 import { indexUploaded, runBackgroundIndex } from "./search/background";
 import { forgetSettings, loadSettings } from "./search/settings";
-import { onSignOut } from "./session";
+import { onSessionChange, onSignOut, savedServer } from "./session";
 
 export const TASK = "cipherfilm-backup";
 
@@ -115,7 +115,8 @@ export async function rememberLibrary(items: { meta?: { name: string; size: numb
 
 
 let running = false;
-let generation = 0; // bumped at sign-out: a run still going stops and keeps nothing
+let generation = 0; // bumped at sign-out and whenever the session changes hands: a run still going stops and keeps nothing
+const OTHER_ACCOUNT = "another account";
 const BACKGROUND_BUDGET = 8 * 60_000; // WorkManager stops work after 10 minutes, if the service couldn't start
 const MAX_TRIES = 3;
 
@@ -130,10 +131,10 @@ export function blocker(c: Config, manual: boolean): string | undefined {
 }
 
 /** /api/me, tried three times over half a minute: a phone that just woke up or changed networks often needs a moment. */
-async function reach(): Promise<{ user: { id: string }; csrf: string }> {
+async function reach(to: Remote): Promise<{ user: { id: string }; csrf: string }> {
   for (let i = 0; ; i++) {
     try {
-      return await api("GET", "/api/me");
+      return await api("GET", "/api/me", undefined, to);
     } catch (e) {
       if (i >= 2 || !(e instanceof ApiError) || !(e.status === 0 || e.status >= 500)) throw e;
       await new Promise((r) => setTimeout(r, i ? 20_000 : 5_000));
@@ -160,10 +161,12 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
     const why = blocker(c, trigger === "manual");
     if (why) { status.problem = why; return; }
 
-    setServer(c.server);
+    if (c.server !== (await savedServer())) { status.problem = "Cipherfilm now uses another server. Turn backup on again."; await disableBackup(); return; }
+    // the run's own server and token: the app's are left alone
+    const to = remote(c.server);
     let me: { user: { id: string }; csrf: string };
     try {
-      me = await reach();
+      me = await reach(to);
     } catch (e) {
       if (e instanceof ApiError) console.log(`backup: server not reached (${e.status}) ${e.detail}`);
       status.problem = e instanceof ApiError && e.status === 401 ? "You were signed out. Open Cipherfilm and sign in to continue the backup." : "Can't connect to the server. The backup tries again in a few minutes.";
@@ -171,7 +174,13 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
       return;
     }
     if (me.user.id !== c.userId) { status.problem = "Signed in with another account. Turn backup on again for this one."; await disableBackup(); return; }
-    setCsrf(me.csrf);
+    to.csrf = me.csrf;
+    // the session may change hands while the run goes on: uploads go only to c.userId
+    const stillMine = async () => {
+      const who = await api<{ user: { id: string }; csrf: string }>("GET", "/api/me", undefined, to);
+      if (who.user.id !== c.userId || !current()) throw new Error(OTHER_ACCOUNT);
+      to.csrf = who.csrf;
+    };
 
     const s = await getSodium();
     const pk = unb64(s, c.pubkey);
@@ -202,9 +211,10 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
             // the server out of reach mid-file: wait and try the file again twice before the run gives up
             for (let attempt = 0; ; attempt++) {
               try {
+                await stillMine(); // before each file, and again after each wait
                 id = await uploadFile(file, s, (itemKey, id) => sealItemKey(s, itemKey, pk, id), () => {
                   if (Date.now() > deadline + 90_000 || (held && N.keepRunningLost()) || !current()) throw new Error("out of time"); // finish next time
-                }, (d, t) => N.backupNotify("Backing up", `${m.name} · ${waiting} left`, t ? d / t : -1, true));
+                }, (d, t) => N.backupNotify("Backing up", `${m.name} · ${waiting} left`, t ? d / t : -1, true), to);
                 break;
               } catch (e) {
                 if (attempt >= 2 || !(e instanceof ApiError) || !(e.status === 0 || e.status >= 500) || outOfTime()) throw e;
@@ -213,7 +223,9 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
                 await new Promise((r) => setTimeout(r, attempt ? 90_000 : 30_000));
               }
             }
-            await indexUploaded(s, id, m.uri, (m.mime ?? "").startsWith("video/"), pk); // for search, while the file is at hand
+            // counted as backed up only once it is certain the file went to c.userId
+            await stillMine();
+            await indexUploaded(s, id, m.uri, (m.mime ?? "").startsWith("video/"), pk, to); // for search, while the file is at hand
             known.add(print);
             delete status.failures[String(m.id)];
             status.uploaded++; done++; waiting--;
@@ -223,6 +235,7 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
             const msg = e instanceof Error ? e.message : String(e);
             if (e instanceof ApiError) console.log(`backup: upload failed (${e.status}) ${e.detail}`); // ids only, no names
             if (msg === "out of time") break outer;
+            if (msg === OTHER_ACCOUNT) { status.problem = "Signed in with another account. The backup goes on once this account is signed in."; break outer; }
             const tries = (status.failures[String(m.id)] ?? 0) + 1;
             status.failures[String(m.id)] = tries;
             if (e instanceof ApiError && (e.status === 0 || e.status >= 500 || e.status === 401 || e.status === 413)) {
@@ -282,6 +295,9 @@ export async function scheduleBackground() {
   } catch { /* already in that state */ }
   N.watchNewMedia(want); // and seconds after a new photo or video
 }
+
+// A session end, another sign-in or another server: a run still going stops before its next request.
+onSessionChange(() => { generation++; });
 
 // Sign-out: nothing of the account stays on the phone (the search models do; they hold nothing of anyone).
 onSignOut(async () => {

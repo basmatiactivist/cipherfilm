@@ -9,6 +9,7 @@ import android.graphics.Canvas
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.util.Half
+import expo.modules.kotlin.exception.CodedException
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.ByteBuffer
@@ -29,9 +30,13 @@ import kotlin.math.sqrt
  * nothing is written to storage and nothing leaves the phone from here. The models are files the app downloaded from
  * its own server and checked against fixed SHA-256 values (src/search/models.ts) before they are opened.
  */
+/** A picture there is nothing to see in (not an image, or a sliver): the app stores an empty entry, not tried again. */
+internal class UnusableImage : CodedException("ERR_UNUSABLE_IMAGE", "not a usable picture", null)
+
 internal object Vision {
   const val CLIP_DIM = 512
   const val FACE_DIM = 128
+  private const val MIN_SIDE = 16
 
   /** The two image/text models: MobileCLIP S2 (256 px, 0..1) and LAION ViT-B/32 (224 px, CLIP mean and std). */
   private class Clip(val vision: String, val text: String, val px: Int, val mean: FloatArray?, val std: FloatArray?)
@@ -88,8 +93,9 @@ internal object Vision {
   /** The image vector and the faces in a JPEG; vectors as little-endian float16. */
   fun analyze(jpeg: ByteArray, faces: Boolean): Map<String, Any> {
     val img = image ?: throw IllegalStateException("search models not loaded")
-    val bmp = decode(jpeg, 1280) ?: throw IllegalArgumentException("not an image")
+    val bmp = decode(jpeg, 1280) ?: throw UnusableImage()
     try {
+      if (min(bmp.width, bmp.height) < MIN_SIDE) throw UnusableImage()
       val out = mutableMapOf<String, Any>("clip" to half(normalize(clip(img, bmp))))
       val d = det; val r = rec
       if (faces && d != null && r != null) {
@@ -147,17 +153,19 @@ internal object Vision {
     }
   }
 
-  // ---- CLIP: shortest side to the model's size, centre crop; MobileCLIP 0..1, LAION with CLIP's mean and std ----
+  // ---- CLIP: centre square, scaled to the model's size; MobileCLIP 0..1, LAION with CLIP's mean and std ----
 
   private fun clip(s: OrtSession, src: Bitmap): FloatArray {
     val k = clipKind
     val CLIP_PX = k.px
-    val scale = CLIP_PX.toFloat() / min(src.width, src.height)
-    val sized = smooth(src, max(CLIP_PX, (src.width * scale).roundToInt()), max(CLIP_PX, (src.height * scale).roundToInt()))
-    val l = (sized.width - CLIP_PX) / 2; val t = (sized.height - CLIP_PX) / 2
+    // cropped before scaling, so a very wide or tall picture never becomes a huge bitmap on the way
+    val side = min(src.width, src.height)
+    val square = if (src.width == src.height) src else Bitmap.createBitmap(src, (src.width - side) / 2, (src.height - side) / 2, side, side)
+    val sized = smooth(square, CLIP_PX, CLIP_PX)
     val px = IntArray(CLIP_PX * CLIP_PX)
-    sized.getPixels(px, 0, CLIP_PX, l, t, CLIP_PX, CLIP_PX)
-    if (sized !== src) sized.recycle()
+    sized.getPixels(px, 0, CLIP_PX, 0, 0, CLIP_PX, CLIP_PX)
+    if (sized !== square) sized.recycle()
+    if (square !== src) square.recycle()
     val n = CLIP_PX * CLIP_PX
     val buf = FloatBuffer.allocate(3 * n)
     for (i in 0 until n) {

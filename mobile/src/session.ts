@@ -6,7 +6,7 @@ import { getSodium, b64, unb64 } from "@crypto/sodium";
 import { loginProof, normEmail, unlockMasterKey } from "@crypto/account";
 import { open, LABEL } from "@crypto/wrap";
 import type { KdfParams } from "@crypto/kdf";
-import { api, ApiError, setCsrf, setServer, whenRevoked, whenSessionEnds } from "./api";
+import { api, ApiError, remote, setCsrf, setServer, whenRevoked, whenSessionEnds } from "./api";
 
 export interface Me {
   user: { id: string; email: string; role: "admin" | "user"; nsfw?: boolean };
@@ -44,11 +44,24 @@ function wipe(how: "locked" | "ended") {
  *  here and is deleted at sign-out, not when the server ends the session (the backup goes on after signing in again). */
 const signOuts = new Set<() => Promise<void> | void>();
 export const onSignOut = (f: () => Promise<void> | void) => { signOuts.add(f); };
+async function forgetAccount() {
+  for (const f of signOuts) { try { await f(); } catch { /* keep deleting the rest */ } }
+}
+
+/** Called whenever who the phone's session belongs to may have changed (a session end, a sign-in, another account,
+ *  another server): work running for the account before (the backup) stops before its next request. */
+const handovers = new Set<() => void>();
+export const onSessionChange = (f: () => void) => { handovers.add(f); };
+function handedOver() {
+  for (const f of handovers) { try { f(); } catch { /* tell the rest */ } }
+}
 
 export const useSession = () => useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => state);
 export const session = () => state;
 
 const SERVER = "cf.server";
+/** The server the app uses, as stored: the background jobs run only for that one. */
+export const savedServer = async () => (await SecureStore.getItemAsync(SERVER)) ?? "";
 const keyName = (userId: string) => `cf.mk.${userId}`; // only letters, digits, ".", "-", "_" are allowed
 const bioName = (userId: string) => `cf.bio.${userId}`;
 const bioNoName = (userId: string) => `cf.bioNo.${userId}`; // "Not now" to fingerprint unlock: not offered again
@@ -74,7 +87,7 @@ async function checkKey(me: Me, key: Uint8Array): Promise<boolean> {
 }
 
 function adopt(me: Me, masterKey: Uint8Array | null) {
-  if (state.me && state.me.user.id !== me.user.id) wipe("ended");
+  if (state.me && state.me.user.id !== me.user.id) { wipe("ended"); handedOver(); }
   setCsrf(me.csrf);
   set({ me, masterKey, phase: masterKey ? "unlocked" : "locked", notice: undefined, byHand: false });
 }
@@ -82,6 +95,7 @@ function adopt(me: Me, masterKey: Uint8Array | null) {
 whenSessionEnds(() => {
   if (state.phase === "unlocked" || state.phase === "locked") {
     wipe("ended");
+    handedOver();
     if (state.masterKey) state.masterKey.fill(0);
     set({ phase: "signedOut", me: null, masterKey: null, notice: "Your session ended. Sign in again." });
   }
@@ -96,7 +110,7 @@ async function revoked() {
     await SecureStore.deleteItemAsync(bioNoName(me.user.id));
   }
   wipe("ended");
-  for (const f of signOuts) { try { await f(); } catch { /* keep deleting the rest */ } }
+  await forgetAccount();
   if (state.masterKey) state.masterKey.fill(0);
   setCsrf("");
   set({ phase: "signedOut", me: null, masterKey: null, biometric: false, notice: "This phone was signed out from another device. What it kept of your library was deleted." });
@@ -136,19 +150,27 @@ export async function chooseServer(input: string) {
   let url: URL;
   try { url = new URL(origin); } catch { throw new Error("That isn't a web address."); }
   if (url.protocol !== "https:") throw new Error("Cipherfilm needs an https address.");
-  setServer(url.origin);
   try {
-    await api("GET", "/api/setup/status");
+    await api("GET", "/api/setup/status", undefined, remote(url.origin)); // the app's server stays until this one answers
   } catch (e) {
     throw e instanceof ApiError && e.status === 0 ? e : new Error("That address answers, but not like a Cipherfilm.");
   }
+  // another server: what the phone keeps for the account on the old one (backup, background search) ends too
+  if (url.origin !== (await savedServer())) await forgetAccount();
+  handedOver();
+  setServer(url.origin);
   await SecureStore.setItemAsync(SERVER, url.origin);
   wipe("ended");
+  setCsrf("");
   set({ server: url.origin, phase: "signedOut", me: null, masterKey: null, notice: undefined });
 }
 
 export async function forgetServer() {
   wipe("ended");
+  await forgetAccount();
+  handedOver();
+  setServer("");
+  setCsrf("");
   await SecureStore.deleteItemAsync(SERVER);
   set({ phase: "noServer", server: "", me: null, masterKey: null });
 }
@@ -156,10 +178,12 @@ export async function forgetServer() {
 export async function login(email: string, password: string) {
   const s = await getSodium();
   const e = normEmail(email);
+  setServer(state.server); // the server shown on the sign-in screen, always
   const kdf = await api<KdfParams>("GET", `/api/auth/params?email=${encodeURIComponent(e)}`);
   assertSaneKdf(kdf);
   const { auth, kek } = await loginProof(s, password, kdf);
   const me = await api<Me>("POST", "/api/auth/login", { email: e, auth });
+  handedOver(); // the cookie is this account's now
   adopt(me, unlockMasterKey(s, e, kek, me.wrapped_master_pw));
   s.memzero(kek);
   set({ biometric: (await SecureStore.getItemAsync(bioName(me.user.id))) === "1" });
@@ -251,7 +275,7 @@ export async function signOut() {
     await SecureStore.deleteItemAsync(bioNoName(me.user.id));
   }
   wipe("ended");
-  for (const f of signOuts) { try { await f(); } catch { /* keep deleting the rest */ } }
+  await forgetAccount();
   if (state.masterKey) state.masterKey.fill(0);
   setCsrf("");
   set({ phase: "signedOut", me: null, masterKey: null, biometric: false, notice: undefined });

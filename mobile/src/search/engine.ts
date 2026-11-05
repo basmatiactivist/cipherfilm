@@ -228,11 +228,21 @@ export async function indexHere(library: Item[]) {
   await startSearch(library);
 }
 
-async function analyzeItem(it: Item, faces: boolean): Promise<IndexEntry> {
-  const bytes = await imageBytes(it);
+async function analyzeItem(it: Item, faces: boolean) { return analyzeBytes(await imageBytes(it), faces, clip); }
+
+/** The entry for one picture (the bytes are wiped). One with nothing to see in it (not an image, or a sliver) gets an
+ *  empty entry, stored like any other: it never matches a search, and isn't tried again at every start. */
+export async function analyzeBytes(bytes: Uint8Array, faces: boolean, model: Clip): Promise<IndexEntry> {
   let a: Analysis;
-  try { a = await N.visionAnalyze(bytes, faces); } finally { bytes.fill(0); }
-  return toEntry(await getSodium(), a, faces, clip);
+  try {
+    a = await N.visionAnalyze(bytes, faces);
+  } catch (e) {
+    if ((e as { code?: string } | null)?.code === "ERR_UNUSABLE_IMAGE") return { v: 1, m: modelTag(model, faces), ...(faces ? { faces: [] } : {}) };
+    throw e;
+  } finally {
+    bytes.fill(0);
+  }
+  return toEntry(await getSodium(), a, faces, model);
 }
 
 export function toEntry(s: Sodium, a: Analysis, faces: boolean, model: Clip): IndexEntry {

@@ -8,7 +8,7 @@ import (
 
 func (a *App) adminListUsers(w http.ResponseWriter, r *http.Request, u *user, s *session) {
 	rows, err := a.db.Query(`SELECT u.id,u.email,u.role,u.status,u.created_at,u.quota_bytes,
-		COALESCE((SELECT SUM(stored_bytes) FROM items i WHERE i.user_id=u.id),0),
+		` + usedBytesSQL("u.id") + `,
 		(SELECT COUNT(*) FROM items i WHERE i.user_id=u.id AND i.state='ready'), u.last_login_at, u.nsfw
 		FROM users u ORDER BY u.created_at`)
 	if err != nil {
@@ -18,7 +18,7 @@ func (a *App) adminListUsers(w http.ResponseWriter, r *http.Request, u *user, s 
 	defer rows.Close()
 	type row struct {
 		ID, Email, Role, Status string
-		CreatedAt, LastLogin   int64
+		CreatedAt, LastLogin    int64
 		Quota, Used, Count      int64
 		NSFW                    bool
 	}
@@ -93,7 +93,6 @@ type patchReq struct {
 	Role       *string `json:"role"`        // "admin" or "user"
 	NSFW       *bool   `json:"nsfw"`        // search of explicit content allowed
 }
-
 
 // adminGuard serialises administrative changes to accounts and re-checks, under the lock, that the caller is still an
 // active administrator and that the change would not remove the last one. Without it, two admins who act on each other

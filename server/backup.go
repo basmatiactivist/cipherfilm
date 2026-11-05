@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"io"
@@ -63,20 +64,47 @@ func runBackup(dataDir string) error {
 }
 
 // runAfterRestore prepares restored data before the app serves it. Every session ends: the backup brings back
-// sessions that were revoked since. And everything in the restored trash gets a fresh 30 days: the cleanup counts
-// from today's date and would otherwise purge, within seconds of starting, exactly the deleted items a restore is
-// usually meant to bring back.
+// sessions that were revoked since. Devices signed out on purpose since the backup was made stay marked as such
+// (their records are taken over from the replaced database that restore.sh leaves in .previous/), so they still
+// delete what they keep. And everything in the restored trash gets a fresh 30 days: the cleanup counts from today's
+// date and would otherwise purge, within seconds of starting, exactly the deleted items a restore is usually meant
+// to bring back.
 func runAfterRestore(dataDir string) error {
 	db, err := openDB(filepath.Join(dataDir, "app.db"))
 	if err != nil {
 		return err
 	}
 	defer db.Close()
-	tx, err := db.Begin()
+	ctx := context.Background()
+	conn, err := db.Conn(ctx) // ATTACH holds for one connection only, and not inside a transaction
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	prev := filepath.Join(dataDir, ".previous", "app.db")
+	carry := false
+	if _, err := os.Stat(prev); err == nil {
+		if _, err := conn.ExecContext(ctx, `ATTACH DATABASE ? AS prev`, "file:"+prev+"?mode=ro"); err != nil {
+			return fmt.Errorf("open the replaced database: %w", err)
+		}
+		defer conn.ExecContext(ctx, `DETACH DATABASE prev`)
+		var n int
+		conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM prev.sqlite_master WHERE type='table' AND name='revoked_sessions'`).Scan(&n)
+		carry = n > 0 // a database from before signed-out devices were remembered has none
+	}
+	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	revoked := int64(0)
+	if carry {
+		res, err := tx.Exec(`INSERT OR IGNORE INTO main.revoked_sessions(id_hash,at) SELECT id_hash,at FROM prev.revoked_sessions`)
+		if err != nil {
+			return err
+		}
+		revoked, _ = res.RowsAffected()
+	}
 	res, err := tx.Exec(`DELETE FROM sessions`)
 	if err != nil {
 		return err
@@ -90,7 +118,7 @@ func runAfterRestore(dataDir string) error {
 	if err := tx.Commit(); err != nil {
 		return err
 	}
-	fmt.Printf("ended %d sessions; %d items in the trash keep it for another 30 days\n", sessions, trashed)
+	fmt.Printf("ended %d sessions; kept %d later sign-outs; %d items in the trash keep it for another 30 days\n", sessions, revoked, trashed)
 	return nil
 }
 
@@ -137,12 +165,12 @@ func copyFile(from, to string) error {
 }
 
 type checkResult struct {
-	Integrity     string
-	Users         int
-	Items         int
-	Trashed       int
-	BlobDirs      int
-	MissingBlobs  []string // ready items whose files are not all on disk
+	Integrity    string
+	Users        int
+	Items        int
+	Trashed      int
+	BlobDirs     int
+	MissingBlobs []string // ready items whose files are not all on disk
 }
 
 // runCheck verifies the database and that every finished item's segment files exist.

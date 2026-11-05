@@ -1,6 +1,8 @@
 package main
 
 import (
+	"database/sql"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -192,4 +194,66 @@ func TestOverlappingBackupsDoNotShareTheirWork(t *testing.T) {
 	if checkSnapshot(empty) == nil {
 		t.Fatal("an empty database passed as a snapshot")
 	}
+}
+
+// A device signed out on purpose after the snapshot must still be told so after a restore of that snapshot: the
+// sign-out records are taken over from the replaced database, which restore.sh leaves in .previous/.
+func TestRestoreKeepsLaterSignOuts(t *testing.T) {
+	e := newEnv(t)
+	admin, ab := e.setupAdmin("admin@x.org")
+	phone := e.login("admin@x.org", ab)
+	if err := runBackup(e.app.dataDir); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range sessionList(t, admin) {
+		if s["current"] != true {
+			admin.do("DELETE", "/api/me/sessions/"+s["id"].(string), nil, true)
+		}
+	}
+	restore := func(prev func(dir string)) string {
+		dir := t.TempDir()
+		os.MkdirAll(filepath.Join(dir, "blobs"), 0o700)
+		os.MkdirAll(filepath.Join(dir, ".previous"), 0o700)
+		prev(filepath.Join(dir, ".previous"))
+		for _, f := range []string{"app.db", "secret"} {
+			if err := copyFile(filepath.Join(e.app.dataDir, "backup", f), filepath.Join(dir, f)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := runAfterRestore(dir); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+	dir := restore(func(prev string) {
+		for _, f := range []string{"app.db", "app.db-wal", "app.db-shm"} {
+			if _, err := os.Stat(filepath.Join(e.app.dataDir, f)); err == nil {
+				copyFile(filepath.Join(e.app.dataDir, f), filepath.Join(prev, f))
+			}
+		}
+	})
+	app2, err := newApp(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app2.db.Close()
+	srv := httptest.NewTLSServer(app2.handler())
+	defer srv.Close()
+	req, _ := http.NewRequest("GET", srv.URL+"/api/items", nil)
+	resp, err := phone.c.Do(req) // the cookie jar ignores the port: the phone's session cookie goes along
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 401 || resp.Header.Get("X-CF-Session") != "revoked" {
+		t.Fatalf("signed-out device not told after the restore: %d %q", resp.StatusCode, resp.Header.Get("X-CF-Session"))
+	}
+	// a replaced database from before sign-outs were remembered is no obstacle
+	restore(func(prev string) {
+		db, err := sql.Open("sqlite", filepath.Join(prev, "app.db"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		db.Exec(`CREATE TABLE users(id TEXT)`)
+	})
 }

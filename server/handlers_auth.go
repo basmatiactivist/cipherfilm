@@ -57,8 +57,8 @@ func (a *App) sessionBundle(u *user, s *session) map[string]any {
 	return map[string]any{
 		"user":              userView{u.ID, u.Email, u.Role, u.NSFW},
 		"csrf":              s.CSRF,
-		"session_id":        s.Pub,                 // this device in the device list
-		"indexer":           a.liveIndexer(u),      // the device that computes the search index ("" = none yet)
+		"session_id":        s.Pub,            // this device in the device list
+		"indexer":           a.liveIndexer(u), // the device that computes the search index ("" = none yet)
 		"kdf":               json.RawMessage(u.KDF),
 		"wrapped_master_pw": u.WrappedMasterPW,
 		"wrapped_privkey":   u.WrappedPrivkey,
@@ -333,7 +333,7 @@ func (a *App) newRecoveryKey(w http.ResponseWriter, r *http.Request, u *user, s 
 func (a *App) usage(w http.ResponseWriter, r *http.Request, u *user, s *session) {
 	var quota, used int64
 	a.db.QueryRow(`SELECT quota_bytes FROM users WHERE id=?`, u.ID).Scan(&quota)
-	a.db.QueryRow(`SELECT COALESCE(SUM(stored_bytes),0) FROM items WHERE user_id=?`, u.ID).Scan(&used)
+	a.db.QueryRow(`SELECT `+usedBytesSQL("?"), u.ID, u.ID, u.ID).Scan(&used)
 	writeJSON(w, 200, map[string]any{"used_bytes": used, "quota_bytes": quota, "unlimited": quota == 0})
 }
 
@@ -363,12 +363,17 @@ func (a *App) recoverStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ip := limiterIP(a.clientIP(r))
-	at, ok := reserve(slot{a.loginIP, "recover|" + ip, false}, slot{a.loginAcct, "recover|" + email + "|" + ip, true})
+	u, err := a.userByEmail(email)
+	slots := []slot{{a.loginIP, "recover|" + ip, false}, {a.loginAcct, "recover|" + email + "|" + ip, true}}
+	if err == nil && a.knownDevice(r, u) {
+		// like login: a browser that signed in before is limited per account, not per source
+		slots = []slot{{a.loginDev, "recover|" + u.ID, true}}
+	}
+	at, ok := reserve(slots...)
 	if !ok {
 		fail(w, 429, "too many attempts, try later")
 		return
 	}
-	u, err := a.userByEmail(email)
 	hash := a.dummyHash
 	if err == nil {
 		hash = u.RecoveryHash

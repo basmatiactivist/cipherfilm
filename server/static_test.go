@@ -13,11 +13,11 @@ import (
 func staticFixture() *staticFiles {
 	big := strings.Repeat("function f(){return 1}\n", 500)
 	return newStatic(fstest.MapFS{
-		"index.html":            {Data: []byte("<!doctype html><title>x</title>" + strings.Repeat(" ", 200))},
-		"sw.js":                 {Data: []byte(big)},
-		"assets/app-abc123.js":  {Data: []byte(big)},
+		"index.html":             {Data: []byte("<!doctype html><title>x</title>" + strings.Repeat(" ", 200))},
+		"sw.js":                  {Data: []byte(big)},
+		"assets/app-abc123.js":   {Data: []byte(big)},
 		"assets/logo-abc123.png": {Data: []byte("\x89PNG not really")},
-		"heic/worker.js":        {Data: []byte(big)},
+		"heic/worker.js":         {Data: []byte(big)},
 	})
 }
 

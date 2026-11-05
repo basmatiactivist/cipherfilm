@@ -24,9 +24,13 @@ const (
 	indexPage     = 500
 )
 
+var modelNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
+
+// The per-account documents and index model families the apps use. Anything else is refused, so an account cannot
+// pile up rows under names of its own; both stores also count toward the storage limit (usedBytesSQL).
 var (
-	blobNameRe  = regexp.MustCompile(`^[a-z]{1,32}$`)
-	modelNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
+	blobNames     = map[string]bool{"people": true}
+	indexFamilies = map[string]bool{"": true, "mcs2": true, "laionb32": true}
 )
 
 func (a *App) indexRoutes(m *http.ServeMux) {
@@ -109,6 +113,19 @@ func (a *App) putIndex(w http.ResponseWriter, r *http.Request, u *user, s *sessi
 		return
 	}
 	fam := modelFamily(req.Model)
+	if !indexFamilies[fam] {
+		fail(w, 400, "invalid request")
+		return
+	}
+	// the entry costs storage like a file; replacing one costs only the difference
+	var prev int64
+	a.db.QueryRow(`SELECT COALESCE(SUM(LENGTH(data_enc)),0) FROM item_index WHERE item_id=? AND model IN (?,'')`, it.ID, fam).Scan(&prev)
+	release, ok := a.reserveBytes(u.ID, int64(len(req.DataEnc))-prev)
+	if !ok {
+		fail(w, 413, "this would go over your storage limit")
+		return
+	}
+	defer release()
 	tx, err := a.db.Begin()
 	if err != nil {
 		fail(w, 500, "server error")
@@ -225,7 +242,7 @@ func (a *App) clearIndex(w http.ResponseWriter, r *http.Request, u *user, s *ses
 
 func (a *App) getUserBlob(w http.ResponseWriter, r *http.Request, u *user, s *session) {
 	name := r.PathValue("name")
-	if !blobNameRe.MatchString(name) {
+	if !blobNames[name] {
 		fail(w, 404, "not found")
 		return
 	}
@@ -242,7 +259,7 @@ func (a *App) getUserBlob(w http.ResponseWriter, r *http.Request, u *user, s *se
 // devices editing at once don't silently undo each other: the second gets 409 and merges.
 func (a *App) putUserBlob(w http.ResponseWriter, r *http.Request, u *user, s *session) {
 	name := r.PathValue("name")
-	if !blobNameRe.MatchString(name) {
+	if !blobNames[name] {
 		fail(w, 404, "not found")
 		return
 	}
@@ -258,6 +275,14 @@ func (a *App) putUserBlob(w http.ResponseWriter, r *http.Request, u *user, s *se
 		fail(w, 400, "invalid request")
 		return
 	}
+	var prev int64
+	a.db.QueryRow(`SELECT COALESCE(SUM(LENGTH(data_enc)),0) FROM user_blobs WHERE user_id=? AND name=?`, u.ID, name).Scan(&prev)
+	release, ok := a.reserveBytes(u.ID, int64(len(req.DataEnc))-prev)
+	if !ok {
+		fail(w, 413, "this would go over your storage limit")
+		return
+	}
+	defer release()
 	var res sql.Result
 	var err error
 	if req.Version == 0 {
@@ -278,7 +303,7 @@ func (a *App) putUserBlob(w http.ResponseWriter, r *http.Request, u *user, s *se
 
 func (a *App) deleteUserBlob(w http.ResponseWriter, r *http.Request, u *user, s *session) {
 	name := r.PathValue("name")
-	if !blobNameRe.MatchString(name) {
+	if !blobNames[name] {
 		fail(w, 404, "not found")
 		return
 	}

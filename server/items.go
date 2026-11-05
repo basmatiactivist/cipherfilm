@@ -1,7 +1,6 @@
 package main
 
 import (
-	"strings"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -12,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -177,10 +177,18 @@ func (a *App) owned(w http.ResponseWriter, r *http.Request, u *user) (*ownedItem
 	return &it, true
 }
 
+// usedBytesSQL is the storage an account takes: its files plus its encrypted index entries and documents, which live
+// in app.db. id is the SQL expression for the account's id.
+func usedBytesSQL(id string) string {
+	return `(COALESCE((SELECT SUM(stored_bytes) FROM items WHERE user_id=` + id + `),0)
+		+ COALESCE((SELECT SUM(LENGTH(data_enc)) FROM item_index WHERE user_id=` + id + `),0)
+		+ COALESCE((SELECT SUM(LENGTH(data_enc)) FROM user_blobs WHERE user_id=` + id + `),0))`
+}
+
 func (a *App) quotaLeft(userID string) (left int64, unlimited bool) {
 	var quota, used sql.NullInt64
 	a.db.QueryRow(`SELECT quota_bytes FROM users WHERE id=?`, userID).Scan(&quota)
-	a.db.QueryRow(`SELECT COALESCE(SUM(stored_bytes),0) FROM items WHERE user_id=?`, userID).Scan(&used)
+	a.db.QueryRow(`SELECT `+usedBytesSQL("?"), userID, userID, userID).Scan(&used)
 	if quota.Int64 == 0 {
 		return 0, true
 	}

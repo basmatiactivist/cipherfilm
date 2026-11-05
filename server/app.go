@@ -1,7 +1,6 @@
 package main
 
 import (
-	"net/netip"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -9,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	cookieName  = "__Host-sid"
+	cookieName = "__Host-sid"
 	// A session lasts while it is used: it ends after 30 days without a request (the cookie and expires_at move
 	// forward with use), and at the latest a year after sign-in. Devices are listed and can be signed out one by one
 	// (sessions.go), so a lost one doesn't need short sessions everywhere; before 1.9.0 every device had to sign in
@@ -38,14 +38,14 @@ type App struct {
 	hosts      map[string]bool // PUBLIC_HOSTS; empty: any
 	dummyHash  string
 	loginIP    *limiter
-	loginAcct  *limiter // per (account, source)
-	loginDev   *limiter // per account, for browsers carrying a valid device cookie
-	tickets    sync.Map // recovery tickets: token hash -> ticket
-	resMu      sync.Mutex // guards reserved
-	auxMu      sync.Mutex // pairs a thumbnail or preview count with its file
+	loginAcct  *limiter         // per (account, source)
+	loginDev   *limiter         // per account, for browsers carrying a valid device cookie
+	tickets    sync.Map         // recovery tickets: token hash -> ticket
+	resMu      sync.Mutex       // guards reserved
+	auxMu      sync.Mutex       // pairs a thumbnail or preview count with its file
 	reserved   map[string]int64 // in-flight upload bytes per user
-	acceptMu   sync.Mutex // one invite acceptance at a time (see inviteAccept)
-	adminMu    sync.Mutex // serialises admin changes to accounts (see adminGuard)
+	acceptMu   sync.Mutex       // one invite acceptance at a time (see inviteAccept)
+	adminMu    sync.Mutex       // serialises admin changes to accounts (see adminGuard)
 	now        func() time.Time
 }
 

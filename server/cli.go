@@ -195,7 +195,7 @@ func cliStatus(a *App, out io.Writer, _ []string) error {
 func cliListUsers(a *App, out io.Writer, _ []string) error {
 	rows, err := a.db.Query(`SELECT u.email, u.role, u.status, u.quota_bytes, u.last_login_at, u.nsfw,
 		(SELECT COUNT(*) FROM items i WHERE i.user_id=u.id AND i.state='ready'),
-		(SELECT COALESCE(SUM(stored_bytes),0) FROM items i WHERE i.user_id=u.id)
+		` + usedBytesSQL("u.id") + `
 		FROM users u ORDER BY u.created_at`)
 	if err != nil {
 		return err

@@ -85,9 +85,15 @@ func inviteQuota(q sql.NullInt64, def int64) int64 {
 }
 
 // audit records an administrative event: who did what to whom. Metadata only, never content.
+// selfService matches the entries people write about their own devices. They are kept, and shown, apart from the
+// administrative ones, so however many of them someone writes, they never push an admin's actions out of the log.
+const selfService = `action IN ('signed out a device','signed out other devices')`
+
 func (a *App) audit(actor, action, target, detail string) {
 	a.db.Exec(`INSERT INTO audit_log(at,actor,action,target,detail) VALUES (?,?,?,?,?)`, a.now().Unix(), actor, action, target, detail)
-	a.db.Exec(`DELETE FROM audit_log WHERE id <= (SELECT MAX(id) FROM audit_log) - ?`, auditKeep)
+	for _, cond := range []string{selfService, "NOT " + selfService} {
+		a.db.Exec(`DELETE FROM audit_log WHERE `+cond+` AND id <= (SELECT MAX(id) FROM audit_log WHERE `+cond+`) - ?`, auditKeep)
+	}
 }
 
 type settingsReq struct {
@@ -113,7 +119,10 @@ func (a *App) adminPatchSettings(w http.ResponseWriter, r *http.Request, u *user
 }
 
 func (a *App) adminAudit(w http.ResponseWriter, r *http.Request, u *user, s *session) {
-	rows, err := a.db.Query(`SELECT at,actor,action,target,detail FROM audit_log ORDER BY id DESC LIMIT 100`)
+	rows, err := a.db.Query(`SELECT at,actor,action,target,detail FROM (
+		SELECT * FROM (SELECT * FROM audit_log WHERE NOT ` + selfService + ` ORDER BY id DESC LIMIT 100)
+		UNION ALL SELECT * FROM (SELECT * FROM audit_log WHERE ` + selfService + ` ORDER BY id DESC LIMIT 100))
+		ORDER BY id DESC`)
 	if err != nil {
 		fail(w, 500, "server error")
 		return

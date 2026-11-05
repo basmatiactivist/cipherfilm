@@ -198,3 +198,36 @@ func TestMigrationKeepsIndexAndSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// People signing out their own devices, however often, must not push the admins' actions out of the activity log.
+func TestOwnSignOutsDoNotFlushTheActivityLog(t *testing.T) {
+	e := newEnv(t)
+	admin, _ := e.setupAdmin("admin@x.org")
+	bob, _ := e.acceptInvite(e.invite(admin, "bob@x.org"))
+	e.invite(admin, "carla@x.org")
+	for i := 0; i < auditKeep+20; i++ {
+		e.app.audit("bob@x.org", "signed out a device", "bob@x.org", "phone")
+	}
+	if _, out := bob.do("POST", "/api/me/sessions/end-others", nil, true); out["ended"] != float64(0) {
+		t.Fatalf("end-others: %v", out)
+	}
+	var n int
+	e.app.db.QueryRow(`SELECT COUNT(*) FROM audit_log WHERE action='signed out other devices'`).Scan(&n)
+	if n != 0 {
+		t.Fatal("logged signing out other devices when there were none")
+	}
+	e.app.db.QueryRow(`SELECT COUNT(*) FROM audit_log WHERE actor='admin@x.org'`).Scan(&n)
+	if n != 2 {
+		t.Fatalf("admin entries kept: %d", n)
+	}
+	_, out := admin.do("GET", "/api/admin/audit", nil, false)
+	invites := 0
+	for _, x := range out["entries"].([]any) {
+		if x.(map[string]any)["action"] == "invited" {
+			invites++
+		}
+	}
+	if invites != 2 {
+		t.Fatalf("admin entries shown: %d", invites)
+	}
+}

@@ -152,7 +152,9 @@ func (a *App) endOtherSessions(w http.ResponseWriter, r *http.Request, u *user, 
 		return
 	}
 	n, _ := res.RowsAffected()
-	a.audit(u.Email, "signed out other devices", u.Email, "")
+	if n > 0 {
+		a.audit(u.Email, "signed out other devices", u.Email, "")
+	}
 	writeJSON(w, 200, map[string]int64{"ended": n})
 }
 

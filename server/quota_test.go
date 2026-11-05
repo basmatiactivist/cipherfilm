@@ -194,3 +194,46 @@ func TestFinishedItemsChargeTheirMetadata(t *testing.T) {
 		t.Fatalf("stored_bytes %d, want %d", stored, want)
 	}
 }
+
+// The search index and the people list live in app.db, but they are the account's data like its files: only the
+// names and model families the apps use are taken, and their bytes count toward the storage limit.
+func TestIndexAndUserBlobsCountTowardTheQuota(t *testing.T) {
+	e := newEnv(t)
+	admin, _ := e.setupAdmin("admin@x.org")
+	bob, _ := e.acceptInvite(e.invite(admin, "bob@x.org"))
+	id := e.newItem(bob, 0)
+	if code, _ := bob.do("PUT", "/api/me/blobs/other", map[string]any{"data_enc": rb(100), "version": 0}, true); code != 404 {
+		t.Fatalf("unknown document name: %d", code)
+	}
+	if code, _ := bob.do("PUT", "/api/items/"+id+"/index", map[string]any{"data_enc": rb(100), "model": "f0/1"}, true); code != 400 {
+		t.Fatalf("unknown model family: %d", code)
+	}
+	people, entry := rb(1000), rb(2000)
+	if code, _ := bob.do("PUT", "/api/me/blobs/people", map[string]any{"data_enc": people, "version": 0}, true); code != 200 {
+		t.Fatalf("people: %d", code)
+	}
+	if code, _ := bob.do("PUT", "/api/items/"+id+"/index", map[string]any{"data_enc": entry, "model": "mcs2/2"}, true); code != 200 {
+		t.Fatalf("index: %d", code)
+	}
+	want := float64(len(people) + len(entry))
+	if _, out := bob.do("GET", "/api/me/usage", nil, false); out["used_bytes"] != want {
+		t.Fatalf("usage %v, want %v", out["used_bytes"], want)
+	}
+	_, out := admin.do("GET", "/api/admin/users", nil, false)
+	for _, x := range out["users"].([]any) {
+		if u := x.(map[string]any); u["email"] == "bob@x.org" && u["used_bytes"] != want {
+			t.Fatalf("admin sees %v, want %v", u["used_bytes"], want)
+		}
+	}
+	// a replacement costs only the difference; growing past the limit is refused
+	e.app.db.Exec(`UPDATE users SET quota_bytes=? WHERE email='bob@x.org'`, int64(want)+10)
+	if code, _ := bob.do("PUT", "/api/items/"+id+"/index", map[string]any{"data_enc": rb(1500), "model": "mcs2+yunet23+sface21/2"}, true); code != 200 {
+		t.Fatalf("replacing an entry: %d", code)
+	}
+	if code, _ := bob.do("PUT", "/api/items/"+id+"/index", map[string]any{"data_enc": rb(1000), "model": "laionb32/1"}, true); code != 413 {
+		t.Fatalf("index over quota: %d", code)
+	}
+	if code, _ := bob.do("PUT", "/api/me/blobs/people", map[string]any{"data_enc": rb(2000), "version": 1}, true); code != 413 {
+		t.Fatalf("people over quota: %d", code)
+	}
+}

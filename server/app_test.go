@@ -1,17 +1,18 @@
 package main
 
 import (
-	"net/url"
-	"sync"
 	"bytes"
 	"crypto/tls"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -586,6 +587,23 @@ func TestKnownDeviceIsNotLockedOutByStrangers(t *testing.T) {
 	}
 }
 
+// The same for recovery: strangers using up the shared source's recovery attempts must not block a known browser.
+func TestKnownDeviceCanRecoverDespiteStrangers(t *testing.T) {
+	e := newEnv(t)
+	admin, ab := e.setupAdmin("admin@x.org")
+	rec := map[string]string{"email": "admin@x.org", "recovery_auth": ab["recovery_verifier"].(string)}
+	stranger := e.client()
+	for i := 0; i < 40; i++ {
+		stranger.do("POST", "/api/auth/recover/start", map[string]string{"email": fmt.Sprintf("nobody%d@x.org", i), "recovery_auth": rb(32)}, false)
+	}
+	if code, _ := stranger.do("POST", "/api/auth/recover/start", rec, false); code != 429 {
+		t.Fatalf("an unknown browser should be blocked after the burst, got %d", code)
+	}
+	if code, _ := admin.do("POST", "/api/auth/recover/start", rec, false); code != 200 {
+		t.Fatalf("the known device could not recover: %d", code)
+	}
+}
+
 func mustURL(s string) *url.URL { u, _ := url.Parse(s); return u }
 
 func TestLimiterIPAndClientIPEdgeCases(t *testing.T) {
@@ -598,7 +616,7 @@ func TestLimiterIPAndClientIPEdgeCases(t *testing.T) {
 	a := &App{trustProxy: true}
 	r, _ := http.NewRequest("GET", "/", nil)
 	r.RemoteAddr = "10.0.0.1:1234"
-	r.Header.Add("X-Forwarded-For", "6.6.6.6")      // client-supplied line
+	r.Header.Add("X-Forwarded-For", "6.6.6.6")          // client-supplied line
 	r.Header.Add("X-Forwarded-For", "7.7.7.7, 8.8.8.8") // line added by the trusted proxy
 	if got := a.clientIP(r); got != "8.8.8.8" {
 		t.Fatalf("clientIP = %q, want the proxy's own entry", got)

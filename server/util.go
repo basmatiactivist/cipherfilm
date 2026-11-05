@@ -1,11 +1,11 @@
 package main
 
 import (
-	"database/sql"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"

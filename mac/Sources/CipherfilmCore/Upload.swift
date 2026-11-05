@@ -148,6 +148,8 @@ public enum Uploader {
     try live()
     struct Created: Decodable { let id: String }
     let id = try JSONDecoder().decode(Created.self, from: try await api.json("POST", "/api/items", body: ["kind": kind.rawValue, "size": size, "segment_count": count] as [String: Any])).id
+    // the id goes into the key's binding and every request path: nothing is wrapped for one of another shape
+    guard ServerId.valid(id) else { throw APIError(status: -1, message: "The server answered with an item id this app can't use.") }
     var itemKey = Crypto.newItemKey()
     defer { Sodium.memzero(&itemKey) }
     let key = itemKey

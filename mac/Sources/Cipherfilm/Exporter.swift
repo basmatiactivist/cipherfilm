@@ -96,11 +96,7 @@ final class Exporter {
     }
   }
 
-  static func clean(_ s: String) -> String {
-    var t = s.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-").trimmingCharacters(in: .whitespaces)
-    while t.hasPrefix(".") { t.removeFirst() }
-    return t
-  }
+  static func clean(_ s: String) -> String { FileName.clean(s) }
 
   /** The folder an item belongs in, relative to the export folder. */
   private func folder(_ it: Item, firstAlbum: [String: Album]) -> String {

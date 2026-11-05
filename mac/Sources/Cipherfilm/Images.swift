@@ -65,9 +65,9 @@ final class ImageStore: @unchecked Sendable {
 
   /** The original photo, decoded (HEIC, RAW and everything macOS reads), for the viewer at full size. */
   func original(_ it: Item, _ vault: Vault) async -> NSImage? {
-    guard it.kind == .image, it.size < 120 << 20 else { return nil }
+    guard it.kind == .image, !it.broken, (0..<120 << 20).contains(it.size) else { return nil }
     var data = Data()
-    for i in 0..<it.segmentCount {
+    for i in 0..<Segments.count(it.size) {
       guard let s = try? await vault.segment(i, of: it) else { return nil }
       data.append(s)
     }

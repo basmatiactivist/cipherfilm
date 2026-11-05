@@ -135,9 +135,12 @@ public final class Vault: @unchecked Sendable {
     FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent((Bundle.main.bundleIdentifier ?? "app.cipherfilm.mac") + "/cf-ct", isDirectory: true)
   }
 
-  public var cacheDir: URL? {
-    guard userId.range(of: "^[0-9A-Za-z_-]{1,64}$", options: .regularExpression) != nil else { return nil }
-    return Self.cacheRoot().appendingPathComponent(userId, isDirectory: true)
+  public var cacheDir: URL? { Self.cacheDir(of: userId) }
+
+  /** An account's cache folder, always inside cacheRoot(); nil for an id that isn't one. */
+  public static func cacheDir(of userId: String) -> URL? {
+    guard ServerId.valid(userId) else { return nil }
+    return cacheRoot().appendingPathComponent(userId, isDirectory: true)
   }
 
   func keep(_ name: String, _ data: Data) {
@@ -158,7 +161,9 @@ public final class Vault: @unchecked Sendable {
 
   // ---- the library ----
 
-  /** Decrypts the list on all cores: each item's key, then its metadata, checked against the server's size. */
+  /** Decrypts the list on all cores: each item's key, then its metadata, checked against the server's size. The
+   *  numbers are checked too (the size against the segment count, the picture's dimensions), so nothing later works
+   *  with values no honest upload has. */
   private func decrypt(_ raw: [RawItem]) throws -> [Item] {
     let m = try masterKey()
     let out = UnsafeMutableBufferPointer<Item?>.allocate(capacity: raw.count)
@@ -170,9 +175,12 @@ public final class Vault: @unchecked Sendable {
                     hasThumb: x.has_thumb, hasPreview: x.has_preview, favorite: x.favorite ?? false, trashedAt: x.trashed_at, purgeAt: x.purge_at,
                     meta: nil, itemKey: nil, broken: false)
       do {
+        guard ServerId.valid(x.id) else { throw CryptoError.failed("bad item id") }
         let key = try Crypto.unwrapAnyItemKey(B64.decode(x.wrapped_item_key), master: m, pair: { try self.pair() }, itemId: x.id)
-        let meta = try JSONDecoder().decode(ItemMeta.self, from: Crypto.decryptMeta(B64.decode(x.meta_enc), itemKey: key, itemId: x.id))
-        guard meta.size == x.size else { throw CryptoError.failed("size mismatch") }
+        var meta = try JSONDecoder().decode(ItemMeta.self, from: Crypto.decryptMeta(B64.decode(x.meta_enc), itemKey: key, itemId: x.id))
+        guard meta.size == x.size, (0...Segments.maxTotal).contains(x.size), x.segment_count == Segments.count(x.size) else { throw CryptoError.failed("size mismatch") }
+        meta.width = Self.dimension(meta.width); meta.height = Self.dimension(meta.height)
+        if let d = meta.duration, !(d.isFinite && d >= 0 && d < 1e7) { meta.duration = nil }
         it.itemKey = key; it.meta = meta
       } catch {
         it.broken = true
@@ -180,6 +188,12 @@ public final class Vault: @unchecked Sendable {
       out[i] = it
     }
     return out.compactMap { $0 }.sorted { $0.when > $1.when }
+  }
+
+  /** A width or height as a picture can have it, else none. */
+  static func dimension(_ v: Double?) -> Double? {
+    guard let v, v.isFinite, v >= 1, v <= 1_000_000 else { return nil }
+    return v
   }
 
   private func pages(_ path: String) async throws -> ([RawItem], Int?) {
@@ -305,15 +319,21 @@ public final class Vault: @unchecked Sendable {
     do {
       let fh = try FileHandle(forWritingTo: tmp)
       defer { try? fh.close() }
-      var next: Task<Data, Error>? = it.segmentCount > 0 ? Task { try await self.segment(0, of: it) } : nil
-      for i in 0..<it.segmentCount {
+      // the count the size gives (decrypt() checked the server's against it); every segment is verified
+      guard (0...Segments.maxTotal).contains(it.size), it.segmentCount == Segments.count(it.size) else { throw CryptoError.failed("size mismatch") }
+      let n = it.segmentCount
+      var next: Task<Data, Error>? = Task { try await self.segment(0, of: it) }
+      var written: Int64 = 0
+      for i in 0..<n {
         try Task.checkCancellation()
         let cur = try await next!.value
-        next = i + 1 < it.segmentCount ? Task { try await self.segment(i + 1, of: it) } : nil
+        next = i + 1 < n ? Task { try await self.segment(i + 1, of: it) } : nil
         try fh.write(contentsOf: cur)
-        progress?(Double(i + 1) / Double(it.segmentCount))
+        written += Int64(cur.count)
+        progress?(Double(i + 1) / Double(n))
       }
       try fh.close()
+      guard written == it.size else { throw CryptoError.failed("size mismatch") }
       if FileManager.default.fileExists(atPath: dest.path) { _ = try FileManager.default.replaceItemAt(dest, withItemAt: tmp) }
       else { try FileManager.default.moveItem(at: tmp, to: dest) }
     } catch {

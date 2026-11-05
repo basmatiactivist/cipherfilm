@@ -204,9 +204,11 @@ final class AppModel {
     notice = revoked ? "This Mac was signed out from another device." : "Your session ended. Sign in again."
   }
 
+  /** Deletes the account's folders; only for an id of the server's shape, so the paths stay inside the app's own. */
   private func forget(account userId: String) {
+    guard ServerId.valid(userId) else { return }
     try? FileManager.default.removeItem(at: Paths.account(userId))
-    try? FileManager.default.removeItem(at: Vault.cacheRoot().appendingPathComponent(userId))
+    if let dir = Vault.cacheDir(of: userId) { try? FileManager.default.removeItem(at: dir) }
   }
 
   /** Removes what accounts left on this Mac when its session is gone; true if there was something. */
@@ -214,7 +216,10 @@ final class AppModel {
   private func forgetAccounts() -> Bool {
     let root = Paths.support.appendingPathComponent("accounts", isDirectory: true)
     let ids = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
-    for id in ids { forget(account: id) }
+    for id in ids {
+      forget(account: id)
+      try? FileManager.default.removeItem(at: root.appendingPathComponent(id, isDirectory: true)) // a name from this folder's own listing
+    }
     api?.clearCookies()
     return !ids.isEmpty
   }
@@ -240,13 +245,14 @@ final class AppModel {
     refreshTimer?.invalidate(); refreshTimer = nil
     search.stop(clear: true)
     exporter.stop()
-    // the queue stays (saved in the account's folder) and goes on after the next unlock
+    // after a lock the queue stays (saved in the account's folder) and goes on after the next unlock; once the session
+    // is gone it is not this Mac's to finish (it never goes on in another account)
     vault?.close()
     vault = nil
     images.clear()
     Outbox.clear()
     items = []; byId = [:]; albums = []; trash = []
-    if ended { watcher.stop() }
+    if ended { watcher.stop(); uploads = []; uploadsOwner = nil; uploadsPaused = false }
   }
 
   // ---- the library ----
@@ -388,11 +394,15 @@ final class AppModel {
 
   private var uploading = 0
   var uploadsPaused = false { didSet { if !uploadsPaused { pump() } } }
+  /** the account the queue in memory belongs to */
+  private var uploadsOwner: String?
   private var queueFile: AccountFile<[UploadJob]>? { me.map { AccountFile(userId: $0.user.id, name: "uploads.json") } }
 
   private func saveQueue() { queueFile?.write(uploads.filter { $0.state != .done }) }
 
   private func restoreUploads() {
+    if uploadsOwner != me?.user.id { uploads = []; uploadsPaused = false }
+    uploadsOwner = me?.user.id
     guard uploads.isEmpty, let saved = queueFile?.read(), !saved.isEmpty else { pump(); return }
     uploads = saved.map { var j = $0; if j.state == .running { j.state = .waiting; j.done = 0 }; return j }
     pump()
@@ -412,6 +422,7 @@ final class AppModel {
       }
     }
     // the same file twice in the queue goes up once
+    if uploadsOwner == nil { uploadsOwner = me?.user.id }
     let queued = Set(uploads.filter { $0.state != .done }.map(\.url.path))
     uploads.removeAll { $0.state == .done }
     uploads += files.filter { !queued.contains($0.path) }.map { UploadJob(url: $0) }
@@ -438,7 +449,7 @@ final class AppModel {
   }
 
   private func pump() {
-    guard let vault, let api, !uploadsPaused, phase == .unlocked else { return }
+    guard let vault, let api, !uploadsPaused, phase == .unlocked, uploadsOwner == vault.userId else { return }
     while uploading < 4, let i = uploads.firstIndex(where: { $0.state == .waiting }) {
       uploading += 1
       uploads[i].state = .running

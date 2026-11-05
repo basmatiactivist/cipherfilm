@@ -341,7 +341,7 @@ struct InfoPanel: View {
         }
         row("Name", item.name)
         row("Taken", item.date.formatted(date: .complete, time: .shortened))
-        if let w = item.meta?.width, let h = item.meta?.height { row("Size", "\(Int(w)) × \(Int(h)) · \(bytes(item.size))") } else { row("Size", bytes(item.size)) }
+        if let w = item.meta?.width, let h = item.meta?.height { row("Size", "\(Int(exactly: w.rounded(.towardZero)) ?? 0) × \(Int(exactly: h.rounded(.towardZero)) ?? 0) · \(bytes(item.size))") } else { row("Size", bytes(item.size)) }
         if let d = item.meta?.duration { row("Length", Duration.seconds(d).formatted(.time(pattern: .minuteSecond))) }
         if let m = [item.meta?.make, item.meta?.model].compactMap({ $0 }).joined(separator: " ").nilIfEmpty { row("Camera", cameraName(m)) }
         if let g = item.meta?.gps { row("Place", String(format: "%.5f, %.5f", g.lat, g.lon)) }

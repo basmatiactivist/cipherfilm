@@ -415,8 +415,16 @@ enum DebugDriver {
 
     // ---- sign out and back in ----
     let count = m.items.count
+    // a paused upload waits in the queue while signing out
+    let waiting = FileManager.default.temporaryDirectory.appendingPathComponent("cf-not-uploaded-\(UUID().uuidString).txt")
+    try? Data("x".utf8).write(to: waiting)
+    m.uploadsPaused = true
+    m.upload([waiting])
+    let queued = m.uploads.count
     await m.signOut(deleteExport: false)
+    try? FileManager.default.removeItem(at: waiting)
     check(m.phase == .signedOut && m.items.isEmpty && m.vault == nil, "signed out: nothing of the account left in memory")
+    check(queued == 1 && m.uploads.isEmpty && !m.uploadsPaused, "signed out: the upload queue is gone too (it never goes on in another account)")
     do {
       try await m.login(email: env["CF_TEST_EMAIL"]!, password: env["CF_TEST_PASSWORD"]!)
       if m.phase == .locked { try await m.unlock(password: env["CF_TEST_PASSWORD"]!) }

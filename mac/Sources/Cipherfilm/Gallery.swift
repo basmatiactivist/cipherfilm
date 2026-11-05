@@ -344,14 +344,16 @@ enum Saver {
         var failed: [String] = []
         for (n, it) in items.enumerated() {
           model.working = "Saving \(n + 1) of \(items.count)…"
-          var name = it.name.isEmpty ? "photo-\(it.id.prefix(8))" : it.name.replacingOccurrences(of: "/", with: "-")
+          // every candidate is one clean path component, the numbered ones too
+          let first = FileName.of(it)
+          var name = first
           var k = 2
           while taken.contains(name.lowercased()) || FileManager.default.fileExists(atPath: dir.appendingPathComponent(name).path) {
-            name = "\((it.name as NSString).deletingPathExtension) (\(k)).\((it.name as NSString).pathExtension)"; k += 1
+            name = FileName.numbered(first, k); k += 1
           }
           taken.insert(name.lowercased())
-          let url = dir.appendingPathComponent(name)
           do {
+            guard let url = FileName.inside(dir, name) else { throw CryptoError.failed("bad file name") }
             try await vault.saveOriginal(it, to: url, staging: staging)
             try? FileManager.default.setAttributes([.creationDate: it.date, .modificationDate: it.date], ofItemAtPath: url.path)
             saved.append(url)

@@ -12,8 +12,36 @@ enum Paths {
   }()
   static let models = support.appendingPathComponent("models", isDirectory: true)
   static func account(_ userId: String) -> URL {
-    let safe = userId.range(of: "^[0-9A-Za-z_-]{1,64}$", options: .regularExpression) != nil ? userId : "invalid"
+    let safe = ServerId.valid(userId) ? userId : "invalid"
     return support.appendingPathComponent("accounts/\(safe)", isDirectory: true)
+  }
+}
+
+/** A decrypted item's name as a file name: one path component (the name comes from the item's metadata, which can say
+ *  anything), so whatever is written lands in the folder it is meant for. */
+enum FileName {
+  static func clean(_ s: String) -> String {
+    var t = s.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-").replacingOccurrences(of: "\u{0}", with: "")
+      .trimmingCharacters(in: .whitespaces)
+    while t.hasPrefix(".") { t.removeFirst() }
+    return t
+  }
+
+  static func of(_ it: Item) -> String {
+    let c = clean(it.name)
+    return c.isEmpty ? "photo-\(it.id.prefix(8))" : c
+  }
+
+  /** "name (k).ext" for the k-th file of the same name. */
+  static func numbered(_ name: String, _ k: Int) -> String {
+    let base = (name as NSString).deletingPathExtension, ext = (name as NSString).pathExtension
+    return ext.isEmpty ? "\(base) (\(k))" : "\(base) (\(k)).\(ext)"
+  }
+
+  /** dir/name, only when that is directly inside dir. */
+  static func inside(_ dir: URL, _ name: String) -> URL? {
+    let u = dir.appendingPathComponent(name)
+    return u.standardizedFileURL.deletingLastPathComponent().path == dir.standardizedFileURL.path ? u : nil
   }
 }
 

@@ -51,14 +51,19 @@ jobs:
           xcodebuild -project Cipherfilm.xcodeproj -scheme CipherfilmApp -configuration Release \
             -destination 'platform=macOS,arch=arm64' -derivedDataPath build/dd \
             CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO \
-            ENABLE_HARDENED_RUNTIME=NO \
             MARKETING_VERSION="${v%%-*}" CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" build
           APP="build/dd/Build/Products/Release/Cipherfilm.app"
           test -x "$APP/Contents/MacOS/Cipherfilm"
           test -d "$APP/Contents/Frameworks/onnxruntime.framework"
-          # an ad-hoc signature has no team: with the hardened runtime, library validation refuses the embedded ONNX
-          # Runtime and the app quits at launch ("different Team IDs"); it must start, so check that here
-          ! codesign -dvv "$APP" 2>&1 | grep -q "flags=.*runtime"
+          # the hardened runtime is on; an ad-hoc signature has no team, so its library validation would refuse the
+          # embedded ONNX Runtime ("different Team IDs") and the app would quit at launch: the entitlements turn off that
+          # check only (no DYLD_* variables, no other exception). The app must start, so check that here
+          codesign -dvv "$APP" 2>&1 | grep -q "flags=.*runtime" || { codesign -dvv "$APP"; echo "no hardened runtime"; exit 1; }
+          codesign -d --entitlements - --xml "$APP" > "$RUNNER_TEMP/ents.plist"
+          grep -q "com.apple.security.cs.disable-library-validation" "$RUNNER_TEMP/ents.plist"
+          if grep -qE "allow-dyld-environment-variables|allow-unsigned-executable-memory|com.apple.security.get-task-allow" "$RUNNER_TEMP/ents.plist"; then
+            cat "$RUNNER_TEMP/ents.plist"; echo "an entitlement beyond library validation"; exit 1
+          fi
           ("$APP/Contents/MacOS/Cipherfilm" > launch.log 2>&1 &); sleep 8
           pgrep -f "$APP/Contents/MacOS/Cipherfilm" >/dev/null || { cat launch.log; echo "the app did not start"; exit 1; }
           pkill -f "$APP/Contents/MacOS/Cipherfilm" || true

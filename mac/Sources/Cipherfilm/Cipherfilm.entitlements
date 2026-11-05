@@ -2,8 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- Hardened runtime, not sandboxed: watched folders and the export folder can be anywhere the person chooses. -->
+	<!-- Hardened runtime, not sandboxed: watched folders and the export folder can be anywhere the person chooses.
+	     Library validation is off because an ad-hoc signature has no team, and with it on the runtime refuses the
+	     embedded ONNX Runtime ("different Team IDs"); everything else the runtime protects (no DYLD_* variables, no
+	     unsigned executable memory, no debugger) stays on. -->
 	<key>com.apple.security.cs.disable-library-validation</key>
-	<false/>
+	<true/>
 </dict>
 </plist>

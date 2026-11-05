@@ -22,8 +22,7 @@ enum Outbox {
     sweep()
     let folder = dir.appendingPathComponent(it.id, isDirectory: true)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-    let name = it.name.isEmpty ? "photo-\(it.id.prefix(8))" : it.name.replacingOccurrences(of: "/", with: "-")
-    let url = folder.appendingPathComponent(name)
+    guard let url = FileName.inside(folder, FileName.of(it)) else { throw CryptoError.failed("bad file name") }
     if !FileManager.default.fileExists(atPath: url.path) {
       try await vault.saveOriginal(it, to: url)
       try? FileManager.default.setAttributes([.creationDate: it.date, .modificationDate: it.date], ofItemAtPath: url.path)

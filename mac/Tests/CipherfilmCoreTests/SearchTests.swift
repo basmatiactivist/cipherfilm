@@ -31,6 +31,20 @@ private let haveModels = models.map { FileManager.default.fileExists(atPath: $0.
     #expect(t.encode(String(repeating: "word ", count: 200)).count == 77)
   }
 
+  /** A very thin picture is cut to its middle before scaling: the model input has its size, and the scaled picture in
+   *  between stays small (scaling the whole of a 1 × 2048 picture to a short side of 256 would take 512 MiB). */
+  @Test func clipInputOfThinPictures() {
+    for (w, h) in [(1, 2048), (2559, 1), (3, 4000)] {
+      for m in [ClipModel.mobileclip, .laion] {
+        let (buf, P) = Vision.clipInput(Pixels(w: w, h: h), m)
+        #expect(buf.count == 3 * P * P)
+      }
+    }
+    let p = Pixels(w: 10, h: 3, px: (0..<120).map { UInt8($0) })
+    #expect(p.cropped(2, 1, 4, 2).px == Array(48..<64) + Array(88..<104))
+    #expect(p.cropped(0, 0, 10, 3).px == p.px)
+  }
+
   @Test func halfFloats() {
     let v: [Float] = [0, 1, -1, 0.5, 0.0001, 65504, 0.33333]
     let back = Vision.unhalf(Vision.half(v))

@@ -43,8 +43,7 @@ cp -R "$FW" "$APP/Contents/Frameworks/"
 install_name_tool -add_rpath @executable_path/../Frameworks "$APP/Contents/MacOS/Cipherfilm" 2>/dev/null || true
 ID=${SIGN_IDENTITY:--}
 codesign --force --sign "$ID" --timestamp=none "$APP/Contents/Frameworks/onnxruntime.framework"
-# hardened runtime with a real identity only: an ad-hoc signature has no team, and the runtime's library validation
-# would then refuse the embedded framework
-if [ "$ID" = "-" ]; then RUNTIME=""; else RUNTIME="--options runtime"; fi
-codesign --force --sign "$ID" --timestamp=none $RUNTIME --entitlements Sources/Cipherfilm/Cipherfilm.entitlements "$APP"
+# always with the hardened runtime; the entitlements turn off only its library validation, which would refuse the
+# embedded framework of an ad-hoc signature (no team)
+codesign --force --sign "$ID" --timestamp=none --options runtime --entitlements Sources/Cipherfilm/Cipherfilm.entitlements "$APP"
 echo "built $APP"

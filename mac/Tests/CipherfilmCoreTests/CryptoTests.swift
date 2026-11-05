@@ -64,6 +64,16 @@ private struct Meta: Decodable { let name: String; let size: Int64 }
     }
   }
 
+  /** Sizes and counts no honest upload has are refused, not computed with (an overflow would stop the app). */
+  @Test func segmentsOutOfRange() {
+    let id = "0123456789abcdef0123456789abcdef", key = Crypto.newItemKey()
+    for (total, count) in [(Int64.max, 1), (-1, 1), (Int64(1) << 55, 1 << 33), (Segments.maxTotal + 1, Segments.count(Segments.maxTotal))] {
+      #expect(throws: CryptoError.self) {
+        try Segments.decrypt(itemKey: key, itemId: id, index: 0, count: count, total: total, blob: Data(count: Segments.cipherLen(Segments.plain)))
+      }
+    }
+  }
+
   @Test func sealedFormats() throws {
     let kp = Sodium.boxKeypair()
     let pair = KeyPair(pk: kp.pk, sk: kp.sk)

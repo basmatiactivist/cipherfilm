@@ -13,11 +13,29 @@ public struct APIError: Error, LocalizedError, Sendable {
   public init(status: Int, message: String, code: String? = nil) { self.status = status; self.message = message; self.code = code }
 }
 
+/** The server's ids (accounts, items, albums): 16 random bytes in lowercase hex. An id goes into file names and
+ *  request paths, so one of any other shape is refused. */
+public enum ServerId {
+  public static func valid(_ s: String) -> Bool {
+    s.utf8.count == 32 && s.utf8.allSatisfy { (0x30...0x39).contains($0) || (0x61...0x66).contains($0) }
+  }
+}
+
 public struct Me: Codable, Sendable {
   public struct User: Codable, Sendable {
     public let id: String; public let email: String; public let role: String
     /** an admin allowed this person explicit search (docs/SEARCH.md) */
     public let nsfw: Bool?
+
+    public init(from d: Decoder) throws {
+      let c = try d.container(keyedBy: CodingKeys.self)
+      id = try c.decode(String.self, forKey: .id)
+      // the account's folders on this Mac are named by it
+      guard ServerId.valid(id) else { throw DecodingError.dataCorruptedError(forKey: .id, in: c, debugDescription: "not an account id") }
+      email = try c.decode(String.self, forKey: .email)
+      role = try c.decode(String.self, forKey: .role)
+      nsfw = try c.decodeIfPresent(Bool.self, forKey: .nsfw)
+    }
   }
   public let user: User
   public let csrf: String
@@ -228,9 +246,11 @@ public final class API: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
 
   /** Downloads into `file`, resuming with HTTP Range what an earlier try or run left there. Drops, stalls and busy
    *  servers are retried with backoff (up to a minute between tries) until it is done or cancelled, each wait reported
-   *  with its reason; refusals (401, 403, 404) fail at once. With `expected`, a complete file returns without a request. */
+   *  with its reason; refusals (401, 403, 404) fail at once. With `expected`, a complete file returns without a request,
+   *  and an answer longer than that fails at once (the file is deleted) instead of filling the disk. */
   public func download(_ path: String, to file: URL, expected: Int64? = nil, event: @escaping @Sendable (DownloadEvent) -> Void) async throws {
     struct Refused: Error { let error: APIError }
+    let tooLong = Refused(error: APIError(status: -1, message: "The search models couldn't be downloaded (the server sent more than expected)."))
     var fruitless = 0
     while true {
       try Task.checkCancellation()
@@ -251,17 +271,25 @@ public final class API: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
           if Self.retryable.contains(h.statusCode) { throw e }
           throw Refused(error: e)
         }
+        if let expected {
+          let len = h.expectedContentLength // -1: not announced
+          if len > (h.statusCode == 200 ? expected : expected - have) { try? FileManager.default.removeItem(at: file); throw tooLong }
+        }
         if !FileManager.default.fileExists(atPath: file.path) { FileManager.default.createFile(atPath: file.path, contents: nil) }
         let fh = try FileHandle(forWritingTo: file)
         defer { try? fh.close() }
         if h.statusCode == 200 { try fh.truncate(atOffset: 0); got = 0 } else { try fh.seekToEnd() } // 200: the server ignored Range
         event(.bytes(got))
         var buf = Data(capacity: 256 << 10)
+        let limit = expected ?? .max
         do {
           for try await b in bytes {
             buf.append(b)
+            if got + Int64(buf.count) > limit { try? fh.close(); try? FileManager.default.removeItem(at: file); throw tooLong }
             if buf.count >= 256 << 10 { try fh.write(contentsOf: buf); got += Int64(buf.count); buf.removeAll(keepingCapacity: true); event(.bytes(got)) }
           }
+        } catch let r as Refused {
+          throw r
         } catch {
           // keep what arrived: the next try asks for the rest
           try? fh.write(contentsOf: buf); got += Int64(buf.count); event(.bytes(got))

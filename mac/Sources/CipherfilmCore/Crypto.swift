@@ -178,6 +178,9 @@ public enum Crypto {
 public enum Segments {
   public static let plain = 4 * 1024 * 1024
   public static let chunk = 64 * 1024
+  /** The largest file this client reads: well above what the server takes (8 GiB), and small enough that the segment
+   *  count and offsets fit their fields. */
+  public static let maxTotal: Int64 = 1 << 40
 
   public static func count(_ total: Int64) -> Int { max(1, Int((total + Int64(plain) - 1) / Int64(plain))) }
 
@@ -217,9 +220,10 @@ public enum Segments {
   }
 
   public static func decrypt(itemKey: Data, itemId: String, index i: Int, count: Int, total: Int64, blob: Data) throws -> Data {
+    guard (0...maxTotal).contains(total), i >= 0, i < count, count == Segments.count(total) else { throw CryptoError.failed("segment failed verification") }
     let want = total == 0 ? 0 : plainLen(total, i)
     let b = Data(blob)
-    guard i >= 0, i < count, count == Segments.count(total), want >= 0, b.count == cipherLen(want) else { throw CryptoError.failed("segment failed verification") }
+    guard want >= 0, b.count == cipherLen(want) else { throw CryptoError.failed("segment failed verification") }
     var key = Sodium.subkey(itemKey, CTX.itemSeg, UInt64(i))
     defer { Sodium.memzero(&key) }
     let s = try Sodium.PullStream(header: b.subdata(in: 0..<Sodium.ssHeader), key: key)

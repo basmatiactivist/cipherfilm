@@ -14,6 +14,17 @@ struct Pixels {
   init(w: Int, h: Int, px: [UInt8]) { self.w = w; self.h = h; self.px = px }
   init(w: Int, h: Int) { self.init(w: w, h: h, px: [UInt8](repeating: 0, count: w * h * 4)) }
 
+  /** The cw × ch part whose top left is at x, y. */
+  func cropped(_ x: Int, _ y: Int, _ cw: Int, _ ch: Int) -> Pixels {
+    if x == 0 && y == 0 && cw == w && ch == h { return self }
+    var out = Pixels(w: cw, h: ch)
+    for r in 0..<ch {
+      let from = ((y + r) * w + x) * 4
+      out.px.replaceSubrange(r * cw * 4..<(r + 1) * cw * 4, with: px[from..<from + cw * 4])
+    }
+    return out
+  }
+
   /** Decodes a JPEG as stored (no EXIF rotation, no colour matching, like BitmapFactory), at a power-of-two reduction
    *  that keeps its long side at least maxPx/2. */
   static func decode(_ data: Data, maxPx: Int) -> Pixels? {
@@ -227,10 +238,14 @@ public final class Vision: @unchecked Sendable {
   static func clipInput(_ src: Pixels, _ model: ClipModel) -> (buf: [Float], px: Int) {
     let P = model == .mobileclip ? clipPx : 224
     let (mean, std): ([Float], [Float]) = model == .mobileclip ? ([0, 0, 0], [1, 1, 1]) : (laionMean, laionStd)
-    let scale = Float(P) / Float(min(src.w, src.h))
-    let sw = max(P, Int((Float(src.w) * scale).rounded())), sh = max(P, Int((Float(src.h) * scale).rounded()))
+    // a very long or tall picture: only its middle (at most 4 times the short side) is scaled, which is all the centre
+    // crop below reads, so the scaled picture stays small however thin the original is
+    let cap = 4 * min(src.w, src.h), cw = min(src.w, cap), ch = min(src.h, cap)
+    let pic = src.cropped((src.w - cw) / 2, (src.h - ch) / 2, cw, ch)
+    let scale = Float(P) / Float(min(pic.w, pic.h))
+    let sw = max(P, Int((Float(pic.w) * scale).rounded())), sh = max(P, Int((Float(pic.h) * scale).rounded()))
     // MobileCLIP as on Android (Vision.kt); LAION as its Python reference (Pillow's bicubic)
-    let sized = model == .mobileclip ? src.smooth(sw, sh) : src.bicubic(sw, sh)
+    let sized = model == .mobileclip ? pic.smooth(sw, sh) : pic.bicubic(sw, sh)
     let l = (sized.w - P) / 2, t = (sized.h - P) / 2
     let n = P * P
     var buf = [Float](repeating: 0, count: 3 * n)

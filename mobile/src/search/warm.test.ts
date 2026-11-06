@@ -10,7 +10,10 @@ const st = vi.hoisted(() => ({
   opened: 0, // entries opened (decrypted)
   vision: { clip: null as string | null, dir: null as string | null, text: false, image: false, faces: false },
   visionOpens: [] as boolean[],
-  wipe: (() => {}) as () => void,
+  wipe: (() => {}) as (how?: "locked" | "ended") => void,
+  have: true, // the models are on the phone
+  download: null as Promise<void> | null, // a model download, until it resolves
+  holds: [] as string[], // the foreground service: "hold search", "let go search"
   master: new Uint8Array(32).fill(7) as Uint8Array | null,
   gate: null as Promise<void> | null, // holds indexLoad until released
   entries: [] as { item_id: string; data_enc: string; updated_at: number }[],
@@ -47,6 +50,7 @@ vi.mock("../../modules/cf-native/src/CfNativeModule", () => ({
     visionOpen: async (dir: string, faces: boolean, clip: string, all: boolean) => { st.visionOpens.push(all); Object.assign(st.vision, { dir, clip, text: true, image: all || st.vision.image, faces }); },
     visionClose: () => {},
     backupState: () => ({ unmetered: true }),
+    backupNotify: () => {},
   },
 }));
 vi.mock("@crypto/item", () => ({ accountKeyPair: () => ({ pk: new Uint8Array(32), sk: new Uint8Array(32) }) }));
@@ -65,20 +69,24 @@ vi.mock("../api", () => ({
   server: () => "https://a.test",
 }));
 vi.mock("../session", () => ({
-  onWipe: (f: () => void) => { st.wipe = f; },
+  onWipe: (f: (how?: "locked" | "ended") => void) => { st.wipe = (how = "locked") => f(how); },
   refreshMe: async () => null,
   session: () => ({ me: { user: { id: "alice", email: "alice@x.test" }, wrapped_privkey: "", pubkey: "", session_id: "s", indexer: "" }, masterKey: st.master }),
 }));
 vi.mock("../library", () => ({ imageBytes: async () => new Uint8Array(0) }));
 vi.mock("../prints", () => ({ fingerprint: async () => "" }));
-vi.mock("../keepAlive", () => ({ keepRunning: () => false, letGo: () => {}, onlyHolder: () => false }));
+vi.mock("../keepAlive", () => ({
+  keepRunning: (h: string) => { st.holds.push(`hold ${h}`); return true; },
+  letGo: (h: string) => { st.holds.push(`let go ${h}`); },
+  onlyHolder: () => true,
+}));
 vi.mock("./settings", () => ({
   loadSettings: async () => ({ enabled: true, faces: false, background: false, wifiOnly: false, chargingOnly: false, asked: true, clip: "mobileclip-s2", indexes: true }),
   saveSettings: async () => {}, settingsDir: () => ({}),
 }));
 vi.mock("./models", () => ({
-  haveModels: async () => true, modelPath: () => "/doc/models", family: () => "mcs2", modelTag: (_c: string, f: boolean) => (f ? "mcs2+faces/2" : "mcs2/2"),
-  dropOtherModels: () => [], downloadModels: async () => {}, downloadSize: () => 0, tokenizerFile: () => ({ text: async () => "{}" }),
+  haveModels: async () => st.have, modelPath: () => "/doc/models", family: () => "mcs2", modelTag: (_c: string, f: boolean) => (f ? "mcs2+faces/2" : "mcs2/2"),
+  dropOtherModels: () => [], downloadModels: async () => { await st.download; st.have = true; }, downloadSize: () => 0, tokenizerFile: () => ({ text: async () => "{}" }),
 }));
 vi.mock("./tokenizer", () => ({ Tokenizer: class { encode() { return [1]; } } }));
 
@@ -88,7 +96,7 @@ const lib = (ids: string[]) => ids.map((id) => ({ id, kind: "image", size: 1, se
 describe("search after unlocking", () => {
   beforeEach(() => {
     st.wipe(); // as a lock does
-    Object.assign(st, { copy: null, loads: [], saves: [], calls: [], opened: 0, visionOpens: [], master: new Uint8Array(32).fill(7), gate: null, entries: [] });
+    Object.assign(st, { copy: null, loads: [], saves: [], calls: [], opened: 0, visionOpens: [], master: new Uint8Array(32).fill(7), gate: null, entries: [], have: true, download: null, holds: [] });
     st.vision = { clip: null, dir: null, text: false, image: false, faces: false };
   });
 
@@ -147,5 +155,33 @@ describe("search after unlocking", () => {
     expect(st.opened).toBe(1);
     expect(engine.searchReady()).toBe(true);
     expect(st.saves).toHaveLength(1);
+  });
+
+  it("a lock doesn't end a model download: the service is held until it is done", async () => {
+    st.have = false;
+    let done = () => {};
+    st.download = new Promise((r) => { done = r; });
+    const started = engine.startSearch(lib(["a"]));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(st.holds).toEqual(["hold search"]);
+    st.master = null; st.wipe("locked");
+    expect(st.holds).toEqual(["hold search"]); // still downloading
+    done();
+    await started;
+    expect(st.holds).toEqual(["hold search", "let go search"]);
+    expect(st.have).toBe(true);
+  });
+
+  it("signing out lets the service go at once", async () => {
+    st.have = false;
+    let done = () => {};
+    st.download = new Promise((r) => { done = r; });
+    const started = engine.startSearch(lib(["a"]));
+    await new Promise((r) => setTimeout(r, 0));
+    st.master = null; st.wipe("ended");
+    expect(st.holds).toEqual(["hold search", "let go search"]);
+    done();
+    await started;
+    expect(st.holds).toEqual(["hold search", "let go search"]);
   });
 });

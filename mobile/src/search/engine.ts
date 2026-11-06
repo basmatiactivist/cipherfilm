@@ -196,8 +196,10 @@ const pause = () => new Promise((r) => setTimeout(r, 0));
 // While it downloads the models, the app keeps running when it leaves the screen: the foreground service (a data
 // transfer, as for uploads, keepAlive.ts) and its notification. Indexing is not a transfer and never runs in that
 // service: it goes on while the app is open (and when Android lets the process run), and the background task
-// (background.ts, WorkManager without a foreground service) does what is on the phone.
+// (background.ts, WorkManager without a foreground service) does what is on the phone. A lock doesn't end a download
+// (it needs no key): the service is held until it is done, and the next unlock joins it (models.ts).
 let held = false;
+let downloading = false;
 let shownAt = 0;
 function hold(title: string, text: string) {
   if (held) return;
@@ -246,12 +248,16 @@ export async function startSearch(library: Item[]) {
       if (st.wifiOnly && !N.backupState().unmetered) { set({ phase: "waitWifi", done: 0, total: downloadSize(st.faces, clip, indexes), message: undefined }); return; }
       set({ phase: "download", done: 0, total: 1, message: undefined });
       hold("Downloading the search model", "");
-      await downloadModels(server(), st.faces, clip, (done, total) => {
-        if (!live()) return;
-        set({ phase: "download", done, total });
-        show("Downloading the search model", `${mbs(done)} of ${mbs(total)}`, done, total);
-      }, indexes);
-      release(); // the download is done: indexing doesn't keep the service (above)
+      downloading = true;
+      try {
+        await downloadModels(server(), st.faces, clip, (done, total) => {
+          show("Downloading the search model", `${mbs(done)} of ${mbs(total)}`, done, total);
+          if (live()) set({ phase: "download", done, total });
+        }, indexes);
+      } finally {
+        downloading = false;
+        release(); // the download is done: indexing doesn't keep the service (above)
+      }
       if (!live()) return;
     }
     if (!ready) set({ phase: "loading", done: 0, total: 0 });
@@ -404,8 +410,9 @@ export async function forgetSearch(clear: boolean) {
   set({ phase: "off", done: 0, total: 0, message: undefined });
 }
 
-onWipe(() => {
-  stopSearch();
+onWipe((how) => {
+  if (run) run.cancelled = true;
+  if (how !== "locked" || !downloading) release(); // a download goes on while locked (above)
   wipes++;
   N.indexClear?.();
   tags.clear(); seen.clear();

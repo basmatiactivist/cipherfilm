@@ -54,6 +54,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const view = page as View;
   const [jobs, setJobs] = useState<Job[]>([]);
   const [error, setError] = useState("");
+  const demo = !!mem.me?.demo; // the public demo login: no uploads (state.ts)
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [picker, setPicker] = useState(false);
@@ -150,6 +151,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
     setJobs((js) => js.filter((j) => !drop.has(j.key)));
   };
   const add = (files: FileList | File[]) => {
+    if (demo) return setError("This is the public demo: changes are turned off."); // a drop: the server would refuse each file
     const fresh: Job[] = Array.from(files).map((file) => ({ key: nextKey.current++, owner: mem.me!.user.id, name: file.name, file, done: 0, total: file.size || 1, state: "queued", stop: { cancelled: false } }));
     setJobs((js) => [...js, ...fresh]);
     pump(fresh);
@@ -482,7 +484,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
             onInput={(e) => { setQuery((e.target as HTMLInputElement).value); if (!libraryView) go({ n: "timeline" }); }} />
         </div>}
         <div class="topactions">
-          {!adminPage && <button class="btn" aria-label="Upload photos and videos" onClick={() => input.current?.click()}><Icon name="upload" /><span class="lbl">Upload</span></button>}
+          {!adminPage && !demo && <button class="btn" aria-label="Upload photos and videos" onClick={() => input.current?.click()}><Icon name="upload" /><span class="lbl">Upload</span></button>}
           <input ref={input} class="sr" type="file" multiple accept="image/*,video/*,.heic,.heif" tabIndex={-1} aria-label="Choose photos and videos"
             onChange={(e) => { const t = e.target as HTMLInputElement; if (t.files?.length) add(t.files); t.value = ""; }} />
           <div class="menuwrap">
@@ -535,6 +537,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
         </nav>
 
         <main id="main" tabIndex={-1} class="content">
+          {demo && <p class="demonote" role="note">Public demo · read-only · resets every hour</p>}
           <div class="pagehead">
             {page.n === "album" && <button class="iconbtn" onClick={() => go({ n: "albums" })} aria-label="All albums"><Icon name="back" /></button>}
             {page.n === "person" && <button class="iconbtn" onClick={() => go({ n: "people" })} aria-label="All people"><Icon name="back" /></button>}
@@ -577,7 +580,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
                   <span class="emptyicon"><Icon name="photos" size={32} /></span>
                   <h2>Your library is empty</h2>
                   <p>Drag photos and videos here, or use the button. Photos are encrypted in this browser before upload. The server only stores encrypted data.</p>
-                  <button class="btn" onClick={() => input.current?.click()}><Icon name="upload" />Add photos and videos</button>
+                  {!demo && <button class="btn" onClick={() => input.current?.click()}><Icon name="upload" />Add photos and videos</button>}
                 </section>
               )}
               {q && content.status && <p class="small" role="status">{content.status}</p>}

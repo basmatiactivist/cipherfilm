@@ -11,6 +11,8 @@ export interface Me {
   wrapped_privkey: string;
   pubkey: string;
   server_version?: string;
+  /** the server's public demo login (DEMO_ACCOUNTS): it reads and searches, every change is refused */
+  demo?: boolean;
 }
 
 /** Key material lives only in this module's memory: a reload or tab close locks the library. */

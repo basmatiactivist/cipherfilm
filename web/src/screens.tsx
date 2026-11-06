@@ -149,12 +149,13 @@ export function Account() {
         <span class="avatar" aria-hidden="true">{mem.me!.user.email.slice(0, 1).toUpperCase()}</span>
         <div><strong class="email">{mem.me!.user.email}</strong><p class="small">{mem.me!.user.role === "admin" ? "Administrator" : "Member"}. Only you can see your photos.</p></div>
       </section>
-      <RecoveryKeyPanel onNew={setKit} />
-      <ChangePassword />
-      <DevicesPanel />
+      {/* the public demo login: one stranger must not lock out the next (the server refuses these anyway) */}
+      {!mem.me!.demo && <RecoveryKeyPanel onNew={setKit} />}
+      {!mem.me!.demo && <ChangePassword />}
+      {!mem.me!.demo && <DevicesPanel />}
       <SearchPanel />
       <StoragePanel />
-      <DeleteAccount />
+      {!mem.me!.demo && <DeleteAccount />}
       <VersionLine server={mem.me!.server_version} />
     </div>
   );

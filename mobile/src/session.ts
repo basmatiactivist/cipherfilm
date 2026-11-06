@@ -25,8 +25,8 @@ export interface Me {
 type Phase = "starting" | "noServer" | "signedOut" | "locked" | "unlocked";
 interface State {
   phase: Phase; server: string; me: Me | null; masterKey: Uint8Array | null; biometric: boolean; notice?: string;
-  /** locked with "Lock now" or automatically: the unlock screen then waits for a tap instead of asking for the
-   *  fingerprint at once */
+  /** locked with "Lock now" or by shaking: the unlock screen then waits for a tap instead of asking for the
+   *  fingerprint at once (the phone may be in someone else's hand) */
   byHand?: boolean;
 }
 
@@ -265,7 +265,7 @@ export async function unlockWithBiometric(): Promise<boolean> {
   return true;
 }
 
-/** Locks the library: the key leaves memory; the session stays. */
+/** Locks the library: the key leaves memory; the session stays. byHand: "Lock now" or shaking, see State. */
 export function lock(byHand = false) {
   wipe("locked");
   if (state.masterKey) state.masterKey.fill(0);

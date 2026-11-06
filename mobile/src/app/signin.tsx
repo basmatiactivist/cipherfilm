@@ -5,6 +5,7 @@ import { Button, Dialog, Portal, Text } from "react-native-paper";
 import { Column, Field, type FieldHandle, Lead, Problem, Screen, Title, useAppTheme } from "../ui";
 import { declineBiometric, enableBiometric, login, offerBiometric, useSession } from "../session";
 import { useAction } from "../useAction";
+import { away } from "../autolock";
 
 export default function SignIn() {
   const t = useAppTheme();
@@ -46,7 +47,7 @@ export default function SignIn() {
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={async () => { await declineBiometric().catch(() => {}); done(); }}>Not now</Button>
-            <Button onPress={async () => { try { await enableBiometric(); } catch (e) { setError((e as Error).message); } done(); }}>Turn on</Button>
+            <Button onPress={async () => { try { await away(enableBiometric); } catch (e) { setError((e as Error).message); } done(); }}>Turn on</Button>
           </Dialog.Actions>
         </Dialog>
       </Portal>

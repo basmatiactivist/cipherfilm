@@ -32,7 +32,7 @@ export function startShake() {
     if (p !== "unlocked" && p !== "locked") return;
     clearImages();
     clearOutbox();
-    lock();
+    lock(true); // the unlock screen then waits for a tap: the phone may be in someone else's hand
     N.haptic();
     N.closeApp();
   });

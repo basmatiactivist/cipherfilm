@@ -7,6 +7,7 @@ import { useKeepAwake } from "expo-keep-awake";
 import { ActivityIndicator, Appbar, Button, ProgressBar, Snackbar, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import N from "../../modules/cf-native/src/CfNativeModule";
+import { away } from "../autolock";
 import { describe, fmtSize, shareSummary, showUploads, SignedOut, uploadShared, uploadsSummary, type Shared } from "../upload";
 import { anyHolder, keepRunning, letGo } from "../keepAlive";
 import { useSession } from "../session";
@@ -149,7 +150,7 @@ export default function ShareScreen() {
   const [removed, setRemoved] = useState(false);
   async function removeFromPhone(uris: string[]) {
     // into the phone's own trash, as Free up space does: restorable for 30 days
-    const ok = await N.trashFromLibrary(uris);
+    const ok = await away(() => N.trashFromLibrary(uris));
     setRemoved(ok);
     setNote(ok ? `Moved ${uris.length === 1 ? "1 item" : `${uris.length} items`} to the phone's trash.` : "Kept on this phone.");
   }

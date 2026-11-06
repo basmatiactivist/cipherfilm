@@ -4,6 +4,7 @@ import { router } from "expo-router";
 import { ActivityIndicator, Appbar, Button, Dialog, Divider, List, Portal, RadioButton, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import N, { type PhoneMedia } from "../../modules/cf-native/src/CfNativeModule";
+import { away } from "../autolock";
 import { refreshLibrary, useLibrary } from "../libraryStore";
 import { fingerprint } from "../prints";
 import { Icon } from "../icons";
@@ -91,7 +92,7 @@ export default function FreeSpace() {
       // Android shows one confirmation per request; large selections go in a few
       for (let i = 0; i < chosen.length; i += 2000) {
         const part = chosen.slice(i, i + 2000);
-        if (!(await N.trashFromLibrary(part.map((m) => m.uri)))) break;
+        if (!(await away(() => N.trashFromLibrary(part.map((m) => m.uri))))) break;
         n += part.length; b += part.reduce((x, m) => x + m.size, 0);
       }
       if (n) setDone({ n, bytes: b });

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Keyboard } from "react-native";
+import { AppState, Keyboard } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { Button, Dialog, Portal, Text } from "react-native-paper";
 import { Column, Field, Lead, Problem, Screen, Title } from "../ui";
 import { declineBiometric, enableBiometric, offerBiometric, signOut, unlockWithBiometric, unlockWithPassword, useSession } from "../session";
 import { useAction } from "../useAction";
+import { away } from "../autolock";
 
 export default function Unlock() {
   const { me, biometric, byHand } = useSession();
@@ -16,9 +17,15 @@ export default function Unlock() {
   const asked = useRef(false);
   const done = () => router.replace(then === "share" ? "/share" : "/library");
   const bio = () => run(async () => { if (await unlockWithBiometric()) done(); });
-  // asks for the fingerprint at once, except after "Lock now" or an automatic lock: the lock screen then shows, and the
-  // phone may be in someone else's hand
-  useEffect(() => { if (biometric && !byHand && !asked.current) { asked.current = true; bio(); } }, [biometric]);
+  // asks for the fingerprint at once, as at app start, also after an automatic lock; not after "Lock now" or shaking
+  // (the phone may be in someone else's hand). A lock in the background asks once the app is back on screen.
+  useEffect(() => {
+    if (!biometric || byHand) return;
+    const ask = () => { if (!asked.current && AppState.currentState === "active") { asked.current = true; bio(); } };
+    ask();
+    const sub = AppState.addEventListener("change", (s) => { if (s === "active") ask(); });
+    return () => sub.remove();
+  }, [biometric, byHand]);
   const go = () => run(async () => {
     Keyboard.dismiss();
     await unlockWithPassword(password);
@@ -47,7 +54,7 @@ export default function Unlock() {
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={async () => { await declineBiometric().catch(() => {}); done(); }}>Not now</Button>
-            <Button onPress={async () => { try { await enableBiometric(); } catch { /* stays off; Account offers it again */ } done(); }}>Turn on</Button>
+            <Button onPress={async () => { try { await away(enableBiometric); } catch { /* stays off; Account offers it again */ } done(); }}>Turn on</Button>
           </Dialog.Actions>
         </Dialog>
         <Dialog visible={confirmOut} onDismiss={() => setConfirmOut(false)}>

@@ -5,6 +5,7 @@
 // the upload puts it into the encrypted details (upload.ts), so it is asked for where the backup is set up.
 import { PermissionsAndroid, type Permission } from "react-native";
 import N from "../modules/cf-native/src/CfNativeModule";
+import { away, expectAway } from "./autolock";
 
 const IMAGES = "android.permission.READ_MEDIA_IMAGES" as Permission;
 const VIDEO = "android.permission.READ_MEDIA_VIDEO" as Permission;
@@ -23,8 +24,8 @@ export function mediaPermissions(sdk: number, location: boolean): Permission[] {
 /** Asks Android for access to photos and videos (after the disclosure, disclosure.tsx). When Android won't ask any
  *  more and nothing is allowed, its app settings open instead. Returns what is allowed now. */
 export async function requestMediaAccess(location: boolean): Promise<"full" | "partial" | "none"> {
-  const r = await PermissionsAndroid.requestMultiple(mediaPermissions(N.backupState().sdk, location));
+  const r = await away(() => PermissionsAndroid.requestMultiple(mediaPermissions(N.backupState().sdk, location)));
   const now = N.backupState().media;
-  if (now === "none" && Object.values(r).includes(PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN)) N.openAppSettings();
+  if (now === "none" && Object.values(r).includes(PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN)) { expectAway(); N.openAppSettings(); }
   return now;
 }

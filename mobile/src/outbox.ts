@@ -10,6 +10,7 @@ import N from "../modules/cf-native/src/CfNativeModule";
 import { getBytes } from "./api";
 import type { Item } from "./library";
 import { onWipe, session } from "./session";
+import { away } from "./autolock";
 
 const OUT = () => new Directory(Paths.cache, "cf-out");
 const KEEP_FOR = 15 * 60 * 1000;
@@ -80,7 +81,7 @@ export async function prepareShare(items: Item[], onProgress: (done: number, tot
   return {
     send: () => {
       lastShare = Date.now();
-      return N.shareFiles(files.map((f) => f.uri), items.map(mimeOf));
+      return away(() => N.shareFiles(files.map((f) => f.uri), items.map(mimeOf)));
     },
   };
 }

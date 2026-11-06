@@ -11,7 +11,7 @@ import { clearImages } from "../library";
 import { Icon } from "../icons";
 import { Field, Problem, SwitchItem, useAppTheme } from "../ui";
 import { setShake, useShake } from "../shake";
-import { CHOICES, setAutoLock, useAutoLock } from "../autolock";
+import { CHOICES, away, setAutoLock, useAutoLock } from "../autolock";
 import { text } from "../tokens";
 
 const gb = (n: number) => (n < 1e9 ? `${Math.max(n > 0 ? 0.1 : 0, n / 1e6).toFixed(1)} MB` : `${(n / 1e9).toFixed(n < 1e10 ? 2 : 1)} GB`);
@@ -70,7 +70,7 @@ export default function Account() {
   };
   const toggleBio = async () => {
     setError(undefined);
-    try { biometric ? await disableBiometric() : await enableBiometric(); } catch (e) { setError((e as Error).message); }
+    try { biometric ? await disableBiometric() : await away(enableBiometric); } catch (e) { setError((e as Error).message); }
   };
 
   return (
@@ -104,16 +104,16 @@ export default function Account() {
           description={bioOk || biometric ? "Your key stays in this phone's secure hardware" : "Set up a fingerprint or face unlock in Android's settings first"}
           left={() => <View style={st.icon}><Icon name="fingerprint" color={bioOk || biometric ? t.colors.primary : t.colors.onSurfaceDisabled} /></View>}
           value={biometric} onValueChange={toggleBio} disabled={!bioOk && !biometric} style={st.item} />
-        <List.Item title="Lock automatically" description={CHOICES.find((c) => c.after === auto.after)?.label}
+        <List.Item title="Lock when you leave the app" description={CHOICES.find((c) => c.after === auto.after)?.label}
           left={() => <View style={st.icon}><Icon name="lock" color={t.colors.primary} /></View>} onPress={() => setPickLock(true)} style={st.item} />
         <SwitchItem title="Lock when the screen turns off"
           left={() => <View style={st.icon}><Icon name="phone" color={t.colors.primary} /></View>}
           value={auto.screenOff} onValueChange={(v) => setAutoLock({ screenOff: v })} style={st.item} />
         <SwitchItem title="Shake to lock and close"
-          description="Two strong shakes lock your library and close Cipherfilm, in case someone grabs the phone"
+          description="Two strong shakes lock and close Cipherfilm"
           left={() => <View style={st.icon}><Icon name="phone" color={t.colors.primary} /></View>}
           value={shake} onValueChange={setShake} style={st.item} />
-        <List.Item title="Lock now" description="Your key leaves memory; unlock to see your photos again"
+        <List.Item title="Lock now" description="Unlock again to see your photos"
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="lock" color={t.colors.primary} /></View>} onPress={() => leave("lock")} style={st.item} />
         <List.Item title="Sign out" description="Ends the session and deletes what this phone keeps for your account"
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="logout" color={t.colors.primary} /></View>} onPress={() => setConfirmOut(true)} style={st.item} />
@@ -130,9 +130,9 @@ export default function Account() {
       </ScrollView>
       <Portal>
         <Dialog visible={pickLock} onDismiss={() => setPickLock(false)}>
-          <Dialog.Title>Lock automatically</Dialog.Title>
+          <Dialog.Title>Lock when you leave the app</Dialog.Title>
           <Dialog.Content>
-            <Text variant="bodyMedium" style={{ marginBottom: 8 }}>When Cipherfilm is in the background. Backup keeps running while locked.</Text>
+            <Text variant="bodyMedium" style={{ marginBottom: 8 }}>Backup keeps running while locked.</Text>
             <RadioButton.Group value={String(auto.after)} onValueChange={(v) => { setAutoLock({ after: Number(v) }); setPickLock(false); }}>
               {CHOICES.map((c) => <RadioButton.Item key={c.after} label={c.label} value={String(c.after)} />)}
             </RadioButton.Group>

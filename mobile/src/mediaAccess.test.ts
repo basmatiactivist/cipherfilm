@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("react-native", () => ({ PermissionsAndroid: { requestMultiple: vi.fn(), RESULTS: {} } }));
 vi.mock("../modules/cf-native/src/CfNativeModule", () => ({ default: {} }));
+vi.mock("./autolock", () => ({ away: (f: () => unknown) => f(), expectAway: () => {} }));
 const { mediaPermissions } = await import("./mediaAccess");
 
 const short = (sdk: number, loc: boolean) => mediaPermissions(sdk, loc).map((p) => p.replace("android.permission.", ""));

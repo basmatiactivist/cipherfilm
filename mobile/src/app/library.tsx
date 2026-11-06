@@ -5,6 +5,7 @@ import { Appbar, Button, Dialog, FAB, Portal, Text } from "react-native-paper";
 import { loadSettings, saveSettings } from "../search/settings";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import N from "../../modules/cf-native/src/CfNativeModule";
+import { away } from "../autolock";
 import { Gallery } from "../Gallery";
 import { NAV_HEIGHT, NavBar } from "../NavBar";
 import { Icon } from "../icons";
@@ -15,7 +16,7 @@ import { text } from "../tokens";
 
 /** Android's photo picker, then the same upload screen as sharing. */
 async function pick() {
-  const uris = await N.pickMedia();
+  const uris = await away(() => N.pickMedia());
   if (!uris.length) return;
   setPicked(uris);
   router.push({ pathname: "/share", params: { from: "picker" } });

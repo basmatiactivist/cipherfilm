@@ -5,7 +5,7 @@ import { Appbar, Button, Dialog, Divider, List, Portal, ProgressBar, RadioButton
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import N from "../../modules/cf-native/src/CfNativeModule";
 import { api } from "../api";
-import { biometricPossible, deleteAccount, disableBiometric, enableBiometric, forgetServer, lock, signOut, useSession } from "../session";
+import { DEMO_NOTE, biometricPossible, deleteAccount, disableBiometric, enableBiometric, forgetServer, lock, signOut, useSession } from "../session";
 import { forgetLibrary } from "../libraryStore";
 import { clearImages } from "../library";
 import { Icon } from "../icons";
@@ -83,6 +83,7 @@ export default function Account() {
         <View style={st.block}>
           <Text variant="titleMedium" numberOfLines={1}>{me?.user.email}</Text>
           <Text variant="bodySmall" style={{ color: t.colors.onSurfaceVariant }} numberOfLines={1}>{server.replace(/^https:\/\//, "")}</Text>
+          {me?.demo ? <Text variant="labelLarge" style={{ color: t.colors.primary, marginTop: 4 }}>{DEMO_NOTE}</Text> : null}
         </View>
         {usage ? (
           <View style={st.block}>
@@ -117,8 +118,8 @@ export default function Account() {
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="lock" color={t.colors.primary} /></View>} onPress={() => leave("lock")} style={st.item} />
         <List.Item title="Sign out" description="Removes your account from this phone"
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="logout" color={t.colors.primary} /></View>} onPress={() => setConfirmOut(true)} style={st.item} />
-        <List.Item title="Delete account" titleStyle={{ color: t.colors.error }} description="Deletes your account and all your photos"
-          descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="trash" color={t.colors.error} /></View>} onPress={() => setDel("warn")} style={st.item} />
+        {me?.demo ? null : <List.Item title="Delete account" titleStyle={{ color: t.colors.error }} description="Deletes your account and all your photos"
+          descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="trash" color={t.colors.error} /></View>} onPress={() => setDel("warn")} style={st.item} />}
         <Divider />
         <Text variant="bodySmall" style={[st.block, { color: t.colors.onSurfaceVariant }]}>
           Photos are encrypted on this phone before upload. The server only stores encrypted data. Change your password, invite people and make a new recovery key in Cipherfilm in the browser.

@@ -4,7 +4,7 @@ import { router } from "expo-router";
 import { ActivityIndicator, Appbar, Button, Divider, List, RadioButton, Switch, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import N, { type BackupState } from "../../modules/cf-native/src/CfNativeModule";
-import { blocker, chooseFolders, disableBackup, enableBackup, loadConfig, loadStatus, notBackedUp, onBackupChange, rememberLibrary, runBackup, saveConfig, startAfter, waitingCount, type Config, type Status } from "../backup";
+import { DEMO_BACKUP, blocker, chooseFolders, disableBackup, enableBackup, loadConfig, loadStatus, notBackedUp, onBackupChange, rememberLibrary, runBackup, saveConfig, startAfter, waitingCount, type Config, type Status } from "../backup";
 import { server } from "../api";
 import { libraryItems, refreshLibrary } from "../libraryStore";
 import { session } from "../session";
@@ -100,6 +100,7 @@ export default function Backup() {
     setError(undefined); setBusy(true);
     try {
       if (on) { await disableBackup(); return; }
+      if (session().me?.demo) throw new Error(DEMO_BACKUP); // before Android asks for the photos
       if (device.media === "none") { await askMedia(); if (N.backupState().media === "none") throw new Error("Allow access to photos and videos first."); }
       const { me, masterKey } = session();
       if (!me || !masterKey) throw new Error("Unlock your library first.");

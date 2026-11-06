@@ -142,6 +142,13 @@ describe("automatic backup", () => {
     expect(c!.folders.cam.after).toBe(1); // only the file that reached alice's library counts as backed up
   });
 
+  it("can't be turned on for the public demo login, and says why", async () => {
+    const { backup, pubkey } = await load();
+    const demo = { ...me("demo"), pubkey, demo: true };
+    await expect(backup.enableBackup(demo, SERVER, new Uint8Array(32), { wifiOnly: false, chargingOnly: false, includeExisting: true, folders: {} })).rejects.toThrow(/public demo/);
+    expect(await backup.loadConfig()).toBeNull();
+  });
+
   it("checks the account again after a wait, even when the app saw no change", async () => {
     const { session, backup, pubkey } = await load();
     await session.start();

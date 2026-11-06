@@ -83,7 +83,11 @@ const changed = () => subs.forEach((f) => f());
 // ---- turning it on and off (only while the library is unlocked) ----
 
 /** Checks the account's public key against its private key and pins it, then schedules the background task. */
-export async function enableBackup(me: { user: { id: string; email: string }; pubkey: string; wrapped_privkey: string }, server: string, master: Uint8Array, choice: Omit<Config, "enabled" | "server" | "userId" | "email" | "pubkey">) {
+/** The server refuses every upload of the public demo login: a backup would only try again and again. */
+export const DEMO_BACKUP = "This is the public demo: it can't store photos, so backup stays off.";
+
+export async function enableBackup(me: { user: { id: string; email: string }; pubkey: string; wrapped_privkey: string; demo?: boolean }, server: string, master: Uint8Array, choice: Omit<Config, "enabled" | "server" | "userId" | "email" | "pubkey">) {
+  if (me.demo) throw new Error(DEMO_BACKUP);
   const s = await getSodium();
   const pair = accountKeyPair(s, unb64(s, me.wrapped_privkey), master, normEmail(me.user.email));
   s.memzero(pair.sk);

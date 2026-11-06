@@ -11,6 +11,7 @@ import { NAV_HEIGHT, NavBar } from "../NavBar";
 import { Icon } from "../icons";
 import { refreshLibrary, useLibrary } from "../libraryStore";
 import { setPicked } from "../pending";
+import { DEMO_NOTE, useSession } from "../session";
 import { useAppTheme } from "../ui";
 import { text } from "../tokens";
 
@@ -26,6 +27,7 @@ export default function Library() {
   const t = useAppTheme();
   const inset = useSafeAreaInsets();
   const { items, error, loading } = useLibrary();
+  const demo = !!useSession().me?.demo;
   useEffect(() => { if (!items) refreshLibrary(); }, []);
   // once: offer search, which is off until the person turns it on; asked only while this screen is on top (a dialog
   // opened under the Backup screen would show over it)
@@ -60,13 +62,16 @@ export default function Library() {
       <Gallery
         items={items} error={error} loading={loading} onRefresh={refreshLibrary} bottom={NAV_HEIGHT}
         header={
-          <Appbar.Header style={{ backgroundColor: t.colors.background }}>
-            <Appbar.Content title="Photos" titleStyle={text.page} />
-            <Appbar.Action icon="user" accessibilityLabel="Account" onPress={() => router.push("/account")} />
-          </Appbar.Header>
+          <View>
+            <Appbar.Header style={{ backgroundColor: t.colors.background }}>
+              <Appbar.Content title="Photos" titleStyle={text.page} />
+              <Appbar.Action icon="user" accessibilityLabel="Account" onPress={() => router.push("/account")} />
+            </Appbar.Header>
+            {demo ? <Text variant="labelLarge" style={[st.demo, { backgroundColor: t.colors.primaryContainer, color: t.colors.onPrimaryContainer }]}>{DEMO_NOTE}</Text> : null}
+          </View>
         }
         empty={<Empty />}
-        fab={<FAB icon="upload" label="Upload" onPress={pick} accessibilityLabel="Upload photos and videos from this phone"
+        fab={demo ? undefined : <FAB icon="upload" label="Upload" onPress={pick} accessibilityLabel="Upload photos and videos from this phone"
           style={[st.fab, { right: 16 + inset.right, bottom: 16 + inset.bottom + NAV_HEIGHT, backgroundColor: t.colors.primary }]} color={t.colors.onPrimary} />}
         nav={<NavBar current="library" />}
       />
@@ -90,6 +95,7 @@ function Empty() {
 
 const st = StyleSheet.create({
   fab: { position: "absolute" },
+  demo: { marginHorizontal: 16, marginBottom: 8, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
   empty: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
   disc: { width: 64, height: 64, borderRadius: 32, alignItems: "center", justifyContent: "center", marginBottom: 16 },
 });

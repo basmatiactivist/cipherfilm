@@ -20,6 +20,8 @@ export interface Me {
   indexer?: string;
   /** the server's version (older servers don't send it) */
   server_version?: string;
+  /** the server's public demo login (DEMO_ACCOUNTS): it reads and searches, every change is refused */
+  demo?: boolean;
 }
 
 type Phase = "starting" | "noServer" | "signedOut" | "locked" | "unlocked";
@@ -313,3 +315,6 @@ export async function deleteAccount(password: string) {
   setCsrf("");
   set({ phase: "signedOut", me: null, masterKey: null, biometric: false, notice: "Your account and everything in it were deleted from the server." });
 }
+
+/** Shown wherever a demo login looks at its photos, so nobody takes it for their own library. */
+export const DEMO_NOTE = "Public demo · read-only · resets every hour";

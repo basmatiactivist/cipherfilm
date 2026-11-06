@@ -129,8 +129,24 @@ test.describe.serial("accounts", () => {
     await page.getByRole("button", { name: "Unlock" }).click();
     await expect(page.getByRole("button", { name: "Timeline" })).toBeVisible({ timeout: 30_000 });
 
-    await openMenuItem(page, "Sign out");
-    await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+    // sign-out doesn't wait for the server: with its answer held back, the sign-in screen is there within 3 seconds,
+    // the tab's kept key is gone, and once the request goes through the session has ended on the server too
+    let release = () => {};
+    const held = new Promise<void>((r) => { release = r; });
+    let asked = false;
+    await page.route("**/api/auth/logout", async (route) => { asked = true; await held; await route.continue(); });
+    await page.getByRole("button", { name: "Account menu" }).click();
+    const started = Date.now();
+    await page.getByRole("menuitem", { name: "Sign out" }).click();
+    await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible({ timeout: 3_000 });
+    expect(Date.now() - started).toBeLessThan(3_000);
+    expect(await page.evaluate(() => sessionStorage.getItem("cf.mk"))).toBeNull();
+    await expect.poll(() => asked).toBe(true);
+    const told = page.waitForResponse("**/api/auth/logout");
+    release();
+    expect((await told).status()).toBe(200);
+    expect(await page.evaluate(async () => (await fetch("/api/me")).status)).toBe(401);
+    await expect(page.getByText(/session has ended/)).toHaveCount(0);
     await ctx.close();
   });
 

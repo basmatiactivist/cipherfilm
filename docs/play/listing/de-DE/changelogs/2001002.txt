@@ -1,0 +1,5 @@
+• Videos füllen den Bildschirm wie Fotos, statt abgeschnitten und klein zu wirken.
+• Das Backup überspringt leere Dateien (0 Byte) und nennt sie, statt ein leeres Foto hochzuladen.
+• Das Backup fragt den Server nicht mehr alle 15 Minuten, wenn nichts Neues da ist.
+• Die Schalter unter Account stehen bündig mit den anderen Zeilen.
+Benötigt Ihren eigenen Cipherfilm-Server: https://cipherfilm.app/de

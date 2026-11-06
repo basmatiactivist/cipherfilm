@@ -1,6 +1,6 @@
 name: Android
 # Builds the signed APK (GitHub releases, Obtainium; signed with the app signing key) and the Android App Bundle for
-# Google Play (CF_STORE=play, signed with the upload key; Play App Signing re-signs it with the same app signing key,
+# Google Play (CF_STORE=play, signed with the key Play takes for uploads; Play App Signing re-signs it with the app signing key,
 # docs/RELEASING.md), and checks both for 16 KB memory pages. Called by the release workflow for a tag; can also be run by hand on a v* tag (Actions >
 # Android > Run workflow) to check the build without releasing. No Actions caches at all: what goes into the signed
 # app is fetched fresh and checked against a pinned hash (the NDK and Gradle here, libsodium in its build script, npm
@@ -86,26 +86,43 @@ jobs:
           echo "distributionSha256Sum=$GRADLE_SHA256" >> "$props"
           [ "$(sha256sum android/gradle/wrapper/gradle-wrapper.jar | cut -d" " -f1)" = "$(cat "$RUNNER_TEMP/wrapper.sha256")" ] \
             || { echo "the Play build's Gradle wrapper differs from the validated one"; exit 1; }
-      - name: Build the App Bundle for Google Play, signed with the upload key
+      - name: Build the App Bundle for Google Play
+        # signed with the key Play Console has registered as upload key: the app signing key until Play accepted the
+        # separate upload key (upload key reset, docs/RELEASING.md), then the upload key once the release environment
+        # has the variable PLAY_UPLOAD_KEY=upload
         env:
+          PLAY_UPLOAD_KEY: ${{ vars.PLAY_UPLOAD_KEY }}
           UPLOAD_KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
-          CF_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
-          echo "$UPLOAD_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/upload.p12"
-          trap 'rm -f "$RUNNER_TEMP/upload.p12"' EXIT
+          if [ "$PLAY_UPLOAD_KEY" = upload ]; then
+            echo "$UPLOAD_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/play.p12"; export CF_KEYSTORE_PASSWORD="$UPLOAD_KEYSTORE_PASSWORD" CF_KEY_ALIAS=upload
+          else
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/play.p12"; export CF_KEYSTORE_PASSWORD="$KEYSTORE_PASSWORD"
+          fi
+          unset UPLOAD_KEYSTORE_B64 UPLOAD_KEYSTORE_PASSWORD KEYSTORE_B64 KEYSTORE_PASSWORD
+          trap 'rm -f "$RUNNER_TEMP/play.p12"' EXIT
           cd mobile/android
-          CF_VERSION="${VERSION#v}" CF_KEYSTORE="$RUNNER_TEMP/upload.p12" CF_KEY_ALIAS=upload ./gradlew bundleRelease \
+          CF_VERSION="${VERSION#v}" CF_KEYSTORE="$RUNNER_TEMP/play.p12" ./gradlew bundleRelease \
             -PreactNativeArchitectures=arm64-v8a --parallel --console=plain
           ../scripts/check-play-manifest.sh app
           cp app/build/outputs/bundle/release/app-release.aab "../../dist/cipherfilm-play-${VERSION#v}.aab"
-      - name: Signatures (APK with the app signing key, AAB with the upload key)
+      - name: Signatures (APK with the app signing key, AAB with the key Play takes)
+        env:
+          PLAY_UPLOAD_KEY: ${{ vars.PLAY_UPLOAD_KEY }}
         run: |
           bt="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
           apk=$("$bt/apksigner" verify --print-certs dist/cipherfilm-android-*.apk | sed -n 's/.*certificate SHA-256 digest: //p' | head -1)
           aab=$(keytool -printcert -jarfile dist/cipherfilm-play-*.aab | sed -n 's/^[[:space:]]*SHA256: //p' | head -1 | tr -d : | tr A-F a-f)
           echo "APK: $apk"; echo "AAB: $aab"
           [ "$apk" = "$RELEASE_CERT_SHA256" ] || { echo "the APK is not signed with the app signing key"; exit 1; }
-          [ -n "$aab" ] && [ "$aab" != "$RELEASE_CERT_SHA256" ] || { echo "the AAB must be signed with the upload key, not the app signing key"; exit 1; }
+          if [ "$PLAY_UPLOAD_KEY" = upload ]; then
+            [ -n "$aab" ] && [ "$aab" != "$RELEASE_CERT_SHA256" ] || { echo "the AAB must be signed with the upload key"; exit 1; }
+          else
+            [ "$aab" = "$RELEASE_CERT_SHA256" ] || { echo "the AAB must be signed with the app signing key"; exit 1; }
+          fi
       - name: 16 KB memory pages (Google Play)
         run: |
           ZIPALIGN="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)/zipalign" ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$NDK" \

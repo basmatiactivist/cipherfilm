@@ -1,0 +1,5 @@
+• Videos fill the screen like photos instead of looking cut off and small.
+• Backup skips empty files (0 bytes) and names them, instead of uploading an empty photo.
+• Backup no longer contacts the server every 15 minutes when there is nothing new.
+• The switches under Account line up with the other rows.
+Needs your own Cipherfilm server: https://cipherfilm.app

@@ -30,7 +30,7 @@ The `Release` workflow then:
    pre-release tags such as `v1.1.0-rc.1` only get their own tag), with provenance and an SBOM;
 3. builds the offline decrypt tool for macOS, Linux and Windows plus `SHA256SUMS`;
 4. builds the Android APK (`cipherfilm-android-X.Y.Z.apk`, signed with the app signing key), the Google Play App
-   Bundle (`cipherfilm-play-X.Y.Z.aab`, `CF_STORE=play`, signed with the upload key; see "Google Play" below), checks
+   Bundle (`cipherfilm-play-X.Y.Z.aab`, `CF_STORE=play`, signed with the key Play takes for uploads; see "Google Play" below), checks
    both for 16 KB memory pages (`mobile/scripts/check-page-size.sh`) and the Play manifest
    (`mobile/scripts/check-play-manifest.sh`), and builds the Mac app (`cipherfilm-mac-X.Y.Z.zip`, unsigned);
 5. creates the GitHub Release with the changelog section as notes and everything attached, after checking that the
@@ -80,7 +80,14 @@ separate **upload key** (`ANDROID_UPLOAD_KEYSTORE_B64` / `ANDROID_UPLOAD_KEYSTOR
 environment, alias `upload`); Google can reset a lost upload key, never the app signing key. `withReleaseSigning`
 takes the key from `CF_KEYSTORE`, `CF_KEYSTORE_PASSWORD`, `CF_KEY_ALIAS` (default `cipherfilm`) and
 `CF_KEY_PASSWORD` (default: the keystore password). `android.yml` fails if the APK isn't signed with the app signing
-key or the bundle is.
+key.
+
+Until Play Console accepts the upload key, the bundle is signed with the app signing key: the first upload to Play was
+signed with it, so Play registered it as the upload key too. To switch: Play Console › Test and release › App
+integrity › App signing › Request upload key reset, with the upload key's certificate
+(`keytool -printcert -rfc -jarfile cipherfilm-play-X.Y.Z.aab` of a bundle signed with it), and once Google confirms,
+set the variable `PLAY_UPLOAD_KEY` to `upload` in the `release` environment
+(`gh variable set PLAY_UPLOAD_KEY --env release --body upload`). `android.yml` then requires the upload key.
 
 The first upload, before any release built a bundle: `make play-aab VERSION=X.Y.Z` builds it locally the same way,
 with the upload key in `~/.cipherfilm-android-signing` (`upload.p12`, `upload-password.txt`), into `dist/`. As with a

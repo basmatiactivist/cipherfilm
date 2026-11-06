@@ -5,6 +5,14 @@ All notable changes to Cipherfilm are listed here. The format follows
 [Semantic Versioning](https://semver.org/). The release workflow copies the section of the tagged
 version into the GitHub release notes, so a release cannot be published without an entry here.
 
+## [2.1.2] - 2026-11-06
+
+The same app as 2.1.1, now uploaded to Google Play's internal testing track by the release itself.
+
+### Fixed
+- Releases: the Play bundle is signed with the key Google Play takes for uploads (the app signing key until the
+  separate upload key is registered), so the automatic upload is accepted.
+
 ## [2.1.1] - 2026-11-06
 
 Android fixes, and releases go to Google Play's internal testing track by themselves.

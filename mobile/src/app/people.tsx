@@ -36,7 +36,7 @@ export default function People() {
             <View style={st.empty}>
               <Text variant="titleMedium" style={{ marginBottom: 8 }}>{showHidden ? "No one is hidden" : "No people yet"}</Text>
               <Text variant="bodyMedium" style={{ textAlign: "center", color: t.colors.onSurfaceVariant, maxWidth: 320 }}>
-                {showHidden ? "People you hide stay out of search and this list." : progress.phase === "indexing" ? `Faces are found as your photos are indexed (${progress.done} of ${progress.total}).` : "Someone shows up here once they are in at least three photos."}
+                {showHidden ? "Hidden people stay out of search and this list." : progress.phase === "indexing" ? `Faces are found as your photos are indexed (${progress.done} of ${progress.total}).` : "People appear here once they are in at least three photos."}
               </Text>
             </View>
           } />

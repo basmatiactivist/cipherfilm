@@ -113,11 +113,11 @@ export default function FreeSpace() {
       <ScrollView contentContainerStyle={{ paddingBottom: inset.bottom + 32 }}>
         {access === "none" ? (
           <View style={[st.card, { backgroundColor: t.colors.surfaceVariant }]}>
-            <Text variant="bodyMedium">To find photos on this phone that are already in Cipherfilm, allow access to photos and videos.</Text>
+            <Text variant="bodyMedium">Allow access to photos and videos to find the ones already in Cipherfilm.</Text>
             <Button mode="contained" onPress={askMedia} style={st.button}>Allow</Button>
           </View>
         ) : !matched && libraryError ? (
-          <View style={{ padding: 16 }}><Problem>{`Your library couldn't be loaded, so nothing is offered for removal. ${libraryError}`}</Problem></View>
+          <View style={{ padding: 16 }}><Problem>{`Couldn't load your library, so nothing can be removed. ${libraryError}`}</Problem></View>
         ) : !matched ? (
           <View style={{ alignItems: "center", padding: 32 }}><ActivityIndicator /><Text variant="bodyMedium" style={{ marginTop: 12 }}>Comparing this phone with your library…</Text></View>
         ) : (
@@ -128,20 +128,20 @@ export default function FreeSpace() {
                 <View style={{ flex: 1 }}>
                   <Text variant="headlineSmall">{chosen.length ? gb(bytes) : "Nothing to free"}</Text>
                   <Text variant="bodyMedium" style={{ color: t.colors.onSurfaceVariant }}>
-                    {chosen.length ? `${chosen.length} ${chosen.length === 1 ? "photo or video is" : "photos and videos are"} already safe in Cipherfilm` : matched.length ? "None match the choice below." : `None of the ${(media ?? []).length} photos and videos on this phone (${gb(total)}) are in your library yet.`}
+                    {chosen.length ? `${chosen.length} ${chosen.length === 1 ? "photo or video is" : "photos and videos are"} already in Cipherfilm` : matched.length ? "None match the choice below." : `None of the ${(media ?? []).length} photos and videos on this phone (${gb(total)}) are in Cipherfilm yet.`}
                   </Text>
                 </View>
               </View>
               {access === "partial" ? (
                 <>
-                  <Text variant="bodySmall" style={{ marginTop: 8 }}>Cipherfilm sees only the photos you chose. Allow more to find the rest.</Text>
+                  <Text variant="bodySmall" style={{ marginTop: 8 }}>Cipherfilm only sees the photos you chose.</Text>
                   <Button mode="outlined" compact onPress={askMedia} style={{ marginTop: 8, alignSelf: "flex-start" }}>Choose photos</Button>
                 </>
               ) : null}
-              {!canTrash ? <Text variant="bodySmall" style={{ marginTop: 8 }}>Removing photos from here needs Android 11 or newer. Delete them in your gallery app instead.</Text> : null}
+              {!canTrash ? <Text variant="bodySmall" style={{ marginTop: 8 }}>Removing needs Android 11 or newer. Delete them in your gallery app instead.</Text> : null}
               <Button mode="contained" icon="trash" disabled={!chosen.length || busy || !canTrash} loading={busy} onPress={() => setAsking(true)} style={st.button}>Remove from this phone</Button>
             </View>
-            {done ? <Text variant="bodyMedium" style={st.hint}>Moved {done.n} ({gb(done.bytes)}) to the phone's trash. Android permanently removes them after 30 days; until then you can restore them in your gallery app.</Text> : null}
+            {done ? <Text variant="bodyMedium" style={st.hint}>Moved {done.n} ({gb(done.bytes)}) to the phone's trash. You can restore them in your gallery app for 30 days.</Text> : null}
             <View style={{ paddingHorizontal: 16 }}><Problem>{error}</Problem></View>
 
             <List.Subheader>Which ones</List.Subheader>
@@ -161,7 +161,7 @@ export default function FreeSpace() {
             ) : null}
             <Divider style={{ marginTop: 8 }} />
             <Text variant="bodySmall" style={[st.hint, { color: t.colors.onSurfaceVariant, marginTop: 12 }]}>
-              Only photos and videos with the same name and size as one in your library are offered, and only after their upload finished. They stay in Cipherfilm, encrypted. Android asks you to confirm, then keeps them in its trash for 30 days.
+              Only photos and videos fully uploaded to your library (same name and size) are offered. They stay in Cipherfilm. Android asks you to confirm, then keeps them in its trash for 30 days.
             </Text>
           </>
         )}
@@ -170,7 +170,7 @@ export default function FreeSpace() {
       <Portal>
         <Dialog visible={asking} onDismiss={() => setAsking(false)}>
           <Dialog.Title>Remove {chosen.length} from this phone?</Dialog.Title>
-          <Dialog.Content><Text variant="bodyMedium">They stay in Cipherfilm. Android moves them to its trash and asks you to confirm.</Text></Dialog.Content>
+          <Dialog.Content><Text variant="bodyMedium">They stay in Cipherfilm. Android asks you to confirm, then moves them to the phone's trash.</Text></Dialog.Content>
           <Dialog.Actions>
             <Button onPress={() => setAsking(false)}>Cancel</Button>
             <Button onPress={free}>Remove {gb(bytes)}</Button>

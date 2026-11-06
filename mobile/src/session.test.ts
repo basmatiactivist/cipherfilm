@@ -98,6 +98,6 @@ describe("password-hashing settings from the server", () => {
     for (const bad of [
       { ...good, alg: "argon2i13" }, { ...good, v: 2 }, { ...good, ops: 1 }, { ...good, ops: 2.5 }, { ...good, mem: 16 * 1024 * 1024 },
       { ...good, mem: "268435456" }, { ...good, salt: "AAAA" }, { ...good, salt: "AAAAAAAAAAAAAAAAAAAAA=" }, { ...good, salt: undefined },
-    ]) expect(() => assertSaneKdf(bad as any), JSON.stringify(bad)).toThrow(/unexpected password-hashing/);
+    ]) expect(() => assertSaneKdf(bad as any), JSON.stringify(bad)).toThrow(/unexpected password settings/);
   });
 });

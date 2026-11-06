@@ -30,7 +30,7 @@ export default function AlbumScreen() {
       setDeleting(false);
       router.back();
     } catch (e) {
-      setDeleteError(e instanceof Error ? e.message : "The album couldn't be deleted.");
+      setDeleteError(e instanceof Error ? e.message : "Couldn't delete the album.");
     } finally {
       setDeleteBusy(false);
     }
@@ -63,13 +63,13 @@ export default function AlbumScreen() {
           <View style={st.empty}>
             <Icon name="albums" size={32} color={t.colors.onSurfaceVariant} />
             <Text variant="bodyMedium" style={{ textAlign: "center", color: t.colors.onSurfaceVariant, marginTop: 12, maxWidth: 300 }}>
-              This album is empty. In Photos, long-press photos and choose Add to album.
+              This album is empty. In Photos, long-press photos and tap Add to album.
             </Text>
           </View>
         }
         extraAction={{
           icon: "minus", label: "Remove",
-          run: async (ids) => { await removeFromAlbum(id, ids); await refreshAlbums(); return `Removed ${count(ids.length)} from ${album?.name ?? "the album"}. ${ids.length === 1 ? "It is" : "They are"} still in Photos.`; },
+          run: async (ids) => { await removeFromAlbum(id, ids); await refreshAlbums(); return `Removed ${count(ids.length)} from ${album?.name ?? "the album"}. Still in Photos.`; },
         }}
       />
       <Portal>
@@ -79,7 +79,7 @@ export default function AlbumScreen() {
           <Dialog.Title>Delete this album?</Dialog.Title>
           <Dialog.Content>
             <Problem>{deleteError}</Problem>
-            <Text variant="bodyMedium">Only the album goes away. Its {count(shown?.length ?? 0)} stay in Photos.</Text>
+            <Text variant="bodyMedium">Its {count(shown?.length ?? 0)} stay in Photos.</Text>
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={() => setDeleting(false)}>Cancel</Button>

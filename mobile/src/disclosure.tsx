@@ -28,20 +28,20 @@ export function useMediaDisclosure(): { ask: (why: Why) => Promise<"full" | "par
           <ScrollView>
             {why === "freeSpace" ? (
               <Text variant="bodyMedium" style={{ marginTop: 8 }}>
-                Cipherfilm reads the names and sizes of the photos and videos on this phone to find the ones that are already backed up to {server}. Nothing is uploaded or sent anywhere for this.
+                Cipherfilm reads the names and sizes of photos and videos on this phone to find the ones already backed up to {server}. Nothing is uploaded or sent anywhere.
               </Text>
             ) : (
               <>
                 <Text variant="bodyMedium" style={{ marginTop: 8 }}>
-                  Cipherfilm reads the photos and videos in the folders you choose, including where they were taken, to back them up. This also happens in the background, when the app is closed, so new photos are backed up automatically.
+                  Cipherfilm reads the photos and videos in the folders you choose, including where they were taken, to back them up. This also happens in the background when the app is closed.
                 </Text>
                 <Text variant="bodyMedium" style={{ marginTop: 12 }}>
-                  Each file is encrypted on this phone before it is uploaded, only to the server you signed in to ({server}). The developer of Cipherfilm never receives your photos or anything about them.
+                  Each file is encrypted on this phone, then uploaded only to your server ({server}). The developer of Cipherfilm never receives your photos or anything about them.
                 </Text>
               </>
             )}
             <Text variant="bodyMedium" style={{ marginVertical: 12 }}>
-              Android asks next. You can allow all photos or only some; with only some, Cipherfilm backs up just those.
+              Android asks next. If you allow only some photos, Cipherfilm backs up just those.
             </Text>
           </ScrollView>
         </Dialog.ScrollArea>

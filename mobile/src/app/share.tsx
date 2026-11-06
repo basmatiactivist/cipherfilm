@@ -69,7 +69,7 @@ export default function ShareScreen() {
       } catch (e) {
         // usually the other app didn't pass on the permission to read the file (or the file is gone)
         console.log("share: couldn't read", e);
-        setProblem("Cipherfilm couldn't read what was shared. Share it again from the other app, or use Upload in Photos.");
+        setProblem("Couldn't read what was shared. Share it again, or use Upload in Photos.");
         setFinished(true);
       }
     })();
@@ -184,13 +184,13 @@ export default function ShareScreen() {
               {asking
                 ? shareSummary(all.map((j) => j.file), me?.user.email ?? "this account")
                 : finished
-                ? `${done.length} of ${all.length} safely in Cipherfilm${failed.length ? `, ${failed.length} failed` : ""}.`
+                ? `${done.length} of ${all.length} uploaded${failed.length ? `, ${failed.length} failed` : ""}.`
                 : `Encrypting and uploading ${all.length === 1 ? "1 file" : `${all.length} files`}. Keep the app open.`}
             </Text>
             {finished || asking ? null : <ProgressBar progress={progress} color={t.colors.primary} style={{ height: 5, borderRadius: 3, backgroundColor: t.colors.outlineVariant }} />}
           </>
         ) : !problem ? (
-          <View style={st.wait}><ActivityIndicator /><Text variant="bodyMedium" style={{ marginLeft: 12 }}>Reading what you shared</Text></View>
+          <View style={st.wait}><ActivityIndicator /><Text variant="bodyMedium" style={{ marginLeft: 12 }}>Reading shared files…</Text></View>
         ) : null}
       </View>
       <FlatList

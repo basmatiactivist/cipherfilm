@@ -351,7 +351,7 @@ describe("automatic backup", () => {
     const { backup } = await load();
     expect(backup.backupSummary(0, 0, "Waiting for Wi-Fi.")).toBeNull();
     expect(backup.backupSummary(1, 0)).toEqual({ title: "Backup done", text: "1 photo or video backed up." });
-    expect(backup.backupSummary(4, 2, "Your storage on the server is full.")).toEqual({ title: "Backup incomplete", text: "4 photos and videos backed up. 2 couldn't be backed up (see Backup). Stopped: Your storage on the server is full." });
+    expect(backup.backupSummary(4, 2, "Your storage on the server is full.")).toEqual({ title: "Backup incomplete", text: "4 photos and videos backed up. 2 couldn't be backed up. Stopped: Your storage on the server is full." });
   });
 
   it("a backup run leaves the app's server and token as they are", async () => {

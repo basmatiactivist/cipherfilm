@@ -141,14 +141,14 @@ export default function SearchSettingsScreen() {
           {!s.enabled ? (
             <Text variant="bodySmall" style={{ marginTop: 8, color: t.colors.onSurfaceVariant }}>
               {allowed
-                ? `Needs a one-time download: standard search ${need("mobileclip-s2")}, explicit search ${need("laion-b32")}. You choose when you turn it on.`
-                : size ? `Needs a one-time download of ${mb(size)}.` : "The models are already on this phone."}
+                ? `Runs on this phone. Downloads once from Hugging Face: standard search ${need("mobileclip-s2")}, explicit search ${need("laion-b32")}. You choose when you turn it on.`
+                : size ? `Runs on this phone. Downloads ${mb(size)} once from Hugging Face.` : "The models are already on this phone."}
             </Text>
           ) : null}
           {/* where the models come from, said before anything is downloaded (docs/MODELS.md) */}
           {(!s.enabled && (size || allowed)) || p.phase === "waitWifi" ? (
             <Text variant="bodySmall" style={{ marginTop: 8, color: t.colors.onSurfaceVariant }}>
-              Downloaded once from Hugging Face, where these open models are published. Hugging Face sees this phone's IP address, nothing about your photos.
+              {p.phase === "waitWifi" ? "Downloaded once from Hugging Face. " : ""}Hugging Face sees this phone's IP address, nothing of your photos.
             </Text>
           ) : null}
         </View>
@@ -156,27 +156,27 @@ export default function SearchSettingsScreen() {
         {s.enabled ? (
           <List.Item title={here ? "This phone indexes your photos" : `Indexed by ${indexer?.device || "another device"}`}
             description={here
-              ? "Only one device indexes your photos for search; your other devices use its index and only download the small search model."
-              : "This phone only searches: it uses what that device found and needs only the search model. Indexing here takes longer and more battery."}
+              ? "Your other devices use its index and only need the small search model."
+              : "This phone uses that index. Indexing here takes longer and more battery."}
             descriptionNumberOfLines={4}
             right={() => (here ? null : <Button mode="outlined" compact disabled={busy} onPress={moveHere} style={{ alignSelf: "center" }}>Index here</Button>)} />
         ) : null}
 
-        <SwitchItem title="Find people" description="Recognise faces and group photos of the same person. You can name them." value={s.faces} onValueChange={(v) => change({ faces: v })} />
+        <SwitchItem title="Find people" description="Group photos by face. You can name people." value={s.faces} onValueChange={(v) => change({ faces: v })} />
         <SwitchItem title="Download models only on Wi-Fi" value={s.wifiOnly} onValueChange={(v) => change({ wifiOnly: v })} />
         {allowed && s.enabled && explicit !== null ? (
           <SwitchItem title="Explicit search" disabled={busy}
             description={explicit
-              ? "On: an uncensored model (LAION CLIP ViT-B/32) also finds explicit content. Turning it off goes back to MobileCLIP."
-              : `Your admin allowed it. Uses an uncensored model (LAION CLIP ViT-B/32) that also finds explicit content; switching means ${need("laion-b32")}. Applies to all your devices; the device that indexes builds the index again.`}
+              ? "Uses an uncensored model (LAION CLIP ViT-B/32). Turn off to go back to MobileCLIP."
+              : `Your admin allowed it. An uncensored model (LAION CLIP ViT-B/32) that also finds explicit content; ${need("laion-b32")}. Applies to all your devices; the index is rebuilt.`}
             value={explicit} onValueChange={switchExplicit} />
         ) : null}
 
         <Divider style={{ marginTop: 8 }} />
         <List.Subheader>In the background</List.Subheader>
-        <SwitchItem title="Also when the app is closed" description="Photos on this phone, about every 15 minutes when Android allows, and after a backup."
+        <SwitchItem title="Also when the app is closed" description="About every 15 minutes when Android allows, and after a backup"
           value={s.background} onValueChange={(v) => change({ background: v }, false)} />
-        <SwitchItem title="Only while charging" description="Recommended: indexing takes battery." disabled={!s.background}
+        <SwitchItem title="Only while charging" description="Recommended. Indexing uses battery." disabled={!s.background}
           value={s.chargingOnly} onValueChange={(v) => change({ chargingOnly: v }, false)} />
         {s.background && !device.batteryExempt ? (
           <List.Item title="Run in the background" descriptionNumberOfLines={4}
@@ -187,14 +187,14 @@ export default function SearchSettingsScreen() {
 
         <Divider style={{ marginTop: 8 }} />
         <Text variant="bodySmall" style={[st.hint, { color: t.colors.onSurfaceVariant, marginTop: 12 }]}>
-          Everything runs on this phone, with open models (MobileCLIP for what is in a photo, YuNet and SFace for faces). The results are encrypted before they are stored, so your other devices don't have to redo them; the server never learns what your photos show or who is in them. Photos that are only on the server are indexed while the app is open and unlocked.
+          Runs on this phone with open models (MobileCLIP for content, YuNet and SFace for faces). Results are encrypted before they are stored and shared with your other devices. The server never learns what your photos show or who is in them. Photos only on the server are indexed while the app is open and unlocked.
         </Text>
       </ScrollView>
       <Portal>
         <Dialog visible={choose} onDismiss={() => setChoose(false)}>
           <Dialog.Title>Which search?</Dialog.Title>
           <Dialog.Content>
-            <Text variant="bodyMedium">Your admin allowed explicit search. Choose before the model downloads; you can change it later here. It applies to all your devices.</Text>
+            <Text variant="bodyMedium">Your admin allowed explicit search. It applies to all your devices, and you can change it later.</Text>
             <Text variant="bodyMedium" style={{ marginTop: 12 }}><Text style={{ fontWeight: "600" }}>Standard</Text> · MobileCLIP, {need("mobileclip-s2")}. Best for everyday searches.</Text>
             <Text variant="bodyMedium" style={{ marginTop: 8 }}><Text style={{ fontWeight: "600" }}>Explicit</Text> · LAION CLIP, {need("laion-b32")}. Also finds explicit content.</Text>
           </Dialog.Content>
@@ -207,11 +207,11 @@ export default function SearchSettingsScreen() {
         <Dialog visible={off} onDismiss={() => setOff(false)}>
           <Dialog.Title>Turn off search?</Dialog.Title>
           <Dialog.Content>
-            <Text variant="bodyMedium">The models are removed from this phone. You can also delete what was found (also for your other devices); names of people are deleted with it.</Text>
+            <Text variant="bodyMedium">The models are removed from this phone. You can also delete the search data on all your devices, including the names of people.</Text>
           </Dialog.Content>
           <Dialog.Actions style={st.stacked}>
             <Button onPress={() => turnOff(false)}>Turn off</Button>
-            <Button textColor={t.colors.error} onPress={() => turnOff(true)}>Delete everything</Button>
+            <Button textColor={t.colors.error} onPress={() => turnOff(true)}>Turn off and delete data</Button>
             <Button onPress={() => setOff(false)}>Cancel</Button>
           </Dialog.Actions>
         </Dialog>

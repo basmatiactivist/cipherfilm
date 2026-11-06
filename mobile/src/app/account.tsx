@@ -94,14 +94,14 @@ export default function Account() {
         ) : null}
         <View style={{ paddingHorizontal: 16 }}><Problem>{error}</Problem></View>
         <Divider />
-        <List.Item title="Backup" description="Back up new photos and videos from this phone automatically"
+        <List.Item title="Backup" description="Back up new photos and videos automatically"
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="cloud" color={t.colors.primary} /></View>} onPress={() => router.push("/backup")} style={st.item} />
-        <List.Item title="Search and people" description="Find photos by what's in them and who is in them, on this phone"
+        <List.Item title="Search and people" description="Find photos by what and who is in them"
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="search" color={t.colors.primary} /></View>} onPress={() => router.push("/search-settings")} style={st.item} />
-        <List.Item title="Free up space" description="Remove photos from this phone that are already safe in Cipherfilm"
+        <List.Item title="Free up space" description="Remove photos from this phone that are already in Cipherfilm"
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="phone" color={t.colors.primary} /></View>} onPress={() => router.push("/free-space")} style={st.item} />
         <SwitchItem title="Unlock with fingerprint or face"
-          description={bioOk || biometric ? "Your key stays in this phone's secure hardware" : "Set up a fingerprint or face unlock in Android's settings first"}
+          description={bioOk || biometric ? "Your key stays in this phone's secure hardware" : "Set up fingerprint or face unlock in Android settings first"}
           left={() => <View style={st.icon}><Icon name="fingerprint" color={bioOk || biometric ? t.colors.primary : t.colors.onSurfaceDisabled} /></View>}
           value={biometric} onValueChange={toggleBio} disabled={!bioOk && !biometric} style={st.item} />
         <List.Item title="Lock when you leave the app" description={CHOICES.find((c) => c.after === auto.after)?.label}
@@ -115,18 +115,18 @@ export default function Account() {
           value={shake} onValueChange={setShake} style={st.item} />
         <List.Item title="Lock now" description="Unlock again to see your photos"
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="lock" color={t.colors.primary} /></View>} onPress={() => leave("lock")} style={st.item} />
-        <List.Item title="Sign out" description="Ends the session and deletes what this phone keeps for your account"
+        <List.Item title="Sign out" description="Removes your account from this phone"
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="logout" color={t.colors.primary} /></View>} onPress={() => setConfirmOut(true)} style={st.item} />
-        <List.Item title="Delete account" titleStyle={{ color: t.colors.error }} description="Deletes your account and all your photos from the server"
+        <List.Item title="Delete account" titleStyle={{ color: t.colors.error }} description="Deletes your account and all your photos"
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="trash" color={t.colors.error} /></View>} onPress={() => setDel("warn")} style={st.item} />
         <Divider />
         <Text variant="bodySmall" style={[st.block, { color: t.colors.onSurfaceVariant }]}>
-          Photos are encrypted on this phone before upload. The server only ever stores ciphertext. Password changes, invites and your recovery key are in Cipherfilm in the browser.
+          Photos are encrypted on this phone before upload. The server only stores encrypted data. Change your password, invite people and make a new recovery key in Cipherfilm in the browser.
         </Text>
         <Divider />
         <List.Subheader>About</List.Subheader>
         <List.Item title="App version" description={app ?? "Unknown"} style={st.item} />
-        <List.Item title="Server version" description={serverVersion ?? "Not reported by this server"} style={st.item} />
+        <List.Item title="Server version" description={serverVersion ?? "Unknown"} style={st.item} />
       </ScrollView>
       <Portal>
         <Dialog visible={pickLock} onDismiss={() => setPickLock(false)}>
@@ -140,7 +140,7 @@ export default function Account() {
         </Dialog>
         <Dialog visible={confirmOut} onDismiss={() => setConfirmOut(false)}>
           <Dialog.Title>Sign out of this phone?</Dialog.Title>
-          <Dialog.Content><Text variant="bodyMedium">Your photos stay in Cipherfilm. This phone deletes its copies of your library, the backup and search settings, and its saved key; the automatic backup stops. You'll need your password to sign in again.</Text></Dialog.Content>
+          <Dialog.Content><Text variant="bodyMedium">Your photos stay in Cipherfilm. This phone deletes its copy of your library, its settings and its saved key, and backup stops. You need your password to sign in again.</Text></Dialog.Content>
           {/* three actions don't fit side by side (least of all with large text): stacked, as Material does */}
           <Dialog.Actions style={st.stacked}>
             <Button onPress={() => { setConfirmOut(false); leave("out"); }}>Sign out</Button>
@@ -151,8 +151,8 @@ export default function Account() {
         <Dialog visible={del === "warn"} onDismiss={closeDel}>
           <Dialog.Title>Delete your account?</Dialog.Title>
           <Dialog.Content>
-            <Text variant="bodyMedium">This deletes your account and all your photos, videos, albums, people and search data from {server.replace(/^https:\/\//, "")}, at once. Nobody can bring them back, not even an administrator. Every device is signed out.</Text>
-            <Text variant="bodyMedium" style={{ marginTop: 12 }}>Photos still on this phone stay on it. Save anything else you want to keep first.</Text>
+            <Text variant="bodyMedium">All your photos, videos, albums, people and search data are deleted from {server.replace(/^https:\/\//, "")} right away. Nobody can bring them back, not even an admin. All your devices are signed out.</Text>
+            <Text variant="bodyMedium" style={{ marginTop: 12 }}>Photos on this phone stay on it. Save anything else you want to keep first.</Text>
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={closeDel}>Cancel</Button>
@@ -163,7 +163,7 @@ export default function Account() {
           <Dialog.Title>Enter your password</Dialog.Title>
           <Dialog.Content>
             <Field label="Password" value={delPw} onChangeText={setDelPw} secureTextEntry textContentType="password" autoComplete="current-password" autoFocus
-              hint={delBusy ? "Checking your password, this takes a second or two" : undefined} />
+              hint={delBusy ? "Checking your password…" : undefined} />
             <Problem>{delError}</Problem>
           </Dialog.Content>
           <Dialog.Actions>

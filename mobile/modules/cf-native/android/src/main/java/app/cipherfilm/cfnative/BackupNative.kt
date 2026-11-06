@@ -202,7 +202,7 @@ internal object BackupNative {
     val nm = ctx.getSystemService(NotificationManager::class.java)
     if (nm != null && nm.getNotificationChannel(CHANNEL) == null) {
       nm.createNotificationChannel(NotificationChannel(CHANNEL, "Backup", NotificationManager.IMPORTANCE_LOW).apply {
-        description = "Progress of the automatic backup"
+        description = "Progress of backups, uploads and search"
         setShowBadge(false)
       })
     }

@@ -15,7 +15,7 @@ export default function ServerScreen() {
     <Screen form>
       <Column>
         <Title>Connect to your Cipherfilm</Title>
-        <Lead>The address you open Cipherfilm at in the browser.</Lead>
+        <Lead>The address of Cipherfilm in your browser.</Lead>
         <Problem>{error}</Problem>
         <Field label="Address" value={address} onChangeText={setAddress} placeholder="photos.example.com" autoCapitalize="none" keyboardType="url" textContentType="URL" returnKeyType="go" onSubmitEditing={go} />
         <Button mode="contained" onPress={go} loading={busy} disabled={busy || !address.trim()} contentStyle={{ height: 48 }}>Connect</Button>

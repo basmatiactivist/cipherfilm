@@ -113,7 +113,7 @@ export default function Search() {
               {SUGGESTIONS.map((s) => <Chip key={s} onPress={() => setQ(s)} style={{ backgroundColor: t.colors.surfaceVariant }} compact>{s}</Chip>)}
             </View>
             <Text variant="bodySmall" style={[st.hint, { color: t.colors.onSurfaceVariant }]}>
-              Search understands English words for what is in a photo, plus names you gave people, years and months ("july 2023"), file names and cameras.
+              Search in English for what's in a photo, or by names, dates ("july 2023"), file names and cameras.
             </Text>
           </>
         ) : null}
@@ -135,7 +135,7 @@ function TurnOn() {
     <View style={[st.card, { backgroundColor: t.colors.primaryContainer }]}>
       <Text style={[text.heading, { marginBottom: 4 }]}>Search what's in your photos</Text>
       <Text variant="bodyMedium" style={{ color: t.colors.onPrimaryContainer }}>
-        Find "beach", "birthday cake" or the people in your photos. It runs on this phone: the server never sees what your photos show.
+        Find "beach", "birthday cake" or the people in your photos. It runs on this phone; the server never sees what your photos show.
       </Text>
       <Button mode="contained" style={{ marginTop: 12, alignSelf: "flex-start" }} onPress={() => router.push("/search-settings")}>Set up search</Button>
     </View>
@@ -156,7 +156,7 @@ function Status({ p }: { p: Progress }) {
       {p.phase === "download" || p.phase === "indexing" ? (
         <ProgressBar progress={p.total ? p.done / p.total : 0} color={t.colors.primary} style={{ height: 5, borderRadius: 3, marginTop: 10, backgroundColor: t.colors.outlineVariant }} />
       ) : null}
-      {p.phase === "indexing" ? <Text variant="bodySmall" style={{ marginTop: 8, color: t.colors.onSurfaceVariant }}>Results get better as it goes. Photos on this phone are also done in the background.</Text> : null}
+      {p.phase === "indexing" ? <Text variant="bodySmall" style={{ marginTop: 8, color: t.colors.onSurfaceVariant }}>Results improve as it goes.</Text> : null}
     </Pressable>
   );
 }
@@ -167,7 +167,7 @@ function NoResults({ ready, on }: { ready: boolean; on: boolean }) {
     <View style={{ alignItems: "center", padding: 32 }}>
       <Text variant="titleMedium" style={{ marginBottom: 8 }}>Nothing found</Text>
       <Text variant="bodyMedium" style={{ textAlign: "center", color: t.colors.onSurfaceVariant, maxWidth: 320 }}>
-        {!on ? "Turn on search to find photos by what's in them. Names, dates and file names work without it." : !ready ? "Search is still getting ready." : "Try other words, in English, like \"dog\" or \"mountains\"."}
+        {!on ? "Turn on search to find photos by what's in them. Names, dates and file names work without it." : !ready ? "Search is still getting ready." : "Try other English words, like \"dog\" or \"mountains\"."}
       </Text>
     </View>
   );

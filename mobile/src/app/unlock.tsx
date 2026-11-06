@@ -38,11 +38,11 @@ export default function Unlock() {
       <Column>
         <Title>Unlock your library</Title>
         <Lead>{me?.user.email}</Lead>
-        {then === "share" ? <Text variant="bodyMedium" style={{ marginBottom: 16 }}>Another app shared something with Cipherfilm. After unlocking you see what it is, and nothing is uploaded until you choose to.</Text> : null}
+        {then === "share" ? <Text variant="bodyMedium" style={{ marginBottom: 16 }}>Another app shared files with Cipherfilm. Unlock to see them. Nothing is uploaded until you choose.</Text> : null}
         <Problem>{error}</Problem>
         {biometric ? <Button mode="contained" icon="fingerprint" onPress={bio} disabled={busy} contentStyle={{ height: 48 }} style={{ marginBottom: 24 }}>Use fingerprint</Button> : null}
         <Field label="Password" value={password} onChangeText={setPassword} secureTextEntry textContentType="password" autoComplete="current-password" returnKeyType="go" onSubmitEditing={go}
-          hint={busy && password ? "Unlocking your keys, this takes a second or two" : undefined} />
+          hint={busy && password ? "Unlocking…" : undefined} />
         <Button mode={biometric ? "outlined" : "contained"} onPress={go} loading={busy && !!password} disabled={busy || !password} contentStyle={{ height: 48 }}>Unlock</Button>
         <Button mode="text" onPress={() => setConfirmOut(true)} style={{ marginTop: 8 }}>Sign out</Button>
       </Column>
@@ -50,7 +50,7 @@ export default function Unlock() {
         <Dialog visible={offerBio} onDismiss={done}>
           <Dialog.Title>Unlock with your fingerprint next time?</Dialog.Title>
           <Dialog.Content>
-            <Text variant="bodyMedium">Your key is then kept in this phone's secure hardware and only released after your fingerprint or face. You can turn it off under Account.</Text>
+            <Text variant="bodyMedium">Your key stays in this phone's secure hardware. You can turn this off in Account.</Text>
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={async () => { await declineBiometric().catch(() => {}); done(); }}>Not now</Button>
@@ -60,7 +60,7 @@ export default function Unlock() {
         <Dialog visible={confirmOut} onDismiss={() => setConfirmOut(false)}>
           <Dialog.Title>Sign out of this phone?</Dialog.Title>
           <Dialog.Content>
-            <Text variant="bodyMedium">Your photos stay in Cipherfilm. This phone deletes its copies of your library, the backup and search settings, and its saved key; the automatic backup stops.</Text>
+            <Text variant="bodyMedium">Your photos stay in Cipherfilm. This phone deletes its copy of your library, its settings and its saved key, and backup stops.</Text>
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={() => setConfirmOut(false)}>Cancel</Button>

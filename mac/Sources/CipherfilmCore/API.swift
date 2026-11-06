@@ -49,6 +49,11 @@ public struct Me: Codable, Sendable {
   public let pubkey: String
   /** shown in Settings; missing from servers before it was added */
   public let server_version: String?
+  /** the server's public demo login (DEMO_ACCOUNTS): it reads and searches, every change is refused */
+  public let demo: Bool?
+  public var isDemo: Bool { demo == true }
+  /** Shown wherever a demo login looks at its photos, so nobody takes it for their own library. */
+  public static let demoNote = "Public demo · read-only · resets every hour"
 
   /** Whether this device may compute index entries: it is the indexer, or there is none yet (the first that writes
    *  one becomes it). */

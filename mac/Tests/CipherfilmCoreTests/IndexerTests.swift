@@ -4,11 +4,12 @@ import Foundation
 import Testing
 @testable import CipherfilmCore
 
-private func me(_ session: String?, _ indexer: String?, id: String = "0123456789abcdef0123456789abcdef") throws -> Me {
+private func me(_ session: String?, _ indexer: String?, id: String = "0123456789abcdef0123456789abcdef", demo: Bool? = nil) throws -> Me {
   var o: [String: Any] = ["user": ["id": id, "email": "a@b.c", "role": "user"], "csrf": "x", "kdf": ["alg": "argon2id", "v": 19, "salt": "", "ops": 3, "mem": 65536],
                           "wrapped_master_pw": "", "wrapped_privkey": "", "pubkey": ""]
   if let session { o["session_id"] = session }
   if let indexer { o["indexer"] = indexer }
+  if let demo { o["demo"] = demo }
   return try JSONDecoder().decode(Me.self, from: JSONSerialization.data(withJSONObject: o))
 }
 
@@ -18,6 +19,13 @@ private func me(_ session: String?, _ indexer: String?, id: String = "0123456789
     #expect(try me("a", "a").mayIndex)
     #expect(try !me("a", "b").mayIndex)
     #expect(try me(nil, nil).mayIndex)     // a server before 1.9.0
+  }
+
+  /** The public demo login (DEMO_ACCOUNTS): only a server that says so makes one. */
+  @Test func demo() throws {
+    #expect(try me(nil, nil, demo: true).isDemo)
+    #expect(try !me(nil, nil).isDemo)
+    #expect(try !me(nil, nil, demo: false).isDemo)
   }
 
   /** The account id names folders on this Mac: anything but 32 lowercase hex is refused when /api/me is read. */

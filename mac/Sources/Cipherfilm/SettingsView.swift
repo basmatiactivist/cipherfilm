@@ -69,12 +69,13 @@ struct GeneralSettings: View {
       Section_(title: "Account") {
         if let me = model.me {
           LabeledContent("Signed in as", value: me.user.email)
+          if me.isDemo { Text(Me.demoNote).font(Typo.caption.weight(.semibold)).foregroundStyle(Ink.teal) }
           if model.server != nil { LabeledContent("Server", value: model.serverName) }
           HStack {
             Button("Lock") { model.lock() }.disabled(model.phase != .unlocked)
             Button("Sign Out…") { signOut = true }
             Spacer()
-            Button("Delete Account…", role: .destructive) { deleteAccount = true }
+            if !me.isDemo { Button("Delete Account…", role: .destructive) { deleteAccount = true } }
           }
           Text("Signing out deletes this account's data from this Mac. Locking only forgets the keys; watched folders keep uploading.")
             .font(Typo.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)

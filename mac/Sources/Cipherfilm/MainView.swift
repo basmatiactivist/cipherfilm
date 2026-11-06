@@ -103,8 +103,10 @@ struct MainView: View {
       Button { nav.jumpPicker = true } label: { Label("Go to Date", systemImage: "calendar") }
         .help("Go to a date (⌘J)").keyboardShortcut("j", modifiers: .command)
         .popover(isPresented: $nav.jumpPicker) { JumpPicker(nav: nav) }
-      Button { UploadPicker.pick(model) } label: { Label("Upload", systemImage: "icloud.and.arrow.up").labelStyle(.titleAndIcon) }
-        .help("Upload photos and videos, or drop them on the window")
+      if model.me?.isDemo != true {
+        Button { UploadPicker.pick(model) } label: { Label("Upload", systemImage: "icloud.and.arrow.up").labelStyle(.titleAndIcon) }
+          .help("Upload photos and videos, or drop them on the window")
+      }
       Button { model.lock() } label: { Label("Lock", systemImage: "lock") }.help("Lock the library")
     }
   }
@@ -213,6 +215,11 @@ struct Sidebar: View {
       .font(Typo.small).foregroundStyle(Ink.muted)
       .padding(.horizontal, 18).padding(.bottom, 12)
       .help("\(model.me?.user.email ?? "") on \(model.serverName)")
+      if model.me?.isDemo == true {
+        Text(Me.demoNote).font(Typo.small.weight(.semibold)).foregroundStyle(Ink.teal)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.horizontal, 18).padding(.bottom, 12)
+      }
       ScrollView {
         VStack(alignment: .leading, spacing: 2) {
           NavItem(title: "Photos", icon: "photo.on.rectangle", screen: .photos, nav: nav)

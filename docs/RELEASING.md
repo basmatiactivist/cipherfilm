@@ -37,7 +37,7 @@ The `Release` workflow then:
    tag still points at the commit that was built. On the public repository every attached file also gets a signed
    build provenance (`gh attestation verify <file> --repo <owner>/cipherfilm`): `SHA256SUMS` sits next to the files
    it covers, so it only catches a damaged download, while the attestation shows the file came from this workflow.
-6. uploads the Play bundle to Google Play's **internal testing** track (not for pre-releases; see "Google Play from
+6. uploads the Play bundle to Google Play's **internal testing** track and the closed test (not for pre-releases; see "Google Play from
    CI" below). Production is a second, hand-started step.
 
 GitHub's macOS arm64 runners are sometimes unavailable for a long time ("not acquired by Runner … capacity
@@ -98,7 +98,8 @@ rejected upload uses its number up.
 ### Google Play from CI
 
 After the GitHub release, the `play` job in `release.yml` uploads `cipherfilm-play-X.Y.Z.aab` through the Google Play
-Developer API to the **internal testing** track (`mobile/scripts/play.sh`: curl, openssl and jq; no third-party
+Developer API to the **internal testing** track and from there to the **closed test** (`alpha`, the testers' Google
+Group `cipherfilm-testers@googlegroups.com`; Play reviews closed-test releases) (`mobile/scripts/play.sh`: curl, openssl and jq; no third-party
 action sees the key). Its "What's new" (at most 500 characters per language) comes from
 `docs/play/listing/en-US/changelogs/<versionCode>.txt` and `docs/play/listing/de-DE/changelogs/<versionCode>.txt`
 (versionCode as above, e.g. 2.1.1 → `2001001.txt`): write both with the CHANGELOG entry, short and for people using

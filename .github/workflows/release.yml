@@ -1,7 +1,7 @@
 name: Release
 # Push a tag like v1.0.0 and this builds the multi-arch image, publishes it to ghcr.io,
 # builds the offline decrypt tool for every platform and creates the GitHub Release with notes, then puts the Android
-# bundle on Google Play's internal testing track.
+# bundle on Google Play's internal testing track and closed test.
 # Only a tag on a commit that is already on master is released. The jobs that sign or push run in the "release"
 # environment, which holds the signing key and admits only v* tags; no job uses an Actions cache (docs/RELEASING.md).
 on:
@@ -229,7 +229,7 @@ jobs:
           gh release create "$GITHUB_REF_NAME" dist/* --title "Cipherfilm ${GITHUB_REF_NAME#v}" --notes-file notes.md $pre --verify-tag
 
   play:
-    # Google Play: the bundle just released goes to the internal testing track, with "What's new" from
+    # Google Play: the bundle just released goes to the internal testing track and the closed test, with "What's new" from
     # docs/play/listing/<lang>/changelogs/<versionCode>.txt or else CHANGELOG.md (mobile/scripts/play-notes.sh).
     # Production is a separate, hand-started step (play-promote.yml). Not for pre-releases; without the service
     # account's key in the release environment it only warns (docs/RELEASING.md, "Google Play from CI").
@@ -253,3 +253,6 @@ jobs:
           fi
           mobile/scripts/play-notes.sh "$v" "$RUNNER_TEMP/notes"
           mobile/scripts/play.sh upload "dist/cipherfilm-play-$v.aab" internal "$RUNNER_TEMP/notes"
+          # and to the testers: the closed test (track "alpha", Google Group cipherfilm-testers), with the same notes
+          IFS=. read -r major minor patch <<< "$v"
+          mobile/scripts/play.sh promote "$((major * 1000000 + minor * 1000 + patch))" internal alpha

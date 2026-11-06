@@ -1,4 +1,4 @@
-import { api, setCsrf } from "./api";
+import { api, dropRequests, setCsrf } from "./api";
 import { getSodium } from "./crypto/sodium";
 import {
   createAccount, finishRecovery, type NewAccount, newRecoveryKit, loginProof, normEmail, recoveryProof, rewrapForPassword,
@@ -23,7 +23,11 @@ function assertSaneKdf(k: KdfParams) {
   }
 }
 
+/** The server's version, for the sign-in screen ("" until the setup status or a session reported it). */
+export let serverVersion = "";
+
 function adopt(me: Me, masterKey: Uint8Array | null) {
+  if (me.server_version) serverVersion = me.server_version; // the sign-in screen after a sign-out shows it too
   setCsrf(me.csrf);
   mem.me = me;
   mem.masterKey = masterKey;
@@ -49,9 +53,6 @@ export async function loadSession(): Promise<Me | null> {
     return null;
   }
 }
-
-/** The server's version as the setup status reported it, for the sign-in screen ("" until then). */
-export let serverVersion = "";
 
 export async function needsSetup(): Promise<boolean> {
   const r = await api<{ needs_setup: boolean; server_version?: string }>("GET", "/api/setup/status");
@@ -161,16 +162,19 @@ export async function unlock(password: string): Promise<void> {
   void keepKey(me.user.id, mem.masterKey);
 }
 
-export async function logout(): Promise<void> {
-  try {
-    await api("POST", "/api/auth/logout");
-  } finally {
-    forgetLocal();
-  }
+/** Sign-out never waits for the network: everything this tab holds is forgotten before this returns. The server is
+ *  told in the background (the promise), with a deadline; keepalive lets the request finish if the tab goes away. */
+export function logout(): Promise<void> {
+  // sent first: forgetLocal drops the CSRF token it needs
+  const told = api("POST", "/api/auth/logout", undefined, { timeout: 10_000, keepalive: true }).then(() => {});
+  forgetLocal();
+  return told;
 }
 
-/** Everything this browser keeps for the account: at sign-out, and when another device signed this one out. */
+/** Everything this browser keeps for the account: at sign-out, and when another device signed this one out. The keys
+ *  and decrypted data go at once; deleting what is stored (Cache Storage, IndexedDB) runs on in the background. */
 export function forgetLocal(): void {
+  dropRequests(); // answers still on their way belong to the keys going now
   void forgetKeptForGood();
   mem.masterKey = null;
   mem.me = null;

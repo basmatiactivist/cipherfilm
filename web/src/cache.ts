@@ -97,10 +97,11 @@ async function stored(kind: "thumb" | "preview", id: string): Promise<Uint8Array
     return ct;
   } catch { return null; }
 }
-async function store(kind: "thumb" | "preview", id: string, ct: Uint8Array) {
+async function store(kind: "thumb" | "preview", id: string, ct: Uint8Array, gen: number) {
   try {
     const m = kind === "preview" ? await previewIndex() : null;
     const c = await box(kind);
+    if (gen !== generation) return; // locked or signed out meanwhile: its cache was deleted and stays so
     await c.put(storedUrl(kind, id), new Response(ct as BlobPart));
     if (!m) return;
     touch(m, id, ct.length);
@@ -129,10 +130,10 @@ function load(kind: "thumb" | "preview", cache: UrlCache, it: Item, wanted?: () 
       if (kept) try { plain = open(kept); } catch { /* damaged copy: fetched again */ }
       if (!plain) {
         const ct = kind === "thumb"
-          ? await batcher.get(it.id, wanted ?? (() => (interest.get(key) ?? 0) > 0))
-          : await limited(() => getBytes(`/api/items/${it.id}/preview`), () => true);
+          ? await batcher.get(it.id, () => gen === generation && (wanted ?? (() => (interest.get(key) ?? 0) > 0))())
+          : await limited(() => getBytes(`/api/items/${it.id}/preview`), () => gen === generation);
         plain = open(ct); // only verified ciphertext is kept
-        if (gen === generation) void store(kind, it.id, ct);
+        if (gen === generation) void store(kind, it.id, ct, gen);
       }
       if (gen !== generation) throw new Error("cancelled");
       const url = URL.createObjectURL(new Blob([plain as BlobPart], { type: "image/jpeg" }));

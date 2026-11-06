@@ -1,6 +1,7 @@
 name: Release
 # Push a tag like v1.0.0 and this builds the multi-arch image, publishes it to ghcr.io,
-# builds the offline decrypt tool for every platform and creates the GitHub Release with notes.
+# builds the offline decrypt tool for every platform and creates the GitHub Release with notes, then puts the Android
+# bundle on Google Play's internal testing track.
 # Only a tag on a commit that is already on master is released. The jobs that sign or push run in the "release"
 # environment, which holds the signing key and admits only v* tags; no job uses an Actions cache (docs/RELEASING.md).
 on:
@@ -226,3 +227,29 @@ jobs:
           [ "$sha" = "$(git rev-parse HEAD)" ] || { echo "$GITHUB_REF_NAME moved to $sha during the run: not released"; exit 1; }
           pre=""; case "$GITHUB_REF_NAME" in *-*) pre="--prerelease";; esac
           gh release create "$GITHUB_REF_NAME" dist/* --title "Cipherfilm ${GITHUB_REF_NAME#v}" --notes-file notes.md $pre --verify-tag
+
+  play:
+    # Google Play: the bundle just released goes to the internal testing track, with "What's new" from
+    # docs/play/listing/<lang>/changelogs/<versionCode>.txt or else CHANGELOG.md (mobile/scripts/play-notes.sh).
+    # Production is a separate, hand-started step (play-promote.yml). Not for pre-releases; without the service
+    # account's key in the release environment it only warns (docs/RELEASING.md, "Google Play from CI").
+    needs: release
+    if: ${{ !cancelled() && needs.release.result == 'success' && !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }  # no token left in .git for later steps
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with: { name: android-app, path: dist }
+      - name: Upload to the internal testing track
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          if [ -z "$PLAY_SERVICE_ACCOUNT_JSON" ]; then
+            echo "::warning::no PLAY_SERVICE_ACCOUNT_JSON in the release environment: upload cipherfilm-play-$v.aab in Play Console by hand"
+            exit 0
+          fi
+          mobile/scripts/play-notes.sh "$v" "$RUNNER_TEMP/notes"
+          mobile/scripts/play.sh upload "dist/cipherfilm-play-$v.aab" internal "$RUNNER_TEMP/notes"

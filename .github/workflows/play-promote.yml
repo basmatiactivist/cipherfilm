@@ -1,0 +1,37 @@
+name: Google Play promote
+# Started by hand, from the release tag: Actions > Google Play promote > Run workflow, "Use workflow from" vX.Y.Z.
+# Gives that version's release on one track (by default internal testing, where release.yml put it) with its notes
+# to another track (by default production; Play reviews it there). A rollout below 1 is staged: 0.2 reaches 20 % of
+# users, and Play Console raises it later. Runs in the "release" environment, which admits only v* tags and holds
+# the service account's key (docs/RELEASING.md, "Google Play from CI").
+on:
+  workflow_dispatch:
+    inputs:
+      to: { type: choice, options: [production, beta, alpha], default: production, description: "track to release on" }
+      from: { type: choice, options: [internal, alpha, beta], default: internal, description: "track the version is on now" }
+      rollout: { type: string, default: "1", description: "share of users: 1 = everyone, 0.2 = staged rollout to 20 %" }
+permissions:
+  contents: read
+concurrency:
+  group: play
+  cancel-in-progress: false
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }  # no token left in .git for later steps
+      - name: Promote
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          FROM: ${{ inputs.from }}
+          TO: ${{ inputs.to }}
+          ROLLOUT: ${{ inputs.rollout }}
+        run: |
+          [[ "$GITHUB_REF" =~ ^refs/tags/v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] \
+            || { echo "run it from a release tag (Use workflow from: vX.Y.Z), not $GITHUB_REF"; exit 1; }
+          vc=$((BASH_REMATCH[1] * 1000000 + BASH_REMATCH[2] * 1000 + BASH_REMATCH[3]))  # as mobile/app.config.js
+          [[ "$ROLLOUT" =~ ^(1|1\.0|0\.[0-9]*[1-9][0-9]*)$ ]] || { echo "rollout must be 1 or between 0 and 1, not $ROLLOUT"; exit 1; }
+          [ "$FROM" != "$TO" ] || { echo "from and to are the same track"; exit 1; }
+          mobile/scripts/play.sh promote "$vc" "$FROM" "$TO" "$ROLLOUT"

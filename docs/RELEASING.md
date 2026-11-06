@@ -10,6 +10,8 @@ Versions follow [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`.
 ## Cutting a release
 
 1. Move the entries from `## [Unreleased]` in `CHANGELOG.md` into a new `## [X.Y.Z] - YYYY-MM-DD` section.
+   For Google Play, also write the short "What's new" in `docs/play/listing/en-US/changelogs/<versionCode>.txt` and
+   `docs/play/listing/de-DE/changelogs/<versionCode>.txt` ("Google Play from CI" below).
 2. Commit that on `master` and wait for CI to pass.
 3. Tag and push:
 
@@ -35,6 +37,8 @@ The `Release` workflow then:
    tag still points at the commit that was built. On the public repository every attached file also gets a signed
    build provenance (`gh attestation verify <file> --repo <owner>/cipherfilm`): `SHA256SUMS` sits next to the files
    it covers, so it only catches a damaged download, while the attestation shows the file came from this workflow.
+6. uploads the Play bundle to Google Play's **internal testing** track (not for pre-releases; see "Google Play from
+   CI" below). Production is a second, hand-started step.
 
 GitHub's macOS arm64 runners are sometimes unavailable for a long time ("not acquired by Runner … capacity
 constraints"). The release then goes out without the Mac app. Build it locally from the tagged commit and attach it:
@@ -84,6 +88,42 @@ local APK, build from a worktree outside the home folder with `GRADLE_USER_HOME`
 `scripts/check-artifacts.sh` on the bundle). Each upload needs a new versionCode (`major*1e6+minor*1e3+patch`): a
 rejected upload uses its number up.
 
+### Google Play from CI
+
+After the GitHub release, the `play` job in `release.yml` uploads `cipherfilm-play-X.Y.Z.aab` through the Google Play
+Developer API to the **internal testing** track (`mobile/scripts/play.sh`: curl, openssl and jq; no third-party
+action sees the key). Its "What's new" (at most 500 characters per language) comes from
+`docs/play/listing/en-US/changelogs/<versionCode>.txt` and `docs/play/listing/de-DE/changelogs/<versionCode>.txt`
+(versionCode as above, e.g. 2.1.1 → `2001001.txt`): write both with the CHANGELOG entry, short and for people using
+the app. Without them English falls back to the Android lines of the CHANGELOG section and German is left out
+(`mobile/scripts/play-notes.sh 2.1.1 /tmp/notes` shows what Play would get). While the app is still a draft in Play
+Console (nothing reviewed yet), Play only takes draft releases: the job then creates one, and you roll it out on the
+track in Play Console once.
+
+**To production** (or closed/open testing), once the internal build looks right: Actions › **Google Play promote** ›
+Run workflow, *Use workflow from* the tag `vX.Y.Z`, `to` = production, `rollout` = 1 (everyone) or e.g. 0.2 for a
+staged rollout to 20 %. It gives the same release, with its notes, to that track; Play reviews it there. Or promote in
+Play Console as before. A personal account's first production release needs the closed test and the
+production-access application first ([docs/play/REQUIREMENTS.md](play/REQUIREMENTS.md) §3).
+
+**One-time setup** (the app must already exist in Play Console, with the first bundle uploaded by hand):
+
+1. [Google Cloud console](https://console.cloud.google.com/): create a project (e.g. `cipherfilm-play`) or pick one,
+   then APIs & Services › Library › **Google Play Android Developer API** › Enable.
+2. IAM & Admin › Service Accounts › Create service account (e.g. `play-publisher`), no roles in Google Cloud. Open it,
+   Keys › Add key › Create new key › JSON. The file downloads once; it is a password for publishing the app.
+3. [Play Console](https://play.google.com/console) › **Users and permissions** › Invite new users: the service
+   account's e-mail (`play-publisher@<project>.iam.gserviceaccount.com`), App permissions › Cipherfilm with *Release
+   apps to testing tracks* and *Release to production, exclude devices, and use Play App Signing* (only for the
+   promote workflow) and *View app information*; no account permissions. Invite user. It can take up to a day until
+   the API accepts the account.
+4. GitHub › Settings › Environments › `release` › Add environment secret **`PLAY_SERVICE_ACCOUNT_JSON`**: the whole
+   JSON file's contents. Then delete the downloaded file (keep no copy; a new key can be created any time, and an old
+   one removed under Keys).
+
+Without the secret the `play` job only warns and the bundle is uploaded by hand as before. To revoke: delete the key
+in Google Cloud (Keys) or remove the user in Play Console.
+
 ## Dependencies
 
 Dependabot opens one grouped pull request per area each week (Go server, decrypt tool, web, e2e, Dockerfile,
@@ -128,7 +168,8 @@ Settings that live on GitHub, not in the repository, set once the repository is 
 - **Ruleset for tags `v*`:** only the owner may create, move or delete them (a tag starts a release).
 - **Environment `release`** (Settings › Environments): holds the secrets `ANDROID_KEYSTORE_B64` and
   `ANDROID_KEYSTORE_PASSWORD` (the app signing key) and `ANDROID_UPLOAD_KEYSTORE_B64` and
-  `ANDROID_UPLOAD_KEYSTORE_PASSWORD` (the Google Play upload key, alias `upload`) (environment secrets, not repository
+  `ANDROID_UPLOAD_KEYSTORE_PASSWORD` (the Google Play upload key, alias `upload`) and `PLAY_SERVICE_ACCOUNT_JSON` (the
+  service account that uploads to Google Play, "Google Play from CI" above) (environment secrets, not repository
   secrets; delete any repository-level copies).
   Deployment branches and tags: "Selected branches and tags" with only the tag rule `v*`. The Android build and the
   image push run in it, so the signing key is out of reach of a branch, a pull request or a hand-started run on

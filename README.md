@@ -17,6 +17,7 @@
 
 <p align="center">
   <a href="https://cipherfilm.app">Website</a> ·
+  <a href="#try-the-demo"><b>Try the demo</b></a> ·
   <a href="docs/INSTALL.md">Install</a> ·
   <a href="docs/SELF-HOSTING.md">Self-hosting</a> ·
   <a href="docs/CRYPTO.md">How the encryption works</a> ·
@@ -42,6 +43,19 @@ open models, and their results are stored encrypted too.
 
 > **Know this first:** if someone loses *both* their password and their recovery key, their photos are lost.
 > Nobody can reset it, not even the admin.
+
+## Try the demo
+
+Open **[demo.cipherfilm.app](https://demo.cipherfilm.app)**, or connect the Android or Mac app to that address, and sign
+in with:
+
+| E-mail | Password |
+|---|---|
+| `demo@cipherfilm.app` | `cipherfilm-demo` |
+
+A shared, read-only account with sample photos (public domain): browse, search ("mountains", "beach") and see how it
+feels. Uploads and changes are turned off, because everyone uses the same login, and visitors are signed out every
+hour. To keep your own photos, [run your own server](#run-your-own-server).
 
 ## Features
 

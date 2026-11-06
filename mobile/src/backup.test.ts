@@ -43,9 +43,9 @@ vi.mock("@crypto/account", () => ({
 }));
 // what the notification showed: [title, text, ongoing]
 const notes = vi.hoisted(() => [] as [string, string, boolean][]);
-// three 10-byte photos in one folder, MediaStore ids 1..3
+// three 10-byte photos in one folder, MediaStore ids 1..3 (reset before each test)
+const media = vi.hoisted(() => [] as { id: number; uri: string; name: string; size: number; mime: string }[]);
 vi.mock("../modules/cf-native/src/CfNativeModule", () => {
-  const media = [1, 2, 3].map((id) => ({ id, uri: `content://m/${id}`, name: `IMG_${id}.jpg`, size: 10, mime: "image/jpeg" }));
   return {
     default: {
       backupState: () => ({ media: "all", online: true, unmetered: true, charging: true }),
@@ -118,6 +118,7 @@ describe("automatic backup", () => {
     store.set("cf.server", SERVER);
     Object.assign(srv, { cookie: "alice", alive: new Set(["alice"]), log: [], hook: () => {}, items: 0 });
     notes.length = 0;
+    media.splice(0, media.length, ...[1, 2, 3].map((id) => ({ id, uri: `content://m/${id}`, name: `IMG_${id}.jpg`, size: 10, mime: "image/jpeg" })));
   });
   afterEach(() => { vi.useRealTimers(); });
 
@@ -171,6 +172,21 @@ describe("automatic backup", () => {
     await run;
     expect(asked).toBe(0);
     expect((await backup.loadStatus()).problem).toBeUndefined();
+  });
+
+  it("an empty file (0 bytes) is skipped at once and named, and the files after it are backed up", async () => {
+    const { session, backup, pubkey } = await load();
+    await session.start();
+    await backup.saveConfig(config(pubkey));
+    media[0].size = 0;
+    const run = backup.runBackup("app");
+    await vi.advanceTimersByTimeAsync(5_000);
+    await run;
+    const st = await backup.loadStatus();
+    expect(st.skipped).toEqual([{ name: "IMG_1.jpg", reason: "The file is empty (0 bytes)." }]);
+    expect(st.problem).toBeUndefined();
+    expect(srv.log.filter((l) => l.startsWith("create"))).toHaveLength(2); // no empty item in the library
+    expect((await backup.loadConfig())!.folders.cam.after).toBe(3);
   });
 
   it("a file the app keeps dying on is skipped after three runs, and the files after it are backed up", async () => {

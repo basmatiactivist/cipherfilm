@@ -72,6 +72,7 @@ export class SignedOut extends Error {
 export async function uploadShared(f: Shared, onProgress: (done: number, total: number) => void, signal: { cancelled: boolean }): Promise<string> {
   if (f.size < 0) throw new Error("Android didn't say how big this file is, so it can't be uploaded safely.");
   if (f.size > MAX_FILE) throw new Error("Files over 8 GB can't be uploaded.");
+  if (f.size === 0) throw new Error("The file is empty (0 bytes).");
   const s = await getSodium();
   const { me, masterKey } = session();
   if (!me || !masterKey) throw new SignedOut();
@@ -97,6 +98,7 @@ export async function uploadShared(f: Shared, onProgress: (done: number, total: 
 export async function uploadFile(f: Shared, s: Sodium, wrap: (itemKey: Uint8Array, id: string) => Uint8Array, mine: () => void, onProgress: (done: number, total: number) => void, to?: Remote): Promise<string> {
   if (f.size < 0) throw new Error("Android didn't say how big this file is, so it can't be uploaded safely.");
   if (f.size > MAX_FILE) throw new Error("Files over 8 GB can't be uploaded.");
+  if (f.size === 0) throw new Error("The file is empty (0 bytes).");
   const kind = kindOf(f);
   const count = segmentCount(f.size);
   const id = (await api<{ id: string }>("POST", "/api/items", { kind, size: f.size, segment_count: count }, to)).id;

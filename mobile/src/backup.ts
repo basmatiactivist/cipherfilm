@@ -143,6 +143,7 @@ let generation = 0; // bumped at sign-out and whenever the session changes hands
 const OTHER_ACCOUNT = "another account";
 const BACKGROUND_BUDGET = 8 * 60_000; // WorkManager stops work after 10 minutes, if the service couldn't start
 const MAX_TRIES = 3;
+const EMPTY = "The file is empty (0 bytes).";
 
 /** Whether a run may start now, and if not, why (in plain words). Manual runs ignore Wi-Fi and charging. */
 export function blocker(c: Config, manual: boolean): string | undefined {
@@ -260,6 +261,15 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
           const print = await fingerprint(m.name, m.size);
           if (known.has(print)) {
             const r = await past(m.id);
+            if (r === "stop") break outer;
+            if (r === "gone") continue outer;
+            continue;
+          }
+          if (!m.size) { // nothing to back up (an app left an empty file): named under Backup, not an empty photo in the library
+            status.skipped = [{ name: m.name, reason: EMPTY }, ...status.skipped].slice(0, 50);
+            gaveUp++;
+            const r = await past(m.id);
+            await save();
             if (r === "stop") break outer;
             if (r === "gone") continue outer;
             continue;

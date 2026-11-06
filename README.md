@@ -36,12 +36,12 @@ Cipherfilm is a self-hosted photo and video library for a family and a few frien
 browser encrypt every photo **before** it is uploaded. The server you run stores only ciphertext: it can't see your
 pictures, file names, dates, places or album names, and neither can its administrator.
 
-It does what you expect from a photo app: a timeline, albums, favourites, automatic backup from your phone, search by
-what's in a picture ("beach", "dog") and by who is in it. The difference is where that happens. Search and face
-recognition run on your own devices with open models, and their results are stored encrypted too.
+It does what you expect from a photo app: a timeline, albums, favorites, automatic backup from your phone, search by
+what's in a picture ("beach", "dog") and by who is in it. Search and face recognition run on your own devices with
+open models, and their results are stored encrypted too.
 
-> **One thing to know first:** if someone loses *both* their password and their recovery key, their photos are gone.
-> Nobody can reset it, not even the admin. That is the point, and the app says so plainly.
+> **Know this first:** if someone loses *both* their password and their recovery key, their photos are lost.
+> Nobody can reset it, not even the admin.
 
 ## Features
 
@@ -52,10 +52,10 @@ recognition run on your own devices with open models, and their results are stor
   but never read any.
 - **Search and people, on your device.** Find photos by content and group faces into people, with open CLIP and face
   models that run locally ([docs/SEARCH.md](docs/SEARCH.md), [docs/MODELS.md](docs/MODELS.md)).
-- **Free up space.** Remove photos from the phone once they are safely in Cipherfilm.
+- **Free up space.** Remove photos from the phone once they are in Cipherfilm.
 - **Locks itself.** Fingerprint unlock, automatic lock after a time you choose or when the screen turns off, and
   shake to lock and close.
-- **Mac app.** Keeps an export folder up to date, uploads watched folders and runs search in the background
+- **Mac app.** Keeps an export folder up to date, uploads watched folders and indexes for search in the background
   ([docs/MAC.md](docs/MAC.md)).
 - **Made for a small group.** Invite-only, a private library per person, storage limits, an admin area that never
   shows anyone's photos.
@@ -73,12 +73,12 @@ recognition run on your own devices with open models, and their results are stor
 | **Mac** | from the [latest release](https://github.com/basmatiactivist/cipherfilm/releases/latest) | Apple silicon, macOS 15 or newer |
 | **Web** | comes with your server, in any current browser | also iPhone and iPad |
 
-Every app needs a Cipherfilm server, yours or one someone runs for you. Step by step, with the APK's signing
-certificate to check: [docs/INSTALL.md](docs/INSTALL.md).
+Every app needs a Cipherfilm server, yours or someone else's. Step by step, with the APK's signing certificate:
+[docs/INSTALL.md](docs/INSTALL.md).
 
 ## Run your own server
 
-You need Docker with Compose and HTTPS. Cipherfilm brings three ways to get HTTPS: **Tailscale** (private, no open
+You need Docker with Compose and HTTPS. Three ways to get HTTPS are included: **Tailscale** (private, no open
 ports), **your own reverse proxy**, or **bundled Caddy** with Let's Encrypt.
 
 ```bash
@@ -89,7 +89,7 @@ docker compose logs app | grep "FIRST-TIME SETUP"
 ```
 
 Open the site, paste the one-time token, create the admin account and save the recovery key. Then invite people from
-**Admin → Invite someone**. Instead of building, you can run the released multi-architecture image
+**Admin → Invite someone**. Instead of building, you can use the released multi-architecture image
 `ghcr.io/basmatiactivist/cipherfilm:2`.
 
 All options, backups, updates, settings and troubleshooting: **[docs/SELF-HOSTING.md](docs/SELF-HOSTING.md)**.
@@ -108,7 +108,6 @@ Each item has its own key, wrapped by your master key. The server sees who has a
 their sizes and upload times, and nothing of what they contain. The full design is in
 [docs/CRYPTO.md](docs/CRYPTO.md). What the server still learns, and what a web app can't protect you from (whoever
 controls the server could deliver modified JavaScript), is in [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
-Please read it.
 
 ## Honest limits
 

@@ -1,0 +1,88 @@
+# Public demo server
+
+A Cipherfilm server with one login published on a website, so anyone can try the apps. Everything is end-to-end
+encrypted, so the operator could never see what strangers store. That is why the demo account is read-only
+(`DEMO_ACCOUNTS`, [docs/SELF-HOSTING.md](../../docs/SELF-HOSTING.md#settings)): visitors can sign in, browse, open
+originals and videos and search, but uploads, edits, albums and account changes get a 403 ("This is the public demo:
+changes are turned off."). The apps say "Public demo · read-only · resets every hour" and hide what would fail. Other
+accounts on the same server (your admin, an app-store reviewer) work as usual.
+
+The server is put back to a seed every hour: `seed.tar` (a backup made with `scripts/backup.sh`), restored by
+`reset.sh` from a systemd timer. That removes what visitors could still write (their search index, the people list)
+and ends every session, the reviewer's included.
+
+## 1. The server
+
+A normal install from the Cipherfilm checkout ([docs/SELF-HOSTING.md](../../docs/SELF-HOSTING.md)), e.g. a public
+domain with Caddy, with your own admin account. Leave `DEMO_ACCOUNTS` empty for now.
+
+## 2. The demo account
+
+Make an invite on the server, then accept it from your computer with the web app's own crypto. The password comes from
+an environment variable, never the command line; the recovery words are printed on stdout only:
+
+```sh
+docker compose exec app /app invite demo@example.org --url https://demo.example.org
+cd web && npm ci
+read -rs CF_DEMO_PASSWORD && export CF_DEMO_PASSWORD     # type the demo password, then Enter
+npx tsx ../deploy/demo/create-account.mts 'https://demo.example.org/invite/…' demo@example.org > demo-recovery.txt
+```
+
+Keep `demo-recovery.txt` private. (Against a server with a locally issued certificate, put
+`NODE_EXTRA_CA_CERTS=/path/to/root.crt` in front.)
+
+## 3. Photos
+
+Upload only photos you may publish, with the uploader ([docs/TOOLS.md](../../docs/TOOLS.md)), the password in a file
+that only you can read:
+
+```sh
+printf %s "$CF_DEMO_PASSWORD" > pw && chmod 600 pw
+./cipherfilm-upload --server https://demo.example.org --email demo@example.org --password-file pw ~/DemoPhotos
+rm pw
+```
+
+Albums, favorites and search (sign in on the Android or Mac app and turn search on) can be set up now too: they go
+into the seed.
+
+## 4. The seed, then DEMO_ACCOUNTS
+
+```sh
+scripts/backup.sh deploy/demo && mv deploy/demo/cipherfilm-*.tar deploy/demo/seed.tar
+echo DEMO_ACCOUNTS=demo@example.org >> .env && docker compose up -d
+```
+
+Set `DEMO_ACCOUNTS` only after the photos are uploaded and the seed is made: from then on the account can't add
+anything. To change the seed later, remove it from `.env`, `docker compose up -d`, change the library, make the seed
+again and put the setting back. Never list your admin or an account with real photos.
+
+## 5. The hourly reset
+
+`/etc/systemd/system/cipherfilm-demo-reset.service` (the path is your checkout):
+
+```ini
+[Unit]
+Description=Reset the Cipherfilm demo to its seed
+[Service]
+Type=oneshot
+ExecStart=/opt/cipherfilm/deploy/demo/reset.sh
+```
+
+`/etc/systemd/system/cipherfilm-demo-reset.timer`:
+
+```ini
+[Unit]
+Description=Reset the Cipherfilm demo every hour
+[Timer]
+OnCalendar=hourly
+Persistent=true
+[Install]
+WantedBy=timers.target
+```
+
+```sh
+systemctl daemon-reload && systemctl enable --now cipherfilm-demo-reset.timer
+systemctl start cipherfilm-demo-reset.service && journalctl -u cipherfilm-demo-reset -n 20   # try it once
+```
+
+Then publish the e-mail and the password, never the recovery words.

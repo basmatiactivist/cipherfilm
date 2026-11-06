@@ -12,6 +12,7 @@ server/static/*
 *.jks
 *.keystore
 data/
+deploy/demo/seed.tar
 .DS_Store
 e2e/node_modules/
 e2e/test-results/

@@ -1,0 +1,3 @@
+• Die Anmeldeseite des Demo-Servers zeigt den öffentlichen Demo-Zugang.
+• Kleine Korrekturen.
+Benötigt Ihren eigenen Cipherfilm-Server: https://cipherfilm.app/de

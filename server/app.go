@@ -36,9 +36,10 @@ type App struct {
 	dataDir    string
 	secret     []byte // HMAC key for fake KDF params; persisted in data dir
 	trustProxy bool
-	proxies    []netip.Prefix  // TRUSTED_PROXIES: the peers whose X-Forwarded-For counts; empty: loopback and private
-	hosts      map[string]bool // PUBLIC_HOSTS; empty: any
-	demo       map[string]bool // DEMO_ACCOUNTS: read-only public logins (demo.go)
+	proxies    []netip.Prefix    // TRUSTED_PROXIES: the peers whose X-Forwarded-For counts; empty: loopback and private
+	hosts      map[string]bool   // PUBLIC_HOSTS; empty: any
+	demo       map[string]bool   // DEMO_ACCOUNTS: read-only public logins (demo.go)
+	demoLogin  map[string]string // DEMO_LOGIN: the one the sign-in page offers (email, password), or nil
 	dummyHash  string
 	loginIP    *limiter
 	loginAcct  *limiter         // per (account, source)
@@ -97,6 +98,10 @@ func newApp(dataDir string) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	demoLogin, err := demoLoginSetting(os.Getenv("DEMO_LOGIN"), demo)
+	if err != nil {
+		return nil, err
+	}
 	dummy, _ := hashSecret(b64.EncodeToString(randBytes(32)))
 	a := &App{
 		db: db, dataDir: dataDir, secret: secret, dummyHash: dummy,
@@ -104,6 +109,7 @@ func newApp(dataDir string) (*App, error) {
 		proxies:    proxies,
 		hosts:      publicHosts(os.Getenv("PUBLIC_HOSTS")),
 		demo:       demo,
+		demoLogin:  demoLogin,
 		loginIP:    newLimiter(15*time.Minute, 30),
 		loginAcct:  newLimiter(15*time.Minute, 10),
 		loginDev:   newLimiter(15*time.Minute, 20),

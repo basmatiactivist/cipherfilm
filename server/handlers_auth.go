@@ -80,7 +80,11 @@ func (a *App) setupStatus(w http.ResponseWriter, r *http.Request) {
 	var n int
 	a.db.QueryRow(`SELECT COUNT(*) FROM setup_state`).Scan(&n)
 	// the version is public anyway (the sign-in screen shows it), so it is no secret worth a login
-	writeJSON(w, 200, map[string]any{"needs_setup": n > 0, "server_version": version})
+	out := map[string]any{"needs_setup": n > 0, "server_version": version}
+	if a.demoLogin != nil {
+		out["demo_login"] = a.demoLogin // published on purpose: a public, read-only demo account
+	}
+	writeJSON(w, 200, out)
 }
 
 type setupReq struct {

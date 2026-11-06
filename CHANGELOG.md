@@ -5,6 +5,12 @@ All notable changes to Cipherfilm are listed here. The format follows
 [Semantic Versioning](https://semver.org/). The release workflow copies the section of the tagged
 version into the GitHub release notes, so a release cannot be published without an entry here.
 
+## [2.1.6] - 2026-11-06
+
+### Added
+- `DEMO_LOGIN`: a demo server's sign-in page shows the public demo login, with an "Open the demo" button that signs
+  in. Only for an account in `DEMO_ACCOUNTS`; the server refuses to start otherwise.
+
 ## [2.1.5] - 2026-11-06
 
 A public demo login, and releases that survive a missing Mac runner.

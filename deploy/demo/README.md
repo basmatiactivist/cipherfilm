@@ -50,7 +50,9 @@ into the seed.
 
 ```sh
 scripts/backup.sh deploy/demo && mv deploy/demo/cipherfilm-*.tar deploy/demo/seed.tar
-echo DEMO_ACCOUNTS=demo@example.org >> .env && docker compose up -d
+echo DEMO_ACCOUNTS=demo@example.org >> .env
+echo 'DEMO_LOGIN=demo@example.org the-public-password' >> .env   # the sign-in page offers it ("Open the demo")
+docker compose up -d
 ```
 
 Set `DEMO_ACCOUNTS` only after the photos are uploaded and the seed is made: from then on the account can't add

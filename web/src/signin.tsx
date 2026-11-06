@@ -1,4 +1,4 @@
-import { useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import * as auth from "./auth";
 import { mem } from "./state";
 import { Card, ErrorLine, Field, Submit, VersionLine, useAction } from "./components";
@@ -10,10 +10,19 @@ export function Login({ nav, onDone, notice }: { nav: Nav; onDone: () => void; n
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const { busy, error, run } = useAction();
+  // the demo login comes with the server's status, which a sign-in screen reached by signing out hasn't asked for
+  const [, shown] = useState(false);
+  useEffect(() => { if (!auth.demoLogin) auth.needsSetup().then(() => shown(true), () => {}); }, []);
   return (
     <Card title="Sign in" sealed>
       {notice && <p class="note" role="status">{notice}</p>}
       <p class="privacy lead">Your photos are encrypted in your browser. Only you can open them.</p>
+      {auth.demoLogin && (
+        <div class="demologin" role="note">
+          <p><strong>Public demo.</strong> Sign in with <code>{auth.demoLogin.email}</code> and <code>{auth.demoLogin.password}</code>. Read-only, sample photos.</p>
+          <button type="button" class="btn" disabled={busy} onClick={() => { const d = auth.demoLogin!; setEmail(d.email); setPw(d.password); run(async () => { await auth.login(d.email, d.password); onDone(); }); }}>Open the demo</button>
+        </div>
+      )}
       <form onSubmit={(e) => { e.preventDefault(); run(async () => { await auth.login(email, pw); onDone(); }); }}>
         <Field label="E-mail" id="email" type="email" value={email} onInput={setEmail} autocomplete="username" autofocus />
         <Field label="Password" id="password" type="password" value={pw} onInput={setPw} autocomplete="current-password" />

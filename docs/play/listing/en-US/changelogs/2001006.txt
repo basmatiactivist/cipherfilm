@@ -1,0 +1,3 @@
+• The demo server's sign-in page shows the public demo login.
+• Small fixes.
+Needs your own Cipherfilm server: https://cipherfilm.app

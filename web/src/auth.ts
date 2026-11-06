@@ -54,9 +54,13 @@ export async function loadSession(): Promise<Me | null> {
   }
 }
 
+/** A public demo login this server offers on its sign-in page (DEMO_LOGIN), or null. */
+export let demoLogin: { email: string; password: string } | null = null;
+
 export async function needsSetup(): Promise<boolean> {
-  const r = await api<{ needs_setup: boolean; server_version?: string }>("GET", "/api/setup/status");
+  const r = await api<{ needs_setup: boolean; server_version?: string; demo_login?: { email: string; password: string } }>("GET", "/api/setup/status");
   serverVersion = r.server_version ?? "";
+  demoLogin = r.demo_login ?? null;
   return r.needs_setup;
 }
 

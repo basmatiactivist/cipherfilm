@@ -205,3 +205,31 @@ func TestDemoAccountSeesOnlyItsOwnDevice(t *testing.T) {
 		t.Fatalf("bob: %v", out)
 	}
 }
+
+func TestDemoLoginOnTheSignInPage(t *testing.T) {
+	demo := map[string]bool{"demo@x.org": true}
+	if got, err := demoLoginSetting(" Demo@X.org  open-sesame ", demo); err != nil || got["email"] != "demo@x.org" || got["password"] != "open-sesame" {
+		t.Fatalf("parse: %v %v", got, err)
+	}
+	for _, bad := range []string{"bob@x.org secret", "demo@x.org", "demo@x.org a b"} {
+		if _, err := demoLoginSetting(bad, demo); err == nil {
+			t.Fatalf("%q must stop the server: only a listed demo account's login may be published", bad)
+		}
+	}
+	if got, err := demoLoginSetting("", demo); got != nil || err != nil {
+		t.Fatal("empty")
+	}
+
+	t.Setenv("DEMO_ACCOUNTS", "demo@x.org")
+	t.Setenv("DEMO_LOGIN", "demo@x.org open-sesame")
+	e := newEnv(t)
+	_, out := e.client().do("GET", "/api/setup/status", nil, false)
+	if l, _ := out["demo_login"].(map[string]any); l["email"] != "demo@x.org" || l["password"] != "open-sesame" {
+		t.Fatalf("status: %v", out)
+	}
+	t.Setenv("DEMO_LOGIN", "")
+	e2 := newEnv(t)
+	if _, out := e2.client().do("GET", "/api/setup/status", nil, false); out["demo_login"] != nil {
+		t.Fatalf("no DEMO_LOGIN, nothing offered: %v", out)
+	}
+}

@@ -24,6 +24,7 @@ services:
       TRUST_PROXY: "0"
       PUBLIC_HOSTS: "${PUBLIC_HOSTS:-}"   # the name(s) the app is reached by; requests for any other name are refused
       DEMO_ACCOUNTS: "${DEMO_ACCOUNTS:-}" # public read-only demo logins (deploy/demo); normally empty
+      DEMO_LOGIN: "${DEMO_LOGIN:-}"       # "EMAIL PASSWORD" of one of them, shown on the sign-in page; normally empty
 
 volumes:
   appdata:

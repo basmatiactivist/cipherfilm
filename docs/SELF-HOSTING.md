@@ -173,6 +173,7 @@ lost device, make an invite link, status). A password can't be reset from the se
 | `TRUSTED_PROXIES` | `.env` | empty (loopback and private networks) | addresses or CIDRs whose `X-Forwarded-For` is believed, comma-separated |
 | `PUBLIC_HOSTS` | `.env` | empty (any); required with `TRUST_PROXY=1` (option B; set from `SITE_ADDRESS` in C) | names the app answers for, e.g. `photos.example.com` or `photos.<tailnet>.ts.net`; others get 421 |
 | `DEMO_ACCOUNTS` | `.env` | empty | e-mail addresses of public demo accounts, comma-separated: they can sign in, look and search, but not upload, edit, delete or change the account (403); see [deploy/demo](../deploy/demo/README.md) |
+| `DEMO_LOGIN` | `.env` | empty | `EMAIL PASSWORD` of one `DEMO_ACCOUNTS` login: the sign-in page shows it with an "Open the demo" button. The password is published, so only for a demo |
 | `DATA_VOLUME` | `.env` | `cipherfilm_data` | Docker volume for database and files |
 | `LISTEN_ADDR`, `DATA_DIR` | app env | `:8080`, `/data` | inside the container |
 

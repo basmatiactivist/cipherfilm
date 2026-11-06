@@ -36,6 +36,23 @@ func demoAccounts(v string) (map[string]bool, error) {
 
 func (a *App) isDemo(u *user) bool { return a.demo[u.Email] }
 
+// demoLoginSetting reads DEMO_LOGIN, "EMAIL PASSWORD": a demo login the sign-in page offers to everyone. Only for an
+// account in DEMO_ACCOUNTS, so a typo can't publish a real account's password.
+func demoLoginSetting(v string, demo map[string]bool) (map[string]string, error) {
+	f := strings.Fields(v)
+	if len(f) == 0 {
+		return nil, nil
+	}
+	if len(f) != 2 {
+		return nil, fmt.Errorf("DEMO_LOGIN: expected \"EMAIL PASSWORD\"")
+	}
+	e, ok := normEmail(f[0])
+	if !ok || !demo[e] {
+		return nil, fmt.Errorf("DEMO_LOGIN: %q is not in DEMO_ACCOUNTS", f[0])
+	}
+	return map[string]string{"email": e, "password": f[1]}, nil
+}
+
 // demoIndexer is the indexer the apps are told about for a demo account: never one of their devices, so they only
 // read the index that was built before the account was listed.
 const demoIndexer = "demo"

@@ -200,7 +200,8 @@ function Page({ item, width, height, active, onZoom }: { item: Item; width: numb
       ) : null}
       {!sharp && item.has_preview && !ready ? <ActivityIndicator color={stage.onStage} style={st.spinner} /> : null}
       {ready ? (
-        <VideoView item={item.id} style={{ position: "absolute", left: 0, right: 0, top: inset.top + 56, bottom: inset.bottom + 80, backgroundColor: stage.stage }} />
+        // the whole page, like the still under it (same fit, so it lines up); the controls keep clear of the bars
+        <VideoView item={item.id} controlsInset={[inset.top + 56, inset.bottom + 80]} style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0 }} />
       ) : null}
     </View>
   );

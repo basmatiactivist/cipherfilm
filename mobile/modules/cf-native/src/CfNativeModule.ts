@@ -120,8 +120,8 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
 
 export default requireNativeModule<CfNativeModule>("CfNative");
 
-/** Android's video player, reading the item registered with videoSource(). */
-export const VideoView = requireNativeView<ViewProps & { item: string | null }>("CfNative");
+/** Android's video player, reading the item registered with videoSource(); `controlsInset` is [top, bottom] in dp. */
+export const VideoView = requireNativeView<ViewProps & { item: string | null; controlsInset?: [number, number] }>("CfNative");
 
 /** One item's thumbnail, decrypted natively (Thumbs.kt); `onFailed` when there is none or it can't be verified. */
 export const ThumbView = requireNativeView<ViewProps & { item: string; fit?: "cover" | "contain"; onFailed?: () => void }>("CfNative", "CfThumbView");

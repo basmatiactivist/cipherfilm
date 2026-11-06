@@ -180,7 +180,7 @@ export default function Backup() {
           text={device.notifications ? "You see the progress while it backs up" : "Shows the progress, and tells you if you need to sign in again"}
           action={device.notifications ? undefined : ["Allow", askNotifications]} />
         <Text variant="bodySmall" style={[st.hint, { color: t.colors.onSurfaceVariant }]}>
-          Samsung, Xiaomi, Huawei and some other phones have their own battery rules: open the app settings, then Battery, and choose "Unrestricted".
+          Samsung, Xiaomi, Huawei, OPPO, OnePlus and some other phones have their own battery rules: open the app settings, then Battery, and choose "Unrestricted" or "Allow background activity".
         </Text>
         <Button mode="text" style={{ alignSelf: "flex-start", marginLeft: 8 }} onPress={() => N.openAppSettings()}>Open app settings</Button>
         {device.powerSave ? <Text variant="bodySmall" style={[st.hint, { color: t.colors.error }]}>Battery saver is on: Android delays background work until it is off.</Text> : null}

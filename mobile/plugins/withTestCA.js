@@ -1,6 +1,7 @@
 // Test builds only: trust the local test instance's certificate authority (mobile/dev), for https://10.0.2.2:8443 in
-// the emulator. app.config.js adds this plugin only when CF_TEST_CA names the CA file and the build is not signed
-// with the release key, so a released app never trusts it.
+// the emulator and https://localhost:8443 on a phone (adb reverse tcp:8443 tcp:8443). app.config.js adds this plugin
+// only when CF_TEST_CA names the CA file and the build is not signed with the release key, so a released app never
+// trusts it.
 const fs = require("fs");
 const path = require("path");
 const { withAndroidManifest, withDangerousMod } = require("expo/config-plugins");
@@ -15,6 +16,7 @@ module.exports = function withTestCA(config, { ca }) {
 <network-security-config>
   <domain-config>
     <domain includeSubdomains="false">10.0.2.2</domain>
+    <domain includeSubdomains="false">localhost</domain>
     <trust-anchors><certificates src="@raw/cf_test_ca" /></trust-anchors>
   </domain-config>
 </network-security-config>

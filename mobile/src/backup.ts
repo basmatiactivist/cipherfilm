@@ -200,6 +200,10 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
     const why = blocker(c, trigger === "manual");
     if (why) { status.problem = why; return; }
 
+    // nothing new on the phone: no request at all (a run every 15 minutes), and a server that is down then is no problem
+    let waiting = 0;
+    for (const [bucket, f] of Object.entries(c.folders)) waiting += await N.countFolderAfter(bucket, f.after);
+    if (!waiting) return;
     if (c.server !== (await savedServer())) { status.problem = "Cipherfilm now uses another server. Turn backup on again."; await disableBackup(); return; }
     // the run's own server and token: the app's are left alone
     const to = remote(c.server);
@@ -225,9 +229,6 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
     const pk = unb64(s, c.pubkey);
     const kept = await readJson<{ userId?: string; prints?: string[] }>(KNOWN(), {});
     const known = new Set(kept.userId === c.userId && Array.isArray(kept.prints) ? kept.prints : []);
-    let waiting = 0;
-    for (const [bucket, f] of Object.entries(c.folders)) waiting += await N.countFolderAfter(bucket, f.after);
-    if (!waiting) return;
     holding = true;
     const total = waiting;
     held = keepRunning("backup", "Backing up", total === 1 ? "1 photo or video" : `${total} photos and videos`);

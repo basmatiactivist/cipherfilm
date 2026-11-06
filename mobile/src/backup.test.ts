@@ -160,6 +160,19 @@ describe("automatic backup", () => {
     expect((await backup.loadStatus()).problem).toMatch(/another account/);
   });
 
+  it("with nothing waiting, a run doesn't ask the server, so a server that is down is no problem then", async () => {
+    const { session, backup, pubkey } = await load();
+    await session.start();
+    await backup.saveConfig({ ...config(pubkey), folders: { cam: { name: "Camera", after: 3 } } });
+    let asked = 0;
+    srv.hook = () => { asked++; throw new TypeError("fetch failed"); };
+    const run = backup.runBackup("background");
+    await vi.advanceTimersByTimeAsync(200_000);
+    await run;
+    expect(asked).toBe(0);
+    expect((await backup.loadStatus()).problem).toBeUndefined();
+  });
+
   it("a file the app keeps dying on is skipped after three runs, and the files after it are backed up", async () => {
     const { session, backup, pubkey } = await load();
     await session.start();

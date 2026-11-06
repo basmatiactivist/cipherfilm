@@ -152,6 +152,7 @@ class CfNativeModule : Module() {
     }
     View(CfVideoView::class) {
       Prop("item") { view: CfVideoView, id: String? -> view.setItem(id) }
+      Prop("controlsInset") { view: CfVideoView, v: List<Double>? -> view.setControlsInset(v?.getOrNull(0) ?: 0.0, v?.getOrNull(1) ?: 0.0) }
     }
 
     // ---- thumbnails (Thumbs.kt) ----

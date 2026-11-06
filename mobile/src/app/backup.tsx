@@ -13,6 +13,8 @@ import { Problem, SwitchItem, useAppTheme } from "../ui";
 import { radius, text } from "../tokens";
 import { useMediaDisclosure } from "../disclosure";
 import { isPlayBuild } from "../store";
+import { away, expectAway } from "../autolock";
+import { ownBatteryRules, useOnReturn } from "../deviceState";
 
 type MediaFolder = Awaited<ReturnType<typeof N.mediaFolders>>[number];
 const fmtTime = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
@@ -34,6 +36,9 @@ export default function Backup() {
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const disclosure = useMediaDisclosure();
+  // what Android allows, again on coming back from its settings (and a moment later, when Android catches up)
+  useOnReturn(() => setDevice(N.backupState()));
+  const xiaomi = ownBatteryRules();
 
   const refresh = useCallback(async () => {
     const st = N.backupState();
@@ -55,7 +60,7 @@ export default function Backup() {
 
   useEffect(() => {
     refresh();
-    const a = AppState.addEventListener("change", (s) => { if (s === "active") refresh(); }); // back from Android's settings
+    const a = AppState.addEventListener("change", (s) => { if (s === "active") refresh(); }); // the backup may have run meanwhile
     const b = onBackupChange(() => { refresh(); });
     return () => { a.remove(); b(); };
   }, [refresh]);
@@ -81,11 +86,13 @@ export default function Backup() {
     await disclosure.ask("backup");
     await refresh();
   };
+  const appSettings = () => { expectAway(); N.openAppSettings(); };
+  const askBattery = () => { expectAway(); N.askBatteryExemption(); };
   const askNotifications = async () => {
     // before Android 13 there is no prompt: notifications are switched off in the app settings
-    if (device.sdk < 33) { N.openAppSettings(); return; }
-    const r = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
-    if (r === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) N.openAppSettings();
+    if (device.sdk < 33) { appSettings(); return; }
+    const r = await away(() => PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS));
+    if (r === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) appSettings();
     await refresh();
   };
 
@@ -168,10 +175,13 @@ export default function Backup() {
         {device.sdk >= 29 ? <Check ok={device.location} icon="info" title="Where photos were taken"
           text={device.location ? "Kept in the backup (encrypted)" : "Without this, Android removes the location from photos before the app sees them"}
           action={device.location ? undefined : ["Allow", askMedia]} /> : null}
-        <Check ok={device.batteryExempt} icon="lock" title="Run in the background"
-          text={device.batteryExempt ? "Android lets the backup run when the app is closed" : "Battery optimisation pauses the backup when the app is closed"}
-          action={device.batteryExempt ? undefined : ["Allow", () => N.askBatteryExemption()]} />
-        {!device.batteryExempt && isPlayBuild() ? (
+        {/* recommended, not required: a running backup keeps itself going (TransferService), so not shown as an error */}
+        <Check ok={device.batteryExempt} warn icon="lock" title="Run in the background"
+          text={device.batteryExempt ? "Android lets the backup run when the app is closed"
+            : xiaomi ? "On Xiaomi phones: app settings › Battery saver › No restrictions. Android doesn't show that setting here, so this stays unticked."
+            : "Android may pause the backup when the app is closed"}
+          action={device.batteryExempt ? undefined : xiaomi ? ["Open", appSettings] : ["Allow", askBattery]} />
+        {!device.batteryExempt && !xiaomi && isPlayBuild() ? (
           <Text variant="bodySmall" style={[st.hint, { color: t.colors.onSurfaceVariant }]}>
             "Allow" opens Android's battery optimisation list: choose "All apps", then Cipherfilm, then "Don't optimise".
           </Text>
@@ -182,7 +192,7 @@ export default function Backup() {
         <Text variant="bodySmall" style={[st.hint, { color: t.colors.onSurfaceVariant }]}>
           Samsung, Xiaomi, Huawei, OPPO, OnePlus and some other phones have their own battery rules: open the app settings, then Battery, and choose "Unrestricted" or "Allow background activity".
         </Text>
-        <Button mode="text" style={{ alignSelf: "flex-start", marginLeft: 8 }} onPress={() => N.openAppSettings()}>Open app settings</Button>
+        <Button mode="text" style={{ alignSelf: "flex-start", marginLeft: 8 }} onPress={appSettings}>Open app settings</Button>
         {device.powerSave ? <Text variant="bodySmall" style={[st.hint, { color: t.colors.error }]}>Battery saver is on: Android delays background work until it is off.</Text> : null}
 
         <Divider style={{ marginTop: 8 }} />

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AppState, ScrollView, StyleSheet, View } from "react-native";
+import { ScrollView, StyleSheet, View } from "react-native";
 import { router } from "expo-router";
 import { ActivityIndicator, Appbar, Button, Dialog, Divider, List, Portal, ProgressBar, Switch, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -11,6 +11,8 @@ import { scheduleBackground } from "../backup";
 import { forgetSearch, indexesHere, indexHere, startSearch, stopSearch, useSearchProgress } from "../search/engine";
 import { loadPeople, setExplicit } from "../search/people";
 import { explicitSearchOffered } from "../store";
+import { expectAway } from "../autolock";
+import { ownBatteryRules, useOnReturn } from "../deviceState";
 import { deleteModels, downloadSize } from "../search/models";
 import { loadSettings, onSettingsChange, pinAccount, saveSettings, type SearchSettings } from "../search/settings";
 import { Problem, SwitchItem, useAppTheme } from "../ui";
@@ -44,11 +46,11 @@ export default function SearchSettingsScreen() {
   const [busy, setBusy] = useState(false);
   const [device, setDevice] = useState(() => N.backupState());
   const p = useSearchProgress();
+  useOnReturn(() => setDevice(N.backupState())); // back from Android's settings
   useEffect(() => {
     loadSettings().then(setS);
     const a = onSettingsChange(() => loadSettings().then(setS));
-    const b = AppState.addEventListener("change", (x) => { if (x === "active") setDevice(N.backupState()); });
-    return () => { a(); b.remove(); };
+    return () => { a(); };
   }, []);
 
   const restart = () => { startSearch(libraryItems()).catch(() => {}); };
@@ -171,8 +173,10 @@ export default function SearchSettingsScreen() {
         <SwitchItem title="Only while charging" description="Recommended: indexing takes battery." disabled={!s.background}
           value={s.chargingOnly} onValueChange={(v) => change({ chargingOnly: v }, false)} />
         {s.background && !device.batteryExempt ? (
-          <List.Item title="Battery optimisation is on" description="Android may pause background work. Allow Cipherfilm to run in the background." descriptionNumberOfLines={3}
-            right={() => <Button mode="outlined" compact onPress={() => N.askBatteryExemption()} style={{ alignSelf: "center" }}>Allow</Button>} />
+          <List.Item title="Run in the background" descriptionNumberOfLines={4}
+            description={ownBatteryRules() ? "On Xiaomi phones: app settings › Battery saver › No restrictions." : "Android may pause indexing when the app is closed."}
+            right={() => <Button mode="outlined" compact style={{ alignSelf: "center" }}
+              onPress={() => { expectAway(); if (ownBatteryRules()) N.openAppSettings(); else N.askBatteryExemption(); }}>{ownBatteryRules() ? "Open" : "Allow"}</Button>} />
         ) : null}
 
         <Divider style={{ marginTop: 8 }} />

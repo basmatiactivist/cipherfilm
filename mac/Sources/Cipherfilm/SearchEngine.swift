@@ -99,7 +99,7 @@ final class SearchEngine {
       step = "Downloading the search models"
       if !models.have(faces: faces, clip: clip, reader: reader) {
         phase = .download; done = 0; total = Int(models.missingBytes(faces: faces, clip: clip, reader: reader)); message = nil; rate = 0; rateAt = nil; retry = nil
-        try await models.download(api: vault.api, faces: faces, clip: clip, reader: reader) { p in Task { @MainActor in self.downloaded(p) } }
+        try await models.download(faces: faces, clip: clip, reader: reader) { p in Task { @MainActor in self.downloaded(p) } }
         guard live(vault) else { return }
       }
       phase = .loading

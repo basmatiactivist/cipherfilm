@@ -224,20 +224,29 @@ public final class API: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     return d
   }
 
-  /** For long downloads: no overall time limit (the search models are hundreds of MB, and a tailnet relayed through
-   *  DERP may bring them at a few hundred KB/s); a connection that sends nothing for two minutes counts as dropped. */
-  private lazy var longSession: URLSession = {
-    let c = URLSessionConfiguration.default
-    c.httpAdditionalHeaders = ["X-CF-Device": Self.device]
-    c.httpCookieStorage = cookies
-    c.httpShouldSetCookies = true
-    c.httpCookieAcceptPolicy = .always
+  /** For the search models, from Hugging Face: nothing of this app or account goes along (no cookie, no device
+   *  header, no cache), and no overall time limit (hundreds of MB on a slow line); a connection that sends nothing for
+   *  a minute counts as dropped and is resumed. */
+  private static let modelSession: URLSession = {
+    let c = URLSessionConfiguration.ephemeral
+    c.httpCookieStorage = nil
+    c.httpShouldSetCookies = false
     c.urlCache = nil
     c.requestCachePolicy = .reloadIgnoringLocalCacheData
-    c.timeoutIntervalForRequest = 120
+    c.timeoutIntervalForRequest = 60
     c.timeoutIntervalForResource = 7 * 24 * 3600
-    return URLSession(configuration: c, delegate: self, delegateQueue: nil)
+    return URLSession(configuration: c, delegate: HTTPSRedirects(), delegateQueue: nil)
   }()
+
+  /** Hugging Face answers with a redirect to its CDN: followed only to https, with the Range header kept. */
+  private final class HTTPSRedirects: NSObject, URLSessionTaskDelegate, Sendable {
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest) async -> URLRequest? {
+      guard request.url?.scheme?.lowercased() == "https" else { return nil }
+      var r = request
+      if let range = task.originalRequest?.value(forHTTPHeaderField: "Range") { r.setValue(range, forHTTPHeaderField: "Range") }
+      return r
+    }
+  }
 
   public enum DownloadEvent: Sendable {
     /** bytes in the file so far (also those from before a drop) */
@@ -246,13 +255,15 @@ public final class API: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     case retrying(in: Int, reason: String)
   }
 
-  /** Downloads into `file`, resuming with HTTP Range what an earlier try or run left there. Drops, stalls and busy
-   *  servers are retried with backoff (up to a minute between tries) until it is done or cancelled, each wait reported
-   *  with its reason; refusals (401, 403, 404) fail at once. With `expected`, a complete file returns without a request,
-   *  and an answer longer than that fails at once (the file is deleted) instead of filling the disk. */
-  public func download(_ path: String, to file: URL, expected: Int64? = nil, event: @escaping @Sendable (DownloadEvent) -> Void) async throws {
+  /** Downloads a search model from its pinned https URL into `file`, resuming with HTTP Range what an earlier try or
+   *  run left there. Drops, stalls and busy servers are retried with backoff (up to a minute between tries) until it is
+   *  done or cancelled, each wait reported with its reason; refusals (403, 404) fail at once. With `expected`, a
+   *  complete file returns without a request, and an answer longer than that fails at once (the file is deleted)
+   *  instead of filling the disk. */
+  public static func download(_ source: URL, to file: URL, expected: Int64? = nil, event: @escaping @Sendable (DownloadEvent) -> Void) async throws {
     struct Refused: Error { let error: APIError }
-    let tooLong = Refused(error: APIError(status: -1, message: "The search models couldn't be downloaded (the server sent more than expected)."))
+    guard source.scheme?.lowercased() == "https" else { throw APIError(status: -1, message: "Search models are only downloaded over https.") }
+    let tooLong = Refused(error: APIError(status: -1, message: "The search models couldn't be downloaded (Hugging Face sent more than expected)."))
     var fruitless = 0
     while true {
       try Task.checkCancellation()
@@ -262,14 +273,13 @@ public final class API: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
       let before = have
       var got = have
       do {
-        var r = URLRequest(url: url(path), timeoutInterval: 120)
+        var r = URLRequest(url: source, timeoutInterval: 60)
         if have > 0 { r.setValue("bytes=\(have)-", forHTTPHeaderField: "Range") }
-        let (bytes, resp) = try await longSession.bytes(for: r)
+        let (bytes, resp) = try await modelSession.bytes(for: r)
         guard let h = resp as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         if h.statusCode == 416 { try? FileManager.default.removeItem(at: file); throw URLError(.networkConnectionLost) } // the file changed: from the start
         guard h.statusCode == 200 || h.statusCode == 206 else {
-          ended(h, path)
-          let e = APIError(status: h.statusCode, message: "The search models couldn't be downloaded (the server answered \(h.statusCode)).")
+          let e = APIError(status: h.statusCode, message: "The search models couldn't be downloaded (Hugging Face answered \(h.statusCode)).")
           if Self.retryable.contains(h.statusCode) { throw e }
           throw Refused(error: e)
         }
@@ -306,11 +316,20 @@ public final class API: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
         if Task.isCancelled || error is CancellationError { throw CancellationError() }
         fruitless = got > before ? 1 : fruitless + 1
         let wait = min(60, 1 << min(fruitless, 6)) // 2, 4, 8 … 60 s; a drop after progress starts again at 2 s
-        var reason = (error as? APIError)?.message ?? ((error as? URLError)?.code == .timedOut ? "The download stalled (no data for two minutes)." : (error as? URLError).map(Self.network) ?? "The connection dropped.")
+        var reason = (error as? APIError)?.message ?? ((error as? URLError)?.code == .timedOut ? "The download stalled (no data for a minute)." : (error as? URLError).map(Self.modelNetwork) ?? "The connection dropped.")
         if fruitless > 3 { reason += " No data for the last \(fruitless - 1) tries." }
         event(.retrying(in: wait, reason: reason))
         try await Task.sleep(nanoseconds: UInt64(wait) * 1_000_000_000)
       }
+    }
+  }
+
+  private static func modelNetwork(_ u: URLError) -> String {
+    switch u.code {
+    case .timedOut: return "Hugging Face is slow to answer (the connection is slow or busy)."
+    case .networkConnectionLost: return "The connection to Hugging Face dropped."
+    case .cannotFindHost, .cannotConnectToHost: return "Hugging Face can't be reached."
+    default: return network(u)
     }
   }
 

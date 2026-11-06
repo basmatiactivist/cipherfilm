@@ -1,10 +1,16 @@
-// Search and people on the Mac: the models (downloaded from the person's own server, checked against fixed SHA-256
-// values), index entries in the shared format (docs/SEARCH.md), the people document, and the search box's query
+// Search and people on the Mac: the models (downloaded from Hugging Face at pinned URLs, checked against fixed SHA-256
+// values; the same list as server/models.json, which a test compares), index entries in the shared format (docs/SEARCH.md), the people document, and the search box's query
 // language. The same constants as mobile/src/search/*.ts, so an entry made here is used on the phone and back.
 import CryptoKit
 import Foundation
 
-public struct ModelFile: Sendable { public let name: String; public let sha256: String; public let size: Int64; public let faces: Bool }
+public struct ModelFile: Sendable {
+  public let name: String; public let url: URL; public let sha256: String; public let size: Int64; public let faces: Bool
+  /** url: the file's pinned Hugging Face URL (a commit, not a branch), as in server/models.json */
+  init(name: String, url: String, sha256: String, size: Int64, faces: Bool) {
+    self.name = name; self.url = URL(string: url)!; self.sha256 = sha256; self.size = size; self.faces = faces
+  }
+}
 
 /** Which model says what is in a photo. MobileCLIP S2 for everyone; LAION's OpenCLIP ViT-B/32 for a person an admin
  *  allowed explicit search and who turned it on (docs/SEARCH.md, "Explicit search"). Both use the same tokenizer. */
@@ -16,15 +22,15 @@ public enum ClipModel: String, Sendable, Codable {
 
   public var vision: ModelFile {
     switch self {
-    case .mobileclip: ModelFile(name: "mobileclip-s2-vision.onnx", sha256: "d28b92d7a3a6ba99bd000cce5c91678c0e279dc934c887a3785908a811872a6c", size: 143_020_962, faces: false)
-    case .laion: ModelFile(name: "nsfw-laion-b32-vision.onnx", sha256: "b9ce24b91a8c62ef8d40ea786051709c93140104cbf2b6b4a2cc270df3838f9c", size: 351_613_724, faces: false)
+    case .mobileclip: ModelFile(name: "mobileclip-s2-vision.onnx", url: "https://huggingface.co/Xenova/mobileclip_s2/resolve/0c311c620b36a2270b851db7bef9135f3eaae5d7/onnx/vision_model.onnx", sha256: "d28b92d7a3a6ba99bd000cce5c91678c0e279dc934c887a3785908a811872a6c", size: 143_020_962, faces: false)
+    case .laion: ModelFile(name: "nsfw-laion-b32-vision.onnx", url: "https://huggingface.co/immich-app/ViT-B-32__laion2b-s34b-b79k/resolve/19a057a0fb927cf239541300e74237cd56c7ffe2/visual/model.onnx", sha256: "b9ce24b91a8c62ef8d40ea786051709c93140104cbf2b6b4a2cc270df3838f9c", size: 351_613_724, faces: false)
     }
   }
 
   public var text: ModelFile {
     switch self {
-    case .mobileclip: ModelFile(name: "mobileclip-s2-text.onnx", sha256: "f8aaa97cf17fbadd78b0bd6d5f6a1c57f712402cacc3055ea92c1a3331357dfe", size: 64_117_260, faces: false)
-    case .laion: ModelFile(name: "nsfw-laion-b32-text.onnx", sha256: "48c25be37b352398f2533c9426dab6f9340535e14e46f884cc894236a5060722", size: 254_193_396, faces: false)
+    case .mobileclip: ModelFile(name: "mobileclip-s2-text.onnx", url: "https://huggingface.co/Xenova/mobileclip_s2/resolve/0c311c620b36a2270b851db7bef9135f3eaae5d7/onnx/text_model_quantized.onnx", sha256: "f8aaa97cf17fbadd78b0bd6d5f6a1c57f712402cacc3055ea92c1a3331357dfe", size: 64_117_260, faces: false)
+    case .laion: ModelFile(name: "nsfw-laion-b32-text.onnx", url: "https://huggingface.co/immich-app/ViT-B-32__laion2b-s34b-b79k/resolve/19a057a0fb927cf239541300e74237cd56c7ffe2/textual/model.onnx", sha256: "48c25be37b352398f2533c9426dab6f9340535e14e46f884cc894236a5060722", size: 254_193_396, faces: false)
     }
   }
 
@@ -40,10 +46,10 @@ public enum ClipModel: String, Sendable, Codable {
 }
 
 public enum Models {
-  public static let tokenizer = ModelFile(name: "mobileclip-s2-tokenizer.json", sha256: "72ed5c96db5729294468543e4bc75fce14ca63f58e37300290189ba1c1e52b85", size: 2_224_081, faces: false)
+  public static let tokenizer = ModelFile(name: "mobileclip-s2-tokenizer.json", url: "https://huggingface.co/Xenova/mobileclip_s2/resolve/0c311c620b36a2270b851db7bef9135f3eaae5d7/tokenizer.json", sha256: "72ed5c96db5729294468543e4bc75fce14ca63f58e37300290189ba1c1e52b85", size: 2_224_081, faces: false)
   public static let faceFiles: [ModelFile] = [
-    ModelFile(name: "yunet-2023mar.onnx", sha256: "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4", size: 232_589, faces: true),
-    ModelFile(name: "sface-2021dec.onnx", sha256: "0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79", size: 38_696_353, faces: true),
+    ModelFile(name: "yunet-2023mar.onnx", url: "https://huggingface.co/opencv/face_detection_yunet/resolve/3cc26e7f1014a5ee5d74a42acee58bafc9d0a310/face_detection_yunet_2023mar.onnx", sha256: "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4", size: 232_589, faces: true),
+    ModelFile(name: "sface-2021dec.onnx", url: "https://huggingface.co/opencv/face_recognition_sface/resolve/3d7082438a6e4551e840c9b2bb60b71e8da4b524/face_recognition_sface_2021dec.onnx", sha256: "0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79", size: 38_696_353, faces: true),
   ]
 
   public static func all(_ clip: ClipModel) -> [ModelFile] { [clip.vision, clip.text, tokenizer] + faceFiles }
@@ -99,9 +105,9 @@ public final class ModelStore: @unchecked Sendable {
     public var retry: (reason: String, seconds: Int)?
   }
 
-  /** Downloads what is missing from the server, each file into "<name>.part" next to where it goes, so a drop (or a
+  /** Downloads what is missing from Hugging Face, each file into "<name>.part" next to where it goes, so a drop (or a
    *  quit) resumes where it stopped; progress counts the bytes of all files together. */
-  public func download(api: API, faces: Bool, clip: ClipModel = .mobileclip, reader: Bool = false, progress: @escaping @Sendable (Progress) -> Void) async throws {
+  public func download(faces: Bool, clip: ClipModel = .mobileclip, reader: Bool = false, progress: @escaping @Sendable (Progress) -> Void) async throws {
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let list = Models.needed(faces: faces, clip: clip, reader: reader).filter { m in !lock.withLock { checked.contains(m.name) } && !(FileManager.default.fileExists(atPath: dir.appendingPathComponent(m.name).path) && Models.sha256(of: dir.appendingPathComponent(m.name)) == m.sha256) }
     let total = list.reduce(Int64(0)) { $0 + $1.size }
@@ -109,7 +115,7 @@ public final class ModelStore: @unchecked Sendable {
     for m in list {
       let b = before
       let part = dir.appendingPathComponent(m.name + ".part")
-      try await api.download("/api/models/\(m.name)", to: part, expected: m.size) { e in
+      try await API.download(m.url, to: part, expected: m.size) { e in
         switch e {
         case .bytes(let n): progress(Progress(done: b + n, total: total))
         case .retrying(let s, let reason):

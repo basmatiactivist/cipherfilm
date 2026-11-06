@@ -38,6 +38,13 @@ export const whenRevoked = (f: () => void) => { onRevoked = f; };
 const JSON_TIMEOUT = 20_000;
 const BYTES_TIMEOUT = 120_000;
 const within = (ms: number) => { const c = new AbortController(); setTimeout(() => c.abort(), ms); return c.signal; };
+/** A time limit that can be moved: a JSON answer gets JSON_TIMEOUT to start, then as long as bytes to arrive (a page
+ *  of the library is up to 4 MB, which a slow mobile connection doesn't bring in 20 seconds). */
+function limit(ms: number) {
+  const c = new AbortController();
+  let t = setTimeout(() => c.abort(), ms);
+  return { signal: c.signal, move(to: number) { clearTimeout(t); t = setTimeout(() => c.abort(), to); }, end() { clearTimeout(t); } };
+}
 
 const OFFLINE = "Can't connect to the server. Check your connection and try again.";
 const FRIENDLY: Record<string, string> = {
@@ -59,14 +66,25 @@ export async function api<T = any>(method: string, path: string, body?: unknown,
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (method !== "GET" && to.csrf) headers["X-CSRF-Token"] = to.csrf;
   let res: Response;
+  const time = limit(JSON_TIMEOUT);
   try {
-    res = await fetch(to.base + path, { method, credentials: "include", headers, body: body !== undefined ? JSON.stringify(body) : undefined, signal: within(JSON_TIMEOUT) });
+    res = await fetch(to.base + path, { method, credentials: "include", headers, body: body !== undefined ? JSON.stringify(body) : undefined, signal: time.signal });
   } catch (e) {
+    time.end();
     throw new ApiError(0, OFFLINE, `${method} ${path.replace(/[0-9a-f]{32}/g, ":id")}: ${why(e)}`);
   }
+  time.move(BYTES_TIMEOUT);
+  // a body cut off (the time limit, a dropped connection) or that isn't JSON (a proxy's or captive portal's page) is a
+  // failed request, never an answer of null that the caller would read from
+  let text = "";
+  try { text = await res.text(); } catch (e) { if (res.ok) throw new ApiError(0, OFFLINE, `${method} ${path.replace(/[0-9a-f]{32}/g, ":id")}: body ${why(e)}`); } finally { time.end(); }
   let data: any = null;
-  try { data = await res.json(); } catch { /* empty body */ }
+  try { data = text ? JSON.parse(text) : null; } catch { /* not JSON */ }
   if (!res.ok) { ended(res, path, to); throw new ApiError(res.status, sentence(data?.error ?? "Something went wrong."), "", data?.code ?? ""); }
+  // a GET always answers with an object or a list; other methods may answer with nothing
+  if ((text && data === null) || (method === "GET" && (data === null || typeof data !== "object"))) {
+    throw new ApiError(0, OFFLINE, `${method} ${path.replace(/[0-9a-f]{32}/g, ":id")}: ${res.status}, not a JSON answer`);
+  }
   return data as T;
 }
 

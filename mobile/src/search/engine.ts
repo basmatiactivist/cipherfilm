@@ -83,7 +83,11 @@ const cacheFile = () => {
 interface Cache { since: number; entries: Record<string, string> }
 async function readCache(): Promise<Cache> {
   const f = cacheFile();
-  try { if (f?.exists) return JSON.parse(await f.text()); } catch { /* start over */ }
+  try {
+    // only a cache: anything else in the file (cut short, "null", an older shape) starts over
+    const c = f?.exists ? JSON.parse(await f.text()) : null;
+    if (c && typeof c.since === "number" && c.entries && typeof c.entries === "object" && !Array.isArray(c.entries)) return c;
+  } catch { /* start over */ }
   return { since: 0, entries: {} };
 }
 async function writeCache(c: Cache) {

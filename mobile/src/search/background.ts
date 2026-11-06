@@ -73,6 +73,7 @@ export async function runBackgroundIndex(): Promise<number> {
   // attempt: the item a run was working on; still set at the next run means that run died on it (killed or hung)
   let local: { userId: string; prints: Record<string, string>; done: string[]; attempt?: string };
   try { local = JSON.parse(await f.text()); } catch { return 0; }
+  if (!local || typeof local.prints !== "object" || !local.prints || !Array.isArray(local.done)) return 0; // the app writes it again
   const clip = st.clip ?? "mobileclip-s2";
   if (local.userId !== st.userId || !(await haveModels(st.faces, clip))) return 0;
   if (local.attempt) { // not tried here again: the app indexes it from the server's preview when it is opened

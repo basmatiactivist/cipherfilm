@@ -18,12 +18,16 @@ export const useLibrary = () => useSyncExternalStore((f) => { subs.add(f); retur
 export const libraryItems = () => (items && owner === session().me?.user.id && session().masterKey ? items : []);
 
 let owner = ""; // the account the list was decrypted for
+// bumped whenever the list is forgotten (every lock): a load still running then ends quietly, shows nothing, and
+// doesn't keep the next one (after unlocking) from starting
+let gen = 0;
 
 export async function refreshLibrary() {
   if (loading) return;
+  const mine = gen;
   loading = true; error = undefined; emit();
   const forUser = session().me?.user.id ?? "";
-  const current = () => session().me?.user.id === forUser && !!session().masterKey;
+  const current = () => mine === gen && session().me?.user.id === forUser && !!session().masterKey;
   try {
     // the list from the last visit first, so the grid is there at once; the server's list replaces it
     if (!items || owner !== forUser) {
@@ -47,15 +51,15 @@ export async function refreshLibrary() {
       startSearch(list).catch(() => {}); // search: the index for what is new
     }, 1500);
   } catch (e) {
-    error = e instanceof Error ? e.message : "Couldn't load your photos.";
+    if (current()) error = e instanceof Error ? e.message : "Couldn't load your photos.";
   } finally {
-    loading = false; emit();
+    if (mine === gen) { loading = false; emit(); }
   }
 }
 
 export function forgetLibrary() {
   items?.forEach((i) => i.itemKey?.fill(0)); // the unwrapped item keys leave memory with the list
-  items = null; owner = ""; error = undefined; loadedAt = 0; emit();
+  items = null; owner = ""; error = undefined; loadedAt = 0; loading = false; gen++; emit();
 }
 
 // a lock, sign-out or account change takes the decrypted list along

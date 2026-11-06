@@ -74,4 +74,14 @@ describe("background indexing", () => {
     expect(st.sent).toEqual([]);
     expect(api.server()).toBe("https://new.test");
   });
+
+  it("does nothing (and doesn't fail) with a list of the phone's photos it can't read", async () => {
+    st.saved = "https://a.test";
+    const { runBackgroundIndex } = await import("./background");
+    for (const local of [null, { userId: "alice" }, { userId: "alice", prints: null, done: [] }]) {
+      st.local = local;
+      expect(await runBackgroundIndex()).toBe(0);
+    }
+    expect(st.sent).toEqual([]);
+  });
 });

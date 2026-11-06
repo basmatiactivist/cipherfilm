@@ -5,6 +5,22 @@ All notable changes to Cipherfilm are listed here. The format follows
 [Semantic Versioning](https://semver.org/). The release workflow copies the section of the tagged
 version into the GitHub release notes, so a release cannot be published without an entry here.
 
+## [2.1.1] - 2026-11-06
+
+Android fixes, and releases go to Google Play's internal testing track by themselves.
+
+### Fixed
+- Android: a video fills the viewer like the photo under it, instead of looking cut off and small.
+- Android: an empty file (0 bytes) is skipped by the backup and named under Backup ("The file is empty") instead of
+  being uploaded as an empty photo; sharing an empty file is refused with the same words.
+- Android: a backup with nothing new no longer asks the server (every 15 minutes), and the Backup screen no longer
+  says "Everything is backed up" and "Can't connect" at once while the server is down.
+- Android: the switch rows under Account line up with the rows around them; the battery hint names OPPO and OnePlus.
+
+### Changed
+- Releases upload the Play bundle to Google Play's internal testing track; production is a hand-started workflow
+  (Google Play promote). Setup in docs/RELEASING.md, "Google Play from CI".
+
 ## [2.1.0] - 2026-11-06
 
 A security release: a fourth full source audit (whole repository, with servers exposed to the public internet as the

@@ -105,7 +105,14 @@ function App() {
   useEffect(() => { const t = TITLES[screen.n]; if (t) document.title = `${t} · Cipherfilm`; }, [screen.n]);
   // lock: the session stays, the keys go; the password opens the library again
   const lock = () => { forgetKeys(); setScreen({ n: "unlock" }); };
-  const signOut = async () => { await auth.logout().catch(() => {}); nav("/"); };
+  // straight to the sign-in screen: the keys are gone before the server hears of it (auth.logout), and asking the
+  // server which screen to show could still find the session it hasn't ended yet
+  const signOut = () => {
+    auth.logout().catch(() => {});
+    setNotice("");
+    history.pushState(null, "", "/");
+    setScreen({ n: "login" });
+  };
 
   if (!isSecure()) {
     return <Shell><Card title="Open Cipherfilm over https"><p>Your browser only allows the encryption features on a secure connection. Open the https address of this server and try again.</p></Card></Shell>;

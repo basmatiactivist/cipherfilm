@@ -6,12 +6,14 @@ const server = vi.hoisted(() => ({
   user: null as null | { email: string; bundle: Record<string, string> },
   loseNextResponse: false,
   loginDown: false,
+  hangLogout: false,
+  dropped: 0,
 }));
 let made = 0;
 
 vi.mock("./api", () => ({
   setCsrf: () => {},
-  dropRequests: () => {},
+  dropRequests: () => { server.dropped++; },
   api: async (method: string, path: string, body: any) => {
     const me = () => ({ csrf: "c", user: { id: "u", email: server.user!.email, role: "admin" }, wrapped_master_pw: server.user!.bundle.wrapped_master_pw });
     if (path === "/api/setup") {
@@ -28,7 +30,7 @@ vi.mock("./api", () => ({
       if (server.user?.bundle.auth !== body.auth) throw new Error("wrong password");
       return me();
     }
-    if (path === "/api/auth/logout") return {};
+    if (path === "/api/auth/logout") return server.hangLogout ? new Promise(() => {}) : {};
     throw new Error(`unexpected ${method} ${path}`);
   },
 }));
@@ -70,5 +72,26 @@ describe("creating the first account when a response is lost", () => {
     await expect((await import("./auth")).setup("tok", "a@x.org", "pw")).rejects.toThrow();
     vi.resetModules(); // a reload forgets the first attempt's keys
     await expect((await import("./auth")).setup("tok", "a@x.org", "pw")).rejects.toThrow(/already exists/);
+  });
+});
+
+describe("signing out", () => {
+  beforeEach(() => {
+    server.user = null;
+    server.hangLogout = false;
+    server.dropped = 0;
+    vi.resetModules();
+  });
+
+  it("forgets the keys before the server answers, even if it never does", async () => {
+    const { setup, logout } = await import("./auth");
+    const { mem } = await import("./state");
+    await (await setup("tok", "a@x.org", "pw")).commit();
+    expect(mem.masterKey).not.toBeNull();
+    server.hangLogout = true; // a slow or unreachable server
+    void logout();
+    expect(mem.masterKey).toBeNull();
+    expect(mem.me).toBeNull();
+    expect(server.dropped).toBe(1); // requests still on their way are dropped
   });
 });

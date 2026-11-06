@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { Appbar, Button, Dialog, FAB, Portal, Text } from "react-native-paper";
-import { claimOffer } from "../search/settings";
+import { answerOffer, claimOffer, releaseOffer } from "../search/settings";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import N from "../../modules/cf-native/src/CfNativeModule";
 import { away } from "../autolock";
@@ -27,15 +27,18 @@ export default function Library() {
   const inset = useSafeAreaInsets();
   const { items, error, loading } = useLibrary();
   useEffect(() => { if (!items) refreshLibrary(); }, []);
-  // once: offer search, which is off until the person turns it on (claimOffer saves that it was asked, at once)
+  // once: offer search, which is off until the person turns it on; asked only while this screen is on top (a dialog
+  // opened under the Backup screen would show over it)
   const [offer, setOffer] = useState(false);
-  useEffect(() => {
-    let live = true;
-    if (items?.length) claimOffer().then((yes) => { if (yes && live) setOffer(true); }, () => {});
-    return () => { live = false; };
-  }, [!!items?.length]);
+  const has = !!items?.length;
+  useFocusEffect(useCallback(() => {
+    let live = true, mine = false;
+    if (has) claimOffer().then((yes) => { mine = yes; if (yes && live) setOffer(true); else if (yes) releaseOffer(); }, () => {});
+    return () => { live = false; setOffer(false); if (mine) releaseOffer(); };
+  }, [has]));
   const answer = (yes: boolean) => {
     setOffer(false);
+    answerOffer();
     if (yes) router.push("/search-settings");
   };
   return (

@@ -72,15 +72,23 @@ export function saveSettings(patch: Partial<SearchSettings>): Promise<SearchSett
 }
 
 let offered = false;
+let answered = false;
 /** Whether to ask "Search your photos?" now: true only for the first caller while search is off and the question
- *  wasn't asked yet, and "asked" is saved right then, not with the answer. A library screen that checks again (its
- *  effect running once more, or a second one mounted) while the question is open or just answered doesn't ask again. */
+ *  wasn't answered yet. A library screen that checks again (its effect running once more, or a second one mounted)
+ *  while the question is open doesn't ask again. "asked" is saved with the answer (answerOffer); a screen that goes
+ *  away before showing or answering it gives the question back (releaseOffer), so it is still asked. */
 export async function claimOffer(): Promise<boolean> {
   const s = await loadSettings();
   if (offered || s.asked || s.enabled) return false;
   offered = true;
-  await saveSettings({ asked: true }).catch(() => { /* asked in this run anyway */ });
   return true;
+}
+
+export function releaseOffer() { if (!answered) offered = false; }
+
+export async function answerOffer() {
+  answered = true;
+  await saveSettings({ asked: true }).catch(() => { /* asked in this run anyway */ });
 }
 
 /** Pins the account's public key for the background indexer after checking it against the private key. */
@@ -97,6 +105,6 @@ export const settingsDir = DIR;
 /** Sign-out: the settings, the pinned key and what was indexed in the background go (the models stay). */
 export function forgetSettings() {
   try { const d = DIR(); if (d.exists) d.delete(); } catch { /* best effort */ }
-  cached = null; offered = false; forgotten++;
+  cached = null; offered = false; answered = false; forgotten++;
   subs.forEach((f) => f());
 }

@@ -108,7 +108,7 @@ export async function inBatches(ids: string[], send: (part: string[]) => Promise
 export const trashItems = (ids: string[]) => inBatches(ids, (part) => api("POST", "/api/items/trash", { item_ids: part }));
 export const restoreItems = (ids: string[]) => inBatches(ids, (part) => api("POST", "/api/items/restore", { item_ids: part }));
 export const setFavorite = (ids: string[], favorite: boolean) => inBatches(ids, (part) => api("POST", "/api/items/favorite", { item_ids: part, favorite }));
-/** Deletes exactly these trashed items for good, in batches the server accepts. Emptying the trash passes the ids
+/** Deletes exactly these trashed items permanently, in batches the server accepts. Emptying the trash passes the ids
  *  that are on screen, so an item trashed on another device in the meantime is not deleted unseen. */
 export async function purgeTrash(ids: string[]): Promise<number> {
   let removed = 0;

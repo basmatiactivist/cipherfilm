@@ -140,7 +140,7 @@ export default function FreeSpace() {
               {!canTrash ? <Text variant="bodySmall" style={{ marginTop: 8 }}>Removing photos from here needs Android 11 or newer. Delete them in your gallery app instead.</Text> : null}
               <Button mode="contained" icon="trash" disabled={!chosen.length || busy || !canTrash} loading={busy} onPress={() => setAsking(true)} style={st.button}>Remove from this phone</Button>
             </View>
-            {done ? <Text variant="bodyMedium" style={st.hint}>Moved {done.n} ({gb(done.bytes)}) to the phone's trash. Android removes them for good after 30 days; until then you can restore them in your gallery app.</Text> : null}
+            {done ? <Text variant="bodyMedium" style={st.hint}>Moved {done.n} ({gb(done.bytes)}) to the phone's trash. Android permanently removes them after 30 days; until then you can restore them in your gallery app.</Text> : null}
             <View style={{ paddingHorizontal: 16 }}><Problem>{error}</Problem></View>
 
             <List.Subheader>Which ones</List.Subheader>

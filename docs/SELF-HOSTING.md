@@ -100,7 +100,7 @@ logins, and stores nothing readable, but keep it updated.
 2. Open the site. It shows **Set up Cipherfilm**: paste the token, enter your e-mail and a password.
    The e-mail is only a login name; **Cipherfilm never sends e-mail.**
 3. **Save the recovery key** shown next (copy, download or print) and tick the box.
-   The setup screen disappears for good once the first account exists.
+   The setup screen disappears once the first account exists.
 
 ## Inviting people
 

@@ -387,7 +387,7 @@ public enum Account {
     }
   }
 
-  /** Deletes the account and everything in it on the server, for good, after checking the password here first (a
+  /** Deletes the account and everything in it on the server, permanently, after checking the password here first (a
    *  typo shows before anything is sent). The server refuses for its only administrator. */
   public static func delete(api: API, me: Me, password: String) async throws {
     try Crypto.assertSaneKdf(me.kdf)

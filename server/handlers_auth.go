@@ -303,7 +303,7 @@ type deleteMeReq struct {
 	CurrentAuth string `json:"current_auth"`
 }
 
-// deleteMe deletes the signed-in account for good, with the same proof as a password change: its photos and videos,
+// deleteMe deletes the signed-in account permanently, with the same proof as a password change: its photos and videos,
 // albums, search index, people and every session (the other devices learn they were signed out on purpose and wipe
 // what they keep). The last active administrator can't: someone else must be made administrator first.
 func (a *App) deleteMe(w http.ResponseWriter, r *http.Request, u *user, s *session) {

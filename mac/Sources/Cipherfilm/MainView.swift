@@ -513,7 +513,7 @@ struct TrashView: View {
   var body: some View {
     VStack(spacing: 0) {
       HStack(alignment: .bottom) {
-        PageTitle(title: "Trash", subtitle: "Items are deleted for good \(model.retentionDays) days after they were moved here.")
+        PageTitle(title: "Trash", subtitle: "Items are permanently deleted \(model.retentionDays) days after they were moved here.")
         if !model.trash.isEmpty {
           Button("Restore All") { model.restore(model.trash.map(\.id)) }.buttonStyle(SecondaryButton())
           Button("Empty Trash…") { nav.confirmPurge = model.trash.map(\.id) }.buttonStyle(SecondaryButton(danger: true)).padding(.trailing, 28)

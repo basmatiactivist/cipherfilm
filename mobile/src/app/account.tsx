@@ -117,7 +117,7 @@ export default function Account() {
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="lock" color={t.colors.primary} /></View>} onPress={() => leave("lock")} style={st.item} />
         <List.Item title="Sign out" description="Ends the session and deletes what this phone keeps for your account"
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="logout" color={t.colors.primary} /></View>} onPress={() => setConfirmOut(true)} style={st.item} />
-        <List.Item title="Delete account" titleStyle={{ color: t.colors.error }} description="Deletes your account and all your photos from the server, for good"
+        <List.Item title="Delete account" titleStyle={{ color: t.colors.error }} description="Deletes your account and all your photos from the server"
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="trash" color={t.colors.error} /></View>} onPress={() => setDel("warn")} style={st.item} />
         <Divider />
         <Text variant="bodySmall" style={[st.block, { color: t.colors.onSurfaceVariant }]}>
@@ -151,7 +151,7 @@ export default function Account() {
         <Dialog visible={del === "warn"} onDismiss={closeDel}>
           <Dialog.Title>Delete your account?</Dialog.Title>
           <Dialog.Content>
-            <Text variant="bodyMedium">This deletes your account and all your photos, videos, albums, people and search data from {server.replace(/^https:\/\//, "")}, at once and for good. Nobody can bring them back, not even an administrator. Every device is signed out.</Text>
+            <Text variant="bodyMedium">This deletes your account and all your photos, videos, albums, people and search data from {server.replace(/^https:\/\//, "")}, at once. Nobody can bring them back, not even an administrator. Every device is signed out.</Text>
             <Text variant="bodyMedium" style={{ marginTop: 12 }}>Photos still on this phone stay on it. Save anything else you want to keep first.</Text>
           </Dialog.Content>
           <Dialog.Actions>
@@ -168,7 +168,7 @@ export default function Account() {
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={closeDel} disabled={delBusy}>Cancel</Button>
-            <Button textColor={t.colors.error} onPress={doDelete} loading={delBusy} disabled={delBusy || !delPw}>Delete for good</Button>
+            <Button textColor={t.colors.error} onPress={doDelete} loading={delBusy} disabled={delBusy || !delPw}>Delete account</Button>
           </Dialog.Actions>
         </Dialog>
       </Portal>

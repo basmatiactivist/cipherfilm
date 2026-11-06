@@ -68,7 +68,7 @@ address is declared as collected; photos, videos and location are exempt because
 <p>No ads, no analytics, no tracking, no crash reporting, no advertising ID, and no data shared with or sold to anyone. The apps contain no third-party SDK that sends data elsewhere.</p>
 
 <h3>How long data is kept, and how to delete it</h3>
-<p>Your data stays on your server until you delete it. Deleted items go to the trash and are removed for good after 30 days, or at once when you empty the trash. You can delete your account with all its photos, videos, albums and search data at any time: in the Android app under Account → Delete account, in the Mac app under Settings → General, in the web app, or by asking your server's administrator. Copies in the administrator's server backups are kept, encrypted, until the administrator's backup retention removes them. Details: <a href="/delete-account">Delete your Cipherfilm account</a>.</p>
+<p>Your data stays on your server until you delete it. Deleted items go to the trash and are permanently removed after 30 days, or at once when you empty the trash. You can delete your account with all its photos, videos, albums and search data at any time: in the Android app under Account → Delete account, in the Mac app under Settings → General, in the web app, or by asking your server's administrator. Copies in the administrator's server backups are kept, encrypted, until the administrator's backup retention removes them. Details: <a href="/delete-account">Delete your Cipherfilm account</a>.</p>
 <p>Signing out in the app deletes what the app keeps for your account on that phone. Uninstalling the app removes everything it stored on the phone.</p>
 
 <h3>Children</h3>

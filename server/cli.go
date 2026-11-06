@@ -39,7 +39,7 @@ func init() {
 		{"revoke-admin", "EMAIL", "make an administrator an ordinary user again (gets the default limit); one must remain", cliRole("user")},
 		{"disable-user", "EMAIL", "lock the account: it can't sign in, and all its devices are signed out; nothing is deleted", cliStatusTo("disabled")},
 		{"enable-user", "EMAIL", "allow a locked account to sign in again", cliStatusTo("active")},
-		{"delete-user", "EMAIL --yes", "delete the account with all its photos, albums and search data, for good", cliDeleteUser},
+		{"delete-user", "EMAIL --yes", "delete the account with all its photos, albums and search data, permanently", cliDeleteUser},
 		{"set-quota", "EMAIL GB", "set the storage limit: a number of GB, unlimited or default", cliSetQuota},
 		{"allow-explicit", "EMAIL", "allow explicit search for the account (docs/SEARCH.md)", cliExplicit(true)},
 		{"deny-explicit", "EMAIL", "turn explicit search off for the account", cliExplicit(false)},
@@ -289,7 +289,7 @@ func cliDeleteUser(a *App, out io.Writer, args []string) error {
 	var n int
 	a.db.QueryRow(`SELECT COUNT(*) FROM items WHERE user_id=?`, u.ID).Scan(&n)
 	if !hasFlag(args, "--yes") {
-		return fmt.Errorf("this deletes %s and its %d photos and videos for good, and nobody can bring them back.\nRun it again with --yes to do it", u.Email, n)
+		return fmt.Errorf("this deletes %s and its %d photos and videos permanently, and nobody can bring them back.\nRun it again with --yes to do it", u.Email, n)
 	}
 	ids := a.itemIDs(u.ID)
 	res, err := a.db.Exec(`DELETE FROM users WHERE id=? AND `+keepsAdmin, u.ID)
@@ -445,7 +445,7 @@ could also read the photos.
 What works:
   - The person signs in with "Forgot password" and their recovery key (24 words) and sets a new password.
   - Without a recovery key the photos can't be opened by anyone. To start over:
-      /app delete-user EMAIL --yes      (deletes the account and its photos for good)
+      /app delete-user EMAIL --yes      (deletes the account and its photos permanently)
       /app invite EMAIL                 (a new account for the same address)
   - To only stop someone from signing in: /app disable-user EMAIL, or /app sign-out EMAIL.
 `)

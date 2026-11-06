@@ -18,7 +18,7 @@ as "server console".
 | `revoke-admin EMAIL` | Makes an administrator an ordinary user again, with the default storage limit. One active administrator must remain. |
 | `disable-user EMAIL` | Locks the account: it can't sign in, and all its devices are signed out. Nothing is deleted. |
 | `enable-user EMAIL` | Lets a locked account sign in again. |
-| `delete-user EMAIL --yes` | Deletes the account with all its photos, albums and search data, for good. Without `--yes` it only says what it would delete. People can also delete their own account (Account › Delete account in the web, Android and Mac apps; `DELETE /api/me`). |
+| `delete-user EMAIL --yes` | Deletes the account with all its photos, albums and search data, permanently. Without `--yes` it only says what it would delete. People can also delete their own account (Account › Delete account in the web, Android and Mac apps; `DELETE /api/me`). |
 | `set-quota EMAIL GB` | Sets the storage limit, for example `50`, `1.5`, `unlimited` or `default`. |
 | `allow-explicit EMAIL` / `deny-explicit EMAIL` | Allows explicit search for the account, or turns it off (docs/SEARCH.md). |
 | `list-sessions [EMAIL]` | Signed-in devices, of everyone or of one account: device, when signed in, last active, which one indexes. |

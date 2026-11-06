@@ -598,7 +598,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
 
           {view.n === "trash" && (
             <>
-              <p class="small trashnote">Items in the trash are deleted for good after {retention} days. They still count toward your storage until then.</p>
+              <p class="small trashnote">Items in the trash are permanently deleted after {retention} days. They still count toward your storage until then.</p>
               {trash && trash.length > 0 && (
                 <div class="toolbar">
                   {confirmPurge === "all" ? (

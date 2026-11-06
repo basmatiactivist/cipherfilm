@@ -287,7 +287,7 @@ export async function signOut() {
   set({ phase: "signedOut", me: null, masterKey: null, biometric: false, notice: undefined });
 }
 
-/** Deletes the account and everything in it from the server, for good (Account › Delete account), after checking the
+/** Deletes the account and everything in it from the server, permanently (Account › Delete account), after checking the
  *  password here first. Then the phone forgets everything, as at sign-out. The server refuses for its only admin. */
 export async function deleteAccount(password: string) {
   const s = await getSodium();

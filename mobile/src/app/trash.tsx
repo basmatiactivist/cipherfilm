@@ -13,7 +13,7 @@ import { text } from "../tokens";
 
 const count = (n: number) => (n === 1 ? "1 item" : `${n} items`);
 
-/** The trash: tap photos to select them, then restore them or delete them for good. The server deletes them on its
+/** The trash: tap photos to select them, then restore them or delete them permanently. The server deletes them on its
  *  own after the retention time. */
 export default function Trash() {
   const t = useAppTheme();
@@ -53,7 +53,7 @@ export default function Trash() {
       run: async (ids) => {
         await inBatches("/api/trash/purge", ids);
         await load(); refreshAlbums();
-        return `Deleted ${count(ids.length)} for good.`;
+        return `Deleted ${count(ids.length)} permanently.`;
       },
     },
   ];
@@ -69,7 +69,7 @@ export default function Trash() {
           </Appbar.Header>
           {items?.length ? (
             <Text variant="bodyMedium" style={[st.note, { color: t.colors.onSurfaceVariant }]}>
-              Tap photos to restore them or delete them for good. Items are deleted automatically {days} days after they were moved here.
+              Tap photos to restore them or delete them permanently. Items are deleted automatically {days} days after they were moved here.
             </Text>
           ) : null}
         </View>

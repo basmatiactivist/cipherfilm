@@ -200,7 +200,7 @@ export async function changePassword(current: string, next: string): Promise<voi
   mem.me = { ...me, kdf: ch.new_kdf, wrapped_master_pw: ch.new_wrapped_master_pw };
 }
 
-/** Deletes the account for good, after checking the password here first (a typo shows before anything is sent), then
+/** Deletes the account permanently, after checking the password here first (a typo shows before anything is sent), then
  *  forgets everything this browser keeps. The server refuses for the only administrator. */
 export async function deleteAccount(password: string): Promise<void> {
   const s = await getSodium();

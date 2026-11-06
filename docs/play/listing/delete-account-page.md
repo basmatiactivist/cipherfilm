@@ -39,7 +39,7 @@ your data: no e-mail address, no photos, no videos, no usage data.
 
 1. Open your Cipherfilm server's address in a browser and sign in.
 2. Open **Account** (your avatar, top right) → **Delete account**.
-3. Enter your password, tick the confirmation and tap **Delete account for good**.
+3. Enter your password, tick the confirmation and tap **Delete account**.
 
 You don't need the Android app installed for this.
 
@@ -61,7 +61,7 @@ yourself, you are the administrator.
 
 ## What is deleted
 
-At once and for good, from that server:
+Immediately, from that server:
 - your account and the e-mail address you sign in with,
 - all your photos and videos, including the trash,
 - your albums, favourites, people and search data,
@@ -114,7 +114,7 @@ keine Nutzungsdaten.
 
 1. Öffnen Sie die Adresse Ihres Cipherfilm-Servers im Browser und melden Sie sich an.
 2. Öffnen Sie **Account** (Ihr Profilbild oben rechts) → **Delete account**.
-3. Geben Sie Ihr Passwort ein, setzen Sie das Häkchen und tippen Sie auf **Delete account for good**.
+3. Geben Sie Ihr Passwort ein, setzen Sie das Häkchen und tippen Sie auf **Delete account**.
 
 Dafür muss die Android-App nicht installiert sein.
 

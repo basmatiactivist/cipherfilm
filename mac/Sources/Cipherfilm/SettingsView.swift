@@ -93,7 +93,7 @@ struct GeneralSettings: View {
   }
 }
 
-/** Deletes the account and everything in it from the server, for good, after a warning and the password. */
+/** Deletes the account and everything in it from the server, permanently, after a warning and the password. */
 struct DeleteAccountSheet: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dismiss) private var dismiss
@@ -105,11 +105,11 @@ struct DeleteAccountSheet: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
       Text("Delete your account?").font(Typo.dialog)
-      Text("This deletes your account and all your photos, videos, albums, people and search data from \(model.serverName), at once and for good. Nobody can bring them back, not even an administrator. Every device is signed out and deletes what it keeps.")
+      Text("This deletes your account and all your photos, videos, albums, people and search data from \(model.serverName), at once. Nobody can bring them back, not even an administrator. Every device is signed out and deletes what it keeps.")
         .font(Typo.body).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
       Text("Exported copies on this Mac stay where they are.").font(Typo.caption).foregroundStyle(Ink.faint)
       SecureField("Your password", text: $password).textContentType(.password)
-      Toggle("I understand that my photos and videos are deleted for good", isOn: $sure).toggleStyle(.checkbox)
+      Toggle("I understand that my photos and videos are deleted permanently", isOn: $sure).toggleStyle(.checkbox)
       if let error { Text(error).font(Typo.caption).foregroundStyle(Ink.danger) }
       HStack {
         Spacer()

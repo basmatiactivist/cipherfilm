@@ -31,7 +31,7 @@ export interface Item {
   itemKey?: Uint8Array;
   /** Decryption or verification failed: never shown, the screen says so. */
   broken?: boolean;
-  /** in the trash: when it was moved there and when the server deletes it for good (seconds) */
+  /** in the trash: when it was moved there and when the server deletes it permanently (seconds) */
   trashed_at?: number;
   purge_at?: number;
   favorite?: boolean;
@@ -100,7 +100,7 @@ function giveThumbKeys(items: Item[]) {
   keys.fill(0);
 }
 
-/** The trash, newest first; the server deletes each item for good at its purge_at. */
+/** The trash, newest first; the server deletes each item permanently at its purge_at. */
 export async function loadTrash(): Promise<{ items: Item[]; retentionDays: number }> {
   const raw: any[] = [];
   let next = "", days = 30;

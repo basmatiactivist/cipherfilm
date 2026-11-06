@@ -85,7 +85,7 @@ export function RecoveryKey({ pending, onDone, title = "Save your recovery key",
         <a class="btn secondary" download="cipherfilm-recovery-key.txt" href={"data:text/plain;charset=utf-8," + encodeURIComponent(file)}>Download</a>
         <button class="btn secondary" onClick={() => window.print()}>Print</button>
       </div>
-      <p class="warning"><strong>If you lose both your password and this key, your photos are gone for good.</strong> Nobody can reset it for you, not even the administrator. We can't see your photos, so we can't recover them either.</p>
+      <p class="warning"><strong>If you lose both your password and this key, your photos can't be recovered.</strong> Nobody can reset it for you, not even the administrator. We can't see your photos, so we can't recover them either.</p>
       {replacing && <p class="small">Backups of this server made before today still open only with your previous password or recovery key. Keep the old key too until those backups are gone.</p>}
       <label class="check no-print"><input type="checkbox" checked={saved} onChange={(e) => setSaved((e.target as HTMLInputElement).checked)} /> I've saved my recovery key somewhere safe</label>
       {error && <ErrorLine text={`This key isn't active yet: ${error} Check the connection and press Continue again.`} />}
@@ -186,7 +186,7 @@ function ChangePassword() {
   );
 }
 
-/** Deletes the account and everything in it from this server, for good (Google Play's account deletion rule, too). */
+/** Deletes the account and everything in it from this server, permanently (Google Play's account deletion rule, too). */
 function DeleteAccount() {
   const [open, setOpen] = useState(false);
   const [cur, setCur] = useState("");
@@ -194,7 +194,7 @@ function DeleteAccount() {
   const { busy, error, run } = useAction();
   return (
     <Acc icon="trash" title="Delete account" sub="Remove your account and all your photos from this server">
-      <p class="warning">This deletes your account and <strong>all your photos, videos, albums, people and search data</strong> from this server, at once and for good. Nobody can bring them back, not even an administrator. Every device is signed out and deletes what it keeps.</p>
+      <p class="warning">This deletes your account and <strong>all your photos, videos, albums, people and search data</strong> from this server, at once. Nobody can bring them back, not even an administrator. Every device is signed out and deletes what it keeps.</p>
       <p>Download anything you want to keep first. Copies of the whole server that an administrator made (a server backup) follow their own schedule.</p>
       {mem.me!.user.role === "admin" && <p class="hint">If you are the only administrator, make someone else an administrator first.</p>}
       {!open ? (
@@ -205,10 +205,10 @@ function DeleteAccount() {
           run(async () => { await auth.deleteAccount(cur); window.dispatchEvent(new Event("cf-account-deleted")); });
         }}>
           <Field label="Your password" id="del-password" type="password" value={cur} onInput={setCur} autocomplete="current-password" autofocus />
-          <label class="check"><input type="checkbox" checked={sure} onChange={(e) => setSure((e.target as HTMLInputElement).checked)} /> I understand that my photos and videos are deleted for good</label>
+          <label class="check"><input type="checkbox" checked={sure} onChange={(e) => setSure((e.target as HTMLInputElement).checked)} /> I understand that my photos and videos are deleted permanently</label>
           <ErrorLine text={error} />
           <div class="row">
-            <button type="submit" class="btn danger" disabled={busy || !sure || !cur}>{busy ? "Deleting…" : "Delete account for good"}</button>
+            <button type="submit" class="btn danger" disabled={busy || !sure || !cur}>{busy ? "Deleting…" : "Delete account"}</button>
             <button type="button" class="btn secondary" onClick={() => { setOpen(false); setCur(""); setSure(false); }}>Cancel</button>
           </div>
         </form>

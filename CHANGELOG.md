@@ -20,6 +20,8 @@ A public demo login, and releases that survive a missing Mac runner.
   invite link.
 
 ### Changed
+- Search engines don't list a Cipherfilm server: every answer carries `X-Robots-Tag: noindex, nofollow, noarchive`,
+  the web app has a robots meta tag, and `/robots.txt` keeps crawlers out of the API.
 - Releases: "Re-run failed jobs" on a release run attaches what came later (the Mac app, when GitHub had no macOS
   runner) to the existing release instead of failing; Google Play isn't uploaded twice.
 

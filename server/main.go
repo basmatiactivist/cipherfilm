@@ -3,6 +3,7 @@ package main
 import (
 	"embed"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net"
@@ -45,6 +46,8 @@ func securityHeaders(next http.Handler) http.Handler {
 		h.Set("Cross-Origin-Resource-Policy", "same-origin")
 		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), interest-cohort=()")
 		h.Set("Strict-Transport-Security", "max-age=31536000")
+		// a private photo server: no search engine lists it, not even its sign-in page
+		h.Set("X-Robots-Tag", "noindex, nofollow, noarchive")
 		next.ServeHTTP(w, r)
 	})
 }
@@ -59,6 +62,12 @@ func (a *App) handler() http.Handler {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// crawlers may fetch the page itself, so they see its noindex (a page they may not fetch can still be listed by its
+	// address alone); the API they have no business with
+	root.HandleFunc("GET /robots.txt", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		io.WriteString(w, "User-agent: *\nDisallow: /api/\n")
+	})
 	root.Handle("/", newStatic(sub))
 	return bodyLimit(a.hostGuard(securityHeaders(root)))
 }

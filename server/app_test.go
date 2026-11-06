@@ -161,6 +161,18 @@ func TestHealthzAndHeaders(t *testing.T) {
 	if resp.Header.Get("X-Content-Type-Options") != "nosniff" {
 		t.Fatal("missing nosniff")
 	}
+	// never in a search engine
+	if resp.Header.Get("X-Robots-Tag") != "noindex, nofollow, noarchive" {
+		t.Fatalf("X-Robots-Tag: %q", resp.Header.Get("X-Robots-Tag"))
+	}
+	r2, err := e.srv.Client().Get(e.srv.URL + "/robots.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	robots, _ := io.ReadAll(r2.Body)
+	if r2.StatusCode != 200 || string(robots) != "User-agent: *\nDisallow: /api/\n" {
+		t.Fatalf("robots.txt: %d %q", r2.StatusCode, robots)
+	}
 }
 
 func TestSetupFlow(t *testing.T) {

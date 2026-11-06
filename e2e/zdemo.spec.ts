@@ -6,7 +6,7 @@ import { join } from "node:path";
 
 // The public demo login (DEMO_ACCOUNTS in compose.e2e.yaml): it can sign in and look, every change is refused.
 const ADMIN = "admin@example.org";
-const GRACE = "grace@example.org";
+const DEMO = "demo@example.org";
 const REFUSED = "This is the public demo: changes are turned off.";
 
 const png = readFileSync(join(__dirname, "fixtures/sample.png"));
@@ -31,7 +31,7 @@ test.describe.serial("public demo", () => {
     const a = await newPage(browser);
     await signIn(a.page, ADMIN, pw("admin"));
     await openMenuItem(a.page, "Admin");
-    await a.page.getByLabel("Their e-mail").fill(GRACE);
+    await a.page.getByLabel("Their e-mail").fill(DEMO);
     await a.page.getByRole("button", { name: "Create invite link" }).click();
     const link = await a.page.getByLabel("Invite link").inputValue();
     await a.ctx.close();
@@ -62,7 +62,7 @@ test.describe.serial("public demo", () => {
 
   test("the account page has no password, recovery, devices or delete", async ({ browser }) => {
     const { ctx, page } = await newPage(browser);
-    await signIn(page, GRACE, pw("grace"));
+    await signIn(page, DEMO, pw("grace"));
     await openMenuItem(page, "Account");
     await expect(page.getByText("Storage", { exact: true })).toBeVisible();
     for (const title of ["Change password", "Recovery key", "Devices", "Delete account"]) {

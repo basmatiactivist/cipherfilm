@@ -2,15 +2,13 @@ package main
 
 import (
 	"database/sql"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // Favorites, the search index and the people list. The phone computes the index itself (what is in a photo, where the
@@ -41,7 +39,7 @@ func (a *App) indexRoutes(m *http.ServeMux) {
 	m.HandleFunc("GET /api/me/blobs/{name}", a.auth(false, a.getUserBlob))
 	m.HandleFunc("PUT /api/me/blobs/{name}", a.auth(false, a.putUserBlob))
 	m.HandleFunc("DELETE /api/me/blobs/{name}", a.auth(false, a.deleteUserBlob))
-	// the open models the phone runs for search; public files, served so the phone needs no other site
+	// the open models the apps run for search: a redirect to Hugging Face, for apps that still ask here
 	m.HandleFunc("GET /api/models/{name}", a.auth(false, a.getModel))
 }
 
@@ -313,45 +311,38 @@ func (a *App) deleteUserBlob(w http.ResponseWriter, r *http.Request, u *user, s 
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
-// getModel serves a file from MODELS_DIR (the image ships them in /models) to signed-in people only, so the server
-// is not a free mirror for anyone who knows the URL. The app checks each file's SHA-256 against the value built into
-// it, so a changed file is never run.
+// The search models: one list (models.json) for the server and every app, each file pinned to a Hugging Face commit
+// and a SHA-256 (docs/MODELS.md). The apps download them from Hugging Face themselves and check the hash.
+//
+//go:embed models.json
+var modelsJSON []byte
+
+var modelURLs = func() map[string]string {
+	var list []struct{ Name, URL string }
+	if err := json.Unmarshal(modelsJSON, &list); err != nil {
+		panic("models.json: " + err.Error())
+	}
+	m := map[string]string{}
+	for _, x := range list {
+		if !modelNameRe.MatchString(x.Name) || !strings.HasPrefix(x.URL, "https://huggingface.co/") {
+			panic("models.json: " + x.Name)
+		}
+		m[x.Name] = x.URL
+	}
+	return m
+}()
+
+// getModel sends apps that still ask the server (2.1.x) to the file's pinned Hugging Face URL. Same rules as when
+// the server had the files: signed-in people only, the explicit model only for people allowed it, so the answer
+// doesn't tell anyone else it exists. The app checks the SHA-256 built into it, wherever the bytes came from.
 func (a *App) getModel(w http.ResponseWriter, r *http.Request, u *user, _ *session) {
 	name := r.PathValue("name")
-	if a.modelsDir == "" || !modelNameRe.MatchString(name) || strings.Contains(name, "..") {
-		fail(w, 404, "not found")
-		return
-	}
+	url, ok := modelURLs[name]
 	// the explicit-search model goes only to people the admin allowed it (off by default)
-	if strings.HasPrefix(name, "nsfw-") && !u.NSFW {
+	if !ok || (strings.HasPrefix(name, "nsfw-") && !u.NSFW) {
 		fail(w, 404, "not found")
 		return
 	}
-	f, err := os.Open(filepath.Join(a.modelsDir, name))
-	if err != nil {
-		fail(w, 404, "not found")
-		return
-	}
-	defer f.Close()
-	st, err := f.Stat()
-	if err != nil || st.IsDir() {
-		fail(w, 404, "not found")
-		return
-	}
-	// a large download on a slow connection: no fixed deadline (600 MB at 250 kB/s take 40 minutes, and a 30-minute
-	// one cut the explicit model off every time); instead each write may take up to two minutes
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Cache-Control", "private, max-age=86400") // not kept by shared caches: it needs a session
-	http.ServeContent(idleWriter{w, http.NewResponseController(w)}, r, "", st.ModTime(), f)
-}
-
-// idleWriter moves the write deadline forward before every write, so a download is cut off only when it stalls.
-type idleWriter struct {
-	http.ResponseWriter
-	rc *http.ResponseController
-}
-
-func (iw idleWriter) Write(p []byte) (int, error) {
-	iw.rc.SetWriteDeadline(time.Now().Add(2 * time.Minute))
-	return iw.ResponseWriter.Write(p)
+	w.Header().Set("Cache-Control", "private, no-store") // per person: the explicit model's permission can change
+	http.Redirect(w, r, url, http.StatusFound)
 }

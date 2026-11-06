@@ -34,7 +34,6 @@ const (
 type App struct {
 	db         *sql.DB
 	dataDir    string
-	modelsDir  string // MODELS_DIR: the search models the phone downloads; empty: none
 	secret     []byte // HMAC key for fake KDF params; persisted in data dir
 	trustProxy bool
 	proxies    []netip.Prefix  // TRUSTED_PROXIES: the peers whose X-Forwarded-For counts; empty: loopback and private
@@ -96,7 +95,6 @@ func newApp(dataDir string) (*App, error) {
 	dummy, _ := hashSecret(b64.EncodeToString(randBytes(32)))
 	a := &App{
 		db: db, dataDir: dataDir, secret: secret, dummyHash: dummy,
-		modelsDir:  os.Getenv("MODELS_DIR"),
 		trustProxy: os.Getenv("TRUST_PROXY") == "1",
 		proxies:    proxies,
 		hosts:      publicHosts(os.Getenv("PUBLIC_HOSTS")),

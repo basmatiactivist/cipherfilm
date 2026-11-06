@@ -5,6 +5,21 @@ All notable changes to Cipherfilm are listed here. The format follows
 [Semantic Versioning](https://semver.org/). The release workflow copies the section of the tagged
 version into the GitHub release notes, so a release cannot be published without an entry here.
 
+## [2.1.3] - 2026-11-06
+
+Automatic lock on Android, and the Google Play build is the Play build again.
+
+### Added
+- Android: Account › Lock automatically: immediately, after 1, 5 (default) or 15 minutes in the background. The key
+  now leaves memory when the time is up, not only when the app is opened again; the lock screen then waits for a tap
+  before asking for the fingerprint.
+- Android: Account › Lock when the screen turns off.
+
+### Fixed
+- Google Play: the bundles of 2.1.1 and 2.1.2 were built as the GitHub app and offered the explicit search model.
+  The release now builds the Play bundle as the Play build and checks it.
+- The test-account script for the local test server (mobile/dev) runs again.
+
 ## [2.1.2] - 2026-11-06
 
 The same app as 2.1.1, now uploaded to Google Play's internal testing track by the release itself.

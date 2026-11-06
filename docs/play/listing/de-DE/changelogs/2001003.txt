@@ -1,0 +1,4 @@
+• Automatisch sperren: wählen, wann Cipherfilm sich im Hintergrund sperrt (Account).
+• Optional: sperren, wenn der Bildschirm ausgeht.
+• Das Backup läuft weiter, während die App gesperrt ist.
+Benötigt Ihren eigenen Cipherfilm-Server: https://cipherfilm.app/de

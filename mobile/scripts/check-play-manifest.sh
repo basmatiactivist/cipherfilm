@@ -1,6 +1,7 @@
 #!/bin/sh
 # After a Play build (CF_STORE=play): the merged release manifest, as it goes into the bundle, must not hold what
-# Google Play's policies reject for this app (docs/play/REQUIREMENTS.md §4.4) and must keep what it needs.
+# Google Play's policies reject for this app (docs/play/REQUIREMENTS.md §4.4) and must keep what it needs; the bundle's
+# app config must say it is the Play build (src/store.ts: no explicit search).
 #   mobile/scripts/check-play-manifest.sh mobile/android/app
 set -eu
 app="${1:?usage: $0 ANDROID_APP_DIR}"
@@ -15,5 +16,9 @@ done
 printf '%s\n' "$flat" | grep '^<uses-permission' | grep 'READ_EXTERNAL_STORAGE"' | grep -q 'android:maxSdkVersion="32"' \
   || { echo "READ_EXTERNAL_STORAGE must be declared with maxSdkVersion 32" >&2; bad=1; }
 printf '%s\n' "$flat" | grep 'TransferService"' | grep -q 'android:foregroundServiceType="dataSync"' || { echo "TransferService must be a dataSync foreground service" >&2; bad=1; }
+aab="$app/build/outputs/bundle/release/app-release.aab"
+if [ -f "$aab" ]; then
+  unzip -p "$aab" base/assets/app.config | grep -q '"store":"play"' || { echo "the bundle's app config is not the Play build (extra.store)" >&2; bad=1; }
+fi
 [ $bad -eq 0 ] && echo "Play manifest: OK ($m)"
 exit $bad

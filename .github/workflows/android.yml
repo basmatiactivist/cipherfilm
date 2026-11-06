@@ -105,7 +105,8 @@ jobs:
           unset UPLOAD_KEYSTORE_B64 UPLOAD_KEYSTORE_PASSWORD KEYSTORE_B64 KEYSTORE_PASSWORD
           trap 'rm -f "$RUNNER_TEMP/play.p12"' EXIT
           cd mobile/android
-          CF_VERSION="${VERSION#v}" CF_KEYSTORE="$RUNNER_TEMP/play.p12" ./gradlew bundleRelease \
+          # CF_STORE=play here too: the build writes the app's config (extra.store) again, from app.config.js
+          CF_STORE=play CF_VERSION="${VERSION#v}" CF_KEYSTORE="$RUNNER_TEMP/play.p12" ./gradlew bundleRelease \
             -PreactNativeArchitectures=arm64-v8a --parallel --console=plain
           ../scripts/check-play-manifest.sh app
           cp app/build/outputs/bundle/release/app-release.aab "../../dist/cipherfilm-play-${VERSION#v}.aab"

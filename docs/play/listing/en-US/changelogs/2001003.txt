@@ -1,0 +1,4 @@
+• Lock automatically: choose when Cipherfilm locks itself in the background (Account).
+• Optional: lock when the screen turns off.
+• Backup keeps running while the app is locked.
+Needs your own Cipherfilm server: https://cipherfilm.app

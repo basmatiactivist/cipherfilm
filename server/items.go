@@ -262,7 +262,7 @@ func (a *App) createItem(w http.ResponseWriter, r *http.Request, u *user, s *ses
 	var open int
 	a.db.QueryRow(`SELECT COUNT(*) FROM items WHERE user_id=? AND state='uploading'`, u.ID).Scan(&open)
 	if open >= maxOpenUploads {
-		fail(w, 429, "too many unfinished uploads, finish or cancel some first")
+		fail(w, 429, "too many unfinished uploads; finish or cancel some first")
 		return
 	}
 	id := randID()
@@ -320,9 +320,9 @@ func (a *App) putSegment(w http.ResponseWriter, r *http.Request, u *user, s *ses
 		// nothing was written: a copy of this segment stored by an earlier attempt stays as it is, and so does its row
 		a.cleanupIfGone(it.ID)
 		if errors.Is(err, errBadSize) {
-			fail(w, 400, "segment has the wrong size")
+			fail(w, 400, "a part has the wrong size")
 		} else {
-			fail(w, 400, "upload failed")
+			fail(w, 400, "couldn't save the upload")
 		}
 		return
 	}
@@ -367,7 +367,7 @@ func (a *App) putAux(name string, max int64, col string) func(http.ResponseWrite
 			return
 		}
 		if it.State != "uploading" {
-			fail(w, 409, "already finalized")
+			fail(w, 409, "this upload is already finished")
 			return
 		}
 		// thumbnails and previews count toward the quota like everything else; reserve the full maximum (a
@@ -454,7 +454,7 @@ func (a *App) finalizeItem(w http.ResponseWriter, r *http.Request, u *user, s *s
 		return
 	}
 	if have != it.Count || !a.segmentsOnDisk(it) {
-		fail(w, 409, "not all parts have been uploaded yet")
+		fail(w, 409, "some parts are still missing")
 		return
 	}
 	// the encrypted metadata, the item's own overhead and the blocks its files take count toward the quota too, so
@@ -480,7 +480,7 @@ func (a *App) finalizeItem(w http.ResponseWriter, r *http.Request, u *user, s *s
 	defer release()
 	res, err := a.db.Exec(`UPDATE items SET state='ready', wrapped_item_key=?, meta_enc=?, stored_bytes=stored_bytes+? WHERE id=? AND user_id=? AND state='uploading'`, req.WrappedItemKey, req.MetaEnc, extra, it.ID, u.ID)
 	if rowsAffected(res, err) != 1 {
-		fail(w, 409, "already finalized")
+		fail(w, 409, "this upload is already finished")
 		return
 	}
 	writeJSON(w, 200, map[string]bool{"ok": true})

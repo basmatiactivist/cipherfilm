@@ -251,7 +251,7 @@ func (a *App) changePassword(w http.ResponseWriter, r *http.Request, u *user, s 
 		return
 	}
 	if !verifySecret(u.AuthHash, req.CurrentAuth) {
-		fail(w, 403, "current password is wrong")
+		fail(w, 403, "that password isn't right")
 		return
 	}
 	if req.NewKDF.validate() != nil || checkLen(req.NewAuth, 32) != nil || checkLen(req.NewWrappedMasterPW, wrappedLen) != nil {
@@ -277,7 +277,7 @@ func (a *App) changePassword(w http.ResponseWriter, r *http.Request, u *user, s 
 		return
 	}
 	if rowsAffected(res, err) != 1 {
-		fail(w, 409, "your password was just changed on another device; sign in again with the new one")
+		fail(w, 409, "your password was changed on another device; sign in with the new one")
 		return
 	}
 	// sign out every other session
@@ -325,7 +325,7 @@ func (a *App) deleteMe(w http.ResponseWriter, r *http.Request, u *user, s *sessi
 	defer a.adminMu.Unlock()
 	if cur, err := a.userByID(u.ID); err == nil && lastAdmin(a, cur) {
 		at.success()
-		fail(w, http.StatusConflict, "you are the only administrator: make someone else an administrator first, then delete your account")
+		fail(w, http.StatusConflict, "you're the only administrator; make someone else an administrator first")
 		return
 	}
 	tx, err := a.db.BeginTx(r.Context(), nil)
@@ -360,7 +360,7 @@ func (a *App) deleteMe(w http.ResponseWriter, r *http.Request, u *user, s *sessi
 		return
 	}
 	if rowsAffected(res, err) != 1 {
-		fail(w, 409, "your password or role was just changed; sign in again and try once more")
+		fail(w, 409, "your password or role changed; sign in again and retry")
 		return
 	}
 	if err := tx.Commit(); err != nil {
@@ -483,7 +483,7 @@ func (a *App) recoverStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !(good && err == nil && u.Status == "active") {
-		fail(w, 401, "e-mail or recovery key is wrong")
+		fail(w, 401, "wrong e-mail or recovery key")
 		return
 	}
 	at.success()
@@ -573,7 +573,7 @@ func (a *App) validInvite(token string) (id, email string, err error) {
 func (a *App) inviteInfo(w http.ResponseWriter, r *http.Request) {
 	_, email, err := a.validInvite(r.PathValue("token"))
 	if err != nil {
-		fail(w, 404, "this invite link is invalid or has expired")
+		fail(w, 404, "this invite link is invalid or expired")
 		return
 	}
 	writeJSON(w, 200, map[string]string{"email": email})
@@ -610,12 +610,12 @@ func (a *App) inviteAccept(w http.ResponseWriter, r *http.Request) {
 	var used, invQuota sql.NullInt64
 	if err := tx.QueryRow(`SELECT id,email,expires_at,used_at,quota_bytes FROM invites WHERE token_hash=?`, tokHash).Scan(&id, &email, &exp, &used, &invQuota); err != nil || used.Valid || a.now().Unix() > exp {
 		a.loginIP.fail(ip)
-		fail(w, 404, "this invite link is invalid or has expired")
+		fail(w, 404, "this invite link is invalid or expired")
 		return
 	}
 	res, err := tx.Exec(`UPDATE invites SET used_at=? WHERE id=? AND used_at IS NULL`, a.now().Unix(), id)
 	if rowsAffected(res, err) != 1 {
-		fail(w, 404, "this invite link is invalid or has expired")
+		fail(w, 404, "this invite link is invalid or expired")
 		return
 	}
 	uid, err := insertUser(r.Context(), tx, email, "user", inviteQuota(invQuota, defQuota), req, a.now())

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { router } from "expo-router";
 import { Appbar, Button, Dialog, FAB, Portal, Text } from "react-native-paper";
-import { loadSettings, saveSettings } from "../search/settings";
+import { claimOffer } from "../search/settings";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import N from "../../modules/cf-native/src/CfNativeModule";
 import { away } from "../autolock";
@@ -27,12 +27,15 @@ export default function Library() {
   const inset = useSafeAreaInsets();
   const { items, error, loading } = useLibrary();
   useEffect(() => { if (!items) refreshLibrary(); }, []);
-  // once: offer search, which is off until the person turns it on
+  // once: offer search, which is off until the person turns it on (claimOffer saves that it was asked, at once)
   const [offer, setOffer] = useState(false);
-  useEffect(() => { if (items?.length) loadSettings().then((s) => { if (!s.asked && !s.enabled) setOffer(true); }); }, [!!items?.length]);
-  const answer = async (yes: boolean) => {
+  useEffect(() => {
+    let live = true;
+    if (items?.length) claimOffer().then((yes) => { if (yes && live) setOffer(true); }, () => {});
+    return () => { live = false; };
+  }, [!!items?.length]);
+  const answer = (yes: boolean) => {
     setOffer(false);
-    await saveSettings({ asked: true });
     if (yes) router.push("/search-settings");
   };
   return (

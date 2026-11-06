@@ -34,25 +34,53 @@ const subs = new Set<() => void>();
 export const onSettingsChange = (f: () => void) => { subs.add(f); return () => { subs.delete(f); }; };
 
 let cached: SearchSettings | null = null;
+let reading: Promise<SearchSettings> | null = null;
+let writing: Promise<unknown> = Promise.resolve();
+let forgotten = 0; // counts sign-outs: a read still going then keeps nothing
 
-export async function loadSettings(): Promise<SearchSettings> {
-  if (cached) return cached;
-  try {
-    const f = FILE();
-    cached = f.exists ? { ...DEFAULTS, ...JSON.parse(await f.text()) } : { ...DEFAULTS };
-  } catch {
-    cached = { ...DEFAULTS };
-  }
-  return cached!;
+/** One read of the file at a time: two that overlapped could each set the cache, the later one with what was in the
+ *  file before a save that came in between ("asked" lost, the search question shown again). */
+export function loadSettings(): Promise<SearchSettings> {
+  if (cached) return Promise.resolve(cached);
+  const gen = forgotten;
+  reading ??= (async () => {
+    let v: SearchSettings;
+    try {
+      const f = FILE();
+      v = f.exists ? { ...DEFAULTS, ...JSON.parse(await f.text()) } : { ...DEFAULTS };
+    } catch {
+      v = { ...DEFAULTS };
+    }
+    if (gen === forgotten) cached ??= v;
+    return cached ?? v;
+  })().finally(() => { reading = null; });
+  return reading;
 }
 
-export async function saveSettings(patch: Partial<SearchSettings>): Promise<SearchSettings> {
-  const next = { ...(await loadSettings()), ...patch };
-  DIR().create({ intermediates: true, idempotent: true });
-  await FILE().write(JSON.stringify(next));
-  cached = next;
-  subs.forEach((f) => f());
-  return next;
+/** Saves one after the other, each on top of the last: two at once would otherwise lose one's change. */
+export function saveSettings(patch: Partial<SearchSettings>): Promise<SearchSettings> {
+  const done = writing.catch(() => {}).then(async () => {
+    const next = { ...(await loadSettings()), ...patch };
+    DIR().create({ intermediates: true, idempotent: true });
+    await FILE().write(JSON.stringify(next));
+    cached = next;
+    subs.forEach((f) => f());
+    return next;
+  });
+  writing = done;
+  return done;
+}
+
+let offered = false;
+/** Whether to ask "Search your photos?" now: true only for the first caller while search is off and the question
+ *  wasn't asked yet, and "asked" is saved right then, not with the answer. A library screen that checks again (its
+ *  effect running once more, or a second one mounted) while the question is open or just answered doesn't ask again. */
+export async function claimOffer(): Promise<boolean> {
+  const s = await loadSettings();
+  if (offered || s.asked || s.enabled) return false;
+  offered = true;
+  await saveSettings({ asked: true }).catch(() => { /* asked in this run anyway */ });
+  return true;
 }
 
 /** Pins the account's public key for the background indexer after checking it against the private key. */
@@ -69,6 +97,6 @@ export const settingsDir = DIR;
 /** Sign-out: the settings, the pinned key and what was indexed in the background go (the models stay). */
 export function forgetSettings() {
   try { const d = DIR(); if (d.exists) d.delete(); } catch { /* best effort */ }
-  cached = null;
+  cached = null; offered = false; forgotten++;
   subs.forEach((f) => f());
 }

@@ -1,0 +1,3 @@
+• Cipherfilm ohne eigenen Server ausprobieren: ein öffentlicher Demo-Zugang, nur lesend (siehe cipherfilm.app).
+• Kleine Korrekturen.
+Benötigt Ihren eigenen Cipherfilm-Server: https://cipherfilm.app/de

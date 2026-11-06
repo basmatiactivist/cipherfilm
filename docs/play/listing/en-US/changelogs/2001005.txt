@@ -1,0 +1,3 @@
+• Try Cipherfilm without a server: a public, read-only demo login (see cipherfilm.app).
+• Small fixes.
+Needs your own Cipherfilm server: https://cipherfilm.app

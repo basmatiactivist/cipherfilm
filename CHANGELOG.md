@@ -5,16 +5,22 @@ All notable changes to Cipherfilm are listed here. The format follows
 [Semantic Versioning](https://semver.org/). The release workflow copies the section of the tagged
 version into the GitHub release notes, so a release cannot be published without an entry here.
 
-## [Unreleased]
+## [2.1.5] - 2026-11-06
+
+A public demo login, and releases that survive a missing Mac runner.
 
 ### Added
-- `DEMO_ACCOUNTS`: read-only public demo logins. Such an account can sign in, look, download and search (its own
-  search index and people list are kept); uploads, edits, albums, account changes, recovery and admin actions get a
+- `DEMO_ACCOUNTS`: read-only public demo logins. Such an account can sign in, look, download and search (its devices
+  may add search index entries; it can't change people names or delete the index, and sees only its own device); uploads, edits, albums, account changes, recovery and admin actions get a
   403 ("This is the public demo: changes are turned off."). Every write route is closed to it unless listed, and a
   test walks every route. Web, Android and Mac say "Public demo · read-only · resets daily" and hide upload and
   account deletion; Android doesn't turn backup on for it and says why.
 - `deploy/demo`: how to run a demo server reset daily from a seed, and a script that makes the demo account from an
   invite link.
+
+### Changed
+- Releases: "Re-run failed jobs" on a release run attaches what came later (the Mac app, when GitHub had no macOS
+  runner) to the existing release instead of failing; Google Play isn't uploaded twice.
 
 ## [2.1.4] - 2026-11-06
 

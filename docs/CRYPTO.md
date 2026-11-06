@@ -1,6 +1,6 @@
 # CRYPTO.md (draft v1)
 
-All cryptography uses **libsodium (sumo build, WASM)** in the browser. No custom primitives; the only "construction" is composition of libsodium calls described here. The server uses `golang.org/x/crypto/argon2` only to hash the already-derived auth key.
+All cryptography uses **libsodium** (WASM in the browser: the standard build on the main thread, the sumo build with Argon2 only in the sign-in worker; native libsodium in the Android and Mac apps). No custom primitives; the only "construction" is composition of libsodium calls described here. The server uses `golang.org/x/crypto/argon2` only to hash the already-derived auth key.
 
 Notation: `||` concat; `KDF(key, ctx, id)` = `crypto_kdf_derive_from_key(32, id, ctx[8], key)`; `AEAD` = `crypto_aead_xchacha20poly1305_ietf` (random 24-byte nonce, prepended); `SS` = `crypto_secretstream_xchacha20poly1305`.
 
@@ -53,7 +53,10 @@ The item id inside the sealed plaintext binds the key to its item, as the AD doe
 Index entries (what the phone found in a photo) use the sealed format too, with the item id inside:
 `0x02 ‖ crypto_box_seal(item id (16 bytes) ‖ sodium_pad(JSON, 512), account public key)`. Readers open them with the
 account's private key and reject an entry whose id differs from the item's. The people list (names) is
-`seal(pad(JSON, 1024), kdf(master, "PEOPLEST", 0), "blob/people", user id)`. Details: docs/SEARCH.md.
+`seal(pad(JSON, 1024), kdf(master, "PEOPLEST", 0), "blob/people", user id)`. The Android app keeps the opened index
+between unlocks in its cache, encrypted with AEAD under `KDF(master, "IDXCOPY1", 1)` with
+`ad = "cipherfilm search index copy v1|" ‖ user id ‖ "|" ‖ model family`, and deletes it at sign-out. Details:
+docs/SEARCH.md.
 
 ## 4. File (item) format
 

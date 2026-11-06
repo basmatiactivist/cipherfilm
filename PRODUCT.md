@@ -4,11 +4,11 @@
 
 ## Platform
 
-web
+web (plus a native Android app and a native Mac app that share its design tokens; DESIGN.md)
 
 ## Stack
 
-Decided in PLAN.md: Go + SQLite server, Preact + TypeScript + Vite client, libsodium (WASM), plain CSS, self-hosted assets only (strict CSP, no CDNs or external fonts).
+Decided in PLAN.md: Go + SQLite server, Preact + TypeScript + Vite client, libsodium (WASM), plain CSS, self-hosted assets only (strict CSP, no CDNs or external fonts). Android: Expo / React Native with a Kotlin module (`mobile/`). Mac: Swift and SwiftUI (`mac/`).
 
 ## Users
 
@@ -24,20 +24,20 @@ Private by construction rather than by policy: the server never holds a key that
 
 ## Operating Context
 
-Reachable only over Tailscale (no public ports). Invite-only: the admin creates an invite link and hands it over manually. No email is ever sent. Originals (JPEG, PNG, WebP, HEIC, MP4/MOV) are stored unchanged. About 100 GB expected. UI language: English.
+Reachable over Tailscale (no public ports), behind the operator's own reverse proxy, or on a public domain with Caddy (docs/INSTALL.md). Invite-only: the admin creates an invite link and hands it over manually. No email is ever sent. Originals (JPEG, PNG, WebP, HEIC, MP4/MOV) are stored unchanged. About 100 GB expected. UI language: English.
 
 ## Capabilities and Constraints
 
-Setup and auth flows: one-time first-admin setup (token printed in container logs), invite acceptance, login, recovery with the recovery key, password change. Recovery key is shown once with copy, download and print and an "I've saved it" confirmation. Later: chunked upload, timeline by capture date, albums, lightbox, video, ZIP download, trash (30 days), admin user management.
+Setup and auth flows: one-time first-admin setup (token printed in container logs), invite acceptance, login, recovery with the recovery key, password change. Recovery key is shown once with copy, download and print and an "I've saved it" confirmation. Built since: chunked upload, timeline by capture date, albums, favorites, lightbox, video, ZIP download, trash (30 days), admin user management, devices, on-device search and people (computed by the Android and Mac apps), account self-deletion.
 Constraints: crypto APIs need a secure context; no inline scripts or third-party origins; no custom crypto; the UI must say plainly that lost password plus lost recovery key means lost data.
 
 ## Brand Commitments
 
-Name: "Cipherfilm" (placeholder the user chose to keep for now). Voice: calm and plain; friendly and direct, no jargon, serious and blunt only where data loss is possible.
+Name: "Cipherfilm". Voice: calm and plain; friendly and direct, no jargon, serious and blunt only where data loss is possible.
 
 ## Evidence on Hand
 
-None: no real photos, testimonials or brand assets. Do not fabricate any.
+The app icon and logo (design/icon/). No real photos or testimonials. Do not fabricate any.
 
 ## Product Principles
 

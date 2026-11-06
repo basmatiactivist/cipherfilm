@@ -41,7 +41,7 @@ Play build and must not appear anywhere.
 | 5 | `05-backup` | **Backup** screen with folders chosen, "Back up automatically" on, a run in progress (progress visible); optionally pull down the shade to show the upload notification | Automatic backup to your own server | Automatisches Backup auf Ihren Server |
 | 6 | `06-unlock` | **Unlock** screen with the system fingerprint prompt showing ("Unlock with fingerprint or face") | Unlock with your fingerprint | Mit Fingerabdruck entsperren |
 | 7 | `07-share` | Android **share sheet** from the Files/Gallery app with Cipherfilm as target, or Cipherfilm's **share** screen right after (items listed, Upload button) | Share from any app to upload | Aus jeder App teilen und hochladen |
-| 8 | `08-privacy` | **Account** screen: App lock, "Unlock with fingerprint or face", "Shake to lock and close", privacy policy link, About/version | No ads, no tracking, no account with us | Keine Werbung, kein Tracking, kein Konto bei uns |
+| 8 | `08-privacy` | **Account** screen: "Unlock with fingerprint or face", "Lock automatically", "Lock when the screen turns off", "Shake to lock and close", app and server version | No ads, no tracking, no account with us | Keine Werbung, kein Tracking, kein Konto bei uns |
 
 Optional replacement for 4 or 7: **Free up space** screen with the amount that can be freed:
 EN "Free up space, safely" / DE "Speicher freigeben, sicher".

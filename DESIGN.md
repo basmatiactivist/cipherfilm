@@ -296,7 +296,7 @@ Small, quiet corners: 6px controls (buttons, inputs, nav items, menu items), 8px
 
 ### Navigation
 - **Sidebar item:** 44px, 6px radius, muted semibold text and 22px icon; hover deep paper; current page uses Teal Wash fill with teal-ink text. Items: Timeline, Favorites, Albums, People (only when the Android or Mac app has indexed faces), Trash. Storage card at the bottom: bordered 8px card, lock icon with "Private to you", and a 5px teal meter.
-- **Top bar:** brand (mark plus serif name), search by file name, Upload, avatar button (40px circle, teal ring on hover or open) opening a 280px menu with Account, Admin (admins), Sign out.
+- **Top bar:** brand (mark plus serif name), search (names, dates, cameras, albums, people, and what is in a photo once the Android or Mac app has indexed it), Upload, avatar button (40px circle, teal ring on hover or open) opening a 280px menu with Account, Admin (admins), Lock, Keyboard shortcuts, Sign out.
 - **Phones:** the sidebar becomes a bottom tab bar with the same current-state treatment.
 - **Admin:** own sidebar items Users, Defaults, Server, Activity.
 

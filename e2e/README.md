@@ -3,7 +3,9 @@
 `make e2e` starts a throwaway stack from `compose.e2e.yaml` (the app image behind Caddy with a locally issued HTTPS
 certificate, plus Playwright), runs the whole suite, then checks that no plaintext reached the server's disk. It needs
 only Docker, never touches the dev stack and is the same command GitHub CI runs on every push. `make e2e-down` removes
-it. `make bench` runs the upload benchmark on that stack afterwards (`BROWSER=firefox` or `webkit` to switch engines).
+it. `make bench` runs the upload benchmark on that stack afterwards (`BROWSER=firefox` or `webkit` to switch engines),
+`make loadbench` the first-thumbnails and lightbox-paging benchmark, and `make migration-test` moves the stack to a
+second one with the backup and restore scripts (docs/MIGRATION.md); CI runs that one too.
 
 The suite creates its own accounts. **Their passwords are random per checkout** and are kept in
 `e2e/.e2e-passwords.json` (created on the first run, git-ignored); `creds.ts` hands them to the specs. Nothing in the
@@ -12,6 +14,7 @@ repository is a usable credential.
 | Account | What it holds after a full run |
 |---|---|
 | `admin@example.org` | The admin area; an empty library |
+| `bob@example.org` | An empty library; used for sign-in, password change, devices and recovery |
 | `carol@example.org` | JPEG, HEIC and a video placeholder |
 | `dave@example.org` | Photos, albums and 400 deliberately unreadable test items |
 | `erin@example.org` | A playable WebM, a broken video, long and emoji file names |

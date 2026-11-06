@@ -1,6 +1,6 @@
 # PLAN: private end-to-end encrypted photo gallery
 
-Status: **historical planning document** from before the build; the implemented system is described in the README, docs/CRYPTO.md and docs/THREAT_MODEL.md and may differ in details.
+Status: **historical planning document** from before the build (milestones M1 to M8 are done; the current release is listed in CHANGELOG.md). The implemented system is described in the README, docs/SELF-HOSTING.md, docs/CRYPTO.md and docs/THREAT_MODEL.md and differs in details, for example in the Android and Mac apps, on-device search, Caddy and own-proxy deployments, and sessions that last 30 days from their last use.
 Companion docs: [docs/CRYPTO.md](docs/CRYPTO.md), [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
 
 ## 1. Stack and reasons

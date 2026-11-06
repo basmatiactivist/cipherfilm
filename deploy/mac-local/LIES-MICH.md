@@ -9,7 +9,7 @@ Alles, was du hochlädst, wird im Browser verschlüsselt. Der Server speichert n
 2. Setup-Token: steht in `SETUP-TOKEN.txt` in diesem Ordner (nur für dich lesbar). Falls die Datei veraltet ist: `./fotocrypt.sh token`.
 3. Gib Token, deine E-Mail-Adresse und ein Passwort ein (mindestens 10 Zeichen).
 4. **Schreibe die 24 Wörter des Recovery-Keys auf** (Passwortmanager oder Papier). Sie werden nur einmal gezeigt. Ohne Passwort UND Recovery-Key sind die Fotos unwiederbringlich weg, auch für mich.
-5. Danach ist das Token wertlos. Weitere Personen lädst du im Admin-Bereich ein (Avatar oben rechts, Admin, Invite).
+5. Danach ist das Token wertlos. Weitere Personen lädst du im Admin-Bereich ein (Avatar oben rechts, Admin, Users, "Invite someone").
 
 ## Alltag
 
@@ -21,7 +21,7 @@ Alles, was du hochlädst, wird im Browser verschlüsselt. Der Server speichert n
 | `./fotocrypt.sh backup` | Sicherung nach `backups/` (Datenbank plus verschlüsselte Dateien) |
 | `./fotocrypt.sh restore backups/<datei>.tar --yes` | Sicherung zurückspielen (ersetzt alle Daten, die alten bleiben in `data.vorher-...`) |
 | `./fotocrypt.sh list` / `export [ziel]` | Konten ansehen / Originale direkt aus `data/` holen (siehe unten) |
-| `./fotocrypt.sh update` | neueste Version aus `~/Desktop/Crypt` bauen und neu starten (macht vorher eine Sicherung) |
+| `./fotocrypt.sh update [quellordner]` | neueste Version aus dem Quellcode bauen (Standard: `~/Desktop/Crypt`) und neu starten (macht vorher eine Sicherung) |
 
 Die Instanz startet nach einem Neustart von OrbStack von selbst (`restart: unless-stopped`). OrbStack muss laufen.
 
@@ -54,7 +54,7 @@ Beim ersten Start blockiert macOS die Datei eventuell: `xattr -d com.apple.quara
 
 ## Gut zu wissen
 
-- Erreichbar nur von diesem Mac. Für Zugriff vom Handy brauchst du Tailscale oder einen eigenen Proxy (siehe README im Projekt `~/Desktop/Crypt`, Abschnitt "Choose how to deploy").
+- Erreichbar nur von diesem Mac. Für Zugriff vom Handy brauchst du Tailscale oder einen eigenen Proxy (siehe `docs/SELF-HOSTING.md` im Projekt, Abschnitt "Choose how to deploy"). Das gilt auch für die Android-App.
 - Die Entwicklungsinstanz `https://cipherfilm.orb.local` ist getrennt und hat andere Daten. Lösche sie nicht aus Versehen mit `make reset` im Projektordner: das betrifft nur sie, nicht fotocrypt.
 - Wer Zugriff auf diesen Ordner und dein Passwort hat, kommt an die Fotos. Wer nur den Ordner hat, nicht.
 

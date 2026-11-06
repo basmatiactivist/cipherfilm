@@ -2,6 +2,18 @@
 
 Researched 2026-11-05 against the official Play Console Help, Play policy and Android Developers pages linked in each section. Play rules change often, so check every date-bound item again in Play Console before submitting.
 
+**Status (2.1.3, 2026-11-06):** the app is in Play Console and in a **closed test** (track `alpha`, testers join
+through the Google Group `cipherfilm-testers`, then https://play.google.com/apps/testing/app.cipherfilm). Every
+release uploads the Play bundle to internal testing and the closed test by itself; production is the hand-started
+"Google Play promote" workflow (docs/RELEASING.md, "Google Play from CI"). Done in the code since this checklist was
+written: the AAB build (`CF_STORE=play`, signed with the key Play takes for uploads), no battery-exemption permission
+and no explicit search in the Play build (checked by `mobile/scripts/check-play-manifest.sh`), `READ_EXTERNAL_STORAGE`
+up to Android 12, search indexing out of the foreground service, the prominent disclosure before the photo
+permission, limited photo access, account deletion (`DELETE /api/me`, Account › Delete account in every app), and
+the 16 KB page check of every build. Still open: the privacy-policy link inside the app, the production-access
+application after the closed test, and the items in §7 not marked done. The tables below keep the state they were
+researched in, with corrections where the code changed.
+
 App facts this checklist is written for (from `mobile/app.json`, `mobile/app.config.js`, `mobile/android/app/src/main/AndroidManifest.xml`, `mobile/modules/cf-native/android/src/main/AndroidManifest.xml`, the library manifests and `.github/workflows/android.yml`):
 
 | Item | Current value |
@@ -9,10 +21,10 @@ App facts this checklist is written for (from `mobile/app.json`, `mobile/app.con
 | Package | `app.cipherfilm` |
 | Expo / RN | Expo SDK 58, React Native 0.88.1 |
 | compileSdk / targetSdk / minSdk | 37 / **36** / 24 (from RN's `libs.versions.toml` via the Expo root-project plugin) |
-| NDK | 27.1.12297006; `expo.useLegacyPackaging=true` (native libs compressed in the package) |
+| NDK | CI installs r30 (30.0.16248370, pinned hash); `useLegacyPackaging=true` (native libs compressed in the package) |
 | Native libs | React Native/Hermes, `com.microsoft.onnxruntime:onnxruntime-android:1.31.1`, libsodium (via `Sodium.kt`), etc. |
 | ABIs | CI builds `arm64-v8a` only (`-PreactNativeArchitectures=arm64-v8a`) |
-| Build output | Signed **APK** (`assembleRelease`); there is no AAB build yet |
+| Build output | Signed **APK** (`assembleRelease`, GitHub releases) and the **AAB** for Play (`bundleRelease`, `CF_STORE=play`, `cipherfilm-play-X.Y.Z.aab`) |
 | versionCode | `major*1_000_000 + minor*1_000 + patch` |
 | Release cert SHA-256 | `87d9e9ab855b03e7d7d3152f5a76a4d8afb5d38efca3b9932ad93f1ba17c6712` |
 
@@ -25,16 +37,17 @@ Merged permissions (app plus libraries):
 | `READ_MEDIA_VISUAL_USER_SELECTED` | app.json | no (it's the partial-access path the policy wants) |
 | `ACCESS_MEDIA_LOCATION` | app.json | no form; disclose in the privacy policy |
 | `POST_NOTIFICATIONS` | app.json | no |
-| `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | app.json | **policy risk**, see §4.4 |
+| `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | app.json | **policy risk**, see §4.4; removed from the Play build |
 | `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC` (service `TransferService`, `foregroundServiceType="dataSync"`) | cf-native | **yes**: Foreground service declaration with video |
 | `WAKE_LOCK` | cf-native, WorkManager | no |
 | `RECEIVE_BOOT_COMPLETED` | expo-task-manager, WorkManager | no |
 | `USE_BIOMETRIC`, `USE_FINGERPRINT` | expo-local-authentication | no |
 | `VIBRATE` | app | no |
-| Removed: `READ_EXTERNAL_STORAGE`, `WRITE_EXTERNAL_STORAGE`, `RECORD_AUDIO`, `SYSTEM_ALERT_WINDOW`, ONNX Runtime telemetry provider | blockedPermissions / `tools:node="remove"` | n/a |
+| `READ_EXTERNAL_STORAGE` with `maxSdkVersion="32"` | `plugins/withStoragePermission.js` | no (Android 7–12 only) |
+| Removed: `WRITE_EXTERNAL_STORAGE`, `RECORD_AUDIO`, `SYSTEM_ALERT_WINDOW`, ONNX Runtime telemetry provider | blockedPermissions / `tools:node="remove"` | n/a |
 | Not present (good): location, `MANAGE_MEDIA`, `SCHEDULE_EXACT_ALARM`/`USE_EXACT_ALARM`, `USE_FULL_SCREEN_INTENT`, `com.google.android.gms.permission.AD_ID`, `QUERY_ALL_PACKAGES` | | |
 
-> **Check:** `READ_EXTERNAL_STORAGE` is removed completely, but minSdk is 24. On Android 7–12 the app then has no permission to read the photo library, so backup can't work there. Either restore it with `android:maxSdkVersion="32"` (this is what Immich and Ente do) or raise minSdk to 33. Play's photo policy applies only to `READ_MEDIA_*`, so `READ_EXTERNAL_STORAGE` with maxSdk 32 doesn't add another declaration.
+> **Done (2.1.0):** restored with `maxSdkVersion="32"`. Original note: `READ_EXTERNAL_STORAGE` was removed completely, but minSdk is 24. On Android 7–12 the app then has no permission to read the photo library, so backup can't work there. Either restore it with `android:maxSdkVersion="32"` (this is what Immich and Ente do) or raise minSdk to 33. Play's photo policy applies only to `READ_MEDIA_*`, so `READ_EXTERNAL_STORAGE` with maxSdk 32 doesn't add another declaration.
 
 ---
 
@@ -170,7 +183,7 @@ Sources: [FGS requirements](https://support.google.com/googleplay/android-develo
 
 Findings in the code:
 - `TransferService` (dataSync) is started by `keepRunning()` from three places: `src/upload.ts` (share-to-upload, which the user starts), `src/backup.ts` (backup runs, including **automatic** runs triggered by the WorkManager content-URI job in `NewMedia.kt`), and **`src/search/engine.ts` (on-device search indexing)**.
-- [ ] **Search indexing in a dataSync FGS is a mismatch.** It's local ML processing, not a data transfer. Either run indexing only while the app is visible or in a plain (non-foreground) WorkManager job, or declare the use case *Local processing: other* and show in the video that the user starts indexing ("Turn on search"). Otherwise reviewers may reject the FGS declaration.
+- [x] **Search indexing in a dataSync FGS is a mismatch** (fixed in 2.1.0: the service carries transfers only, model download included; indexing runs in plain WorkManager runs or while the app is open). It's local ML processing, not a data transfer. Either run indexing only while the app is visible or in a plain (non-foreground) WorkManager job, or declare the use case *Local processing: other* and show in the video that the user starts indexing ("Turn on search"). Otherwise reviewers may reject the FGS declaration.
 - [ ] Automatic background backup started without a user action is exactly what Google's backup use case excludes. Mitigation, the same pattern as Immich (WorkManager `SystemForegroundService` with `dataSync`): pick **"Network transfer: upload or download"**. Describe it as uploading photos *the user chose to back up*. Have the video show the user turning on backup for a folder, tapping "Back up now" and sharing a photo to Cipherfilm, with the notification and progress continuing after leaving the app. Consider using expedited WorkManager work (`setForeground` inside the worker) or user-initiated data transfer jobs ([UIDT](https://developer.android.com/develop/background-work/background-tasks/uidt), API 34+, `RUN_USER_INITIATED_JOBS`) for manual "Back up now" runs. UIDT is Google's recommended API for user-requested long transfers.
 - [ ] Draft declaration text: *"Cipherfilm uploads the user's photos and videos, end-to-end encrypted, to the user's own server when the user backs up or shares items to the app. Uploads of large videos take minutes to hours and must not be interrupted when the user leaves the app. If deferred, the backup stays incomplete and the user's new photos are not protected; partially uploaded files must restart."*
 - [ ] Record the video (unlisted YouTube or Drive link, 30–90 s): open the app → sign in to the demo server → turn on backup → tap Back up now → go to the home screen → show the "Backing up" notification with progress → completion. Add a second segment: share a photo from the Gallery to Cipherfilm.
@@ -178,7 +191,7 @@ Findings in the code:
 ### 4.4 `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`: high rejection risk
 Source: [Doze exemptions / Play policy note](https://developer.android.com/training/monitoring-device-state/doze-standby#exemption-cases)
 - *"Google Play policies prohibit apps from requesting direct exemption from Power Management features … unless the core function of the app is adversely affected."* The acceptable-use table covers messaging that can't use FCM, safety apps, task automation and peripheral companions. A backup app doesn't clearly qualify. Neither Immich nor Ente declares this permission.
-- [ ] **Remove the permission from the Play build.** `BackupNative.askBatteryExemption` already falls back to `Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS`, which needs **no permission**. Use only that path, with an explanation screen. Keep the direct dialog in the GitHub flavour if wanted, through a build-time switch in `app.config.js` (e.g. `CF_STORE=play`).
+- [x] **Remove the permission from the Play build** (done: `CF_STORE=play`). `BackupNative.askBatteryExemption` already falls back to `Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS`, which needs **no permission**. Use only that path, with an explanation screen. Keep the direct dialog in the GitHub flavour if wanted, through a build-time switch in `app.config.js` (e.g. `CF_STORE=play`).
 
 ### 4.5 Prominent disclosure and consent (User Data policy)
 - Required when data access may be unexpected, *"when the user is not engaging with your app"* (background photo access for auto-backup).
@@ -199,7 +212,7 @@ Source: [Data safety section](https://support.google.com/googleplay/android-deve
 | Personal info → **Email address** | Collected, **not shared**, required, purposes: **App functionality, Account management**. Not processed ephemerally. |
 | Photos and videos | **Not declared**: end-to-end encrypted, the server and developer can't read them (E2E exemption). Mention this in the privacy policy. |
 | Location (EXIF GPS) | Not declared: inside the E2E-encrypted metadata only. |
-| Device or other IDs | Not declared (the server stores only a UA-derived device label; no identifiers). Declare it if a device ID is ever added. |
+| Device or other IDs | Not declared (the server stores only a device label, the phone's model name such as "Pixel 8 (Android app)"; no identifiers). Declare it if a device ID is ever added. |
 | App activity / app info and performance / diagnostics | **None**: no analytics or crash SDK, ONNX telemetry removed. |
 | Shared with third parties | None |
 | Independent security review | No (unless one is done) |
@@ -213,8 +226,8 @@ Sources: [Account deletion requirements](https://support.google.com/googleplay/a
   - An **in-app** path to delete the account and its data (it may be a link to the web resource).
   - A **web URL** entered in Data safety, where users can request deletion without reinstalling the app. It must reference "Cipherfilm" (the app or developer name as shown on Play).
   - Deactivation or "freeze" doesn't count. Retained data must be disclosed.
-- Today the server only supports admin deletion (`DELETE /api/admin/users/{id}`, CLI `delete-user`) and blocks deleting yourself.
-- [ ] **Build:** `DELETE /api/me` (requires re-entering the password / `auth` proof; refuses for the last active admin), plus **Account → Delete account** in the mobile app and the web app. It deletes items, albums, index and blobs, then signs out every device.
+- When this was written the server only supported admin deletion (`DELETE /api/admin/users/{id}`, CLI `delete-user`).
+- [x] **Built (2.1.0):** `DELETE /api/me` (requires re-entering the password / `auth` proof; refuses for the last active admin), plus **Account → Delete account** in the mobile app and the web app. It deletes items, albums, index and blobs, then signs out every device.
 - [ ] **Web page** `https://<site>/delete-account`: "Cipherfilm accounts live on the server your administrator runs; the Cipherfilm developer holds no account data. To delete your account: in the app, Account → Delete account; or in Cipherfilm in the browser; or ask your server administrator (they can run `/app delete-user EMAIL --yes`). Deletion removes all photos, videos, albums and search data from that server immediately. Backups of the server made by its administrator (e.g. Kopia) follow the administrator's retention."
 
 ### 4.8 Sensitive content: optional explicit-content search model
@@ -222,7 +235,7 @@ Source: [Sexual content and profanity policy](https://support.google.com/googlep
 - The policy bans apps that *contain or promote* sexual content, and "undress / see-through" apps. A classifier that lets a user find their *own* photos isn't content, and the help page doesn't address it. The risk is a reviewer seeing an "explicit" toggle or label and judging it as promoting sexual content.
 - [ ] It's already off unless an admin allows it (`me.user.nsfw`), and the demo server must **not** allow it. Reviewers then never see it.
 - [ ] Neutral wording in the app: "Sensitive content detection: find or hide photos that may contain nudity" rather than "explicit search". No sample imagery, nothing in screenshots, listing or description.
-- [ ] Safest: a Play build flag that removes the explicit model choice entirely (the GitHub build keeps it). Decide before submitting.
+- [x] Safest: a Play build flag that removes the explicit model choice entirely (the GitHub build keeps it). Done: the Play build has no explicit search (`mobile/src/store.ts`).
 - [ ] Don't market it. If asked, the answer is: "on-device classifier over the user's own private library; no content is provided by the app."
 
 ### 4.9 Other App content items
@@ -260,7 +273,7 @@ Sources: [App access](https://support.google.com/googleplay/android-developer/an
   - search models available (standard only), **explicit model disabled**, small quota (e.g. 2 GB);
   - a nightly reset job (restore a snapshot) so reviewer uploads don't pile up, with monitoring and an uptime alert.
 - [ ] App access instructions (≤ 500 chars each field):
-  > Cipherfilm is a client for a self-hosted server. On the sign-in screen enter Server: `https://demo.<domain>` · Email: `reviewer@<domain>` · Password: `<…>`. No 2FA. After sign-in, grant photo access and tap "Back up" to see encrypted backup; the demo library already contains sample photos. Biometric unlock is optional (Account → App lock).
+  > Cipherfilm is a client for a self-hosted server. On the sign-in screen enter Server: `https://demo.<domain>` · Email: `reviewer@<domain>` · Password: `<…>`. No 2FA. After sign-in, grant photo access and tap "Back up" to see encrypted backup; the demo library already contains sample photos. Biometric unlock is optional (Account → Unlock with fingerprint or face).
 - [ ] Add the same values to the pre-launch report credentials if the sign-in fields have stable resource IDs.
 - [ ] The listing and description must make the server requirement obvious, with a link to `docs/INSTALL.md` on the website, to avoid a "minimum functionality / app doesn't work" rejection.
 
@@ -289,15 +302,15 @@ Sources: [App access](https://support.google.com/googleplay/android-developer/an
 2. Website on a privacy-protected domain with `/privacy` (§4.1), `/delete-account` (§4.7), support email and install guide.
 
 **Code**
-3. CI: an `bundleRelease` AAB job signed with a **new upload key**. Keep the GitHub APK signed with the existing release key.
+3. **Done.** CI: an `bundleRelease` AAB job signed with a **new upload key** (until Play accepts it, with the key Play registered at the first upload; `PLAY_UPLOAD_KEY`, docs/RELEASING.md). Keep the GitHub APK signed with the existing release key.
 4. Play App Signing: on the first upload, **provide the existing release key (PEPK export) as the app signing key** (option B), before any open or production release.
-5. A Play build flavour switch (`CF_STORE=play` in `app.config.js`) that drops `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` (uses the settings-screen fallback) and optionally removes the explicit-content model option.
-6. Restore `READ_EXTERNAL_STORAGE` with `maxSdkVersion=32`, or raise minSdk to 33 (Android 7–12 currently can't read the library).
-7. Move search indexing out of the dataSync FGS (plain WorkManager / foreground-only), or plan to declare it as *Local processing*.
-8. An in-app **prominent disclosure** screen before the media permission and before enabling auto-backup. Request notifications at backup opt-in.
-9. Make sure partial ("limited") photo access works and is explained.
-10. **Account deletion:** server `DELETE /api/me` with re-authentication, plus "Delete account" in the mobile Account screen and the web app. Add a privacy-policy link in the app (sign-in and Account screens).
-11. Verify 16 KB alignment of every `.so` (script plus 16 KB emulator). Fix the NDK/linker flags if any library is unaligned. Fix the pre-release versionCode mapping.
+5. **Done.** A Play build flavour switch (`CF_STORE=play` in `app.config.js`) that drops `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` (uses the settings-screen fallback) and removes the explicit-content model option.
+6. **Done.** Restore `READ_EXTERNAL_STORAGE` with `maxSdkVersion=32`, or raise minSdk to 33 (Android 7–12 currently can't read the library).
+7. **Done.** Move search indexing out of the dataSync FGS (plain WorkManager / foreground-only), or plan to declare it as *Local processing*.
+8. **Done.** An in-app **prominent disclosure** screen before the media permission and before enabling auto-backup. Request notifications at backup opt-in.
+9. **Done.** Make sure partial ("limited") photo access works and is explained.
+10. **Account deletion (done):** server `DELETE /api/me` with re-authentication, plus "Delete account" in the mobile Account screen and the web app. Still open: a privacy-policy link in the app (sign-in and Account screens).
+11. Verify 16 KB alignment of every `.so` (script plus 16 KB emulator; **done** in CI: `mobile/scripts/check-page-size.sh`). Fix the NDK/linker flags if any library is unaligned. Fix the pre-release versionCode mapping.
 12. Test the tablet/landscape layout (Android 16 ignores portrait lock on large screens), or add the temporary opt-out property.
 
 **Store assets and forms**

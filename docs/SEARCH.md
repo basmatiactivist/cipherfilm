@@ -1,4 +1,4 @@
-# Search and people (Android and Mac; people also on the web)
+# Search and people (computed by Android and Mac; used on the web too)
 
 The Mac app (docs/MAC.md) runs the same models with the same preprocessing and writes the same entries; it indexes
 the whole library in the background while it is unlocked. Entries from either device are used by the other.
@@ -14,7 +14,8 @@ list from the server.
 ## Models
 
 Open models, shipped in the server image (`/models`, see the Dockerfile) and downloaded by the phone from its own
-server once (about 250 MB, by default only on Wi-Fi). Each file is pinned to a commit and a SHA-256 in the Dockerfile,
+server once (about 250 MB, by default only on Wi-Fi). `GET /api/models/{name}` needs a signed-in session, like every
+other request for the library. Each file is pinned to a commit and a SHA-256 in the Dockerfile,
 and the app checks the same SHA-256 (`mobile/src/search/models.ts`) before it opens a file.
 
 | File | Model | What for | License |
@@ -139,9 +140,9 @@ session with `user.nsfw`; the apps send their session cookie):
 
 ## On the web
 
-The web client computes nothing: it reads the entries the Android and Mac apps stored. After unlocking it fetches them
-(`GET /api/index`, page by page, again at most once a minute), opens them with the account's private key in the
-browser and keeps only the faces (box, score, vector) in memory. They are grouped in a Web Worker with a port of the
+The web client never looks at a photo: it reads the entries the Android and Mac apps stored. After unlocking it fetches
+them (`GET /api/index`, page by page, again at most once a minute), opens them with the account's private key in the
+browser and keeps the image vectors and the faces (box, score, vector) in memory. They are grouped in a Web Worker with a port of the
 same algorithm (`web/src/people/faces.ts`, tested against the Mac's test case), so every device shows the same people.
 The people document is read and saved with the same version check and retry as the apps. Face pictures are cropped
 from the decrypted thumbnail or preview in the browser.
@@ -150,9 +151,14 @@ from the decrypted thumbnail or preview in the browser.
   someone already has joins the face, or its group, to them.
 - People: named people, then groups not named yet (from three photos); a person's page shows their photos, with
   Rename and Select all (as on an album's page) for the usual selection actions.
-- Without index entries the People item is not shown, and a photo's details say to turn on search in the Android
-  or Mac app. Searching by what is in a photo needs the text model and stays in the apps.
-- Everything (faces, groups, names, crops) is dropped at sign-out and when the tab is closed or reloaded.
+- **Search by what is in a photo:** the browser downloads the active model's text encoder and the tokenizer once from
+  its own server (`web/src/search/content.worker.ts`; ONNX Runtime Web in a worker, checked against the same SHA-256,
+  kept in the browser's cache), turns the words into a vector and ranks the stored image vectors, as the apps do.
+  Account › Search shows the model and, for people an admin allowed it, the "Explicit search" switch for the account.
+  Sign-out deletes the cached models.
+- Without index entries the People item is not shown, and a photo's details, an empty search and Account › Search say
+  to turn on search in the Android or Mac app.
+- Everything (vectors, faces, groups, names, crops) is dropped at sign-out and when the tab is closed or reloaded.
 
 ## What is stored, and how
 
@@ -162,6 +168,7 @@ from the decrypted thumbnail or preview in the browser.
 | People: names, anchor faces, taken-out faces, hidden | server, `user_blobs` "people" | XChaCha20-Poly1305 under `kdf(master, "PEOPLEST")`, AD `blob/people \0 user id`, padded to 1024 bytes |
 | Favorites | server, `items.favorite` | plain flag, like album membership |
 | The server's index entries (ciphertext) | phone cache | as on the server; removed at sign-out |
+| The opened index (vectors and faces), so search works seconds after unlocking | phone cache, `cf-ct/<user id>/index-<family>.bin` | XChaCha20-Poly1305 under `kdf(master, "IDXCOPY1", 1)`, bound to the account and model family; removed at sign-out |
 | Decrypted vectors | phone, native memory; web: faces only, browser memory | none; removed at every lock (web: at sign-out, reload or tab close) |
 
 Entries are sealed to the public key (like the background backup's item keys) so the phone can index in the
@@ -171,7 +178,8 @@ made-up entries, which could make a photo show up in a search where it doesn't b
 
 ## When it runs
 
-- **While the app is open and unlocked:** downloads the models if needed, fetches the entries other devices made,
+- **While the app is open and unlocked:** opens the encrypted copy of the index on the phone first (search works at
+  once), then downloads the models if needed, fetches the entries other devices made,
   then indexes every photo and video in the library that has none (from the decrypted preview, two at a time).
 - **In the background** (the backup's WorkManager task, about every 15 minutes when Android allows; by default only
   while charging): photos on the phone that are in the library but not indexed yet are indexed from the phone's

@@ -43,6 +43,10 @@ your data: no e-mail address, no photos, no videos, no usage data.
 
 You don't need the Android app installed for this.
 
+## Delete it in the Mac app
+
+Open **Settings** (⌘,) → **General** → **Delete Account…**, enter your password and confirm.
+
 ## If you can't sign in any more
 
 Ask your server's administrator to delete the account. They can do it in the web app under **Admin**, or on the
@@ -113,6 +117,10 @@ keine Nutzungsdaten.
 3. Geben Sie Ihr Passwort ein, setzen Sie das Häkchen und tippen Sie auf **Delete account for good**.
 
 Dafür muss die Android-App nicht installiert sein.
+
+## In der Mac-App löschen
+
+Öffnen Sie **Settings** (⌘,) → **General** → **Delete Account…**, geben Sie Ihr Passwort ein und bestätigen Sie.
 
 ## Wenn Sie sich nicht mehr anmelden können
 

@@ -49,9 +49,10 @@ The full description uses `<b>…</b>` for section headings, which Play renders.
 no superlatives, no other products or stores named. It says in the second paragraph that the app needs the user's
 own Cipherfilm server and links the install guide.
 
-Release notes for 2.1.0 (versionCode 2001000): `en-US/changelogs/2001000.txt` and `de-DE/changelogs/2001000.txt`
-(same text as `release_notes.txt`). Paste them into the release's "Release notes" box as
-`<en-US>…</en-US><de-DE>…</de-DE>`, or let fastlane `supply` pick them up from `changelogs/`.
+Release notes ("What's new") per version: `en-US/changelogs/<versionCode>.txt` and `de-DE/changelogs/<versionCode>.txt`
+(versionCode `major*1e6+minor*1e3+patch`, e.g. 2.1.3 → `2001003.txt`). The release workflow sends them to Play with
+each upload (`mobile/scripts/play-notes.sh`, docs/RELEASING.md "Google Play from CI"); nothing to paste by hand.
+`release_notes.txt` holds the 2.1.0 text of the first upload.
 
 ---
 
@@ -74,8 +75,8 @@ Release notes for 2.1.0 (versionCode 2001000): `en-US/changelogs/2001000.txt` an
 ### 4.1 Privacy policy
 
 - URL: `https://cipherfilm.app/privacy`
-- Before submitting, the page needs the app section in `privacy-policy-changes.md` (the current page covers only
-  the website). The app must also link it on the sign-in screen and under Account (REQUIREMENTS §4.1).
+- The page needs the app section in `privacy-policy-changes.md`. The app must also link it on the sign-in screen and
+  under Account (REQUIREMENTS §4.1); the app has no such link yet.
 
 ### 4.2 App access
 
@@ -188,7 +189,7 @@ declared. This matches REQUIREMENTS §4.6.
 | Web browsing history | No | No | |
 | App activity → App interactions, in-app search history, installed apps, other UGC, other actions | No | No | Search runs on the phone; the search index and people list are encrypted on the device before they are stored. The server keeps upload and sign-in times as part of operating the user's account on the user's own server; they are not sent to the developer. *Conservative fallback if a reviewer asks: "App interactions, App functionality".* |
 | App info and performance → Crash logs, Diagnostics, Other | No | No | No crash reporting or analytics SDK. ONNX Runtime telemetry is removed from the manifest. |
-| Device or other IDs | No | No | No advertising ID (`AD_ID` not in the manifest), no Android ID. The server stores only a readable device label derived from the user agent ("Android phone") so the user can sign out a device. |
+| Device or other IDs | No | No | No advertising ID (`AD_ID` not in the manifest), no Android ID. The server stores only a readable device label, the phone's model name ("Pixel 8 (Android app)"), so the user can sign out a device. |
 
 #### Security practices summary shown on the listing
 
@@ -242,8 +243,8 @@ Cipherfilm is a photo and video backup and gallery app. Its core feature is auto
 The picker only grants access to items the user selects each time. Automatic backup must detect and read new photos and videos in the background without user interaction (WorkManager content-URI trigger on MediaStore), read whole device folders the user chose to back up, and track which items are already backed up so that space can be freed. None of this works with one-time picker selections. Share-to-upload needs no media permission.
 ```
 
-Before submitting: the in-app prominent disclosure before the permission prompt (REQUIREMENTS §4.5) and the
-"limited access" path must be in the build under review.
+The in-app prominent disclosure before the permission prompt (REQUIREMENTS §4.5) and the "limited access" path are
+in the app since 2.1.0.
 
 ### 4.14 Foreground service permissions (`FOREGROUND_SERVICE_DATA_SYNC`)
 
@@ -269,12 +270,9 @@ User impact if deferred or interrupted:
 If the upload is deferred, the user's new photos and videos are not backed up and are not protected if the phone is lost. If it is interrupted, partly uploaded large videos must restart, which wastes the user's data and battery, and the user cannot free up space on the phone until the backup is complete.
 ```
 
-> Open point (REQUIREMENTS §4.3): `src/search/engine.ts` also starts this service for on-device search indexing.
-> That is local processing, not a transfer. If it is still in the Play build, add a second use case
-> **"Local processing: other"** with: *"After the user turns on search, Cipherfilm analyses the user's own photos
-> on the device to build an encrypted search index. It runs while the user waits for search to become available
-> and stops when indexing is done."* and show that step in the video. Better: move indexing out of the FGS before
-> submitting, then this point disappears.
+> Resolved in 2.1.0 (REQUIREMENTS §4.3): search indexing no longer runs in this service. Besides backup and
+> share-to-upload it carries only the download of the search model from the user's own server, which is a download
+> and fits the same use case.
 
 #### Demo video script (30–60 s, portrait screen recording, no audio needed)
 
@@ -290,7 +288,6 @@ not age-restricted, no ads. Add on-screen text (or the YouTube description) for 
 | 20–30 s | Press Home. Pull down the notification shade: the Cipherfilm "Backing up" notification with a progress bar, counting up. | "Upload continues in a foreground service while the app is in the background" |
 | 30–38 s | Wait (or cut) until the notification says the backup is done; the notification goes away / shows "Backup done". | "Service stops when the upload is done" |
 | 38–55 s | Open the Gallery (or Files) app, select a photo or video, tap **Share → Cipherfilm**, confirm the upload. Press Home and show the "Uploading" notification with progress, then "Upload done". | "User shares a video to Cipherfilm: same upload service" |
-| (55–60 s) | Only if search indexing still uses the FGS: Account → Search and people → turn on search; show the indexing notification. | "User turns on search: indexing on the device" |
 
 Do not show automatic backup starting by itself in the background: the chosen use case requires the user to start
 the transfer. Use the demo account only.
@@ -300,7 +297,7 @@ the transfer. Use the demo account only.
 | Item | Answer |
 |---|---|
 | Exact alarms, full-screen intent, background location, `MANAGE_MEDIA`, `QUERY_ALL_PACKAGES`, accessibility, VPN | Not used: no declaration appears. |
-| `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | Must be removed from the Play build (REQUIREMENTS §4.4). If it is still in the merged manifest, Play will flag it; do not submit with it. |
+| `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | Not in the Play build (`CF_STORE=play`; `mobile/scripts/check-play-manifest.sh` fails the build if it is in the merged manifest). REQUIREMENTS §4.4. |
 | Families policy | Not applicable (18+). |
 | EU Digital Services Act: trader status | Non-trader, if the account is not a business (free, no monetization); otherwise trader with the organization's public contact details (REQUIREMENTS §0). Owner decides. |
 

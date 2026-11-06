@@ -10,7 +10,8 @@ checked. How they are used is in docs/SEARCH.md.
 ## The files
 
 All files are shipped in the server image (`/models`, built in the `models` stage of the Dockerfile) and downloaded
-by each device from **your own server** (`GET /api/models/{name}`). Each one is pinned twice:
+by each device from **your own server** (`GET /api/models/{name}`, only with a signed-in session; the `nsfw-*` files
+only for people allowed explicit search). Each one is pinned twice:
 
 1. **In the Dockerfile**, to a fixed commit of its Hugging Face repository and a SHA-256 (`ADD --checksum`): the image
    build fails if a single byte differs, so a later change upstream can't slip in.

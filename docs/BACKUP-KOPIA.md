@@ -84,4 +84,4 @@ kopia restore <snapshot-id> restore-me
 - **Back into Cipherfilm:** pack it the way `backup.sh` does and restore that:
   `tar -cf cipherfilm-restore.tar -C restore-me backup blobs`, then `scripts/restore.sh cipherfilm-restore.tar --yes`.
 - **Straight to your photos, without the app:** `cipherfilm-decrypt --email you@example.org --out ~/Pictures/restored restore-me`
-  (see "Getting your photos back without the app" in the README).
+  (see [TOOLS.md](TOOLS.md#getting-your-photos-back-without-the-app)).

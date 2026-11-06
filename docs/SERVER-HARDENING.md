@@ -173,5 +173,5 @@ fail2ban-client status sshd
 
 Finally change the root password with `passwd`. You will only need it for the provider's web console.
 
-Next: install Docker from Docker's own Debian repository and continue with [MIGRATION.md](MIGRATION.md) or the
-README.
+Next: install Docker from Docker's own Debian repository and continue with [MIGRATION.md](MIGRATION.md) or
+[SELF-HOSTING.md](SELF-HOSTING.md).

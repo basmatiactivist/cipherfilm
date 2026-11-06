@@ -25,9 +25,11 @@ This is **not** an independent human audit and not a guarantee that no issues re
 added since round 2. Round 4 covered the whole repository again and found 8 records (1 medium, 6 low, 1 informational: quota
 accounting of the search index, two account or server mix-ups in the Android app, the activity log, recovery behind a shared address,
 sign-outs lost by a restore, paths in the decrypt tool, a stale rate-limit claim), plus 23 whose impact depends on the
-deployment or a platform fact; the server-side ones of those were hardened too. The Tailscale and Caddy overlays were never
-exercised on a real server.
+deployment or a platform fact; the server-side ones of those were hardened too. The Tailscale overlay runs on a real server; the Caddy
+overlay was never exercised on one.
 
 ## Supported versions
 
-Only the latest commit on the default branch.
+Only the latest release (and the default branch it is tagged from). Fixes ship as a new release; older releases
+get no backports. The server, the web app, the Android and the Mac app are released together with one version
+number; keep them on the same version where you can.

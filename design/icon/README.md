@@ -21,7 +21,7 @@ the website (kept in the website repository under `design/logo-concepts/`).
 
 Until 1.x the icon was variant D below ("padlock corner").
 
-## All explored variants (`variants/`, SVG plus 512, 48 and 16 px PNGs)
+## Variants explored for 1.x (not kept in this repository)
 
 Round 2, sealed print (photo-first, no encryption cue):
 - `a-sealed-print`: print with a teal seal on its bottom edge. Clean, but the dot did not
@@ -30,7 +30,7 @@ Round 2, sealed print (photo-first, no encryption cue):
 - `c-photo-corners`: album mounting corners. They read as a crop or full-screen glyph.
 
 Round 3, encryption cue:
-- `d-padlock-corner` (**chosen**): fastest "encrypted photos" read at every size.
+- `d-padlock-corner` (**the 1.x icon**): fastest "encrypted photos" read at every size.
 - `e-cipher-blocks`: half the landscape turns into teal blocks. At 48 px it reads as a
   bar chart or pixel art, not encryption.
 - `f-padlock-body`: the print is a padlock body with a teal shackle. It is a strong single
@@ -44,12 +44,10 @@ The envelope-and-seal direction from round 1 was dropped because it read as an e
 | Role | Hex |
 | --- | --- |
 | Tile / adaptive background (paper) | `#FAF7F2` |
-| Print lines, sun (ink) | `#1F2A33` |
-| Padlock (teal) | `#1F6F6B` |
-| Keyhole and gap (paper) | `#FAF7F2` |
+| Padlock with the photo (teal) | `#1F6F6B` |
 
-The monochrome layer is a single colour (`#000000`, tinted by the system). The gap and the
-keyhole are transparent cut-outs.
+The ridge and the sun are cut-outs, so the paper shows through. The monochrome layer is the same shape in a single
+colour (`#000000`, tinted by the system).
 
 ## Files
 
@@ -57,8 +55,8 @@ keyhole are transparent cut-outs.
 - `android-foreground.svg` / `-background.svg` / `-monochrome.svg` (108 dp) and their
   `*-432.png` renders. The mark is the 1024 artwork scaled into the 72 dp visible area
   and stays inside the 66 dp safe zone.
-- `favicon.svg`, `favicon-32.png`: a 24-grid redraw for 16 px. It has a simpler ridge, no
-  sun, a larger padlock and heavier strokes, on a paper tile so it holds on dark tabs.
+- `favicon.svg`, `favicon-32.png`: a 24-grid redraw for 16 px, with a thicker shackle and larger
+  cut-outs, on a paper tile so it holds on dark tabs.
 - `favicon-180.png`: apple-touch icon (`icon.svg` at 180 px).
 - `preview.png`: masks at 192 and 48 px on light and dark backgrounds, the favicon on
   tabs, and the themed (monochrome) icon.

@@ -65,10 +65,9 @@ cp .env.example .env
 In `.env`:
 
 1. Pick how people reach it with `COMPOSE_FILE` (Tailscale, your own reverse proxy, or Caddy with automatic HTTPS;
-   see the README, "Choose how to deploy") and fill in that option's settings.
-2. Use the released image instead of building: `CIPHERFILM_IMAGE=ghcr.io/basmatiactivist/cipherfilm:2`.
-   While the package on GitHub is private, sign in first with a token that may read packages:
-   `echo <token> | docker login ghcr.io -u <github-user> --password-stdin`.
+   see [SELF-HOSTING.md](SELF-HOSTING.md#choose-how-to-deploy)) and fill in that option's settings.
+2. Use the released image instead of building: `CIPHERFILM_IMAGE=ghcr.io/basmatiactivist/cipherfilm:2` (public, no
+   sign-in needed).
 
 Do **not** start the app yet: a fresh start creates a new, empty instance with its own secret. `restore.sh` sets
 everything up itself (an accidental first start is harmless, the restore replaces it).
@@ -98,7 +97,8 @@ users and items matches the old instance. You can repeat this check at any time 
 
 1. Open the new address, sign in, open a few photos and play a video.
 2. Admin, Server: the version and the data size match what you expect.
-3. Set up automatic backups on the new machine (README, "Backup and restore") and test one.
+3. Set up automatic backups on the new machine ([SELF-HOSTING.md](SELF-HOSTING.md), "Backup and restore", or
+   [BACKUP-KOPIA.md](BACKUP-KOPIA.md)) and test one.
 4. Only then stop the old instance: `./fotocrypt.sh stop`. Keep its `data/` folder and the backup for a while
    before you delete them. Until then you can go back at any time.
 

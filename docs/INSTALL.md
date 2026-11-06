@@ -12,8 +12,8 @@ shasum -a 256 -c SHA256SUMS --ignore-missing      # macOS and Linux
 built by the release workflow also carry a signed build provenance; with the GitHub CLI:
 `gh attestation verify cipherfilm-android-X.Y.Z.apk --repo basmatiactivist/cipherfilm`.
 
-You need a **server** first; the apps connect to it. None of the apps is in a store yet, so they are installed from
-the files below.
+You need a **server** first; the apps connect to it. The Android app is also in a closed test on Google Play (below);
+everything else is installed from the files below.
 
 ## Server (Docker)
 
@@ -33,7 +33,7 @@ Open `https://photos.example.com`, paste the token from the last line and create
 
 The image is `ghcr.io/basmatiactivist/cipherfilm`: `:2` (the default here) follows every 2.x release, `:X.Y.Z` pins
 one version (`CIPHERFILM_TAG=X.Y.Z` in `.env`). For private use without open ports (Tailscale) or behind a proxy you
-already run, use the full setup in the [README](../README.md#choose-how-to-deploy).
+already run, use the full setup in [SELF-HOSTING.md](SELF-HOSTING.md#choose-how-to-deploy).
 
 ## Web app
 
@@ -42,12 +42,17 @@ the way to use Cipherfilm on an iPhone or iPad; there is no iOS app yet.
 
 ## Android
 
-File: `cipherfilm-android-X.Y.Z.apk`, for Android 7 or newer on a 64-bit ARM phone (nearly every phone of the last
-years).
+For Android 7 or newer on a 64-bit ARM phone (nearly every phone of the last years). Three ways: the APK by hand,
+the APK through Obtainium (updates on their own), or the Google Play closed test.
+
+File: `cipherfilm-android-X.Y.Z.apk`.
 
 1. Open the latest release on the phone and download the APK.
 2. Open the downloaded file. Android asks whether your browser or file manager may install apps; allow it.
 3. Install, open Cipherfilm and enter your server's address.
+
+Account (in the app) shows the app's and the server's version, sets fingerprint unlock and when the app locks itself
+(immediately, or after 1, 5 or 15 minutes away; optionally also when the screen turns off), and has Delete account.
 
 **Updates:** download the APK of the newer release and install it over the app.
 
@@ -62,7 +67,22 @@ without an app store.
    on the phone.
 3. Tap **Install**. Obtainium checks for new releases and offers each update.
 
-Every release is signed with the same key. To check it, compare the certificate's SHA-256 (Obtainium shows it, or use
+### Google Play (closed test)
+
+The Play build is in a closed test for now. Join the testers' group
+[groups.google.com/g/cipherfilm-testers](https://groups.google.com/g/cipherfilm-testers) with your Google account,
+then open [play.google.com/apps/testing/app.cipherfilm](https://play.google.com/apps/testing/app.cipherfilm) on the
+phone (or in a browser signed in to the same account), tap **Become a tester** and install Cipherfilm from Play. Play
+then installs every update itself.
+
+The Play build is the same app with two differences Google Play requires: it has no explicit search (docs/SEARCH.md),
+and for battery optimisation it opens Android's list instead of asking directly. The APK from GitHub keeps both.
+Both are signed with the same key (Google Play signs with it too), so you can switch between the Play build and the
+APK without uninstalling: each installs as an update over the other.
+
+### Checking the signature
+
+Every APK release is signed with the same key. To check it, compare the certificate's SHA-256 (Obtainium shows it, or use
 [AppVerifier](https://github.com/soupslurpr/AppVerifier)) with
 `87:D9:E9:AB:85:5B:03:E7:D7:D3:15:2F:5A:76:A4:D8:AF:B5:D3:8E:FC:A3:B9:93:2A:D9:3F:1B:A1:7C:67:12`.
 
@@ -82,8 +102,8 @@ the app; use the web app there.
 
 | File | What for |
 | --- | --- |
-| `cipherfilm-upload-darwin-arm64` / `-amd64` | Uploads a big folder from a Mac, encrypted, from the command line ([README](../README.md#uploading-a-large-folder-from-a-mac)). |
-| `cipherfilm-decrypt-<os>-<arch>` | Restores your originals from the server's data folder or a backup, without the app ([README](../README.md#getting-your-photos-back-without-the-app)). macOS, Linux and Windows. |
+| `cipherfilm-upload-darwin-arm64` / `-amd64` | Uploads a big folder from a Mac, encrypted, from the command line ([TOOLS.md](TOOLS.md#uploading-a-large-folder-from-a-mac)). |
+| `cipherfilm-decrypt-<os>-<arch>` | Restores your originals from the server's data folder or a backup, without the app ([TOOLS.md](TOOLS.md#getting-your-photos-back-without-the-app)). macOS, Linux and Windows. |
 
 On macOS, a downloaded tool is blocked the first time like the app. Make it executable and allow it once:
 
@@ -94,4 +114,5 @@ xattr -d com.apple.quarantine cipherfilm-decrypt-darwin-arm64
 
 ## Coming later
 
-Signed versions in Google Play and the Mac App Store. This page will say so when they exist.
+The Android app in Google Play for everyone (after the closed test), and a Mac app signed and notarised by Apple.
+This page will say so when they exist.

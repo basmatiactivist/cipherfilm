@@ -5,11 +5,17 @@ Issues and pull requests are welcome. Please keep changes small and focused.
 ## Run the tests
 
 ```bash
-make test         # Go server tests, web type-check, build and unit tests, offline decrypt tool tests (needs Docker)
+make test         # design tokens check, Go server tests, web build and unit tests, decrypt tool and uploader tests (needs Docker)
 make e2e          # full browser suite in a throwaway Docker stack, then the plaintext leak check (see e2e/README.md)
+make migration-test   # after make e2e: backup, restore into a new stack, sign in, decrypt offline (docs/MIGRATION.md)
 ```
 
-CI runs all of these on every push and pull request, including the browser suite.
+The Android app (it shares `web/src/crypto`, so web's packages come first):
+`(cd web && npm ci) && cd mobile && npm ci && npx tsc --noEmit && npm test`; the APK is built in CI (`android.yml`). The
+Mac app: `mac/scripts/test.sh` (mac/README.md).
+
+CI runs all of these on every push and pull request, including the browser suite; the Mac app is built and tested
+when `mac/` changes.
 
 ## Ground rules
 

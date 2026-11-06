@@ -1,5 +1,8 @@
 # Claude Code prompt: private end-to-end encrypted photo gallery
 
+> **Historical:** the prompt the project was started from. It is kept for the record and no longer describes the
+> project; for what Cipherfilm is now, see the README and docs/.
+
 ## Step 0: do this yourself before pasting the prompt
 
 1. Create an empty project folder, run `git init` in it, and start Claude Code there.

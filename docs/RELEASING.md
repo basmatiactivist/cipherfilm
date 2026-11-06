@@ -37,8 +37,9 @@ The `Release` workflow then:
    tag still points at the commit that was built. On the public repository every attached file also gets a signed
    build provenance (`gh attestation verify <file> --repo <owner>/cipherfilm`): `SHA256SUMS` sits next to the files
    it covers, so it only catches a damaged download, while the attestation shows the file came from this workflow.
-6. uploads the Play bundle to Google Play's **internal testing** track and the closed test (not for pre-releases; see "Google Play from
-   CI" below). Production is a second, hand-started step.
+6. uploads the Play bundle to Google Play's **internal testing** track and promotes it to the closed test (track
+   `alpha`), not for pre-releases (see "Google Play from CI" below). Production is a second, hand-started step: the
+   **Google Play promote** workflow.
 
 GitHub's macOS arm64 runners are sometimes unavailable for a long time ("not acquired by Runner … capacity
 constraints"). The release then goes out without the Mac app. Build it locally from the tagged commit and attach it:
@@ -134,8 +135,8 @@ in Google Cloud (Keys) or remove the user in Play Console.
 
 ## Dependencies
 
-Dependabot opens one grouped pull request per area each week (Go server, decrypt tool, web, e2e, Dockerfile,
-compose files, GitHub Actions) and merges it itself once the full CI is green; major versions wait for a
+Dependabot opens one grouped pull request per area each week (Go server, decrypt tool, uploader, web, Android app
+and its native module's Gradle files, e2e, Mac app, Dockerfile, compose files, GitHub Actions) and merges it itself once the full CI is green; major versions wait for a
 person (and a grouped pull request that a refresh turns into a major update has its auto-merge turned off again). Two things it can't do alone:
 
 - **Playwright** is pinned twice and both must match: `@playwright/test` in `e2e/package.json` and the
@@ -146,8 +147,8 @@ person (and a grouped pull request that a refresh turns into a major update has 
 
 ## First publish
 
-The first image is created private by GitHub. To let others pull it, open the package
-(`github.com/<owner>?tab=packages`), then Package settings, and set the visibility to public.
+Done for `ghcr.io/basmatiactivist/cipherfilm`, which is public. For a fork: GitHub creates the first image private; open
+the package (`github.com/<owner>?tab=packages`), then Package settings, and set the visibility to public.
 
 ## Repository settings (public repository)
 
@@ -178,10 +179,11 @@ Settings that live on GitHub, not in the repository, set once the repository is 
   `ANDROID_KEYSTORE_PASSWORD` (the app signing key) and `ANDROID_UPLOAD_KEYSTORE_B64` and
   `ANDROID_UPLOAD_KEYSTORE_PASSWORD` (the Google Play upload key, alias `upload`) and `PLAY_SERVICE_ACCOUNT_JSON` (the
   service account that uploads to Google Play, "Google Play from CI" above) (environment secrets, not repository
-  secrets; delete any repository-level copies).
+  secrets; delete any repository-level copies), and the environment variable `PLAY_UPLOAD_KEY` (`upload` once Play
+  accepted the upload key; "Google Play" above).
   Deployment branches and tags: "Selected branches and tags" with only the tag rule `v*`. The Android build and the
   image push run in it, so the signing key is out of reach of a branch, a pull request or a hand-started run on
-  anything but a release tag. Needed before the next release: without it the Android build has no signing key.
+  anything but a release tag. Without it the Android build has no signing key.
 - **Security:** secret scanning with push protection, Dependabot alerts, private vulnerability reporting.
 - The container package's visibility (above).
 

@@ -1,4 +1,4 @@
-This is an Expo/React Native mobile application. Prioritize mobile-first patterns, performance, and cross-platform compatibility.
+This is Cipherfilm's Android app: Expo / React Native, with the native work (crypto via libsodium, uploads, backup, search with ONNX Runtime) in the Kotlin module `modules/cf-native`. There is no iOS build. It shares the web client's crypto code (`../web/src/crypto`), so install `web/`'s packages first. Prioritize mobile-first patterns and performance.
 
 ## Expo has changed — do not trust your training data
 
@@ -10,18 +10,18 @@ Expo ships breaking changes every SDK release. APIs you remember are likely rena
 
 ## Commands
 
-Use `bunx` instead of `npx` if the project uses bun (`bun.lock` present).
+The project uses npm (`package-lock.json`).
 
 ```bash
 npx expo install <package>  # ALWAYS use instead of npm/yarn/pnpm/bun add — resolves SDK-compatible versions
 npx expo start              # start the dev server
-npx expo lint               # lint
+npm test                    # unit tests (Vitest)
 npx tsc --noEmit            # typecheck
 npx expo-doctor             # diagnose dependency and config issues
 npx expo install --fix      # fix incompatible package versions
 ```
 
-Run lint and typecheck before declaring any task done.
+Run the typecheck and the unit tests (`npm test`, Vitest) before declaring any task done; CI runs both.
 
 ## Navigation & Routing
 
@@ -29,13 +29,12 @@ Run lint and typecheck before declaring any task done.
 - Import `Link`, `router`, and `useLocalSearchParams` from `expo-router`.
 - Docs: https://docs.expo.dev/router/introduction.md
 
-## Building with EAS
+## Building
 
-Use EAS to build, sign, and submit the app in the cloud (`eas build`, `eas submit`) and to ship over-the-air updates (`eas update`) — no local Xcode or Android Studio required. Run EAS CLI as `bunx eas-cli <command>` in Bun projects, or `npx eas-cli@latest <command>` otherwise; substitute that for bare `eas` in docs examples.
-Docs: https://docs.expo.dev/eas/index.md
+This project does not use EAS or over-the-air updates. Release builds are made by `.github/workflows/android.yml`: `npx expo prebuild --platform android`, then Gradle (`assembleRelease` for the GitHub APK, `bundleRelease` with `CF_STORE=play` for the Google Play bundle), signed by `plugins/withReleaseSigning` from `CF_KEYSTORE`. `app.config.js` sets the version from `CF_VERSION` and for `CF_STORE=play` drops the battery-exemption permission and explicit search. Locally: `npx expo run:android`, or `make play-aab VERSION=X.Y.Z` for the Play bundle (docs/RELEASING.md). Test against the throwaway server in `dev/` (`dev/compose.yaml`, `dev/account.mts`), never a real one.
 
 ## Rules
 
-- If `ios/` and `android/` directories do not exist, they are generated (Continuous Native Generation). Never create or edit them by hand — configure native behavior in `app.json` and config plugins.
-- Expo Go only includes its bundled native modules. After adding a library with native code, the app needs a development build: `npx expo run:ios|android` locally, or `eas build --profile development`.
+- The `android/` directory is generated (Continuous Native Generation) and git-ignored. Never create or edit it by hand — configure native behavior in `app.json`, `app.config.js` and the config plugins in `plugins/`.
+- Expo Go only includes its bundled native modules. After adding a library with native code, the app needs a development build: `npx expo run:android`.
 - Prefer recommended Expo modules over third-party libraries, and check your available skills before adding dependencies. Docs: https://docs.expo.dev/versions/latest/index.md

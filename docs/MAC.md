@@ -10,7 +10,9 @@ build notes: `mac/README.md`.
 - **Sign in and unlock** against your own server, like the web app. Which server (and which account) is always shown:
   on the sign-in and unlock screens, under the brand in the sidebar, and in the menu bar. The master key lives in
   memory only; after a restart the session stays and only the password (or Touch ID) is asked for again. **Lock**
-  (⌃⌘L, the toolbar, the menu bar) forgets the keys and everything decrypted.
+  (⌃⌘L, the toolbar, the menu bar) forgets the keys and everything decrypted. "Lock when this Mac sleeps or its screen
+  locks" (Settings › General, on by default) does the same on its own. Settings › General also shows the app's and the server's
+  version.
 - **Unlock with Touch ID** (Settings › General, off by default): a P-256 key in the Mac's Secure Enclave, usable only
   after a Touch ID check with the fingerprints enrolled at that moment, locks a copy of the master key (ECDH with a
   one-time key, HKDF-SHA256, ChaCha20-Poly1305 bound to the account). The key never leaves the chip; the account
@@ -71,7 +73,7 @@ What needs what:
 | Search indexing | the master key (it decrypts previews) | waits for unlock; files from watched folders are indexed from the file at upload |
 
 After a restart (or Open at Login) the library is locked until you unlock it once. There is deliberately no
-"remember the password" yet; see "Not yet" below.
+"remember the password"; with Touch ID unlock that is one touch.
 
 ## Export
 
@@ -139,7 +141,7 @@ insides of packages (such as a Photos library). A file that fails three times is
 ## Search on the Mac
 
 Off until turned on (the question after the first unlock, or Settings › Search & People). Then the Mac downloads the
-models from your server once (about 250 MB, checked against the same SHA-256 values as the phone), fetches the entries
+models from your server once (signed in; about 250 MB, checked against the same SHA-256 values as the phone), fetches the entries
 other devices made, and indexes every photo and video that has none, six at a time at low priority, also on battery
 (Settings › Search can limit it to power). Entries are sealed to the account's public key and stored on the
 server, so each photo is analysed once for all devices. The download has no overall time limit (a slow tailnet relay
@@ -209,6 +211,12 @@ hold nothing of anyone. Exported copies stay unless you choose otherwise (see ab
 The same happens when the server ends the session (signed out from another device in Account › Devices, or expired):
 the first request that gets 401 forgets the account here, and so does the next start if it happened while the app
 was closed. Exported copies stay.
+
+## Deleting the account
+
+Settings › General › Delete Account…: after the password the server deletes the account with all its photos, videos,
+albums, people and search data and signs out every device; this Mac then forgets everything it keeps for the account,
+as at sign-out. Exported copies stay. The only active administrator must make someone else an administrator first.
 
 ## Where things are
 

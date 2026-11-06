@@ -49,12 +49,14 @@ export function Field(props: React.ComponentProps<typeof TextInput> & { hint?: s
 
 /** A setting with a switch: the whole row toggles it, and a screen reader hears one switch with its title and state
  *  (not an unnamed switch next to a row that does nothing). */
-export function SwitchItem({ title, description, value, onValueChange, disabled, left }: {
+export function SwitchItem({ title, description, value, onValueChange, disabled, left, style }: {
   title: string; description?: string; value: boolean; onValueChange: (v: boolean) => void; disabled?: boolean;
   left?: React.ComponentProps<typeof List.Item>["left"];
+  /** the list's own item style, so a switch row lines up with the rows around it */
+  style?: React.ComponentProps<typeof List.Item>["style"];
 }) {
   return (
-    <List.Item title={title} description={description} titleNumberOfLines={2} descriptionNumberOfLines={3} left={left} disabled={disabled}
+    <List.Item title={title} description={description} titleNumberOfLines={2} descriptionNumberOfLines={3} left={left} disabled={disabled} style={style}
       onPress={disabled ? undefined : () => onValueChange(!value)} accessibilityRole="switch" accessibilityState={{ checked: value, disabled }}
       right={() => (
         <View importantForAccessibility="no-hide-descendants" style={{ justifyContent: "center" }}>

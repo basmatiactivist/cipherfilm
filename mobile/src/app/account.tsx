@@ -100,11 +100,11 @@ export default function Account() {
         <SwitchItem title="Unlock with fingerprint or face"
           description={bioOk || biometric ? "Your key stays in this phone's secure hardware" : "Set up a fingerprint or face unlock in Android's settings first"}
           left={() => <View style={st.icon}><Icon name="fingerprint" color={bioOk || biometric ? t.colors.primary : t.colors.onSurfaceDisabled} /></View>}
-          value={biometric} onValueChange={toggleBio} disabled={!bioOk && !biometric} />
+          value={biometric} onValueChange={toggleBio} disabled={!bioOk && !biometric} style={st.item} />
         <SwitchItem title="Shake to lock and close"
           description="Two strong shakes lock your library and close Cipherfilm, in case someone grabs the phone"
           left={() => <View style={st.icon}><Icon name="phone" color={t.colors.primary} /></View>}
-          value={shake} onValueChange={setShake} />
+          value={shake} onValueChange={setShake} style={st.item} />
         <List.Item title="Lock now" description="Your key leaves memory; unlock to see your photos again"
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="lock" color={t.colors.primary} /></View>} onPress={() => leave("lock")} style={st.item} />
         <List.Item title="Sign out" description="Ends the session and deletes what this phone keeps for your account"

@@ -210,7 +210,7 @@ jobs:
         env:
           CHECK_ARTIFACTS_ONLY_EXTRA: "1"
           CHECK_ARTIFACTS_EXTRA: '/Users/[A-Za-z0-9._-]+|/home/[A-Za-z0-9._-]+|[A-Z]:\\Users\\[A-Za-z0-9._-]+'
-          CHECK_ARTIFACTS_ALLOW: '^(/Users/runner|/home/runner|/Users/Shared|/home/linuxbrew)$'
+          CHECK_ARTIFACTS_ALLOW: '^(/Users/runner|/home/runner|/Users/Shared|/home/linuxbrew|/Users/cloudtest)$'  # cloudtest: Microsoft's build machine, inside the ONNX Runtime it ships
         run: scripts/check-artifacts.sh dist/*
       - name: Sign the build provenance of every attached file (GitHub only offers this for public repositories)
         if: ${{ !github.event.repository.private }}

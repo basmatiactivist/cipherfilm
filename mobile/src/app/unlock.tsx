@@ -16,7 +16,8 @@ export default function Unlock() {
   const asked = useRef(false);
   const done = () => router.replace(then === "share" ? "/share" : "/library");
   const bio = () => run(async () => { if (await unlockWithBiometric()) done(); });
-  // asks for the fingerprint at once, except right after "Lock now": then the phone may be in someone else's hand
+  // asks for the fingerprint at once, except after "Lock now" or an automatic lock: the lock screen then shows, and the
+  // phone may be in someone else's hand
   useEffect(() => { if (biometric && !byHand && !asked.current) { asked.current = true; bio(); } }, [biometric]);
   const go = () => run(async () => {
     Keyboard.dismiss();

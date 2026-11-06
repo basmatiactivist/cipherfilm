@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { AppState, ScrollView, StyleSheet, View } from "react-native";
 import { router } from "expo-router";
-import { Appbar, Button, Dialog, Divider, List, Portal, ProgressBar, Text } from "react-native-paper";
+import { Appbar, Button, Dialog, Divider, List, Portal, ProgressBar, RadioButton, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import N from "../../modules/cf-native/src/CfNativeModule";
 import { api } from "../api";
@@ -11,6 +11,7 @@ import { clearImages } from "../library";
 import { Icon } from "../icons";
 import { Field, Problem, SwitchItem, useAppTheme } from "../ui";
 import { setShake, useShake } from "../shake";
+import { CHOICES, setAutoLock, useAutoLock } from "../autolock";
 import { text } from "../tokens";
 
 const gb = (n: number) => (n < 1e9 ? `${Math.max(n > 0 ? 0.1 : 0, n / 1e6).toFixed(1)} MB` : `${(n / 1e9).toFixed(n < 1e10 ? 2 : 1)} GB`);
@@ -29,6 +30,8 @@ export default function Account() {
   const [delError, setDelError] = useState<string>();
   const [bioOk, setBioOk] = useState(() => biometricPossible());
   const shake = useShake();
+  const auto = useAutoLock();
+  const [pickLock, setPickLock] = useState(false);
   useEffect(() => {
     const sub = AppState.addEventListener("change", (s) => { if (s === "active") setBioOk(biometricPossible()); }); // back from Android settings
     return () => sub.remove();
@@ -101,6 +104,11 @@ export default function Account() {
           description={bioOk || biometric ? "Your key stays in this phone's secure hardware" : "Set up a fingerprint or face unlock in Android's settings first"}
           left={() => <View style={st.icon}><Icon name="fingerprint" color={bioOk || biometric ? t.colors.primary : t.colors.onSurfaceDisabled} /></View>}
           value={biometric} onValueChange={toggleBio} disabled={!bioOk && !biometric} style={st.item} />
+        <List.Item title="Lock automatically" description={CHOICES.find((c) => c.after === auto.after)?.label}
+          left={() => <View style={st.icon}><Icon name="lock" color={t.colors.primary} /></View>} onPress={() => setPickLock(true)} style={st.item} />
+        <SwitchItem title="Lock when the screen turns off"
+          left={() => <View style={st.icon}><Icon name="phone" color={t.colors.primary} /></View>}
+          value={auto.screenOff} onValueChange={(v) => setAutoLock({ screenOff: v })} style={st.item} />
         <SwitchItem title="Shake to lock and close"
           description="Two strong shakes lock your library and close Cipherfilm, in case someone grabs the phone"
           left={() => <View style={st.icon}><Icon name="phone" color={t.colors.primary} /></View>}
@@ -121,6 +129,15 @@ export default function Account() {
         <List.Item title="Server version" description={serverVersion ?? "Not reported by this server"} style={st.item} />
       </ScrollView>
       <Portal>
+        <Dialog visible={pickLock} onDismiss={() => setPickLock(false)}>
+          <Dialog.Title>Lock automatically</Dialog.Title>
+          <Dialog.Content>
+            <Text variant="bodyMedium" style={{ marginBottom: 8 }}>When Cipherfilm is in the background. Backup keeps running while locked.</Text>
+            <RadioButton.Group value={String(auto.after)} onValueChange={(v) => { setAutoLock({ after: Number(v) }); setPickLock(false); }}>
+              {CHOICES.map((c) => <RadioButton.Item key={c.after} label={c.label} value={String(c.after)} />)}
+            </RadioButton.Group>
+          </Dialog.Content>
+        </Dialog>
         <Dialog visible={confirmOut} onDismiss={() => setConfirmOut(false)}>
           <Dialog.Title>Sign out of this phone?</Dialog.Title>
           <Dialog.Content><Text variant="bodyMedium">Your photos stay in Cipherfilm. This phone deletes its copies of your library, the backup and search settings, and its saved key; the automatic backup stops. You'll need your password to sign in again.</Text></Dialog.Content>

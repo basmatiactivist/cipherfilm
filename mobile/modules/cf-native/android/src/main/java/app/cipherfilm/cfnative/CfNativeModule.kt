@@ -67,11 +67,12 @@ class CfNativeModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("CfNative")
 
-    Events("onModelProgress", "onShake")
+    Events("onModelProgress", "onShake", "onLockDue")
 
     OnCreate {
       protect(appContext.currentActivity)
       Shake.onShake = { sendEvent("onShake", emptyMap<String, Any>()) }
+      AutoLock.onDue = { why -> sendEvent("onLockDue", mapOf("why" to why)) }
     }
     OnActivityEntersForeground { protect(appContext.currentActivity); appContext.reactContext?.let { Shake.resume(it) } }
     OnActivityEntersBackground { CfVideoView.pauseAll(); Shake.pause() }
@@ -83,6 +84,11 @@ class CfNativeModule : Module() {
       appContext.currentActivity?.let { a -> a.runOnUiThread { a.finishAndRemoveTask() } }
       Unit
     }
+
+    // ---- automatic lock (AutoLock.kt) ----
+    Function("lockAfter") { ms: Double -> AutoLock.schedule(ms.toLong()) }
+    Function("lockCancel") { AutoLock.cancel() }
+    Function("watchScreen") { on: Boolean -> appContext.reactContext?.let { AutoLock.watchScreen(it, on) }; Unit }
 
     // ---- automatic backup (BackupNative.kt) ----
     Function("backupState") { BackupNative.state(appContext.reactContext!!) }

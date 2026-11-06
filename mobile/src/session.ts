@@ -25,7 +25,8 @@ export interface Me {
 type Phase = "starting" | "noServer" | "signedOut" | "locked" | "unlocked";
 interface State {
   phase: Phase; server: string; me: Me | null; masterKey: Uint8Array | null; biometric: boolean; notice?: string;
-  /** locked with "Lock now": the unlock screen then waits for a tap instead of asking for the fingerprint at once */
+  /** locked with "Lock now" or automatically: the unlock screen then waits for a tap instead of asking for the
+   *  fingerprint at once */
   byHand?: boolean;
 }
 

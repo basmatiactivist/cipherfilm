@@ -37,7 +37,7 @@ export const kindOf = (f: Pick<Shared, "mime" | "name">): "image" | "video" | "o
   f.mime.startsWith("video/") || /\.(mp4|mov|m4v|3gp|webm)$/i.test(f.name) ? "video"
     : f.mime.startsWith("image/") || /\.(jpe?g|png|webp|heic|heif|gif|dng)$/i.test(f.name) ? "image" : "other";
 
-/** Uploads in progress: the app doesn't lock itself while one runs (but once they are over, _layout.tsx). */
+/** Uploads in progress: the app doesn't lock itself while one runs (but once they are over, autolock.ts). */
 let running = 0;
 export const uploadsRunning = () => running;
 const idle = new Set<() => void>();

@@ -13,10 +13,14 @@ export interface Hit { id: string; score: number }
 export interface FaceGroup { person: string | null; faces: string[]; items: string[]; cover: { key: string; item: string; box: number[] } | null }
 export interface PhoneMedia { id: number; uri: string; name: string; size: number; mime: string; bucket: string; folder: string; taken: number }
 
-declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path: string; done: number; total: number }) => void; onShake: () => void }> {
+declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path: string; done: number; total: number }) => void; onShake: () => void; onLockDue: (e: { why: "timer" | "screen" }) => void }> {
   // shake to lock and close (Shake.kt)
   shakeWatch(on: boolean): void;
   closeApp(): void;
+  // automatic lock (AutoLock.kt): onLockDue after lockAfter(ms), and at screen off while watchScreen(true)
+  lockAfter(ms: number): void;
+  lockCancel(): void;
+  watchScreen(on: boolean): void;
   // libsodium, see android/.../Sodium.kt
   sodium_version_string(): string;
   randombytes_buf(n: number): Bytes;

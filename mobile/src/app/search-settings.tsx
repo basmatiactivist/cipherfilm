@@ -139,8 +139,14 @@ export default function SearchSettingsScreen() {
           {!s.enabled ? (
             <Text variant="bodySmall" style={{ marginTop: 8, color: t.colors.onSurfaceVariant }}>
               {allowed
-                ? `Needs a one-time download from your Cipherfilm server: standard search ${need("mobileclip-s2")}, explicit search ${need("laion-b32")}. You choose when you turn it on.`
-                : size ? `Needs a one-time download of ${mb(size)} from your Cipherfilm server.` : "The models are already on this phone."}
+                ? `Needs a one-time download: standard search ${need("mobileclip-s2")}, explicit search ${need("laion-b32")}. You choose when you turn it on.`
+                : size ? `Needs a one-time download of ${mb(size)}.` : "The models are already on this phone."}
+            </Text>
+          ) : null}
+          {/* where the models come from, said before anything is downloaded (docs/MODELS.md) */}
+          {(!s.enabled && (size || allowed)) || p.phase === "waitWifi" ? (
+            <Text variant="bodySmall" style={{ marginTop: 8, color: t.colors.onSurfaceVariant }}>
+              Downloaded once from Hugging Face, where these open models are published. Hugging Face sees this phone's IP address, nothing about your photos.
             </Text>
           ) : null}
         </View>
@@ -177,7 +183,7 @@ export default function SearchSettingsScreen() {
 
         <Divider style={{ marginTop: 8 }} />
         <Text variant="bodySmall" style={[st.hint, { color: t.colors.onSurfaceVariant, marginTop: 12 }]}>
-          Everything runs on this phone, with open models from your own server (MobileCLIP for what is in a photo, YuNet and SFace for faces). The results are encrypted before they are stored, so your other devices don't have to redo them; the server never learns what your photos show or who is in them. Photos that are only on the server are indexed while the app is open and unlocked.
+          Everything runs on this phone, with open models (MobileCLIP for what is in a photo, YuNet and SFace for faces). The results are encrypted before they are stored, so your other devices don't have to redo them; the server never learns what your photos show or who is in them. Photos that are only on the server are indexed while the app is open and unlocked.
         </Text>
       </ScrollView>
       <Portal>

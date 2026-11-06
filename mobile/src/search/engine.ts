@@ -15,7 +15,7 @@ import { accountKeyPair, type KeyPair } from "@crypto/item";
 import { normEmail } from "@crypto/account";
 import { decryptPeople, openIndexEntry, sealIndexEntry, type IndexEntry } from "@crypto/search";
 import N, { type Analysis, type Hit } from "../../modules/cf-native/src/CfNativeModule";
-import { api, ApiError, server } from "../api";
+import { api, ApiError } from "../api";
 import { onWipe, refreshMe, session, type Me } from "../session";
 import { imageBytes, type Item } from "../library";
 import { fingerprint } from "../prints";
@@ -242,7 +242,7 @@ export async function startSearch(library: Item[]) {
       if (st.wifiOnly && !N.backupState().unmetered) { set({ phase: "waitWifi", done: 0, total: downloadSize(st.faces, clip, indexes), message: undefined }); return; }
       set({ phase: "download", done: 0, total: 1, message: undefined });
       hold("Downloading the search model", "");
-      await downloadModels(server(), st.faces, clip, (done, total) => {
+      await downloadModels(st.faces, clip, (done, total) => {
         if (!live()) return;
         set({ phase: "download", done, total });
         show("Downloading the search model", `${mbs(done)} of ${mbs(total)}`, done, total);

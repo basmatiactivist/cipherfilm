@@ -7,8 +7,10 @@ const { getDefaultConfig } = require("expo/metro-config");
 const config = getDefaultConfig(__dirname);
 const webCrypto = path.resolve(__dirname, "../web/src/crypto");
 const vectors = path.resolve(__dirname, "../tools/decrypt/testdata");
+// the search models' list (models.json), shared with the server and the other apps
+const server = path.resolve(__dirname, "../server");
 
-config.watchFolders = [webCrypto, vectors];
+config.watchFolders = [webCrypto, vectors, server];
 config.resolver.nodeModulesPaths = [path.resolve(__dirname, "node_modules")];
 const resolve = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, name, platform) => {

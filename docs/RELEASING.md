@@ -42,7 +42,10 @@ The `Release` workflow then:
    **Google Play promote** workflow.
 
 GitHub's macOS arm64 runners are sometimes unavailable for a long time ("not acquired by Runner … capacity
-constraints"). The release then goes out without the Mac app. Build it locally from the tagged commit and attach it:
+constraints"). The release then goes out without the Mac app. First choice: **Re-run failed jobs** on the release run
+once runners are back; the release job then attaches the Mac app (with provenance) and a new `SHA256SUMS` to the
+existing release, and Google Play is left alone. If that isn't possible, build it locally from the tagged commit and
+attach it:
 
 ```bash
 git worktree add /tmp/cf-rel vX.Y.Z && cd /tmp/cf-rel/mac

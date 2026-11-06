@@ -168,9 +168,12 @@ jobs:
   release:
     needs: [image, tool, android, mac]
     # GitHub's macOS arm64 runners are sometimes not available for a long time: the release then goes out without the
-    # Mac app, which is built locally (mac/scripts/bundle.sh) and attached with `gh release upload` (docs/RELEASING.md)
+    # Mac app. "Re-run failed jobs" later builds it and this job attaches it to the existing release; or build it locally
+    # (mac/scripts/bundle.sh) and attach it with `gh release upload` (docs/RELEASING.md)
     if: ${{ !cancelled() && needs.image.result == 'success' && needs.tool.result == 'success' && needs.android.result == 'success' }}
     runs-on: ubuntu-latest
+    outputs:
+      created: ${{ steps.publish.outputs.created }}
     permissions:
       contents: write
       id-token: write       # signing the provenance of the attached files
@@ -218,6 +221,7 @@ jobs:
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with: { subject-path: "dist/*" }
       - name: Publish the release
+        id: publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -226,7 +230,14 @@ jobs:
           sha="${ref#* }"; [ "${ref% *}" = tag ] && sha=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$sha" --jq .object.sha)
           [ "$sha" = "$(git rev-parse HEAD)" ] || { echo "$GITHUB_REF_NAME moved to $sha during the run: not released"; exit 1; }
           pre=""; case "$GITHUB_REF_NAME" in *-*) pre="--prerelease";; esac
-          gh release create "$GITHUB_REF_NAME" dist/* --title "Cipherfilm ${GITHUB_REF_NAME#v}" --notes-file notes.md $pre --verify-tag
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            # a re-run (the Mac app came later): attach what is new, replace SHA256SUMS; Google Play has the bundle already
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+            echo "created=false" >> "$GITHUB_OUTPUT"
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --title "Cipherfilm ${GITHUB_REF_NAME#v}" --notes-file notes.md $pre --verify-tag
+            echo "created=true" >> "$GITHUB_OUTPUT"
+          fi
 
   play:
     # Google Play: the bundle just released goes to the internal testing track and the closed test, with "What's new" from
@@ -234,7 +245,7 @@ jobs:
     # Production is a separate, hand-started step (play-promote.yml). Not for pre-releases; without the service
     # account's key in the release environment it only warns (docs/RELEASING.md, "Google Play from CI").
     needs: release
-    if: ${{ !cancelled() && needs.release.result == 'success' && !contains(github.ref_name, '-') }}
+    if: ${{ !cancelled() && needs.release.result == 'success' && needs.release.outputs.created == 'true' && !contains(github.ref_name, '-') }}
     runs-on: ubuntu-latest
     environment: release
     steps:

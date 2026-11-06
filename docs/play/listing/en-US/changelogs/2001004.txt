@@ -1,0 +1,6 @@
+• Search models download straight from Hugging Face: much faster, and resumes after drops.
+• "Lock when you leave the app": Immediately now locks every time; the fingerprint prompt shows at once.
+• "Search your photos?" is asked only once.
+• Fixed "Cannot read property … of null" messages.
+• Shorter, clearer texts.
+Needs your own Cipherfilm server: https://cipherfilm.app

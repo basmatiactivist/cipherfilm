@@ -5,7 +5,7 @@ All notable changes to Cipherfilm are listed here. The format follows
 [Semantic Versioning](https://semver.org/). The release workflow copies the section of the tagged
 version into the GitHub release notes, so a release cannot be published without an entry here.
 
-## [Unreleased]
+## [2.1.4] - 2026-11-06
 
 Search models now come straight from Hugging Face, so the server image drops about 850 MB of models (compressed:
 about 784 MB down to 11 MB).
@@ -33,7 +33,7 @@ about 784 MB down to 11 MB).
 
 ### Fixed
 - Android: locking no longer lets Android stop a running search model download.
-- Android: "Search your photos?" is asked only once.
+- Android: "Search your photos?" is asked once, and only on the library screen.
 - Android: no more "Cannot read property … of null" banners when an answer is cut off or the connection drops.
 - Web: lock and sign-out cancel requests still in flight, so no late answer is used after the keys are gone, and a
   late 401 no longer shows "Your session has ended".

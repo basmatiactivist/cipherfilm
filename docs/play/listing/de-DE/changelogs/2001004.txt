@@ -1,0 +1,6 @@
+• Suchmodelle laden direkt von Hugging Face: viel schneller, und nach Abbrüchen geht es weiter.
+• „Lock when you leave the app“: „Immediately“ sperrt jetzt jedes Mal, der Fingerabdruck wird sofort abgefragt.
+• „Search your photos?“ wird nur noch einmal gefragt.
+• Meldungen „Cannot read property … of null“ behoben.
+• Kürzere, klarere Texte.
+Benötigt Ihren eigenen Cipherfilm-Server: https://cipherfilm.app/de

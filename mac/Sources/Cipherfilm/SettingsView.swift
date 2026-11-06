@@ -46,22 +46,22 @@ struct GeneralSettings: View {
   var body: some View {
     @Bindable var agent = model.agent
     VStack(alignment: .leading, spacing: 22) {
-      Section_(title: "This Mac", subtitle: "With the window closed, Cipherfilm stays in the menu bar and keeps exporting, uploading watched folders and looking at photos.") {
-        Toggle("Keep running in the menu bar when the window is closed or ⌘Q is pressed", isOn: $agent.keepRunning)
-        Text("Quit it from the menu-bar panel (the power button). Logging out or shutting down ends it as usual.").font(Typo.caption).foregroundStyle(.secondary)
+      Section_(title: "This Mac", subtitle: "With the window closed, Cipherfilm keeps exporting, uploading watched folders and indexing from the menu bar.") {
+        Toggle("Keep running in the menu bar after closing or ⌘Q", isOn: $agent.keepRunning)
+        Text("To quit, use the power button in the menu-bar panel.").font(Typo.caption).foregroundStyle(.secondary)
         Toggle("Open at login", isOn: Binding(get: { model.agent.openAtLogin }, set: { model.agent.setOpenAtLogin($0) }))
-        Toggle("Notify me when uploads, exports and indexing finish", isOn: Binding(get: { Notifier.enabled }, set: { Notifier.enabled = $0 }))
+        Toggle("Notify when uploads, exports and indexing finish", isOn: Binding(get: { Notifier.enabled }, set: { Notifier.enabled = $0 }))
         if let p = model.agent.loginProblem { Text(p).font(Typo.caption).foregroundStyle(Ink.danger) }
       }
       Divider()
-      Section_(title: "Unlock with Touch ID", subtitle: "A key in this Mac's Secure Enclave, usable only after your fingerprint, keeps a locked copy of your library's key. Adding a fingerprint turns it off; your password always works.") {
+      Section_(title: "Unlock with Touch ID", subtitle: "Your library's key is kept locked in this Mac's Secure Enclave. Changing your fingerprints turns it off. Your password always works.") {
         Toggle("Unlock with Touch ID", isOn: Binding(get: { model.touchID }, set: { on in
           touchError = nil
           if on { Task { do { try await model.enableTouchID() } catch { touchError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription } } }
           else { model.disableTouchID() }
         }))
         .disabled(!TouchID.available || (model.phase != .unlocked && !model.touchID))
-        if !TouchID.available { Text("This Mac has no Touch ID, or no fingerprint is set up.").font(Typo.caption).foregroundStyle(.secondary) }
+        if !TouchID.available { Text("No Touch ID or no fingerprint set up on this Mac.").font(Typo.caption).foregroundStyle(.secondary) }
         else if model.phase != .unlocked && !model.touchID { NeedsUnlock() }
         if let touchError { Text(touchError).font(Typo.caption).foregroundStyle(Ink.danger) }
       }
@@ -76,7 +76,7 @@ struct GeneralSettings: View {
             Spacer()
             Button("Delete Account…", role: .destructive) { deleteAccount = true }
           }
-          Text("Signing out deletes everything this Mac keeps for the account. Locking only forgets the keys; watched folders keep uploading.")
+          Text("Signing out deletes this account's data from this Mac. Locking only forgets the keys; watched folders keep uploading.")
             .font(Typo.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
           Toggle("Lock when this Mac sleeps or its screen locks", isOn: Binding(get: { AppModel.lockOnSleep }, set: { AppModel.lockOnSleep = $0 }))
         } else {
@@ -105,11 +105,11 @@ struct DeleteAccountSheet: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
       Text("Delete your account?").font(Typo.dialog)
-      Text("This deletes your account and all your photos, videos, albums, people and search data from \(model.serverName), at once. Nobody can bring them back, not even an administrator. Every device is signed out and deletes what it keeps.")
+      Text("Your account and all photos, videos, albums, people and search data are deleted from \(model.serverName) right away. Nobody can bring them back, not even an administrator. All your devices are signed out and delete what they keep.")
         .font(Typo.body).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
       Text("Exported copies on this Mac stay where they are.").font(Typo.caption).foregroundStyle(Ink.faint)
       SecureField("Your password", text: $password).textContentType(.password)
-      Toggle("I understand that my photos and videos are deleted permanently", isOn: $sure).toggleStyle(.checkbox)
+      Toggle("I understand my photos and videos are deleted permanently", isOn: $sure).toggleStyle(.checkbox)
       if let error { Text(error).font(Typo.caption).foregroundStyle(Ink.danger) }
       HStack {
         Spacer()
@@ -144,26 +144,26 @@ struct SearchSettings: View {
     @Bindable var model = model
     let unlocked = model.phase == .unlocked
     VStack(alignment: .leading, spacing: 20) {
-      Section_(title: "Search what is in photos, and people", subtitle: "Runs on this Mac with open models (MobileCLIP, YuNet, SFace)\(size(.mobileclip).map { ", \($0)" } ?? " (already on this Mac)"). What it finds is encrypted and stored on your server, so your phone and this Mac share it. Nothing is sent anywhere else.") {
+      Section_(title: "Search and people", subtitle: "Runs on this Mac with open models (MobileCLIP, YuNet, SFace)\(size(.mobileclip).map { ", \($0)" } ?? ", already on this Mac"). Results are encrypted and stored on your server, shared with your other devices.") {
         Toggle("Search and people", isOn: Binding(get: { model.settings.search }, set: { on in
           // where explicit search is allowed, which model is asked first, so only that one is downloaded
           if on && model.me?.user.nsfw == true { askModel = true } else { model.settings.search = on; model.settings.searchAsked = true }
         }))
           .disabled(!unlocked)
         // where the models come from, said before anything is downloaded (docs/MODELS.md)
-        Text("Downloaded once from Hugging Face, where these open models are published. Hugging Face sees this Mac's IP address, nothing about your photos.")
+        Text("Downloaded once from Hugging Face. Hugging Face sees this Mac's IP address, nothing of your photos.")
           .font(Typo.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        Toggle("Find faces and group them into people", isOn: $model.settings.faces).disabled(!unlocked || !model.settings.search)
+        Toggle("Group faces into people", isOn: $model.settings.faces).disabled(!unlocked || !model.settings.search)
         Toggle("Also while on battery", isOn: $model.settings.indexOnBattery).disabled(!model.settings.search)
         if !unlocked { NeedsUnlock() }
       }
       // only for a person an admin allowed it (docs/SEARCH.md, "Explicit search")
       if model.me?.user.nsfw == true && model.settings.search {
         let on = model.search.people.explicit == true
-        Section_(title: "Explicit search", subtitle: "Uses a second model, LAION's OpenCLIP ViT-B/32, that also understands explicit content (MobileCLIP was trained without it). It is \(size(.laion).map { "a download of \($0)" } ?? "already on this Mac"). The choice is for your account: every photo is looked at again with the other model, and your phone and other devices switch too.") {
+        Section_(title: "Explicit search", subtitle: "Uses LAION's OpenCLIP ViT-B/32, which also understands explicit content\(size(.laion).map { " (\($0) download)" } ?? ""). Applies to your account: all devices switch and every photo is indexed again.") {
           Toggle("Explicit search", isOn: Binding(get: { on }, set: { explicitAsk = $0 }))
             .disabled(!unlocked || explicitBusy || model.search.phase == .off)
-          if on && model.search.clip == .laion { Text("On. Searches use the LAION model.").font(Typo.caption).foregroundStyle(.secondary) }
+          if on && model.search.clip == .laion { Text("On. Search uses the LAION model.").font(Typo.caption).foregroundStyle(.secondary) }
         }
       }
       if model.settings.search {
@@ -174,7 +174,7 @@ struct SearchSettings: View {
           Text("\(c.items) photos and videos indexed, \(c.faces) faces.").font(Typo.caption).foregroundStyle(.secondary)
         }
         // one device per account looks at the photos; the others read what it found (docs/SEARCH.md)
-        Section_(title: "Which device indexes", subtitle: "One of your devices looks at the photos and stores what it finds; the others only read it, and download just the text model to understand your search words.") {
+        Section_(title: "Which device indexes", subtitle: "One device indexes your photos. The others use its results and download only the text model.") {
           if s.indexes {
             Text("This Mac indexes your photos.").font(Typo.caption)
           } else {
@@ -198,7 +198,7 @@ struct SearchSettings: View {
         }
       }
       Divider()
-      Section_(title: "Turn off and delete", subtitle: "Removes the models and the index from this Mac. “Everywhere” also deletes the index and the people list (names) from the server, for all your devices.") {
+      Section_(title: "Turn off and delete", subtitle: "Removes the models and index from this Mac. “Everywhere” also deletes the index and people names from the server.") {
         HStack {
           Button("Turn Off on This Mac") { Task { try? await model.search.forget(clearServer: false, api: model.api); model.settings.search = false } }
           Button("Delete Everywhere…") { confirm = true }.disabled(!unlocked)
@@ -214,13 +214,13 @@ struct SearchSettings: View {
         }
       }
       Button("Cancel", role: .cancel) {}
-    } message: { Text("Names you gave people are lost. Turning search on again on any device starts over.") }
+    } message: { Text("People names are lost. Turning search on again starts over.") }
     .alert("Which search?", isPresented: $askModel) {
       Button("Standard Search (MobileCLIP, \(size(.mobileclip) ?? "already on this Mac"))") { model.turnOnSearch(explicit: false) }
       Button("Explicit Search (LAION, \(size(.laion) ?? "already on this Mac"))") { model.turnOnSearch(explicit: true) }
       Button("Cancel", role: .cancel) {}
     } message: {
-      Text("Explicit search uses a model that also understands explicit content. The choice is for your account: your phone and other devices use the same one. You can change it later here.")
+      Text("Explicit search also understands explicit content. It applies to all your devices. You can change it later here.")
     }
     .alert(explicitAsk == true ? "Turn on explicit search?" : "Turn off explicit search?", isPresented: Binding(get: { explicitAsk != nil }, set: { if !$0 { explicitAsk = nil } })) {
       Button(explicitAsk == true ? "Turn On" : "Turn Off") {
@@ -258,10 +258,10 @@ struct SearchSettings: View {
     case .off: return model.phase == .unlocked ? "Starting…" : "Waits until the library is unlocked."
     case .download: return s.downloadText
     case .loading: return "Loading the models…"
-    case .indexing: return "Looking at photos: \(s.done) of \(s.total)"
+    case .indexing: return "Indexing \(s.done) of \(s.total)"
     case .waitPower: return s.message ?? "Waiting for power."
     case .ready:
-      if !s.indexes { return s.clip == .laion ? "Ready to search (explicit search), with what the indexing device found." : "Ready to search, with what the indexing device found." }
+      if !s.indexes { return s.clip == .laion ? "Ready (explicit search), using the indexing device's results." : "Ready, using the indexing device's results." }
       return s.clip == .laion ? "Up to date (explicit search)." : "Up to date."
     case .error: return s.message ?? "Stopped."
     }
@@ -278,7 +278,7 @@ struct ExportSettings: View {
     let unlocked = model.phase == .unlocked
     ScrollView {
     VStack(alignment: .leading, spacing: 20) {
-      Section_(title: "Export to a folder", subtitle: "A decrypted copy of your library in a folder on this Mac (or a drive). Anyone with access to this folder can see these photos.") {
+      Section_(title: "Export to a folder", subtitle: "A decrypted copy of your library in a folder on this Mac or a drive. Anyone with access to the folder can see the photos.") {
         Toggle("Export", isOn: Binding(get: { model.settings.exportOn }, set: { on in
           if on && model.settings.exportPath == nil { choose(thenEnable: true) } else { model.settings.exportOn = on }
         })).disabled(!unlocked)
@@ -289,7 +289,7 @@ struct ExportSettings: View {
           if let p = model.settings.exportPath { Button("Show in Finder") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: p) } }
         }
         Toggle("Keep up to date", isOn: $model.settings.exportKeepUpToDate).disabled(!model.settings.exportOn)
-        Text(model.settings.exportKeepUpToDate ? "Runs on its own while the library is unlocked, also with the window closed: new photos from any device arrive within minutes, deleted ones leave." : "Only when you press Export Now.")
+        Text(model.settings.exportKeepUpToDate ? "Runs while unlocked, also with the window closed. Changes from any device arrive within minutes." : "Only when you click Export Now.")
           .font(Typo.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         Button("Export Now") { e.exportNow() }.disabled(!model.settings.exportOn || !unlocked || e.phase == .working)
         if let problem { Text(problem).font(Typo.caption).foregroundStyle(Ink.danger) }
@@ -301,7 +301,7 @@ struct ExportSettings: View {
           Text("By album").tag(Exporter.Layout.album)
         }.fixedSize()
         if model.settings.exportLayout == .album {
-          Text("A photo in several albums goes into the first one only; photos in no album go to “Not in an album”.").font(Typo.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+          Text("A photo in several albums goes into the first one. Photos in no album go to “Not in an album”.").font(Typo.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         Picker("Export", selection: $model.settings.exportScope) {
           Text("Everything").tag(Exporter.Scope.all)
@@ -318,12 +318,12 @@ struct ExportSettings: View {
             if model.albums.isEmpty { Text("No albums yet.").font(Typo.caption).foregroundStyle(.secondary) }
           }.padding(.leading, 4)
         }
-        Text("No duplicates: each photo is written once; the same photo uploaded twice becomes one file; files already in the folder are kept, not copied again; changing the folders moves the files.")
+        Text("Each photo is written once, even if uploaded twice. Existing files are kept. Changing the layout moves the files.")
           .font(Typo.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
       }
       Section_(title: "When something is deleted") {
-        Toggle("Move copies of photos deleted from the library to the Trash", isOn: $model.settings.exportTrashRemoved)
-        Text("Only unchanged copies; you can put them back from the Trash. Files you rename, move or delete inside the folder are left as they are; the folder is never read back into the library.")
+        Toggle("Move copies of deleted photos to the Trash", isOn: $model.settings.exportTrashRemoved)
+        Text("Only unchanged copies. Changes you make in the folder are left alone and never read back into the library.")
           .font(Typo.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         Button("Export Missing Files Again") { e.exportMissingAgain() }.disabled(!model.settings.exportOn || !unlocked)
       }
@@ -344,7 +344,7 @@ struct ExportSettings: View {
     let p = NSOpenPanel()
     p.canChooseDirectories = true; p.canChooseFiles = false; p.canCreateDirectories = true
     p.prompt = "Export Here"
-    p.message = "Choose an empty folder for the decrypted copy of your library."
+    p.message = "Choose an empty folder for the decrypted copy."
     guard p.runModal() == .OK, let url = p.url, let me = model.me else { return }
     if let why = Exporter.check(folder: url, userId: me.user.id) { problem = why; return }
     problem = nil
@@ -361,7 +361,7 @@ struct WatchSettings: View {
     @Bindable var model = model
     let w = model.watcher
     VStack(alignment: .leading, spacing: 20) {
-      Section_(title: "Upload new files from folders", subtitle: "New photos and videos in these folders are encrypted on this Mac and uploaded seconds after they appear, also while the library is locked. Files your library already has (same name and size) are skipped.") {
+      Section_(title: "Upload new files from folders", subtitle: "New photos and videos here are encrypted and uploaded within seconds, even while locked. Files already in your library (same name and size) are skipped.") {
         Toggle("Watched folders", isOn: Binding(get: { model.settings.watchOn }, set: { enable($0) }))
           .disabled(model.phase != .unlocked && !model.settings.watchOn)
         if model.phase != .unlocked && !model.settings.watchOn { NeedsUnlock() }
@@ -381,7 +381,7 @@ struct WatchSettings: View {
           Button("Add Folder…") { add() }
           Picker("", selection: $model.settings.watchIncludeExisting) {
             Text("Only files added from now on").tag(false)
-            Text("Also the files already in it").tag(true)
+            Text("Also existing files").tag(true)
           }.labelsHidden().fixedSize()
         }
       }
@@ -409,7 +409,7 @@ struct WatchSettings: View {
       model.settings.watchOn = true
       if model.settings.watched.isEmpty { add() }
     } catch {
-      self.error = "Your account's keys don't match. Watched folders were not turned on."
+      self.error = "Your account's keys don't match. Watched folders are off."
     }
   }
 
@@ -417,7 +417,7 @@ struct WatchSettings: View {
     let p = NSOpenPanel()
     p.canChooseDirectories = true; p.canChooseFiles = false; p.allowsMultipleSelection = true
     p.prompt = "Watch"
-    p.message = "Choose folders whose new photos and videos should be uploaded."
+    p.message = "Choose folders to upload new photos and videos from."
     guard p.runModal() == .OK else { return }
     for url in p.urls where !model.settings.watched.contains(where: { $0.path == url.path }) {
       if !model.settings.watchIncludeExisting { model.watcher.baseline(url) }
@@ -462,7 +462,7 @@ struct MenuBarView: View {
         if model.phase == .unlocked { Button("Lock") { model.lock() }.buttonStyle(SecondaryButton()) }
         Spacer()
         Button { NSApp.activate(); openSettings() } label: { Image(systemName: "gearshape") }.buttonStyle(.borderless).help("Settings").accessibilityLabel("Settings")
-        Button { AppDelegate.quitting = true; NSApp.terminate(nil) } label: { Image(systemName: "power") }.buttonStyle(.borderless).accessibilityLabel("Quit Cipherfilm").help("Quit Cipherfilm (stops export, watched folders and indexing)")
+        Button { AppDelegate.quitting = true; NSApp.terminate(nil) } label: { Image(systemName: "power") }.buttonStyle(.borderless).accessibilityLabel("Quit Cipherfilm").help("Quit Cipherfilm and stop export, watched folders and indexing")
       }
     }
     .padding(14)

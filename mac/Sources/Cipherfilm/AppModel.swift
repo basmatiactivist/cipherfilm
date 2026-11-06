@@ -103,7 +103,7 @@ final class AppModel {
     } catch let e as APIError where e.status == 0 || e.status == -2 {
       throw e
     } catch {
-      throw APIError(status: -1, message: "That address answers, but not like a Cipherfilm.")
+      throw APIError(status: -1, message: "That address isn't a Cipherfilm server.")
     }
     a.invalidate()
     wipe(ended: true)
@@ -273,7 +273,7 @@ final class AppModel {
     settings = AccountSettings()
     api.csrf = ""
     phase = .signedOut
-    notice = "Your account and everything in it were deleted from the server."
+    notice = "Your account and everything in it were deleted."
   }
 
   /** Everything derived from the master key goes; "ended" also drops the encrypted cache's owner state. */
@@ -368,7 +368,7 @@ final class AppModel {
         try await search.choose(explicit: explicit, vault: vault)
         settings.search = true
       } catch {
-        alert = "Search wasn't turned on: \(error.localizedDescription)"
+        alert = "Couldn't turn on search: \(error.localizedDescription)"
       }
     }
   }

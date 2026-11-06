@@ -57,7 +57,7 @@ struct ServerView: View {
   @State private var busy = false
 
   var body: some View {
-    AuthCard(title: "Your server", subtitle: "The address of your Cipherfilm, as you open it in the browser.") {
+    AuthCard(title: "Your server", subtitle: "Your Cipherfilm address, as you open it in the browser.") {
       VStack(alignment: .leading, spacing: 6) {
         FieldLabel(text: "Address")
         TextField("photos.example.org", text: $address).field().onSubmit(go)
@@ -121,7 +121,7 @@ struct UnlockView: View {
   @State private var signOut = false
 
   var body: some View {
-    AuthCard(title: "Unlock your library", subtitle: model.me.map { "Signed in as \($0.user.email). Your password opens the keys on this Mac; it is not sent anywhere." }, server: model.serverName) {
+    AuthCard(title: "Unlock your library", subtitle: model.me.map { "Signed in as \($0.user.email). Your password stays on this Mac." }, server: model.serverName) {
       VStack(alignment: .leading, spacing: 6) {
         FieldLabel(text: "Password")
         SecureField("", text: $password).field().onSubmit(go)
@@ -169,11 +169,11 @@ struct SignOutSheet: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
       Text("Sign out of Cipherfilm?").font(Typo.dialog)
-      Text("Everything this Mac keeps for your account is deleted: the encrypted cache, the search index copy, the settings of export and watched folders. Your library on the server stays as it is.")
+      Text("This Mac's cache, search index and export and watched-folder settings for this account are deleted. Your library on the server stays.")
         .font(Typo.body).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
       if model.settings.exportPath != nil {
         Toggle("Also move the exported copies to the Trash", isOn: $deleteExport).toggleStyle(.checkbox)
-        Text("Unchanged files only; a file you edited stays.").font(Typo.caption).foregroundStyle(Ink.faint)
+        Text("Only unchanged files. Edited files stay.").font(Typo.caption).foregroundStyle(Ink.faint)
       }
       HStack {
         Spacer()
@@ -198,13 +198,13 @@ struct AgentQuestion: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
       HStack(spacing: 10) { Mark(size: 26); Text("Keep Cipherfilm running?").font(Typo.dialog) }
-      Text("Cipherfilm can stay in the menu bar when you close the window and open when you log in. Then it keeps your export folder up to date, uploads new files from watched folders, and finds what is in your photos and who is in them, without the window open.")
+      Text("Cipherfilm can open at login and stay in the menu bar when you close the window, to keep exporting, uploading watched folders and indexing.")
         .font(Typo.body).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
       if !model.settings.searchAsked {
         Toggle(isOn: $search) {
           VStack(alignment: .leading, spacing: 2) {
-            Text("Search what is in photos and who is in them").font(Typo.label)
-            Text(model.search.downloadSize(explicit ? .laion : .mobileclip, faces: model.settings.faces).map { "Runs on this Mac. Downloads \($0) of open models once from Hugging Face, where they are published; Hugging Face sees this Mac's IP address, nothing about your photos." } ?? "Runs on this Mac. The models are already on this Mac.").font(Typo.caption).foregroundStyle(Ink.muted)
+            Text("Search what and who is in your photos").font(Typo.label)
+            Text(model.search.downloadSize(explicit ? .laion : .mobileclip, faces: model.settings.faces).map { "Runs on this Mac. Downloads \($0) once from Hugging Face. Hugging Face sees this Mac's IP address, nothing of your photos." } ?? "Runs on this Mac. The models are already here.").font(Typo.caption).foregroundStyle(Ink.muted)
           }
         }.toggleStyle(.checkbox)
         // only for people an admin allowed explicit search: which model, before anything is downloaded
@@ -216,7 +216,7 @@ struct AgentQuestion: View {
           .pickerStyle(.radioGroup).labelsHidden().font(Typo.caption).padding(.leading, 20)
         }
       }
-      Text("You can change all of this any time in Settings.").font(Typo.caption).foregroundStyle(Ink.faint)
+      Text("You can change this any time in Settings.").font(Typo.caption).foregroundStyle(Ink.faint)
       HStack {
         Spacer()
         Button("Not now") { askSearch(); model.agent.answer(false) }.buttonStyle(SecondaryButton())

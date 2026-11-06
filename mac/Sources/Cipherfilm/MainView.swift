@@ -67,7 +67,7 @@ struct MainView: View {
     .alert("Delete forever?", isPresented: Binding(get: { nav.confirmPurge != nil }, set: { if !$0 { nav.confirmPurge = nil } })) {
       Button("Delete Forever", role: .destructive) { if let ids = nav.confirmPurge { model.purge(ids); selection.clear() } }
       Button("Cancel", role: .cancel) {}
-    } message: { Text("This can't be undone. The encrypted files are removed from your server.") }
+    } message: { Text("This can't be undone.") }
     .sheet(isPresented: Binding(get: { nav.newAlbumFor != nil }, set: { if !$0 { nav.newAlbumFor = nil } })) {
       NameSheet(title: "New album", placeholder: "Album name", action: "Create") { name in
         let ids = nav.newAlbumFor ?? []
@@ -104,8 +104,8 @@ struct MainView: View {
         .help("Go to a date (⌘J)").keyboardShortcut("j", modifiers: .command)
         .popover(isPresented: $nav.jumpPicker) { JumpPicker(nav: nav) }
       Button { UploadPicker.pick(model) } label: { Label("Upload", systemImage: "icloud.and.arrow.up").labelStyle(.titleAndIcon) }
-        .help("Upload photos and videos (or drop them on the window)")
-      Button { model.lock() } label: { Label("Lock", systemImage: "lock") }.help("Lock: the keys leave this Mac's memory")
+        .help("Upload photos and videos, or drop them on the window")
+      Button { model.lock() } label: { Label("Lock", systemImage: "lock") }.help("Lock the library")
     }
   }
 }
@@ -296,7 +296,7 @@ struct StatusCard: View {
         switch s.phase {
         case .download: StatusLine(icon: "arrow.down.circle", text: s.downloadText, fraction: s.total > 0 ? Double(s.done) / Double(s.total) : nil)
         case .loading: StatusLine(icon: "sparkle.magnifyingglass", text: "Starting search")
-        case .indexing: StatusLine(icon: "sparkle.magnifyingglass", text: "Looking at photos \(s.done) of \(s.total)", fraction: s.total > 0 ? Double(s.done) / Double(s.total) : nil)
+        case .indexing: StatusLine(icon: "sparkle.magnifyingglass", text: "Indexing \(s.done) of \(s.total)", fraction: s.total > 0 ? Double(s.done) / Double(s.total) : nil)
         case .waitPower: StatusLine(icon: "powerplug", text: s.message ?? "Waiting for power")
         case .error: StatusLine(icon: "exclamationmark.triangle", text: s.message ?? "Search stopped", problem: true)
         case .ready, .off: EmptyView()
@@ -357,7 +357,7 @@ struct UploadsPanel: View {
         Spacer()
         Button("Clear Finished") { model.clearFinishedUploads() }
       }.font(Typo.caption)
-      Text("The queue is kept on this Mac and goes on after a restart or lock, once the library is unlocked.").font(Typo.small).foregroundStyle(Ink.faint)
+      Text("The queue survives a restart or lock and continues once you unlock.").font(Typo.small).foregroundStyle(Ink.faint)
     }
     .padding(16).frame(width: 380)
     .background(Ink.card)
@@ -424,8 +424,8 @@ struct Detail: View {
         SearchResults(query: nav.query, selection: selection)
       } else {
         switch nav.screen {
-        case .photos: library(title: "Photos", items: model.items, empty: ("photo.on.rectangle", "Nothing here yet", "Drop photos and videos on this window, or choose Upload. They are encrypted on this Mac before they leave it."))
-        case .favorites: library(title: "Favorites", items: model.items.filter(\.favorite), empty: ("heart", "No favorites yet", "Right-click a photo and choose Add to Favorites, or press the heart in the viewer."))
+        case .photos: library(title: "Photos", items: model.items, empty: ("photo.on.rectangle", "Nothing here yet", "Drop photos and videos here, or choose Upload. They are encrypted on this Mac before upload."))
+        case .favorites: library(title: "Favorites", items: model.items.filter(\.favorite), empty: ("heart", "No favorites yet", "Right-click a photo and choose Add to Favorites, or click the heart in the viewer."))
         case .videos: library(title: "Videos", items: model.items.filter { $0.kind == .video }, empty: ("film", "No videos", "Videos you upload show up here."))
         case .people: PeopleView(selection: selection)
         case .person(let key): PersonView(key: key, selection: selection)
@@ -468,7 +468,7 @@ struct SearchResults: View {
       if let r = result {
         if r.items.isEmpty {
           Spacer()
-          EmptyState(icon: "magnifyingglass", title: "Nothing found", text: model.settings.search ? "Try other words: what is in the photo (“dog on the beach”), a name, a year or a month." : "Search looks at names, dates and cameras. Turn on search in Settings to find what is in your photos and who is in them.")
+          EmptyState(icon: "magnifyingglass", title: "Nothing found", text: model.settings.search ? "Try what is in the photo (“dog on the beach”), a name, a year or a month." : "Search covers names, dates and cameras. Turn on search in Settings to find what and who is in your photos.")
           Spacer()
         } else {
           PhotoGrid(items: Array(r.items.prefix(shown)), grouping: .none, selection: selection,
@@ -513,14 +513,14 @@ struct TrashView: View {
   var body: some View {
     VStack(spacing: 0) {
       HStack(alignment: .bottom) {
-        PageTitle(title: "Trash", subtitle: "Items are permanently deleted \(model.retentionDays) days after they were moved here.")
+        PageTitle(title: "Trash", subtitle: "Items are permanently deleted after \(model.retentionDays) days.")
         if !model.trash.isEmpty {
           Button("Restore All") { model.restore(model.trash.map(\.id)) }.buttonStyle(SecondaryButton())
           Button("Empty Trash…") { nav.confirmPurge = model.trash.map(\.id) }.buttonStyle(SecondaryButton(danger: true)).padding(.trailing, 28)
         }
       }
       if model.trash.isEmpty {
-        Spacer(); EmptyState(icon: "trash", title: "The trash is empty", text: "What you move to the trash stays here for \(model.retentionDays) days and can be restored."); Spacer()
+        Spacer(); EmptyState(icon: "trash", title: "The trash is empty", text: "Deleted items stay here for \(model.retentionDays) days and can be restored."); Spacer()
       } else {
         PhotoGrid(items: model.trash, grouping: .none, trashMode: true, selection: selection) { it, list in nav.viewer = ViewerState(ids: list.map(\.id), index: list.firstIndex(of: it) ?? 0) }
       }

@@ -95,7 +95,7 @@ enum UploadPicker {
     p.canChooseDirectories = true
     p.canChooseFiles = true
     p.allowedContentTypes = [.image, .movie, .audiovisualContent, .folder]
-    p.message = "Choose photos and videos (or folders) to encrypt and upload."
+    p.message = "Choose photos, videos or folders to upload."
     p.prompt = "Upload"
     if p.runModal() == .OK { model.upload(p.urls) }
   }

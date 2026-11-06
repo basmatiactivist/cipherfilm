@@ -65,7 +65,7 @@ enum TouchID {
       return master
     } catch {
       disable(userId) // fingerprints changed, or the key doesn't fit the account any more
-      throw APIError(status: -1, message: "Touch ID unlock was reset (the fingerprints changed). Unlock with your password, then turn it on again in Settings.")
+      throw APIError(status: -1, message: "Fingerprints changed, so Touch ID was turned off. Unlock with your password and turn it on again in Settings.")
     }
   }
 }

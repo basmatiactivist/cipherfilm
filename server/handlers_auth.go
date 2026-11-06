@@ -68,6 +68,7 @@ func (a *App) sessionBundle(u *user, s *session) map[string]any {
 		"server_version":    version, // shown in the apps' settings
 	}
 	if a.isDemo(u) {
+		b["indexer"] = demoIndexer
 		b["demo"] = true // the apps show a notice and hide what would be refused
 	}
 	return b

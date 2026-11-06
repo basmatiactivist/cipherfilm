@@ -17,11 +17,8 @@ const demoRefused = "This is the public demo: changes are turned off."
 var demoAllowed = map[string]bool{
 	"POST /api/auth/logout":  true,
 	"POST /api/items/thumbs": true, // a read: many thumbnails in one request
-	// search: index entries the account's own devices computed (bounded by its storage limit) and taking the indexing
-	// role. Not the people document (names one visitor types would show to the next) and not deleting the index (one
-	// visitor would break search for everyone until the daily reset).
-	"PUT /api/items/{id}/index": true,
-	"PUT /api/me/indexer":       true,
+	// Nothing for search: visitors share the login, so anything one could store, the next would read. The demo's
+	// index is built before the account is listed, and the apps only read it (demoIndexer).
 }
 
 // demoAccounts reads DEMO_ACCOUNTS: e-mail addresses, separated by commas or spaces, normalised like a sign-in.
@@ -38,6 +35,10 @@ func demoAccounts(v string) (map[string]bool, error) {
 }
 
 func (a *App) isDemo(u *user) bool { return a.demo[u.Email] }
+
+// demoIndexer is the indexer the apps are told about for a demo account: never one of their devices, so they only
+// read the index that was built before the account was listed.
+const demoIndexer = "demo"
 
 // demoAllows says whether a demo account may make this request; r.Pattern is the route it matched.
 func demoAllows(r *http.Request) bool {

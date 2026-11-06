@@ -4,12 +4,13 @@ A Cipherfilm server with one login published on a website, so anyone can try the
 encrypted, so the operator could never see what strangers store. That is why the demo account is read-only
 (`DEMO_ACCOUNTS`, [docs/SELF-HOSTING.md](../../docs/SELF-HOSTING.md#settings)): visitors can sign in, browse, open
 originals and videos and search, but uploads, edits, albums and account changes get a 403 ("This is the public demo:
-changes are turned off."). The apps say "Public demo · read-only · resets daily" and hide what would fail. Other
+changes are turned off."). The apps say "Public demo · read-only · resets every hour" and hide what would fail. Other
 accounts on the same server (your admin, an app-store reviewer) work as usual.
 
-The server is put back to a seed every day (04:00 UTC): `seed.tar` (a backup made with `scripts/backup.sh`), restored by
-`reset.sh` from a systemd timer. That removes what visitors could still write (their search index, the people list)
-and ends every session, the reviewer's included.
+The demo account stores nothing, so all that visitors leave behind are their sign-ins: every hour a timer signs out
+all of the demo account's devices (`/app sign-out DEMO_EMAIL`). Once a day (04:00 UTC) the whole server is put back to
+a seed, `seed.tar` (a backup made with `scripts/backup.sh`), restored by `reset.sh`; that ends every session, the
+reviewer's included, so it runs only daily.
 
 ## 1. The server
 
@@ -56,7 +57,7 @@ Set `DEMO_ACCOUNTS` only after the photos are uploaded and the seed is made: fro
 anything. To change the seed later, remove it from `.env`, `docker compose up -d`, change the library, make the seed
 again and put the setting back. Never list your admin or an account with real photos.
 
-## 5. The daily reset
+## 5. The resets
 
 `/etc/systemd/system/cipherfilm-demo-reset.service` (the path is your checkout):
 
@@ -84,5 +85,9 @@ WantedBy=timers.target
 systemctl daemon-reload && systemctl enable --now cipherfilm-demo-reset.timer
 systemctl start cipherfilm-demo-reset.service && journalctl -u cipherfilm-demo-reset -n 20   # try it once
 ```
+
+Every hour, sign out the demo visitors: `/etc/systemd/system/cipherfilm-demo-signout.service` runs
+`/bin/sh -c 'cd /opt/cipherfilm-demo && docker compose exec -T app /app sign-out demo@example.org'`, and its timer has
+`OnCalendar=hourly`.
 
 Then publish the e-mail and the password, never the recovery words.

@@ -10,12 +10,13 @@ version into the GitHub release notes, so a release cannot be published without 
 A public demo login, and releases that survive a missing Mac runner.
 
 ### Added
-- `DEMO_ACCOUNTS`: read-only public demo logins. Such an account can sign in, look, download and search (its devices
-  may add search index entries; it can't change people names or delete the index, and sees only its own device); uploads, edits, albums, account changes, recovery and admin actions get a
+- `DEMO_ACCOUNTS`: read-only public demo logins. Such an account can sign in, look, download and search. It stores
+  nothing at all (visitors share it, so one would read what another stored): the search index is built before the
+  account is listed, and the apps only read it. Each visitor sees only its own device; uploads, edits, albums, account changes, recovery and admin actions get a
   403 ("This is the public demo: changes are turned off."). Every write route is closed to it unless listed, and a
-  test walks every route. Web, Android and Mac say "Public demo · read-only · resets daily" and hide upload and
+  test walks every route. Web, Android and Mac say "Public demo · read-only · resets every hour" and hide upload and
   account deletion; Android doesn't turn backup on for it and says why.
-- `deploy/demo`: how to run a demo server reset daily from a seed, and a script that makes the demo account from an
+- `deploy/demo`: how to run a demo server (visitors signed out every hour, the whole server reset daily from a seed), and a script that makes the demo account from an
   invite link.
 
 ### Changed

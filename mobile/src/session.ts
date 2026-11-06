@@ -317,4 +317,4 @@ export async function deleteAccount(password: string) {
 }
 
 /** Shown wherever a demo login looks at its photos, so nobody takes it for their own library. */
-export const DEMO_NOTE = "Public demo · read-only · resets daily";
+export const DEMO_NOTE = "Public demo · read-only · resets every hour";

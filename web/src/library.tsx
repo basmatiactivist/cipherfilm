@@ -537,7 +537,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
         </nav>
 
         <main id="main" tabIndex={-1} class="content">
-          {demo && <p class="demonote" role="note">Public demo · read-only · resets daily</p>}
+          {demo && <p class="demonote" role="note">Public demo · read-only · resets every hour</p>}
           <div class="pagehead">
             {page.n === "album" && <button class="iconbtn" onClick={() => go({ n: "albums" })} aria-label="All albums"><Icon name="back" /></button>}
             {page.n === "person" && <button class="iconbtn" onClick={() => go({ n: "people" })} aria-label="All people"><Icon name="back" /></button>}

@@ -60,9 +60,9 @@ func TestDemoAccountReadsAndSearchesButChangesNothing(t *testing.T) {
 	if code, _ := demo.postRaw("/api/items/thumbs", map[string]any{"item_ids": []string{item}}); code != 200 {
 		t.Fatalf("thumbs: %d", code)
 	}
-	// search keeps its index
-	if code, _ := demo.do("PUT", "/api/items/"+item+"/index", map[string]any{"data_enc": rb(300)}, true); code != 200 {
-		t.Fatalf("index: %d", code)
+	// the apps are told another device indexes, so they only read the index built before the account was listed
+	if me["indexer"] != demoIndexer {
+		t.Fatalf("indexer: %v", me["indexer"])
 	}
 	// changes are refused, with a message the apps show as it is
 	for _, c := range []struct {
@@ -74,7 +74,9 @@ func TestDemoAccountReadsAndSearchesButChangesNothing(t *testing.T) {
 		{"POST", "/api/albums", albumBody()},
 		{"POST", "/api/auth/password", map[string]any{}},
 		{"DELETE", "/api/me", map[string]any{}},
-		// names typed by one visitor would show to the next; wiping the index would break search for all of them
+		// visitors share the login: whatever one stores, the next reads (index entries, names), so nothing is stored
+		{"PUT", "/api/items/" + item + "/index", map[string]any{"data_enc": rb(300)}},
+		{"PUT", "/api/me/indexer", nil},
 		{"PUT", "/api/me/blobs/people", map[string]any{"data_enc": rb(300), "version": 0}},
 		{"DELETE", "/api/index", nil},
 	} {

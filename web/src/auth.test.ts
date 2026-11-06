@@ -11,6 +11,7 @@ let made = 0;
 
 vi.mock("./api", () => ({
   setCsrf: () => {},
+  dropRequests: () => {},
   api: async (method: string, path: string, body: any) => {
     const me = () => ({ csrf: "c", user: { id: "u", email: server.user!.email, role: "admin" }, wrapped_master_pw: server.user!.bundle.wrapped_master_pw });
     if (path === "/api/setup") {

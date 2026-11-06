@@ -4,6 +4,7 @@ import { useEffect, useState } from "preact/hooks";
 import { isSecure } from "./env";
 import * as auth from "./auth";
 import { mem } from "./state";
+import { dropRequests } from "./api";
 import { clearCaches } from "./cache";
 import { clearPeople } from "./people/people";
 import { clearPlayer } from "./player";
@@ -28,6 +29,7 @@ type Screen =
 
 /** Drops every key and decrypted byte this tab holds: locking, an ended session. */
 function forgetKeys() {
+  dropRequests(); // answers still on their way belong to the keys going now
   mem.masterKey = null;
   forgetKept(); // a lock asks for the password again, also after a reload
   forgetDecrypted();
@@ -63,6 +65,8 @@ function App() {
   };
   useEffect(() => {
     const ended = () => {
+      // a 401 for a request that was already on its way when this tab signed out: nothing is left to end
+      if (!mem.me) return;
       // an ended session is a sign-out by the server: the same is forgotten (kept keys, search models, upload notes)
       forgetKeys();
       auth.forgetLocal();

@@ -1,4 +1,4 @@
-import { api, setCsrf } from "./api";
+import { api, dropRequests, setCsrf } from "./api";
 import { getSodium } from "./crypto/sodium";
 import {
   createAccount, finishRecovery, type NewAccount, newRecoveryKit, loginProof, normEmail, recoveryProof, rewrapForPassword,
@@ -171,6 +171,7 @@ export async function logout(): Promise<void> {
 
 /** Everything this browser keeps for the account: at sign-out, and when another device signed this one out. */
 export function forgetLocal(): void {
+  dropRequests(); // answers still on their way belong to the keys going now
   void forgetKeptForGood();
   mem.masterKey = null;
   mem.me = null;

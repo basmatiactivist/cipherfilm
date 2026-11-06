@@ -48,7 +48,7 @@ export default function Library() {
           <Dialog.Title>Search your photos?</Dialog.Title>
           <Dialog.Content>
             <Text variant="bodyMedium">
-              Cipherfilm can find photos by what's in them ("beach", "birthday cake") and group the people in them. It works on this phone with a one-time download of the open search models from Hugging Face, where they are published (the size shows before it starts); the server never sees what your photos show. You can change this any time under Account.
+              Find photos by what's in them ("beach", "birthday cake") and by the people in them. Runs on this phone; the server never sees what your photos show. The models download once from Hugging Face; you see the size first. Change this any time in Account.
             </Text>
           </Dialog.Content>
           <Dialog.Actions>
@@ -81,7 +81,7 @@ function Empty() {
       <View style={[st.disc, { backgroundColor: t.colors.primaryContainer }]}><Icon name="photos" size={30} color={t.colors.primary} /></View>
       <Text variant="headlineSmall" style={{ textAlign: "center", marginBottom: 8 }}>Nothing here yet</Text>
       <Text variant="bodyMedium" style={{ textAlign: "center", color: t.colors.onSurfaceVariant, maxWidth: 320 }}>
-        Tap Upload, or share photos from your gallery to Cipherfilm. They are encrypted on this phone before they leave it.
+        Tap Upload, or share photos to Cipherfilm from your gallery. They are encrypted on this phone before upload.
       </Text>
       <Button mode="text" onPress={refreshLibrary} style={{ marginTop: 16 }}>Check again</Button>
     </View>

@@ -23,14 +23,14 @@ async function viaWorker(kind: "file" | "zip", name: string, items: Item[]): Pro
   }));
   await new Promise<void>((res, rej) => {
     const ch = new MessageChannel();
-    const t = setTimeout(() => rej(new Error("The download couldn't start. Try again.")), 4000);
+    const t = setTimeout(() => rej(new Error("Couldn't start the download. Try again.")), 4000);
     ch.port1.onmessage = () => { clearTimeout(t); res(); };
     navigator.serviceWorker.controller!.postMessage({ type: "job", token, job: { kind, name, entries } }, [ch.port2]);
   });
   clickDownload(`/sw/dl/${token}`);
 }
 
-const tooBig = () => new Error("This browser can't stream big downloads, and this is too large to prepare in memory. Try a smaller selection, or use a different browser.");
+const tooBig = () => new Error("Too large to download in this browser. Select fewer items or use another browser.");
 
 export async function downloadOriginal(it: Item): Promise<void> {
   const name = it.meta?.name ?? "download";

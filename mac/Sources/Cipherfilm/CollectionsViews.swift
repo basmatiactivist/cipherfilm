@@ -14,7 +14,7 @@ struct AlbumsView: View {
         Button("New Album…") { creating = true }.buttonStyle(SecondaryButton()).padding(.trailing, 28)
       }
       if model.albums.isEmpty {
-        Spacer(); EmptyState(icon: "rectangle.stack", title: "No albums yet", text: "Create an album, then add photos with a right click or by dragging them onto it."); Spacer()
+        Spacer(); EmptyState(icon: "rectangle.stack", title: "No albums yet", text: "Create an album, then right-click photos or drag them onto it."); Spacer()
       } else {
         ScrollView {
           LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 20)], spacing: 22) {
@@ -77,7 +77,7 @@ struct AlbumView: View {
         } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton).fixedSize().padding(.trailing, 28)
       }
       if items.isEmpty {
-        Spacer(); EmptyState(icon: "rectangle.stack", title: "This album is empty", text: "Right-click photos and choose Add to Album, or drag them onto the album."); Spacer()
+        Spacer(); EmptyState(icon: "rectangle.stack", title: "This album is empty", text: "Right-click photos and choose Add to Album, or drag them here."); Spacer()
       } else {
         PhotoGrid(items: items, albumId: id, selection: selection) { it, list in nav.viewer = ViewerState(ids: list.map(\.id), index: list.firstIndex(of: it) ?? 0) }
       }
@@ -88,7 +88,7 @@ struct AlbumView: View {
     .alert("Delete this album?", isPresented: $deleting) {
       Button("Delete Album", role: .destructive) { model.perform { try await $0.deleteAlbum(id) }; nav.go(.albums) }
       Button("Cancel", role: .cancel) {}
-    } message: { Text("Only the album goes. Its photos stay in your library.") }
+    } message: { Text("Its photos stay in your library.") }
   }
 }
 
@@ -138,13 +138,13 @@ struct PeopleView: View {
     let hidden = (groups ?? []).filter { $0.person?.hidden == true }
     VStack(spacing: 0) {
       HStack(alignment: .bottom) {
-        PageTitle(title: "People", subtitle: groups == nil ? "Grouping faces…" : "Faces are grouped on this Mac. Names are encrypted; only your devices can read them.")
+        PageTitle(title: "People", subtitle: groups == nil ? "Grouping faces…" : "Faces are grouped on this Mac. Names are encrypted.")
         if !hidden.isEmpty { Toggle("Show hidden (\(hidden.count))", isOn: $showHidden).toggleStyle(.switch).controlSize(.small).padding(.trailing, 28) }
       }
       if let groups, groups.isEmpty {
         Spacer()
         EmptyState(icon: "person.2", title: model.search.phase == .indexing || model.search.phase == .download ? "Looking at your photos" : "No people yet",
-                   text: "Someone shows up here once they are in three photos. Faces are found while Cipherfilm looks at your library.")
+                   text: "Someone shows up here once they are in three photos.")
         Spacer()
       } else {
         ScrollView {
@@ -202,7 +202,7 @@ struct PersonView: View {
         if let g {
           Button(selection.ids.count == items.count && !items.isEmpty ? "Select None" : "Select All \(items.count)") {
             if selection.ids.count == items.count { selection.clear() } else { selection.ids = Set(items.map(\.id)) }
-          }.buttonStyle(SecondaryButton()).help("Select every photo of this person, then use Actions in the toolbar (album, share, save, favorite)")
+          }.buttonStyle(SecondaryButton()).help("Select every photo of this person")
           Button(g.name.isEmpty ? "Add a Name…" : "Rename…") { naming = true }.buttonStyle(PrimaryButton())
           Menu {
             let others = model.search.people.people.filter { !$0.name.isEmpty && $0.id != g.person?.id }
@@ -232,7 +232,7 @@ struct PersonView: View {
             if let id = try await model.search.name(g, n), id != key { nav.screen = .person(id) }
             error = nil
           } catch {
-            self.error = "The name couldn't be saved: " + ((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+            self.error = "Couldn't save the name: " + ((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
           }
         }
       }

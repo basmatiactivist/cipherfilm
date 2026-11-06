@@ -98,7 +98,7 @@ func (a *App) createAlbum(w http.ResponseWriter, r *http.Request, u *user, s *se
 	res, err := a.db.Exec(`INSERT INTO albums(id,user_id,name_enc,created_at) SELECT ?,?,?,? WHERE (SELECT COUNT(*) FROM albums WHERE user_id=?) < ?`,
 		req.ID, u.ID, req.NameEnc, a.now().Unix(), u.ID, maxAlbumsPerUser)
 	if err != nil {
-		fail(w, 409, "could not create the album")
+		fail(w, 409, "couldn't create the album")
 		return
 	}
 	if rowsAffected(res, err) != 1 {

@@ -7,8 +7,7 @@ settings. Download links for every app are in [INSTALL.md](INSTALL.md).
 
 - Docker with the Compose plugin (`docker compose`) on a Linux or macOS machine (amd64 or arm64).
 - **HTTPS.** The browser's encryption features, the Service Worker (video, big downloads) and the secure
-  session cookie all require a secure connection. Cipherfilm doesn't provide HTTPS itself; one of the three
-  options below does.
+  session cookie need it. Cipherfilm doesn't provide HTTPS itself; one of the three options below does.
 
 ## Choose how to deploy
 
@@ -21,8 +20,8 @@ Pick exactly one. They share one base file, [compose.yaml](../compose.yaml), whi
 | **B. Your own reverse proxy** | You already run nginx, Caddy, Traefik, a Cloudflare Tunnel, … | your proxy | `127.0.0.1:8080` only |
 | **C. Caddy (bundled)** | A public site on your own domain | Let's Encrypt, automatic | 80 and 443 |
 
-Copy [.env.example](../.env.example) to `.env`, select the option with `COMPOSE_FILE`, fill in its settings,
-then start it:
+Copy [.env.example](../.env.example) to `.env`, choose the option with `COMPOSE_FILE`, fill in its settings and
+start:
 
 ```bash
 cp .env.example .env      # edit it
@@ -33,7 +32,7 @@ docker compose logs app | grep "FIRST-TIME SETUP"
 ### A. Tailscale
 
 1. In the [Tailscale admin console](https://login.tailscale.com/admin/dns) turn on **HTTPS certificates**
-   (and MagicDNS). Serve needs the certificates.
+   (and MagicDNS); Serve needs them.
 2. Create an **auth key** (Settings → Keys). A one-off key is enough: it is only used the first time
    (`TS_AUTH_ONCE=true`, and the node's state is kept in the `cipherfilm_tsstate` volume).
 3. In `.env`: `COMPOSE_FILE=compose.yaml:compose.tailscale.yaml`, `TS_AUTHKEY=…`, `TS_HOSTNAME=photos`, and
@@ -42,15 +41,15 @@ docker compose logs app | grep "FIRST-TIME SETUP"
 
 The app shares the Tailscale container's network, so nothing is published on the host.
 [deploy/tailscale/serve.json](../deploy/tailscale/serve.json) makes Tailscale Serve forward HTTPS to the app and
-explicitly sets `AllowFunnel` to `false`, so it is never exposed to the public internet.
+sets `AllowFunnel` to `false`, so it is never exposed to the public internet.
 
 A name of your own (`photos.example.com`) works too, still only inside the tailnet: [docs/OWN-DOMAIN.md](OWN-DOMAIN.md).
 
-This option runs on a real Debian 13 VPS with the released image. After the first start,
+Tested on a Debian 13 VPS with the released image. After the first start,
 `docker compose exec tailscale tailscale serve status` shows `https://<name>.<tailnet>.ts.net (tailnet only)`; the
-first certificate takes a few seconds. Two things in the admin console afterwards: turn off **key expiry** for the
-machine (otherwise it drops off the tailnet after about 180 days), and delete the used auth key. With this option the
-host needs no open ports except SSH; see [docs/SERVER-HARDENING.md](SERVER-HARDENING.md).
+first certificate takes a few seconds. Then, in the admin console, turn off **key expiry** for the machine (otherwise
+it drops off the tailnet after about 180 days) and delete the used auth key. The host needs no open ports except SSH;
+see [docs/SERVER-HARDENING.md](SERVER-HARDENING.md).
 
 ### B. Your own reverse proxy
 
@@ -59,14 +58,14 @@ host needs no open ports except SSH; see [docs/SERVER-HARDENING.md](SERVER-HARDE
 2. Point your proxy at `http://127.0.0.1:8080`. Requirements:
    - **Forward `Host` and add `X-Forwarded-For`.** Login rate limits use the client address; with exactly one
      proxy in front, leave `TRUST_PROXY=1`. Behind a Cloudflare Tunnel or several proxies set
-     `TRUST_PROXY=0`. Then every client looks like the same source, so a stranger's failed logins can block *new*
-     browsers for up to 15 minutes; browsers that have signed in before are not affected (device cookie).
+     `TRUST_PROXY=0`. Then all clients share one address, so a stranger's failed logins can block *new* browsers
+     for up to 15 minutes; browsers that signed in before are not affected (device cookie).
      `X-Forwarded-For` is only believed for requests to a name in `PUBLIC_HOSTS` and from an address in
      `TRUSTED_PROXIES` (default: loopback and private networks, which covers a proxy on the same host; set it to your
      proxy's address or CIDR if it sits elsewhere).
    - Allow request bodies of at least **5 MB** (encrypted parts are about 4.2 MB).
    - **Don't add or change security headers.** The app sets its own strict Content-Security-Policy, HSTS and others.
-   - Plain HTTP between proxy and app is fine, as long as they are on the same host.
+   - Plain HTTP between proxy and app is fine if both are on the same host.
 
 ```nginx
 server {
@@ -88,7 +87,7 @@ server {
 
 1. Point a DNS name at the machine and make ports 80 and 443 reachable.
 2. `.env`: `COMPOSE_FILE=compose.yaml:compose.caddy.yaml`, `SITE_ADDRESS=photos.example.com`.
-3. `docker compose up -d --build`. Caddy gets and renews the certificate by itself.
+3. `docker compose up -d --build`. Caddy gets and renews the certificate.
 
 This puts the login page on the public internet. The app is invite-only (no public sign-up), rate-limits
 logins, and stores nothing readable, but keep it updated.
@@ -104,10 +103,10 @@ logins, and stores nothing readable, but keep it updated.
 
 ## Inviting people
 
-Open **Admin → Invite someone**, enter their e-mail (and, if you like, a storage limit) and copy the link. Send the link yourself
-(message, in person). It works once and expires after 7 days. They choose a password, and their browser
-creates their keys and shows them their own recovery key. You can disable, enable or delete accounts there,
-see how much storage each person uses and change their limit (default 20 GB; the admin has no limit).
+Open **Admin → Invite someone**, enter their e-mail (and optionally a storage limit) and copy the link. Send it
+yourself (message, in person). It works once and expires after 7 days. They choose a password; their browser creates
+their keys and shows their recovery key. The admin area also lets you disable, enable or delete accounts, see each
+person's storage and change their limit (default 20 GB; the admin has no limit).
 
 ## Backup and restore
 
@@ -119,7 +118,7 @@ scripts/backup.sh /path/to/backups     # writes cipherfilm-YYYYMMDD-HHMMSS.tar, 
 ```
 
 The script first takes a consistent snapshot of the database, *then* copies the files, so everything the
-snapshot refers to is in the backup (an upload that finished in between is simply not in it). Run it from
+snapshot refers to is in the backup (an upload that finished in between is not in it). Run it from
 cron, e.g. `15 3 * * * cd /opt/cipherfilm && scripts/backup.sh /mnt/backups`, and keep copies on another
 machine. If you changed `DATA_VOLUME`, export it for the scripts.
 
@@ -129,14 +128,17 @@ machine. If you changed `DATA_VOLUME`, export it for the scripts.
 scripts/restore.sh /path/to/cipherfilm-20261102-035500.tar --yes
 ```
 
-It first checks the archive (required files present, no symlinks or paths that escape the data directory), then stops the app (and refuses to go on if it keeps running), moves the current data aside to `.previous/` in the volume (a rename, no extra space: if it was the wrong archive, nothing is lost), puts the backup in place, ends every session (an older backup revives revoked ones), gives items in the restored trash a fresh 30 days, starts the app and prints a health report (database integrity, number
-of users and items, items with missing files). Also run `docker compose exec app /app check` any time.
+It checks the archive (required files present, no symlinks or paths outside the data directory) and stops the app
+(refusing to go on if it keeps running). It moves the current data aside to `.previous/` in the volume (a rename, no
+extra space; nothing is lost if it was the wrong archive), puts the backup in place, ends every session (an older
+backup would revive revoked ones) and gives items in the restored trash a fresh 30 days. Then it starts the app and
+prints a health report (database integrity, number of users and items, items with missing files). You can run
+`docker compose exec app /app check` any time.
 
 **Off-site, every night:** with the Tailscale option, `compose.kopia.yaml` adds Kopia, which saves the same data to
 Nextcloud (WebDAV), S3, SFTP and others, with its UI only in your tailnet: [docs/BACKUP-KOPIA.md](BACKUP-KOPIA.md).
 
-**Test your backups.** A backup you have never restored is a hope. On a spare machine, restore the file and
-sign in as a user.
+**Test your backups:** restore one on a spare machine and sign in as a user.
 
 ## Updating
 
@@ -148,8 +150,8 @@ docker compose up -d --build
 
 Database changes are applied automatically at start. Browsers pick up the new web app on the next load.
 
-Released versions are published as a multi-architecture image (amd64 and arm64) on GitHub's container
-registry, built by a GitHub Action from a version tag. Instead of building yourself, set
+Releases are published as a multi-architecture image (amd64 and arm64) on GitHub's container registry, built
+from a version tag. Instead of building yourself, set
 `CIPHERFILM_IMAGE=ghcr.io/basmatiactivist/cipherfilm:2` in `.env` and run `docker compose pull && docker compose up -d`.
 `:2` follows every 2.x release, `:2.1.3` pins one exact version, `:latest` is the newest stable release.
 Release notes are in [CHANGELOG.md](../CHANGELOG.md) and on the Releases page; read them before a major upgrade.
@@ -158,8 +160,7 @@ How releases are made: [docs/RELEASING.md](RELEASING.md).
 
 ### Server commands
 
-Accounts can also be managed from the server, like Immich's server commands: `docker compose exec app /app help`
-lists them (list users, make someone an administrator, lock or delete an account, set a storage limit, sign out a
+Accounts can also be managed on the server: `docker compose exec app /app help` lists the commands (list users, make someone an administrator, lock or delete an account, set a storage limit, sign out a
 lost device, make an invite link, status). A password can't be reset from the server, by design. All commands and why:
 [docs/SERVER-COMMANDS.md](SERVER-COMMANDS.md).
 

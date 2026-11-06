@@ -64,7 +64,7 @@ export async function api<T = any>(method: string, path: string, body?: unknown,
   try {
     data = text ? JSON.parse(text) : null;
   } catch {
-    if (res.ok) throw new ApiError(0, "The server sent an answer that can't be read. Try again.");
+    if (res.ok) throw new ApiError(0, "Couldn't read the server's answer. Try again.");
   }
   if (!res.ok) { sessionEnded(res, path); throw new ApiError(res.status, sentence(data?.error ?? "Something went wrong.")); }
   return data as T;
@@ -72,8 +72,8 @@ export async function api<T = any>(method: string, path: string, body?: unknown,
 
 const FRIENDLY: Record<string, string> = {
   "invalid request": "That didn't work. Check what you entered and try again.",
-  "server error": "The server had a problem. Wait a moment and try again.",
-  "not found": "That couldn't be found. It may have been removed.",
+  "server error": "The server had a problem. Try again in a moment.",
+  "not found": "Not found. It may have been deleted.",
 };
 export const sentence = (s: string): string => FRIENDLY[s] ?? (s ? s[0].toUpperCase() + s.slice(1) + (/[.!?]$/.test(s) ? "" : ".") : s);
 

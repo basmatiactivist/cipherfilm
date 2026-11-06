@@ -148,10 +148,10 @@ const EMPTY = "The file is empty (0 bytes).";
 /** Whether a run may start now, and if not, why (in plain words). Manual runs ignore Wi-Fi and charging. */
 export function blocker(c: Config, manual: boolean): string | undefined {
   const st = N.backupState();
-  if (st.media === "none") return "Cipherfilm isn't allowed to see your photos. Allow it under Backup.";
+  if (st.media === "none") return "Cipherfilm can't see your photos. Allow access in Backup.";
   if (!st.online) return "Waiting for an internet connection.";
   if (!manual && c.wifiOnly && !st.unmetered) return "Waiting for Wi-Fi.";
-  if (!manual && c.chargingOnly && !st.charging) return "Waiting until the phone is charging.";
+  if (!manual && c.chargingOnly && !st.charging) return "Waiting for the phone to charge.";
   return undefined;
 }
 
@@ -213,7 +213,7 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
       me = await reach(to);
     } catch (e) {
       if (e instanceof ApiError) console.log(`backup: server not reached (${e.status}) ${e.detail}`);
-      status.problem = e instanceof ApiError && e.status === 401 ? "You were signed out. Open Cipherfilm and sign in to continue the backup." : "Can't connect to the server. The backup tries again in a few minutes.";
+      status.problem = e instanceof ApiError && e.status === 401 ? "You were signed out. Sign in to continue the backup." : "Can't connect to the server. Trying again in a few minutes.";
       if (e instanceof ApiError && e.status === 401) N.backupNotify("Backup paused", "Sign in to Cipherfilm to continue.", 0, false);
       return;
     }
@@ -329,11 +329,11 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
             const msg = e instanceof Error ? e.message : String(e);
             if (e instanceof ApiError) console.log(`backup: upload failed (${e.status}) ${e.detail}`); // ids only, no names
             if (msg === "out of time") break outer;
-            if (msg === OTHER_ACCOUNT) { status.problem = "Signed in with another account. The backup goes on once this account is signed in."; break outer; }
+            if (msg === OTHER_ACCOUNT) { status.problem = "Signed in with another account. Backup continues when this account signs in again."; break outer; }
             const tries = (status.failures[String(m.id)] ?? 0) + 1;
             status.failures[String(m.id)] = tries;
             if (e instanceof ApiError && (e.status === 0 || e.status >= 500 || e.status === 401 || e.status === 413)) {
-              status.problem = e.status === 413 ? "Your storage on the server is full." : e.status === 401 ? "You were signed out. Open Cipherfilm and sign in to continue the backup." : "Can't reach the server right now. The backup tries again in a few minutes.";
+              status.problem = e.status === 413 ? "Your storage on the server is full." : e.status === 401 ? "You were signed out. Sign in to continue the backup." : "Can't connect to the server. Trying again in a few minutes.";
               break outer;
             }
             if (tries >= MAX_TRIES) { // this file can't be read or uploaded: leave it and go on
@@ -377,7 +377,7 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
 export function backupSummary(done: number, gaveUp: number, problem?: string): { title: string; text: string } | null {
   if (!done && !gaveUp) return null;
   const parts = [done === 1 ? "1 photo or video backed up." : done ? `${done} photos and videos backed up.` : ""];
-  if (gaveUp) parts.push(gaveUp === 1 ? "1 couldn't be backed up (see Backup)." : `${gaveUp} couldn't be backed up (see Backup).`);
+  if (gaveUp) parts.push(gaveUp === 1 ? "1 couldn't be backed up." : `${gaveUp} couldn't be backed up.`);
   if (problem) parts.push(`Stopped: ${problem}`);
   return { title: gaveUp || problem ? "Backup incomplete" : "Backup done", text: parts.filter(Boolean).join(" ") };
 }

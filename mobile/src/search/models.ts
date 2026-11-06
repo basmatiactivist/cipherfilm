@@ -80,7 +80,7 @@ export function dropOtherModels(clip: Clip, indexes = true): string[] {
 
 async function fetchAll(faces: boolean, clip: Clip, indexes: boolean, onProgress: (done: number, total: number) => void) {
   // the Play build never offers explicit search, so it never fetches that model, whatever asked for it (store.ts)
-  if (clip !== "mobileclip-s2" && !explicitSearchOffered()) throw new Error("Explicit search isn't available in this version of the app.");
+  if (clip !== "mobileclip-s2" && !explicitSearchOffered()) throw new Error("Explicit search isn't available in this version.");
   modelDir().create({ intermediates: true, idempotent: true });
   const list = needed(faces, clip, indexes).filter((m) => !checked.has(m.name));
   const total = list.reduce((n, m) => n + m.size, 0);

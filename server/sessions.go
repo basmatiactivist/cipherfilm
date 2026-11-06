@@ -128,7 +128,7 @@ func (a *App) endSession(w http.ResponseWriter, r *http.Request, u *user, s *ses
 		return
 	}
 	if id == s.Pub {
-		fail(w, 400, "use sign out for this device")
+		fail(w, 400, "use Sign out for this device")
 		return
 	}
 	var device string

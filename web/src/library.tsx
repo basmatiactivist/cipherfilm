@@ -172,7 +172,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
 
   const pickedItems = () => shown.filter((i) => selected.has(i.id));
   const guard = async (fn: () => Promise<void>) => { setError(""); setNote(null); try { await fn(); } catch (e) { setError(msg(e)); } };
-  const moveToTrash = (ids: string[]) => guard(async () => { await trashItems(ids); await Promise.all([refreshItems(), refreshAlbums(), refreshTrash()]); endSelect(); setNote({ text: `${ids.length} moved to the trash. You can restore ${ids.length === 1 ? "it" : "them"} for ${retention} days.`, undo: () => { restore(ids); } }); });
+  const moveToTrash = (ids: string[]) => guard(async () => { await trashItems(ids); await Promise.all([refreshItems(), refreshAlbums(), refreshTrash()]); endSelect(); setNote({ text: `${ids.length} moved to the trash. Restore within ${retention} days.`, undo: () => { restore(ids); } }); });
   const restore = (ids: string[]) => guard(async () => { await restoreItems(ids); await Promise.all([refreshItems(), refreshAlbums(), refreshTrash()]); endSelect(); setNote({ text: `${ids.length} restored.` }); });
   const purge = (ids: string[]) => guard(async () => { await purgeTrash(ids); await refreshTrash(); await refreshItems(); refreshUsage(); endSelect(); setConfirmPurge(null); });
   /** Marks or unmarks as favorites; on screen at once, put back if the server says no. */
@@ -182,7 +182,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
     mark(on);
     setFavorite(ids, on).then(() => setNote({ text: on ? (ids.length === 1 ? "Added to favorites." : `${ids.length} added to favorites.`) : (ids.length === 1 ? "Removed from favorites." : `${ids.length} removed from favorites.`) }), (e) => { mark(!on); setError(msg(e)); });
   };
-  const zip = (list: Item[], name: string) => guard(async () => { await downloadItems(list, name); setNote({ text: "Your download is starting. It will appear in your browser's downloads." }); });
+  const zip = (list: Item[], name: string) => guard(async () => { await downloadItems(list, name); setNote({ text: "Download starting." }); });
 
   const addIdsToAlbum = async (a: Album, ids: string[]) => {
     if (!ids.length) return;
@@ -313,9 +313,9 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
     const t = setTimeout(() => {
       setContent((c) => ({ ...c, q: cq, status: "Looking at what's in your photos…" }));
       contentSearch(cq, family, (done, total) => {
-        if (alive && done < total) setContent((c) => ({ ...c, status: `Getting the search model, once: ${Math.round(done / 1e6)} of ${Math.round(total / 1e6)} MB…` }));
+        if (alive && done < total) setContent((c) => ({ ...c, status: `Downloading the search model: ${Math.round(done / 1e6)} of ${Math.round(total / 1e6)} MB…` }));
       }).then((hits) => alive && setContent({ q: cq, ids: hits.map((h) => h.id), status: "" }),
-        (e) => alive && setContent({ q: cq, ids: null, status: `Searching what's in photos didn't work: ${e instanceof Error ? e.message : "try again."}` }));
+        (e) => alive && setContent({ q: cq, ids: null, status: `Couldn't search photo content. ${e instanceof Error ? e.message : "Try again."}` }));
     }, size > 1e8 ? 400 : 250);
     return () => { alive = false; clearTimeout(t); };
   }, [split.content, family, searchable > 0]);
@@ -494,7 +494,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
                 <div class="menuhead"><span class="avatar" aria-hidden="true">{props.email.slice(0, 1).toUpperCase()}</span><span class="email">{props.email}</span></div>
                 <button class="menuitem" role="menuitem" onClick={() => { setMenuOpen(false); go({ n: "account" }); }}><Icon name="user" />Account</button>
                 {props.admin && <button class="menuitem" role="menuitem" onClick={() => { setMenuOpen(false); go({ n: "admin" }); }}><Icon name="shield" />Admin</button>}
-                <button class="menuitem" role="menuitem" onClick={() => { setMenuOpen(false); if (uploading) setError("Files are still uploading. Lock when they're done, or cancel them first."); else props.onLock(); }}><Icon name="lock" />Lock</button>
+                <button class="menuitem" role="menuitem" onClick={() => { setMenuOpen(false); if (uploading) setError("Files are still uploading. Wait or cancel them, then lock."); else props.onLock(); }}><Icon name="lock" />Lock</button>
                 <button class="menuitem kbditem" role="menuitem" onClick={() => { setMenuOpen(false); setHelp(true); }}><Icon name="keyboard" />Keyboard shortcuts</button>
                 <div class="menusep" />
                 <button class="menuitem" role="menuitem" onClick={() => { setMenuOpen(false); props.onSignOut(); }}><Icon name="logout" />Sign out</button>
@@ -554,14 +554,14 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
             return (
               <p class="warning small" role="status">
                 {n} {n === 1 ? "item couldn't" : "items couldn't"} be verified{showBroken ? "" : ` and ${n === 1 ? "is" : "are"} hidden`}. Your other photos are fine. <button class="link" onClick={() => setShowBroken((v) => !v)}>{showBroken ? "Hide them" : "Show them"}</button>
-                {showBroken && " Open one to move it to the trash and clear it."}
+                {showBroken && " Open one to move it to the trash."}
               </p>
             );
           })()}
           {libraryView && !uploading && unfinished.length > 0 && (
             <p class="warning small" role="status">
               {unfinished.length === 1 ? `“${unfinished[0]}” didn't finish uploading.` : `${unfinished.length} files didn't finish uploading: ${unfinished.slice(0, 3).map((n) => `“${n}”`).join(", ")}${unfinished.length > 3 ? " and more" : ""}.`}{" "}
-              Choose {unfinished.length === 1 ? "it" : "them"} again within two days and the upload continues where it stopped.{" "}
+              Choose {unfinished.length === 1 ? "it" : "them"} again within two days to resume.{" "}
               <button class="link" onClick={() => input.current?.click()}>Choose files</button>{" · "}
               <button class="link" onClick={() => { forgetUnfinished(); setUnfinished([]); }}>Dismiss</button>
             </p>
@@ -576,19 +576,19 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
                 <section class="panel empty">
                   <span class="emptyicon"><Icon name="photos" size={32} /></span>
                   <h2>Your library is empty</h2>
-                  <p>Drag photos and videos here, or add them with the button. They're encrypted in this browser before they leave it, so the server only ever stores scrambled data.</p>
+                  <p>Drag photos and videos here, or use the button. Photos are encrypted in this browser before upload. The server only stores encrypted data.</p>
                   <button class="btn" onClick={() => input.current?.click()}><Icon name="upload" />Add photos and videos</button>
                 </section>
               )}
               {q && content.status && <p class="small" role="status">{content.status}</p>}
-              {q && items && items.length > 0 && timelineItems.length === 0 && !content.status && <p class="small">Nothing matches “{searched.trim()}”. Search looks at file names, dates (2023, March, 14.03.2023), cameras, albums and people{searchable ? ", and at what is in your photos" : ""}.{!searchable && " To find photos by what is in them (dog, beach, birthday), turn on search in the Android or Mac app."}</p>}
+              {q && items && items.length > 0 && timelineItems.length === 0 && !content.status && <p class="small">Nothing matches “{searched.trim()}”. Search covers file names, dates (2023, March, 14.03.2023), cameras, albums and people{searchable ? ", and what's in your photos" : ""}.{!searchable && " To search by what's in photos (dog, beach), turn on search in the Android or Mac app."}</p>}
               {items && items.length > 0 && albums.length > 0 && !selectMode && !q && <p class="small hint desktoponly">Tip: drag photos onto an album to file them.</p>}
               {timelineItems.length > 0 && <Timeline items={timelineItems} flat={!!ranked} selectMode={selectMode} selected={selected} onToggle={pick} onContext={(id, e) => setCtx({ x: e.clientX, y: e.clientY, kind: "item", id })} dragIds={dragIds} onOpen={(id) => openLb(timelineItems.findIndex((i) => i.id === id))} />}
             </>
           )}
 
           {view.n === "favorites" && (shown.length === 0 ? (
-            <section class="panel empty"><span class="emptyicon"><Icon name="heart" size={32} /></span><h2>No favorites yet</h2><p>Open a photo and press the heart (or F) to keep it here. Favorites you mark on your phone or Mac show up here too.</p></section>
+            <section class="panel empty"><span class="emptyicon"><Icon name="heart" size={32} /></span><h2>No favorites yet</h2><p>Open a photo and press the heart (or F). Favorites from your phone or Mac show up here too.</p></section>
           ) : (
             <>
               {q && shownItems.length === 0 && <p class="small">No favorite matches “{searched.trim()}”.</p>}
@@ -598,7 +598,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
 
           {view.n === "trash" && (
             <>
-              <p class="small trashnote">Items in the trash are permanently deleted after {retention} days. They still count toward your storage until then.</p>
+              <p class="small trashnote">Items are permanently deleted after {retention} days. Until then they count toward your storage.</p>
               {trash && trash.length > 0 && (
                 <div class="toolbar">
                   {confirmPurge === "all" ? (
@@ -612,7 +612,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
                 </div>
               )}
               {trash && trash.length === 0 ? (
-                <section class="panel empty"><span class="emptyicon"><Icon name="trash" size={32} /></span><h2>The trash is empty</h2><p>Photos and videos you move to the trash wait here, and can be restored for {retention} days.</p></section>
+                <section class="panel empty"><span class="emptyicon"><Icon name="trash" size={32} /></span><h2>The trash is empty</h2><p>Items you move to the trash stay here for {retention} days.</p></section>
               ) : (
                 trash && <Timeline items={trashItemsShown} selectMode={selectMode} selected={selected} onToggle={pick} onContext={(id, e) => setCtx({ x: e.clientX, y: e.clientY, kind: "item", id })} onOpen={(id) => openLb(trashItemsShown.findIndex((i) => i.id === id))} />
               )}
@@ -638,7 +638,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
                 onRename={(n) => setAlbums((x) => x.map((a) => (a.id === album.id ? { ...a, name: n } : a)))}
                 onDeleted={() => { setAlbums((x) => x.filter((a) => a.id !== album.id)); go({ n: "albums" }); }} setError={setError} />
               {shown.length === 0 ? (
-                <section class="panel empty"><span class="emptyicon"><Icon name="albums" size={32} /></span><h2>This album is empty</h2><p>Open your timeline, choose Select, tick some photos and add them to this album. On a computer you can also drag photos onto an album.</p></section>
+                <section class="panel empty"><span class="emptyicon"><Icon name="albums" size={32} /></span><h2>This album is empty</h2><p>In the timeline, choose Select, pick photos and add them to this album. Or drag photos onto the album.</p></section>
               ) : (
                 <Timeline items={shownItems} flat={!!ranked} selectMode={selectMode} selected={selected} onToggle={pick} onContext={(id, e) => setCtx({ x: e.clientX, y: e.clientY, kind: "item", id })} dragIds={dragIds} onOpen={(id) => openLb(shownItems.findIndex((i) => i.id === id))} />
               )}
@@ -757,7 +757,7 @@ function UploadPanel(p: { jobs: Job[]; lifted: boolean; retry: (j: Job) => void;
     : failed.length ? `${failed.length === 1 ? "1 upload" : `${failed.length} uploads`} stopped` : `${done === 1 ? "1 file" : `${done} files`} uploaded`;
   const detail = running.length
     ? [`${bytes(sent)} of ${bytes(total)}`, rate > 0 && `${bytes(rate)}/s`, rate > 0 && `${duration(left)} left`].filter(Boolean).join(" · ")
-    : done ? "Encrypted on this device, safely in Cipherfilm" : "";
+    : done ? "Encrypted and uploaded" : "";
   const pct = total ? Math.round((sent / total) * 100) : 0;
   const rows = [...unfinished.filter((j) => j.state === "working"), ...failed, ...unfinished.filter((j) => j.state === "queued")];
 
@@ -796,12 +796,12 @@ function UploadPanel(p: { jobs: Job[]; lifted: boolean; retry: (j: Job) => void;
                     <div class={"fill" + (j.state === "error" ? " err" : "")} style={{ width: `${jp}%` }} />
                   </div>
                 )}
-                {j.error && <p class="error" role="alert">{j.error}{j.retryable ? " It continues by itself when the connection is back." : ""} <button class="link" onClick={() => p.retry(j)}>Try again</button></p>}
+                {j.error && <p class="error" role="alert">{j.error}{j.retryable ? " It continues by itself once the server is reachable." : ""} <button class="link" onClick={() => p.retry(j)}>Try again</button></p>}
               </li>
             );
           })}
           {rows.length > ROWS && <li class="jobnote small">and {rows.length - ROWS} more waiting</li>}
-          {running.length > 0 && <li class="jobnote small">Keep this page open until the upload finishes. If it stops, it continues where it left off.</li>}
+          {running.length > 0 && <li class="jobnote small">Keep this page open until uploads finish. A stopped upload resumes where it left off.</li>}
         </ul>
       )}
     </section>
@@ -825,7 +825,7 @@ function AlbumList(p: { onContext: (id: string, e: MouseEvent) => void; albums: 
   return (
     <div>
       {p.albums.length === 0 ? (
-        <section class="panel empty"><span class="emptyicon"><Icon name="albums" size={32} /></span><h2>No albums yet</h2><p>Albums are private too: their names are encrypted. A photo can be in as many albums as you like.</p></section>
+        <section class="panel empty"><span class="emptyicon"><Icon name="albums" size={32} /></span><h2>No albums yet</h2><p>Album names are encrypted too. A photo can be in many albums.</p></section>
       ) : (
         <ul class="albums" aria-label="Albums">
           {p.albums.map((a) => {
@@ -884,7 +884,7 @@ function AlbumHeader(p: { album: Album; count: number; onZip: () => void; onRena
       )}
       {confirm && (
         <div class="warning" role="alertdialog" aria-label="Delete this album?">
-          <p><strong>Delete “{p.album.name}”?</strong> The photos and videos stay in your library; only the album goes away.</p>
+          <p><strong>Delete “{p.album.name}”?</strong> The photos and videos stay in your library.</p>
           <div class="row">
             <button class="btn danger small" onClick={async () => { try { await deleteAlbum(p.album.id); p.onDeleted(); } catch (e) { p.setError(msg(e)); } }}>Delete album</button>
             <KeepButton label="Keep it" onClick={() => setConfirm(false)} />

@@ -131,7 +131,7 @@ final class SearchEngine {
       var sinceWrite = 0
       while live(vault) {
         if pending.isEmpty {
-          if phase == .indexing && indexedThisRun >= 20 { Notifier.post("Search is ready", "Cipherfilm looked at \(indexedThisRun) photos and videos. You can search what is in them and who is in them.") }
+          if phase == .indexing && indexedThisRun >= 20 { Notifier.post("Search is ready", "\(indexedThisRun) photos and videos indexed.") }
           if indexedThisRun > 0 { version += 1 }
           indexedThisRun = 0
           phase = .ready
@@ -153,7 +153,7 @@ final class SearchEngine {
           continue
         }
         if !settings.indexOnBattery && Power.onBattery() {
-          phase = .waitPower; message = "Waiting until the Mac is on power (Settings › Search: also on battery)."
+          phase = .waitPower; message = "Waiting for power. To index on battery, change it in Settings › Search."
           try await Task.sleep(nanoseconds: 30_000_000_000)
           continue
         }
@@ -207,7 +207,7 @@ final class SearchEngine {
         if Date().timeIntervalSince(lastBump) > 4 { version += 1; lastBump = Date() }
         if sinceWrite >= 20 { cache.write(vault, clip.family); sinceWrite = 0 }
         if offlineCount == batch.count {
-          phase = .error; message = "Couldn't load photos to look at: \(lastOffline ?? APIError.offline) Trying again in 30 s."
+          phase = .error; message = "Couldn't load photos to index: \(lastOffline ?? APIError.offline) Trying again in 30 s."
           try await Task.sleep(nanoseconds: 30_000_000_000)
         }
       }

@@ -238,7 +238,7 @@ func sameOrigin(next http.Handler) http.Handler {
 				}
 			}
 			if ct := r.Header.Get("Content-Type"); r.ContentLength != 0 && !strings.HasPrefix(ct, "application/json") && ct != "application/octet-stream" {
-				fail(w, http.StatusUnsupportedMediaType, "json required")
+				fail(w, http.StatusUnsupportedMediaType, "JSON required")
 				return
 			}
 		}
@@ -263,7 +263,7 @@ func (a *App) auth(admin bool, next func(http.ResponseWriter, *http.Request, *us
 		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			if !ctEqual(r.Header.Get("X-CSRF-Token"), s.CSRF) {
-				fail(w, http.StatusForbidden, "bad csrf token")
+				fail(w, http.StatusForbidden, "invalid CSRF token")
 				return
 			}
 		}

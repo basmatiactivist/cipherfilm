@@ -44,7 +44,7 @@ describe("uploadFile", () => {
 
 describe("shareSummary", () => {
   it("names how many, how big and which account", () => {
-    expect(shareSummary([{ size: 2_000_000 }, { size: 500_000 }], "a@example.test")).toBe("2 files (2.5 MB) shared from another app, to be encrypted and uploaded to the library of a@example.test.");
+    expect(shareSummary([{ size: 2_000_000 }, { size: 500_000 }], "a@example.test")).toBe("2 files (2.5 MB) to encrypt and upload to a@example.test.");
     expect(shareSummary([{ size: 3000 }], "b@example.test")).toMatch(/^1 file \(3 KB\).*b@example\.test\.$/);
   });
 });
@@ -72,7 +72,7 @@ describe("the uploads' notification", () => {
   it("ends with one summary", () => {
     vi.useRealTimers();
     expect(uploadsSummary(0, 0)).toBeNull();
-    expect(uploadsSummary(3, 0)).toEqual({ title: "Upload done", text: "3 files encrypted and uploaded." });
-    expect(uploadsSummary(1, 2)).toEqual({ title: "Upload incomplete", text: "1 file encrypted and uploaded. 2 files didn't upload. Open Cipherfilm to try again." });
+    expect(uploadsSummary(3, 0)).toEqual({ title: "Upload done", text: "3 files uploaded." });
+    expect(uploadsSummary(1, 2)).toEqual({ title: "Upload incomplete", text: "1 file uploaded. 2 files didn't upload. Open Cipherfilm to try again." });
   });
 });

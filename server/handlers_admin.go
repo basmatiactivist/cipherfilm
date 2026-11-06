@@ -126,7 +126,7 @@ func (a *App) adminPatchUser(w http.ResponseWriter, r *http.Request, u *user, s 
 	}
 	// an admin may allow or forbid explicit search for themselves too, but not change their own role, status or limit
 	if id == u.ID && (req.Status != nil || req.QuotaBytes != nil || req.Role != nil) {
-		fail(w, 400, "you cannot change your own account here")
+		fail(w, 400, "you can't change your own role, status or limit")
 		return
 	}
 	if (req.Status == nil && req.QuotaBytes == nil && req.Role == nil && req.NSFW == nil) || (req.Role != nil && *req.Role != "admin" && *req.Role != "user") || (req.Status != nil && *req.Status != "active" && *req.Status != "disabled") || (req.QuotaBytes != nil && (*req.QuotaBytes < 0 || *req.QuotaBytes > 1<<50)) {
@@ -186,7 +186,7 @@ func (a *App) adminPatchUser(w http.ResponseWriter, r *http.Request, u *user, s 
 func (a *App) adminDeleteUser(w http.ResponseWriter, r *http.Request, u *user, s *session) {
 	id := r.PathValue("id")
 	if id == u.ID {
-		fail(w, 400, "you cannot delete your own account here")
+		fail(w, 400, "delete your own account under Account")
 		return
 	}
 	a.adminMu.Lock()

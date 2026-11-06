@@ -50,7 +50,7 @@ export default function PersonScreen() {
               <Menu.Item title={name ? "Rename" : "Add a name"} onPress={() => { setMenu(false); setNaming(true); }} />
               {others.length ? <Menu.Item title="Same person as…" onPress={() => { setMenu(false); setMerging(true); }} /> : null}
               {group ? <Menu.Item title={group.person?.hidden ? "Show again" : "Hide this person"} onPress={() => { setMenu(false); act(async () => { setCurrent(await setHidden(group, !group.person?.hidden)); }, group.person?.hidden ? "Shown again." : "Hidden from search and People."); }} /> : null}
-              {group?.person ? <Menu.Item title="Forget the name" onPress={() => { setMenu(false); act(() => forgetPerson(group.person!), "The name was removed."); }} /> : null}
+              {group?.person ? <Menu.Item title="Forget the name" onPress={() => { setMenu(false); act(() => forgetPerson(group.person!), "Name removed."); }} /> : null}
             </Menu>
           </Appbar.Header>
         }
@@ -60,7 +60,7 @@ export default function PersonScreen() {
             const pick = new Set(ids);
             await removeFromPerson(group.person!, group.faces.filter((f) => pick.has(f.split(":")[0])));
             reload();
-            return ids.length === 1 ? "Taken out of this person." : `${ids.length} photos taken out of this person.`;
+            return ids.length === 1 ? "Removed from this person." : `${ids.length} photos removed from this person.`;
           },
         } : undefined}
         empty={<View style={{ padding: 32 }}><Text variant="bodyMedium" style={{ textAlign: "center", color: t.colors.onSurfaceVariant }}>No photos of this person.</Text></View>}

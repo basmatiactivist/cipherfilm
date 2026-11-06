@@ -36,17 +36,17 @@ func init() {
 		{"status", "", "version, accounts, photos, storage, signed-in devices and the last backup", cliStatus},
 		{"list-users", "", "every account: role, status, photos, storage used and limit, last sign-in", cliListUsers},
 		{"make-admin", "EMAIL", "make the account an administrator (no storage limit)", cliRole("admin")},
-		{"revoke-admin", "EMAIL", "make an administrator an ordinary user again (gets the default limit); one must remain", cliRole("user")},
-		{"disable-user", "EMAIL", "lock the account: it can't sign in, and all its devices are signed out; nothing is deleted", cliStatusTo("disabled")},
-		{"enable-user", "EMAIL", "allow a locked account to sign in again", cliStatusTo("active")},
-		{"delete-user", "EMAIL --yes", "delete the account with all its photos, albums and search data, permanently", cliDeleteUser},
+		{"revoke-admin", "EMAIL", "make an administrator a regular user (default limit); one must remain", cliRole("user")},
+		{"disable-user", "EMAIL", "lock the account and sign out its devices; nothing is deleted", cliStatusTo("disabled")},
+		{"enable-user", "EMAIL", "unlock the account", cliStatusTo("active")},
+		{"delete-user", "EMAIL --yes", "permanently delete the account with its photos, albums and search data", cliDeleteUser},
 		{"set-quota", "EMAIL GB", "set the storage limit: a number of GB, unlimited or default", cliSetQuota},
 		{"allow-explicit", "EMAIL", "allow explicit search for the account (docs/SEARCH.md)", cliExplicit(true)},
 		{"deny-explicit", "EMAIL", "turn explicit search off for the account", cliExplicit(false)},
-		{"list-sessions", "[EMAIL]", "signed-in devices: account, device, signed in, last active, which one indexes", cliListSessions},
-		{"sign-out", "EMAIL [--wipe]", "sign all devices of the account out; with --wipe they also delete what they keep of the library", cliSignOut},
+		{"list-sessions", "[EMAIL]", "signed-in devices: account, device, signed in, last active, indexer", cliListSessions},
+		{"sign-out", "EMAIL [--wipe]", "sign out all the account's devices; --wipe also deletes their local copy of the library", cliSignOut},
 		{"invite", "EMAIL [--quota GB] [--url URL]", "make an invite link (valid 7 days); URL is your Cipherfilm address", cliInvite},
-		{"reset-password", "EMAIL", "explains why this isn't possible, and what is", cliResetPassword},
+		{"reset-password", "EMAIL", "why this isn't possible, and what to do instead", cliResetPassword},
 	}
 }
 
@@ -73,9 +73,9 @@ func printHelp(out io.Writer) {
 		fmt.Fprintf(tw, "  %s %s\t%s\n", c.name, c.args, c.help)
 	}
 	for _, c := range [][2]string{
-		{"backup", "write a consistent snapshot of the database to /data/backup"},
-		{"check", "check the database and that every stored file is there"},
-		{"revoke-sessions", "sign out every device of every account (after restoring an older backup)"},
+		{"backup", "write a database snapshot to /data/backup"},
+		{"check", "check the database and that every stored file exists"},
+		{"revoke-sessions", "sign out every device of every account (after restoring a backup)"},
 		{"version", "print the version"},
 		{"help", "this list"},
 	} {
@@ -88,7 +88,7 @@ func printHelp(out io.Writer) {
 
 func cliUser(a *App, args []string) (*user, error) {
 	if len(args) < 1 {
-		return nil, errors.New("which account? give its e-mail address")
+		return nil, errors.New("give the account's e-mail address")
 	}
 	email, ok := normEmail(args[0])
 	if !ok {
@@ -227,7 +227,7 @@ func cliRole(role string) func(*App, io.Writer, []string) error {
 			return err
 		}
 		if u.Role == role {
-			fmt.Fprintf(out, "%s is already %s\n", u.Email, map[string]string{"admin": "an administrator", "user": "an ordinary user"}[role])
+			fmt.Fprintf(out, "%s is already %s\n", u.Email, map[string]string{"admin": "an administrator", "user": "a regular user"}[role])
 			return nil
 		}
 		if role == "user" && lastAdmin(a, u) {
@@ -245,7 +245,7 @@ func cliRole(role string) func(*App, io.Writer, []string) error {
 			return errors.New("this is the only active administrator: make someone else an administrator first")
 		}
 		a.audit(consoleActor, "role changed", u.Email, role)
-		fmt.Fprintf(out, "%s is now %s\n", u.Email, map[string]string{"admin": "an administrator", "user": "an ordinary user"}[role])
+		fmt.Fprintf(out, "%s is now %s\n", u.Email, map[string]string{"admin": "an administrator", "user": "a regular user"}[role])
 		return nil
 	}
 }
@@ -269,7 +269,7 @@ func cliStatusTo(status string) func(*App, io.Writer, []string) error {
 		if status == "disabled" {
 			a.db.Exec(`DELETE FROM sessions WHERE user_id=?`, u.ID)
 			a.audit(consoleActor, "disabled", u.Email, "")
-			fmt.Fprintf(out, "%s is locked and signed out everywhere; its photos stay. enable-user undoes it.\n", u.Email)
+			fmt.Fprintf(out, "%s is locked and signed out everywhere; its photos stay. Undo with enable-user.\n", u.Email)
 			return nil
 		}
 		a.audit(consoleActor, "enabled", u.Email, "")
@@ -289,12 +289,12 @@ func cliDeleteUser(a *App, out io.Writer, args []string) error {
 	var n int
 	a.db.QueryRow(`SELECT COUNT(*) FROM items WHERE user_id=?`, u.ID).Scan(&n)
 	if !hasFlag(args, "--yes") {
-		return fmt.Errorf("this deletes %s and its %d photos and videos permanently, and nobody can bring them back.\nRun it again with --yes to do it", u.Email, n)
+		return fmt.Errorf("this permanently deletes %s and its %d photos and videos; nobody can bring them back.\nRun it again with --yes to confirm", u.Email, n)
 	}
 	ids := a.itemIDs(u.ID)
 	res, err := a.db.Exec(`DELETE FROM users WHERE id=? AND `+keepsAdmin, u.ID)
 	if rowsAffected(res, err) != 1 {
-		return errors.New("the account could not be deleted (it may be the only active administrator)")
+		return errors.New("couldn't delete the account (it may be the only active administrator)")
 	}
 	for _, id := range ids {
 		a.removeBlobs(id)
@@ -396,7 +396,7 @@ func cliSignOut(a *App, out io.Writer, args []string) error {
 
 func cliInvite(a *App, out io.Writer, args []string) error {
 	if len(args) < 1 {
-		return errors.New("whom to invite? give an e-mail address")
+		return errors.New("give the e-mail address to invite")
 	}
 	email, ok := normEmail(args[0])
 	if !ok {
@@ -430,7 +430,7 @@ func cliInvite(a *App, out io.Writer, args []string) error {
 		}
 	}
 	if base == "" {
-		fmt.Fprintf(out, "Invite for %s, valid until %s. Send this path with your Cipherfilm address in front:\n%s\n(or pass --url https://photos.example.com)\n", email, when(exp), path)
+		fmt.Fprintf(out, "Invite for %s, valid until %s. Put your Cipherfilm address in front of this path (or pass --url https://photos.example.com):\n%s\n", email, when(exp), path)
 		return nil
 	}
 	fmt.Fprintf(out, "Invite for %s, valid until %s:\n%s%s\n", email, when(exp), strings.TrimRight(base, "/"), path)
@@ -438,16 +438,15 @@ func cliInvite(a *App, out io.Writer, args []string) error {
 }
 
 func cliResetPassword(a *App, out io.Writer, args []string) error {
-	fmt.Fprint(out, `A password can't be reset on the server, by design: it unlocks the account's keys, and the server
-has neither the password nor the keys (end-to-end encryption, docs/CRYPTO.md). An administrator who could reset it
-could also read the photos.
+	fmt.Fprint(out, `The server can't reset a password, by design: the password unlocks the account's keys, and the server
+has neither (end-to-end encryption, docs/CRYPTO.md). An administrator who could reset it could also read the photos.
 
-What works:
-  - The person signs in with "Forgot password" and their recovery key (24 words) and sets a new password.
-  - Without a recovery key the photos can't be opened by anyone. To start over:
+Instead:
+  - The person uses "Forgot password" with their recovery key (24 words) and sets a new password.
+  - Without the recovery key nobody can open the photos. To start over:
       /app delete-user EMAIL --yes      (deletes the account and its photos permanently)
       /app invite EMAIL                 (a new account for the same address)
-  - To only stop someone from signing in: /app disable-user EMAIL, or /app sign-out EMAIL.
+  - To only block sign-in: /app disable-user EMAIL, or /app sign-out EMAIL.
 `)
 	return nil
 }

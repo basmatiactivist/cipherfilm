@@ -28,7 +28,7 @@ export default function Favorites() {
           <View style={[st.disc, { backgroundColor: t.colors.primaryContainer }]}><Icon name="heart" size={30} color={t.colors.primary} /></View>
           <Text variant="headlineSmall" style={{ textAlign: "center", marginBottom: 8 }}>No favorites yet</Text>
           <Text variant="bodyMedium" style={{ textAlign: "center", color: t.colors.onSurfaceVariant, maxWidth: 320 }}>
-            Tap the heart on a photo to keep it here. Your other devices see the same favorites.
+            Tap the heart on a photo to add it here. Favorites sync across your devices.
           </Text>
         </View>
       }

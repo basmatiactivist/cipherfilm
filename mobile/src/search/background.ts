@@ -20,9 +20,9 @@ export function backgroundBlocker(st: SearchSettings): string | undefined {
   const d = N.backupState();
   if (!st.enabled || !st.background) return "off";
   if (st.indexes === false) return "Another device indexes your photos.";
-  if (d.media === "none") return "Cipherfilm isn't allowed to see your photos.";
+  if (d.media === "none") return "Cipherfilm can't see your photos.";
   if (!d.online) return "Waiting for an internet connection.";
-  if (st.chargingOnly && !d.charging) return "Waiting until the phone is charging.";
+  if (st.chargingOnly && !d.charging) return "Waiting for the phone to charge.";
   return undefined;
 }
 

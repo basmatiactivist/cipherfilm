@@ -19,7 +19,7 @@ export const paint = (): Promise<void> => new Promise((r) => requestAnimationFra
 /** A server could hand out weak or absurd KDF settings; refuse anything outside the range the server itself enforces. */
 function assertSaneKdf(k: KdfParams) {
   if (!(k.ops >= 2 && k.ops <= 10 && k.mem >= 32 * 1024 * 1024 && k.mem <= 1024 * 1024 * 1024)) {
-    throw new Error("The server sent unexpected password-hashing settings. Sign-in was stopped for your safety.");
+    throw new Error("The server sent unexpected password settings. Sign-in stopped for your safety.");
   }
 }
 

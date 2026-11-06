@@ -139,7 +139,7 @@ export default function Backup() {
               <Text variant="titleMedium">Back up automatically</Text>
               <Text variant="bodySmall" style={{ color: t.colors.onSurfaceVariant, marginTop: 2 }}>
                 {on ? (status?.running ? `Backing up${status.current ? ` ${status.current}` : ""}…` : waiting ? `${waiting} waiting`
-                  : older ? "New photos and videos are backed up" : device.media === "partial" ? "Everything Cipherfilm may see is backed up" : "Everything is backed up") : "Off"}
+                  : older ? "New photos and videos are backed up" : device.media === "partial" ? "Everything Cipherfilm can see is backed up" : "Everything is backed up") : "Off"}
               </Text>
             </View>
             {busy ? <ActivityIndicator /> : <Switch value={on} onValueChange={toggle} accessibilityLabel="Back up automatically" />}
@@ -155,7 +155,7 @@ export default function Backup() {
                   <Button mode="outlined" style={{ marginTop: 8, alignSelf: "flex-start" }} onPress={() => apply(chosen, { ...prefs, includeExisting: true })}>Back up these too</Button>
                 </>
               ) : null}
-              {status?.stalled && !status.running ? <Text variant="bodyMedium" style={{ marginTop: 12 }}>The last backup stopped while working on {status.stalled}. It is tried again, at most three times, then skipped.</Text> : null}
+              {status?.stalled && !status.running ? <Text variant="bodyMedium" style={{ marginTop: 12 }}>The last backup stopped at {status.stalled}. It is tried up to three more times, then skipped.</Text> : null}
               <Text variant="bodySmall" style={{ marginTop: 8, color: t.colors.onSurfaceVariant }}>
                 {status?.lastDone ? `Last complete: ${fmtTime.format(status.lastDone)}` : status?.lastRun ? `Last checked: ${fmtTime.format(status.lastRun)}` : "Not run yet"}
                 {status?.uploaded ? ` · ${status.uploaded} backed up so far` : ""}
@@ -170,30 +170,30 @@ export default function Backup() {
 
         <List.Subheader>Android settings</List.Subheader>
         <Check ok={device.media === "full"} warn={device.media === "partial"} icon="photos" title="Access to photos and videos"
-          text={device.media === "full" ? "Allowed" : device.media === "partial" ? "Only the photos you chose are backed up, and new photos aren't found. Choose \"Allow all\" for automatic backup." : "Needed to find new photos"}
+          text={device.media === "full" ? "Allowed" : device.media === "partial" ? "Only the photos you chose are backed up; new ones aren't found. Choose \"Allow all\"." : "Needed to find new photos"}
           action={device.media === "full" ? undefined : [device.media === "partial" ? "Change" : "Allow", askMedia]} />
         {device.sdk >= 29 ? <Check ok={device.location} icon="info" title="Where photos were taken"
-          text={device.location ? "Kept in the backup (encrypted)" : "Without this, Android removes the location from photos before the app sees them"}
+          text={device.location ? "Kept in the backup (encrypted)" : "Without this, Android strips the location from photos"}
           action={device.location ? undefined : ["Allow", askMedia]} /> : null}
         {/* recommended, not required: a running backup keeps itself going (TransferService), so not shown as an error */}
         <Check ok={device.batteryExempt} warn icon="lock" title="Run in the background"
           text={device.batteryExempt ? "Android lets the backup run when the app is closed"
-            : xiaomi ? "On Xiaomi phones: app settings › Battery saver › No restrictions. Android doesn't show that setting here, so this stays unticked."
+            : xiaomi ? "On Xiaomi: app settings › Battery saver › No restrictions. This box stays unticked, because Android can't see that setting."
             : "Android may pause the backup when the app is closed"}
           action={device.batteryExempt ? undefined : xiaomi ? ["Open", appSettings] : ["Allow", askBattery]} />
         {!device.batteryExempt && !xiaomi && isPlayBuild() ? (
           <Text variant="bodySmall" style={[st.hint, { color: t.colors.onSurfaceVariant }]}>
-            "Allow" opens Android's battery optimisation list: choose "All apps", then Cipherfilm, then "Don't optimise".
+            In the list that opens, choose "All apps", then Cipherfilm, then "Don't optimise".
           </Text>
         ) : null}
         <Check ok={device.notifications} icon="upload" title="Notifications"
-          text={device.notifications ? "You see the progress while it backs up" : "Shows the progress, and tells you if you need to sign in again"}
+          text={device.notifications ? "Shows backup progress" : "Shows progress and tells you when to sign in again"}
           action={device.notifications ? undefined : ["Allow", askNotifications]} />
         <Text variant="bodySmall" style={[st.hint, { color: t.colors.onSurfaceVariant }]}>
-          Samsung, Xiaomi, Huawei, OPPO, OnePlus and some other phones have their own battery rules: open the app settings, then Battery, and choose "Unrestricted" or "Allow background activity".
+          Samsung, Xiaomi, Huawei, OPPO, OnePlus and some others have their own battery rules: in the app settings, open Battery and choose "Unrestricted" or "Allow background activity".
         </Text>
         <Button mode="text" style={{ alignSelf: "flex-start", marginLeft: 8 }} onPress={appSettings}>Open app settings</Button>
-        {device.powerSave ? <Text variant="bodySmall" style={[st.hint, { color: t.colors.error }]}>Battery saver is on: Android delays background work until it is off.</Text> : null}
+        {device.powerSave ? <Text variant="bodySmall" style={[st.hint, { color: t.colors.error }]}>Battery saver is on. Android delays the backup until it's off.</Text> : null}
 
         <Divider style={{ marginTop: 8 }} />
         <List.Subheader>Folders to back up</List.Subheader>
@@ -214,7 +214,7 @@ export default function Backup() {
           <RadioButton.Item label="Also the ones already in these folders" value="all" labelVariant="bodyLarge" />
         </RadioButton.Group>
         <Text variant="bodySmall" style={[st.hint, { color: t.colors.onSurfaceVariant }]}>
-          Applies to all chosen folders. Photos that are already in your library (same name and size) are skipped.
+          Applies to all chosen folders. Photos already in your library (same name and size) are skipped.
         </Text>
 
         <Divider style={{ marginTop: 8 }} />
@@ -232,7 +232,7 @@ export default function Backup() {
 
         <Divider style={{ marginTop: 8 }} />
         <Text variant="bodySmall" style={[st.hint, { color: t.colors.onSurfaceVariant, marginTop: 12 }]}>
-          Photos are encrypted on this phone before they leave it. The background backup only holds your account's public key: it can add photos to your library but can't open any. It starts a few seconds after you take a photo, about every 15 minutes besides when Android allows, and when you open the app; once it runs, it goes on until everything is uploaded.
+          Photos are encrypted on this phone before upload. The server only stores encrypted data. The background backup only holds your public key: it can add photos but can't open any. It runs a few seconds after you take a photo, about every 15 minutes when Android allows, and when you open the app.
         </Text>
       </ScrollView>
     </View>

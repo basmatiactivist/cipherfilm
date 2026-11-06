@@ -30,10 +30,10 @@ function VideoPlayer({ item }: { item: Item }) {
           blobUrl = URL.createObjectURL(new Blob([b], { type: playMime(item.meta?.mime ?? "", item.meta?.name ?? "") }));
           if (alive) setSrc(blobUrl);
         } else if (alive) {
-          setErr("This browser can't stream large videos, and this one is too big to decrypt in one go. Download the original to watch it.");
+          setErr("This video is too large to play in this browser. Download the original to watch it.");
         }
       } catch {
-        if (alive) setErr("This video couldn't be loaded or verified. You can still try downloading the original.");
+        if (alive) setErr("This video couldn't be loaded or verified. Try downloading the original.");
       }
     })();
     return () => { alive = false; forgetStream(item.id); if (blobUrl) URL.revokeObjectURL(blobUrl); };
@@ -42,7 +42,7 @@ function VideoPlayer({ item }: { item: Item }) {
   if (!src) return <p class="lbmsg" role="status">{status}</p>;
   return (
     <video key={src} src={src} controls playsInline preload="metadata" poster={cachedThumb(item.id)} aria-label={item.meta?.name}
-      onError={() => setErr("This video can't be played here. Its format may not be supported by this browser (iPhone videos often use HEVC), or it couldn't be verified. You can still download the original.")} />
+      onError={() => setErr("This video can't be played here. This browser may not support its format (iPhone videos often use HEVC), or it couldn't be verified. Download the original instead.")} />
   );
 }
 
@@ -94,7 +94,7 @@ export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number)
       onCancel={(e) => { e.preventDefault(); if (info) setInfo(false); else p.onClose(); }}
       onKeyDown={(e) => { if ((e.target as HTMLElement | null)?.closest?.("input, textarea")) return; if (e.key === "ArrowLeft") go(-1); else if (e.key === "ArrowRight") go(1); else if (e.key === "i" && !e.metaKey && !e.ctrlKey) setInfo((v) => !v);
         else if (e.key === "f" && !e.metaKey && !e.ctrlKey && !e.altKey && p.onFavorite && !it.broken) p.onFavorite(it);
-        else if (e.key === "d" && !e.ctrlKey && !e.metaKey && !e.altKey && !it.broken && !busy) { setBusy(true); downloadOriginal(it).catch((x) => setErr(x instanceof Error ? x.message : "Download failed.")).finally(() => setBusy(false)); }
+        else if (e.key === "d" && !e.ctrlKey && !e.metaKey && !e.altKey && !it.broken && !busy) { setBusy(true); downloadOriginal(it).catch((x) => setErr(x instanceof Error ? x.message : "Couldn't download.")).finally(() => setBusy(false)); }
         else if ((e.key === "Delete" || e.key === "Backspace") && p.action?.label === "Move to trash" && !busy) { e.preventDefault(); setBusy(true); p.action.run(it).catch((x) => { setErr(x instanceof Error ? x.message : "That didn't work."); setBusy(false); }); } }}>
       <div class="lbtop">
         <button class="lbbtn" onClick={p.onClose} aria-label="Close"><Icon name="back" /></button>
@@ -106,7 +106,7 @@ export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number)
         )}
         <button class="lbbtn" aria-label="Show info" aria-pressed={info} onClick={() => setInfo((v) => !v)}><Icon name="info" /></button>
         {!it.broken && (
-          <button class="lbbtn" aria-label="Download original" disabled={busy} onClick={async () => { setBusy(true); try { await downloadOriginal(it); } catch (e) { setErr(e instanceof Error ? e.message : "Download failed."); } setBusy(false); }}>
+          <button class="lbbtn" aria-label="Download original" disabled={busy} onClick={async () => { setBusy(true); try { await downloadOriginal(it); } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't download."); } setBusy(false); }}>
             <Icon name="download" />
           </button>
         )}
@@ -121,7 +121,7 @@ export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number)
         onPointerUp={(e) => { if (startX.current === null) return; const dx = e.clientX - startX.current; startX.current = null; if (Math.abs(dx) > 50) go(dx < 0 ? 1 : -1); }}>
         <button class="nav prev" onClick={() => go(-1)} disabled={p.index === 0} aria-label="Previous"><Icon name="back" size={24} /></button>
         {it.broken || err ? (
-          <p class="lbmsg">{err || "This item couldn't be verified, so it isn't shown. Your other photos aren't affected. You can move this one to the trash."}</p>
+          <p class="lbmsg">{err || "This item couldn't be verified, so it isn't shown. Your other photos are fine. You can move it to the trash."}</p>
         ) : it.kind === "video" ? (
           <VideoPlayer key={it.id} item={it} />
         ) : url ? (
@@ -129,7 +129,7 @@ export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number)
         ) : it.kind === "image" ? (
           <p class="lbmsg" role="status">Decrypting…</p>
         ) : (
-          <p class="lbmsg">No preview for this file. You can download the original.</p>
+          <p class="lbmsg">No preview for this file. Download the original to open it.</p>
         )}
         <button class="nav next" onClick={() => go(1)} disabled={p.index === p.items.length - 1} aria-label="Next"><Icon name="next" size={24} /></button>
       </div>
@@ -154,7 +154,7 @@ export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number)
             {m?.duration ? <div><dt>Length</dt><dd>{Math.round(m.duration)} s</dd></div> : null}
             {p.people && p.onPerson && !it.broken && <PhotoPeople item={it} all={p.people.all} ready={p.people.ready} onPerson={p.onPerson} />}
           </dl>
-          <p class="small">Read from this encrypted file in your browser. The server never sees any of it.</p>
+          <p class="small">Decrypted in your browser. The server never sees these details.</p>
         </aside>
       )}
     </dialog>

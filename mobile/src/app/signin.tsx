@@ -32,18 +32,18 @@ export default function SignIn() {
         <Field label="E-mail" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" textContentType="emailAddress" autoComplete="email" returnKeyType="next"
           onSubmitEditing={() => passwordField.current?.focus()} submitBehavior="submit" />
         <Field inputRef={passwordField} label="Password" value={password} onChangeText={setPassword} secureTextEntry textContentType="password" autoComplete="current-password" returnKeyType="go" onSubmitEditing={go}
-          hint={busy ? "Unlocking your keys, this takes a second or two" : undefined} />
+          hint={busy ? "Unlocking…" : undefined} />
         <Button mode="contained" onPress={go} loading={busy} disabled={busy || !email || !password} contentStyle={{ height: 48 }}>Sign in</Button>
         <Button mode="text" onPress={() => router.push("/server")} style={{ marginTop: 8 }}>Use a different address</Button>
         <Text variant="bodySmall" style={{ color: t.colors.onSurfaceVariant, marginTop: 24 }}>
-          New here, or forgot your password? Use Cipherfilm in the browser for invites and recovery.
+          New here, or forgot your password? Use Cipherfilm in the browser.
         </Text>
       </Column>
       <Portal>
         <Dialog visible={offerBio} onDismiss={done}>
           <Dialog.Title>Unlock with your fingerprint?</Dialog.Title>
           <Dialog.Content>
-            <Text variant="bodyMedium">Your key is then kept in this phone's secure hardware and only released after your fingerprint or face. You can turn it off under Account.</Text>
+            <Text variant="bodyMedium">Your key stays in this phone's secure hardware. You can turn this off in Account.</Text>
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={async () => { await declineBiometric().catch(() => {}); done(); }}>Not now</Button>

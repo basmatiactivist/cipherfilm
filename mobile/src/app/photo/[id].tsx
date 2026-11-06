@@ -326,7 +326,7 @@ function InPhoto({ item, onClose }: { item: Item; onClose: () => void }) {
           const f = naming!;
           setNaming(null);
           try { await nameFace(f, n); setError(undefined); await load(); }
-          catch (e) { setError(e instanceof Error ? `The name couldn't be saved: ${e.message}` : "The name couldn't be saved."); }
+          catch (e) { setError(e instanceof Error ? `Couldn't save the name: ${e.message}` : "Couldn't save the name."); }
         }} />
     </View>
   );

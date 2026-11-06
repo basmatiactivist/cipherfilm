@@ -6,7 +6,7 @@ import { useAction } from "../components";
 import { faceCrop, facesIn, hasIndex, knownNames, MAX_NAME, nameFace, nameGroup, type FaceInPhoto, type Group } from "./people";
 import type { Cover } from "./faces";
 
-export const NO_INDEX = "Turn on search in the Android or Mac app. It finds the faces in your photos, and they show up here too.";
+export const NO_INDEX = "Turn on search in the Android or Mac app to find the faces in your photos.";
 
 /** The decrypted image a face is cut from: the preview when it is at hand (sharper), else the thumbnail. */
 async function imageOf(it: Item): Promise<string> {
@@ -74,7 +74,7 @@ export function PhotoPeople(p: { item: Item; all: Group[]; ready: boolean; onPer
   if (!p.ready) return null;
   if (!hasIndex()) return <div><dt>People</dt><dd class="small">{NO_INDEX}</dd></div>;
   const faces = facesIn(p.item.id, p.all);
-  if (!faces.length) return <div><dt>People</dt><dd class="small">No faces found in this {p.item.kind === "video" ? "video" : "photo"}, or the Android or Mac app hasn't looked at it yet.</dd></div>;
+  if (!faces.length) return <div><dt>People</dt><dd class="small">No faces found in this {p.item.kind === "video" ? "video" : "photo"} yet.</dd></div>;
   const save = (f: FaceInPhoto) => async (name: string) => { await nameFace(f, name); setEditing(null); };
   return (
     <div>
@@ -114,7 +114,7 @@ export function PeopleList(p: { groups: Group[] | null; ready: boolean; error: s
       <section class="panel empty">
         <span class="emptyicon"><Icon name="users" size={32} /></span>
         <h2>No people yet</h2>
-        <p>{NO_INDEX} Faces are found and stored encrypted by your phone or Mac; this browser only shows them.</p>
+        <p>{NO_INDEX}</p>
       </section>
     );
   }
@@ -125,7 +125,7 @@ export function PeopleList(p: { groups: Group[] | null; ready: boolean; error: s
       <section class="panel empty">
         <span class="emptyicon"><Icon name="users" size={32} /></span>
         <h2>No people yet</h2>
-        <p>Someone shows up here once their face is in at least three photos. Your Android or Mac app is still looking, or found too few faces.</p>
+        <p>Someone shows up here once their face is in at least three photos. Your Android or Mac app may still be looking.</p>
       </section>
     );
   }
@@ -147,7 +147,7 @@ export function PeopleList(p: { groups: Group[] | null; ready: boolean; error: s
           <ul class="persons" aria-label="People not named yet">{others.map(card)}</ul>
         </>
       )}
-      <p class="small">Faces are found by your Android or Mac app and stored encrypted. Names are encrypted too and shared by your devices.</p>
+      <p class="small">Faces are found by your Android or Mac app. Faces and names are stored encrypted and shared by your devices.</p>
     </div>
   );
 }

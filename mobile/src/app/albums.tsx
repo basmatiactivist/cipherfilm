@@ -108,7 +108,7 @@ function Empty({ onCreate }: { onCreate: () => void }) {
       <View style={[st.disc, { backgroundColor: t.colors.primaryContainer }]}><Icon name="albums" size={30} color={t.colors.primary} /></View>
       <Text variant="headlineSmall" style={{ textAlign: "center", marginBottom: 8 }}>No albums yet</Text>
       <Text variant="bodyMedium" style={{ textAlign: "center", color: t.colors.onSurfaceVariant, maxWidth: 320 }}>
-        Albums are private too: their names are encrypted. A photo can be in as many albums as you like.
+        Album names are encrypted too. A photo can be in any number of albums.
       </Text>
       <Button mode="text" onPress={onCreate} style={{ marginTop: 16 }}>Create an album</Button>
     </View>

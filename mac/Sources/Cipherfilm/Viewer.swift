@@ -226,7 +226,7 @@ struct PhotoView: View {
   var body: some View {
     ZStack {
       if item.broken {
-        Text("This item couldn't be verified and is not shown.").foregroundStyle(Ink.stageMuted)
+        Text("Couldn't verify this item, so it isn't shown.").foregroundStyle(Ink.stageMuted)
       } else if let image {
         Image(nsImage: image).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
           .scaleEffect(zoom)
@@ -308,7 +308,7 @@ struct InfoPanel: View {
           VStack(alignment: .leading, spacing: 10) {
             Text("People").font(Typo.caption.weight(.semibold)).foregroundStyle(Ink.muted)
             if faces.isEmpty {
-              Text(model.search.index.has(item.id) ? "No faces found in this photo." : "Not looked at yet. Faces show up once Cipherfilm has looked at this photo.")
+              Text(model.search.index.has(item.id) ? "No faces found in this photo." : "Not indexed yet. Faces show up once this photo is indexed.")
                 .font(Typo.caption).foregroundStyle(Ink.faint).fixedSize(horizontal: false, vertical: true)
             }
             ForEach(faces) { f in

@@ -7,19 +7,36 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
-Search models come straight from Hugging Face, and the server image no longer carries them (about 850 MB of
-models; the compressed image goes from about 784 MB to 11 MB).
+Search models now come straight from Hugging Face, so the server image drops about 850 MB of models (compressed:
+about 784 MB down to 11 MB).
 
 ### Changed
-- Android, Mac and web download the search models directly from Hugging Face, where these open models are
-  published, at URLs pinned to a commit, instead of through your own server (slow and often stuck over a tailnet).
-  Every file is still checked against its size and SHA-256 before it is used. Hugging Face sees the device's IP
-  address, nothing about your photos; the apps say so before the download.
+- Android, Mac and web download the search models from Hugging Face at URLs pinned to a commit, not through your
+  server (slow and often stuck over a tailnet). Every file is still checked against its size and SHA-256. Hugging
+  Face sees the device's IP address, nothing of your photos; the apps say so before the download.
 - Android: the model download resumes after drops, retries with backoff and drops a stalled connection.
-- One list of the models (`server/models.json`) for the server and every app.
-- The server image no longer contains the models (no `MODELS_DIR`). Apps that still ask the server (2.1.x) are sent
-  on to the same pinned Hugging Face URL, with the same sign-in and explicit-search checks.
-- Web: the Content-Security-Policy allows connections to `huggingface.co` and its CDN (`*.hf.co`), for the model.
+- One model list (`server/models.json`) for the server and every app.
+- The server image no longer contains the models (no `MODELS_DIR`). Apps that still ask the server (2.1.x) are
+  redirected to the same pinned Hugging Face URL, with the same sign-in and explicit-search checks.
+- Web: the Content-Security-Policy allows `huggingface.co` and its CDN (`*.hf.co`) for the model.
+- Android: "Immediately" locks every time you leave the app; Android screens the app opens itself (photo picker,
+  permission prompts, share sheet) lock only after 10 minutes. After an automatic lock the fingerprint prompt shows
+  at once. Account › Lock automatically is now "Lock when you leave the app".
+- Android: "Run in the background" updates when you return to the app; on Xiaomi phones it says where to set the
+  battery saver to "No restrictions".
+- Web: sign-out is instant; the server is told in the background.
+- Shorter, plainer texts on Android, Mac and web, in server error messages and command help, and in the docs.
+  Deleting no longer says "for good".
+- Google Play: the German listing uses the English name, "Cipherfilm: Encrypted Photos".
+- README shortened; deployment moved to docs/SELF-HOSTING.md, tools to docs/TOOLS.md. SECURITY.md links to private
+  vulnerability reporting.
+
+### Fixed
+- Android: locking no longer lets Android stop a running search model download.
+- Android: "Search your photos?" is asked only once.
+- Android: no more "Cannot read property … of null" banners when an answer is cut off or the connection drops.
+- Web: lock and sign-out cancel requests still in flight, so no late answer is used after the keys are gone, and a
+  late 401 no longer shows "Your session has ended".
 
 ## [2.1.3] - 2026-11-06
 

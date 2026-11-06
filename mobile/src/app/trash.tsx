@@ -49,7 +49,7 @@ export default function Trash() {
     },
     {
       icon: "trash", label: "Delete forever",
-      confirm: (n) => [`Delete ${count(n)} forever?`, "They are removed from the server and can't be restored, also not from a backup made after today.", "Delete forever"],
+      confirm: (n) => [`Delete ${count(n)} forever?`, "They are deleted from the server and can't be restored, not even from a backup made after today.", "Delete forever"],
       run: async (ids) => {
         await inBatches("/api/trash/purge", ids);
         await load(); refreshAlbums();
@@ -69,7 +69,7 @@ export default function Trash() {
           </Appbar.Header>
           {items?.length ? (
             <Text variant="bodyMedium" style={[st.note, { color: t.colors.onSurfaceVariant }]}>
-              Tap photos to restore them or delete them permanently. Items are deleted automatically {days} days after they were moved here.
+              Tap photos to restore or delete them. Items are permanently deleted after {days} days.
             </Text>
           ) : null}
         </View>
@@ -79,7 +79,7 @@ export default function Trash() {
           <View style={[st.disc, { backgroundColor: t.colors.primaryContainer }]}><Icon name="trash" size={30} color={t.colors.primary} /></View>
           <Text variant="headlineSmall" style={{ textAlign: "center", marginBottom: 8 }}>The trash is empty</Text>
           <Text variant="bodyMedium" style={{ textAlign: "center", color: t.colors.onSurfaceVariant, maxWidth: 320 }}>
-            Photos and videos you move to the trash wait here, and can be restored for {days} days.
+            Deleted photos and videos stay here for {days} days.
           </Text>
         </View>
       }

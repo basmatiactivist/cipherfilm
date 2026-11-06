@@ -130,13 +130,13 @@ final class Watcher {
       do {
         struct MeLite: Decodable { struct U: Decodable { let id: String; let nsfw: Bool? }; let user: U; let csrf: String; let session_id: String?; let indexer: String? }
         let me = try JSONDecoder().decode(MeLite.self, from: try await api.json("GET", "/api/me"))
-        guard me.user.id == userId else { problem = "Signed in with another account. Turn watched folders on again."; return }
+        guard me.user.id == userId else { problem = "Signed in with another account. Turn on watched folders again."; return }
         api.csrf = me.csrf
         clip = ClipModel.choose(allowed: me.user.nsfw == true, explicit: explicit)
         // only the indexing device computes entries (docs/SEARCH.md); on the others the new photo waits for it
         indexes = (me.indexer ?? "").isEmpty || me.indexer == me.session_id
       } catch let e as APIError {
-        problem = e.status == 401 ? "You were signed out. Sign in to continue uploading watched folders." : "Can't reach the server. Trying again later."
+        problem = e.status == 401 ? "Signed out. Sign in to keep uploading." : "Can't reach the server. Trying again later."
         return
       } catch { return }
       let sf = stateFile(userId)
@@ -165,7 +165,7 @@ final class Watcher {
         } catch is Stopped {
           return
         } catch let e as APIError where e.status == 0 || e.status == 401 || e.status == 413 || e.status >= 500 {
-          problem = e.status == 413 ? "Your storage on the server is full." : e.status == 401 ? "You were signed out. Sign in to continue uploading watched folders." : "Can't reach the server right now. Trying again later."
+          problem = e.status == 413 ? "Your storage on the server is full." : e.status == 401 ? "Signed out. Sign in to keep uploading." : "Can't reach the server. Trying again later."
           sf.write(st); return
         } catch {
           let tries = (st.failures[c.print] ?? 0) + 1

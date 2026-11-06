@@ -52,7 +52,7 @@ function send(r: Req) {
       waiting.delete(e.data.id);
       e.data.ok ? w?.ok(e.data.groups) : w?.fail(new Error(e.data.error));
     };
-    worker.onerror = () => { for (const w of waiting.values()) w.fail(new Error("Grouping faces failed.")); waiting.clear(); };
+    worker.onerror = () => { for (const w of waiting.values()) w.fail(new Error("Couldn't group faces.")); waiting.clear(); };
   }
   worker.postMessage(r);
 }

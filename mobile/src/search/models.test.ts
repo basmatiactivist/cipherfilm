@@ -13,9 +13,17 @@ vi.mock("expo-file-system", () => {
   }
   return { Directory, File, Paths: { document: "docs" } };
 });
-vi.mock("../../modules/cf-native/src/CfNativeModule", () => ({ default: {} }));
+const fetched: string[] = [];
+vi.mock("../../modules/cf-native/src/CfNativeModule", () => ({
+  default: {
+    addListener: () => ({ remove() {} }),
+    downloadModel: async (url: string) => { fetched.push(url); return true; },
+  },
+}));
+const store = vi.hoisted(() => ({ play: false }));
+vi.mock("../store", () => ({ explicitSearchOffered: () => !store.play }));
 
-const { dropOtherModels, MODELS } = await import("./models");
+const { downloadModels, dropOtherModels, MODELS } = await import("./models");
 const all = () => MODELS.map((m) => `file:///docs/models/${m.name}`);
 
 describe("dropOtherModels", () => {
@@ -38,5 +46,31 @@ describe("dropOtherModels", () => {
   it("a phone that only searches keeps only the text model and the tokenizer", () => {
     expect(dropOtherModels("laion-b32", false).sort()).toEqual(["mobileclip-s2-text.onnx", "mobileclip-s2-vision.onnx", "nsfw-laion-b32-vision.onnx", "sface-2021dec.onnx", "yunet-2023mar.onnx"]);
     expect([...files].map((f) => f.split("/").pop()).sort()).toEqual(["mobileclip-s2-tokenizer.json", "nsfw-laion-b32-text.onnx"]);
+  });
+});
+
+describe("where the models come from", () => {
+  beforeEach(() => { files.clear(); fetched.length = 0; store.play = false; });
+
+  it("every file has a role here and a URL pinned to a Hugging Face commit", () => {
+    expect(MODELS).toHaveLength(7);
+    for (const m of MODELS) {
+      expect(m.url).toMatch(/^https:\/\/huggingface\.co\/[\w.-]+\/[\w.-]+\/resolve\/[0-9a-f]{40}\//);
+      expect(m.sha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(m.faces || m.clip || m.text).toBeTruthy();
+    }
+  });
+
+  it("downloads from the pinned URLs", async () => {
+    await downloadModels(false, "mobileclip-s2", () => {});
+    expect(fetched).toEqual(MODELS.filter((m) => !m.faces && m.clip !== "laion-b32").map((m) => m.url));
+  });
+
+  it("the Play build never downloads the explicit model", async () => {
+    store.play = true;
+    await expect(downloadModels(true, "laion-b32", () => {})).rejects.toThrow(/isn't available/);
+    expect(fetched).toEqual([]);
+    await downloadModels(false, "mobileclip-s2", () => {});
+    expect(fetched.some((u) => u.includes("laion"))).toBe(false);
   });
 });

@@ -15,7 +15,7 @@ import { accountKeyPair, type KeyPair } from "@crypto/item";
 import { normEmail } from "@crypto/account";
 import { decryptPeople, openIndexEntry, sealIndexEntry, type IndexEntry } from "@crypto/search";
 import N, { type Analysis, type Hit } from "../../modules/cf-native/src/CfNativeModule";
-import { api, ApiError, server } from "../api";
+import { api, ApiError } from "../api";
 import { onWipe, refreshMe, session, type Me } from "../session";
 import { imageBytes, type Item } from "../library";
 import { fingerprint } from "../prints";
@@ -250,7 +250,7 @@ export async function startSearch(library: Item[]) {
       hold("Downloading the search model", "");
       downloading = true;
       try {
-        await downloadModels(server(), st.faces, clip, (done, total) => {
+        await downloadModels(st.faces, clip, (done, total) => {
           show("Downloading the search model", `${mbs(done)} of ${mbs(total)}`, done, total);
           if (live()) set({ phase: "download", done, total });
         }, indexes);

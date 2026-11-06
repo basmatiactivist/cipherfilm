@@ -1,8 +1,9 @@
 package main
 
 import (
-	"os"
-	"path/filepath"
+	"encoding/json"
+	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -120,35 +121,61 @@ func TestUserBlobsKeepVersions(t *testing.T) {
 	}
 }
 
-func TestModelsAreServedOnlyFromTheirFolder(t *testing.T) {
+// model asks for a search model without following the redirect (the tests stay off the network): the status, and
+// where it points.
+func (c *client) model(name string) (int, string) {
+	c.e.t.Helper()
+	hc := *c.c
+	hc.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := hc.Get(c.e.srv.URL + "/api/models/" + name)
+	if err != nil {
+		c.e.t.Fatal(err)
+	}
+	resp.Body.Close()
+	return resp.StatusCode, resp.Header.Get("Location")
+}
+
+// The list every app uses: well-formed, the pins the docs name, nothing twice.
+func TestModelListIsPinned(t *testing.T) {
+	var list []struct {
+		Name, URL, SHA256 string
+		Size              int64
+	}
+	if err := json.Unmarshal(modelsJSON, &list); err != nil {
+		t.Fatal(err)
+	}
+	pinned := regexp.MustCompile(`^https://huggingface\.co/[\w.-]+/[\w.-]+/resolve/[0-9a-f]{40}/[\w./-]+$`)
+	seen := map[string]bool{}
+	for _, m := range list {
+		if seen[m.Name] || !pinned.MatchString(m.URL) || !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(m.SHA256) || m.Size <= 0 {
+			t.Fatalf("%+v", m)
+		}
+		seen[m.Name] = true
+	}
+	if len(list) != 7 || !seen["mobileclip-s2-text.onnx"] || !seen["nsfw-laion-b32-text.onnx"] || !seen["sface-2021dec.onnx"] {
+		t.Fatalf("%d models", len(list))
+	}
+}
+
+func TestModelsRedirectToTheirPinnedURL(t *testing.T) {
 	e := newEnv(t)
-	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "clip-text.onnx"), []byte("model"), 0o600)
-	os.WriteFile(filepath.Join(filepath.Dir(dir), "secret.txt"), []byte("no"), 0o600)
-	e.app.modelsDir = dir
-	if code, _ := e.client().getRaw("/api/models/clip-text.onnx"); code != 401 {
-		t.Fatalf("model served without a session: %d", code)
+	if code, _ := e.client().model("mobileclip-s2-text.onnx"); code != 401 {
+		t.Fatalf("model redirect without a session: %d", code)
 	}
 	c, _ := e.setupAdmin("admin@x.org")
-	if code, b := c.getRaw("/api/models/clip-text.onnx"); code != 200 || string(b) != "model" {
-		t.Fatalf("model: %d %q", code, b)
+	code, loc := c.model("mobileclip-s2-text.onnx")
+	if code != 302 || loc != modelURLs["mobileclip-s2-text.onnx"] || !strings.Contains(loc, "/resolve/0c311c620b36a2270b851db7bef9135f3eaae5d7/") {
+		t.Fatalf("model: %d %q", code, loc)
 	}
-	for _, p := range []string{"/api/models/..%2Fsecret.txt", "/api/models/nope.onnx", "/api/models/.hidden"} {
-		if code, b := c.getRaw(p); code == 200 || strings.Contains(string(b), "no\n") {
-			t.Fatalf("%s: %d", p, code)
+	for _, p := range []string{"..%2Fsecret.txt", "nope.onnx", ".hidden", "Mobileclip-s2-text.onnx"} {
+		if code, loc := c.model(p); code != 404 || loc != "" {
+			t.Fatalf("%s: %d %q", p, code, loc)
 		}
-	}
-	e.app.modelsDir = ""
-	if code, _ := c.getRaw("/api/models/clip-text.onnx"); code != 404 {
-		t.Fatal("served without MODELS_DIR")
 	}
 }
 
 func TestExplicitSearchIsOffUntilTheAdminAllowsIt(t *testing.T) {
 	e := newEnv(t)
-	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "nsfw-clip.onnx"), []byte("model"), 0o600)
-	e.app.modelsDir = dir
 	admin, _ := e.setupAdmin("admin@x.org")
 	bob, _ := e.acceptInvite(e.invite(admin, "bob@x.org"))
 	nsfw := func(c *client) bool {
@@ -159,11 +186,11 @@ func TestExplicitSearchIsOffUntilTheAdminAllowsIt(t *testing.T) {
 	if nsfw(admin) || nsfw(bob) {
 		t.Fatal("explicit search on by default")
 	}
-	if code, _ := e.client().getRaw("/api/models/nsfw-clip.onnx"); code != 401 {
+	if code, _ := e.client().model("nsfw-laion-b32-text.onnx"); code != 401 {
 		t.Fatalf("explicit model served without a session: %d", code)
 	}
 	for _, c := range []*client{bob, admin} {
-		if code, _ := c.getRaw("/api/models/nsfw-clip.onnx"); code != 404 {
+		if code, _ := c.model("nsfw-laion-b32-text.onnx"); code != 404 {
 			t.Fatalf("explicit model served without permission: %d", code)
 		}
 	}
@@ -190,10 +217,10 @@ func TestExplicitSearchIsOffUntilTheAdminAllowsIt(t *testing.T) {
 	if !nsfw(bob) || nsfw(admin) {
 		t.Fatal("allowed for the wrong person")
 	}
-	if code, b := bob.getRaw("/api/models/nsfw-clip.onnx"); code != 200 || string(b) != "model" {
-		t.Fatalf("allowed person doesn't get the model: %d", code)
+	if code, loc := bob.model("nsfw-laion-b32-vision.onnx"); code != 302 || loc != modelURLs["nsfw-laion-b32-vision.onnx"] {
+		t.Fatalf("allowed person doesn't get the model: %d %q", code, loc)
 	}
-	if code, _ := e.client().getRaw("/api/models/nsfw-clip.onnx"); code != 401 {
+	if code, _ := e.client().model("nsfw-laion-b32-vision.onnx"); code != 401 {
 		t.Fatal("served without a session")
 	}
 	// an admin may allow it for themselves, but still not change their own role through it
@@ -208,7 +235,7 @@ func TestExplicitSearchIsOffUntilTheAdminAllowsIt(t *testing.T) {
 	if nsfw(bob) {
 		t.Fatal("still allowed")
 	}
-	if code, _ := bob.getRaw("/api/models/nsfw-clip.onnx"); code != 404 {
+	if code, _ := bob.model("nsfw-laion-b32-vision.onnx"); code != 404 {
 		t.Fatal("model served after turning it off")
 	}
 }

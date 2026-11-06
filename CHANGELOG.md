@@ -5,6 +5,22 @@ All notable changes to Cipherfilm are listed here. The format follows
 [Semantic Versioning](https://semver.org/). The release workflow copies the section of the tagged
 version into the GitHub release notes, so a release cannot be published without an entry here.
 
+## [Unreleased]
+
+Search models come straight from Hugging Face, and the server image no longer carries them (about 850 MB of
+models; the compressed image goes from about 784 MB to 11 MB).
+
+### Changed
+- Android, Mac and web download the search models directly from Hugging Face, where these open models are
+  published, at URLs pinned to a commit, instead of through your own server (slow and often stuck over a tailnet).
+  Every file is still checked against its size and SHA-256 before it is used. Hugging Face sees the device's IP
+  address, nothing about your photos; the apps say so before the download.
+- Android: the model download resumes after drops, retries with backoff and drops a stalled connection.
+- One list of the models (`server/models.json`) for the server and every app.
+- The server image no longer contains the models (no `MODELS_DIR`). Apps that still ask the server (2.1.x) are sent
+  on to the same pinned Hugging Face URL, with the same sign-in and explicit-search checks.
+- Web: the Content-Security-Policy allows connections to `huggingface.co` and its CDN (`*.hf.co`), for the model.
+
 ## [2.1.3] - 2026-11-06
 
 Automatic lock on Android, and the Google Play build is the Play build again.

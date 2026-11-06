@@ -45,7 +45,7 @@ export default function Library() {
           <Dialog.Title>Search your photos?</Dialog.Title>
           <Dialog.Content>
             <Text variant="bodyMedium">
-              Cipherfilm can find photos by what's in them ("beach", "birthday cake") and group the people in them. It works on this phone with a one-time download of the search models from your own server (the size shows before it starts); the server never sees what your photos show. You can change this any time under Account.
+              Cipherfilm can find photos by what's in them ("beach", "birthday cake") and group the people in them. It works on this phone with a one-time download of the open search models from Hugging Face, where they are published (the size shows before it starts); the server never sees what your photos show. You can change this any time under Account.
             </Text>
           </Dialog.Content>
           <Dialog.Actions>

@@ -129,7 +129,7 @@ Questions for that category:
 | Does the app share the user's current physical location with other users? | No | Location is read only from photo EXIF, encrypted on the device, and never shown to anyone else. |
 | Does the app allow users to purchase digital goods? | No | Free, no in-app purchases. |
 | Does the app contain any swastikas or other hate symbols? (some questionnaire versions) | No | |
-| Is the app a web browser or search engine / provides unrestricted internet access? | No | It connects only to the one server the user signs in to. "Search" is a local search of the user's own photos. |
+| Is the app a web browser or search engine / provides unrestricted internet access? | No | It connects only to the one server the user signs in to, and once to Hugging Face to download the open search models. "Search" is a local search of the user's own photos. |
 | Is this a news or educational product? (if asked) | No | |
 
 Expected result: ESRB Everyone, PEGI 3, USK 0, IARC 3+, ClassInd L.
@@ -164,7 +164,7 @@ declared. This matches REQUIREMENTS §4.6.
 | Question | Answer | Why |
 |---|---|---|
 | Does your app collect or share any of the required user data types? | **Yes** | The sign-in e-mail address goes to the user's server in readable form. |
-| Is all of the user data collected by your app encrypted in transit? | **Yes** | The app only talks to `https://` servers and refuses plain http (`mobile/src/session.ts`). |
+| Is all of the user data collected by your app encrypted in transit? | **Yes** | The app only talks to `https://` servers and refuses plain http (`mobile/src/session.ts`; the model download too). |
 | Which of the following methods of account creation does your app support? | **Username and password** (accounts are created through an invite link from the server's administrator, in the browser) | The app itself only signs in; the sign-in screen points new users to the web app for invites, which counts as directing to account creation (REQUIREMENTS §4.7). |
 | Do you provide a way for users to request that their data is deleted? | **Yes** | In the app (Account → Delete account), in the web app, and via the server's administrator. |
 | Delete account URL | `https://cipherfilm.app/delete-account` | Public page, names "Cipherfilm", explains the steps. Content in `delete-account-page.md`. |
@@ -188,6 +188,7 @@ declared. This matches REQUIREMENTS §4.6.
 | **Location** → Approximate, Precise | **No** (exempt) | No | GPS positions exist only inside photo EXIF, which is encrypted on the device with the photo. The app requests no location permission. |
 | Web browsing history | No | No | |
 | App activity → App interactions, in-app search history, installed apps, other UGC, other actions | No | No | Search runs on the phone; the search index and people list are encrypted on the device before they are stored. The server keeps upload and sign-in times as part of operating the user's account on the user's own server; they are not sent to the developer. *Conservative fallback if a reviewer asks: "App interactions, App functionality".* |
+| Search models from Hugging Face (not a data type; for the reviewer's notes) | No | No | When the user turns search on, the app downloads the open search models once from Hugging Face (`huggingface.co`, its CDN under `hf.co`), where they are published. It is a plain download of public files: no user data, account, photo, search word or identifier is sent; Hugging Face sees only the phone's IP address, as any server it connects to does. Each file is checked against a SHA-256 built into the app. Not "sharing" under Play's definition (no user data leaves the app). |
 | App info and performance → Crash logs, Diagnostics, Other | No | No | No crash reporting or analytics SDK. ONNX Runtime telemetry is removed from the manifest. |
 | Device or other IDs | No | No | No advertising ID (`AD_ID` not in the manifest), no Android ID. The server stores only a readable device label, the phone's model name ("Pixel 8 (Android app)"), so the user can sign out a device. |
 
@@ -198,7 +199,8 @@ declared. This matches REQUIREMENTS §4.6.
 - Independent security review: **No** (none has been done; do not tick).
 - Committed to Play Families Policy: not applicable.
 
-Before each release: check that no new dependency adds network calls (`expo-updates` stays disabled), that the
+Before each release: check that no new dependency adds network calls (`expo-updates` stays disabled; the only
+other host is Hugging Face for the models, `server/models.json`), that the
 merged manifest still has no `AD_ID`, and that these answers still match.
 
 ### 4.9 Government apps
@@ -271,7 +273,7 @@ If the upload is deferred, the user's new photos and videos are not backed up an
 ```
 
 > Resolved in 2.1.0 (REQUIREMENTS §4.3): search indexing no longer runs in this service. Besides backup and
-> share-to-upload it carries only the download of the search model from the user's own server, which is a download
+> share-to-upload it carries only the download of the search model (from Hugging Face), which is a download
 > and fits the same use case.
 
 #### Demo video script (30–60 s, portrait screen recording, no audio needed)

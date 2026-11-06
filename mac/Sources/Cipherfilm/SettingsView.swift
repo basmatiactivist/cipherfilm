@@ -144,12 +144,15 @@ struct SearchSettings: View {
     @Bindable var model = model
     let unlocked = model.phase == .unlocked
     VStack(alignment: .leading, spacing: 20) {
-      Section_(title: "Search what is in photos, and people", subtitle: "Runs on this Mac with open models (MobileCLIP, YuNet, SFace) downloaded once from your own server\(size(.mobileclip).map { ", \($0)" } ?? " (already on this Mac)"). What it finds is encrypted and stored on your server, so your phone and this Mac share it. Nothing is sent anywhere else.") {
+      Section_(title: "Search what is in photos, and people", subtitle: "Runs on this Mac with open models (MobileCLIP, YuNet, SFace)\(size(.mobileclip).map { ", \($0)" } ?? " (already on this Mac)"). What it finds is encrypted and stored on your server, so your phone and this Mac share it. Nothing is sent anywhere else.") {
         Toggle("Search and people", isOn: Binding(get: { model.settings.search }, set: { on in
           // where explicit search is allowed, which model is asked first, so only that one is downloaded
           if on && model.me?.user.nsfw == true { askModel = true } else { model.settings.search = on; model.settings.searchAsked = true }
         }))
           .disabled(!unlocked)
+        // where the models come from, said before anything is downloaded (docs/MODELS.md)
+        Text("Downloaded once from Hugging Face, where these open models are published. Hugging Face sees this Mac's IP address, nothing about your photos.")
+          .font(Typo.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         Toggle("Find faces and group them into people", isOn: $model.settings.faces).disabled(!unlocked || !model.settings.search)
         Toggle("Also while on battery", isOn: $model.settings.indexOnBattery).disabled(!model.settings.search)
         if !unlocked { NeedsUnlock() }

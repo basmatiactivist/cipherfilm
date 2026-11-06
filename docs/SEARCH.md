@@ -13,10 +13,11 @@ list from the server.
 
 ## Models
 
-Open models, shipped in the server image (`/models`, see the Dockerfile) and downloaded by the phone from its own
-server once (about 250 MB, by default only on Wi-Fi). `GET /api/models/{name}` needs a signed-in session, like every
-other request for the library. Each file is pinned to a commit and a SHA-256 in the Dockerfile,
-and the app checks the same SHA-256 (`mobile/src/search/models.ts`) before it opens a file.
+Open models, downloaded by the phone once (about 250 MB, by default only on Wi-Fi) directly from Hugging Face, where
+they are published, at URLs pinned to a commit. Each file's URL, SHA-256 and size are in `server/models.json`, the one
+list the server and every app use; the app checks size and SHA-256 before it opens a file. A dropped or stalled
+download continues with HTTP Range. Hugging Face sees the phone's IP address, nothing about the photos (docs/MODELS.md).
+Older apps that still ask `GET /api/models/{name}` get a redirect to the same URL.
 
 | File | Model | What for | License |
 |---|---|---|---|
@@ -34,7 +35,7 @@ words are English.
 
 ONNX Runtime for Android ships a usage-telemetry client that starts with the app and reports to Microsoft; the app's
 manifest removes it (`mobile/modules/cf-native/android/src/main/AndroidManifest.xml`) and telemetry is switched off
-in code too. Cipherfilm talks only to its own server.
+in code too. Cipherfilm talks only to its own server, and to Hugging Face for the models.
 
 ## Explicit search (off by default; per person, allowed by an admin)
 
@@ -152,7 +153,7 @@ from the decrypted thumbnail or preview in the browser.
 - People: named people, then groups not named yet (from three photos); a person's page shows their photos, with
   Rename and Select all (as on an album's page) for the usual selection actions.
 - **Search by what is in a photo:** the browser downloads the active model's text encoder and the tokenizer once from
-  its own server (`web/src/search/content.worker.ts`; ONNX Runtime Web in a worker, checked against the same SHA-256,
+  Hugging Face (`web/src/search/content.worker.ts`; ONNX Runtime Web in a worker, checked against the same SHA-256,
   kept in the browser's cache), turns the words into a vector and ranks the stored image vectors, as the apps do.
   Account › Search shows the model and, for people an admin allowed it, the "Explicit search" switch for the account.
   Sign-out deletes the cached models.

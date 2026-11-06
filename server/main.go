@@ -17,8 +17,11 @@ import (
 //go:embed all:static
 var staticFS embed.FS
 
+// connect-src: besides this server, only Hugging Face, where the web app downloads the search text model
+// (server/models.json): huggingface.co answers with a redirect to its own CDN under hf.co, whose host name has changed
+// over time (cdn-lfs*.hf.co, cas-bridge.xethub.hf.co, now us.aws.cdn.hf.co), so the whole of hf.co is allowed.
 const csp = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; " +
-	"img-src 'self' blob:; media-src 'self' blob:; connect-src 'self'; worker-src 'self'; " +
+	"img-src 'self' blob:; media-src 'self' blob:; connect-src 'self' https://huggingface.co https://*.hf.co; worker-src 'self'; " +
 	"manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 
 // The HEIC decoder (libheif, built with embind) needs eval. It runs in a dedicated worker served from /heic/,

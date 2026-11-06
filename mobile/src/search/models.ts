@@ -1,22 +1,28 @@
-// The search models: downloaded once from the person's own server (which ships them, see Dockerfile) into the app's
-// private storage, each checked against the SHA-256 below before it is opened. Same files and hashes as the Dockerfile.
+// The search models: downloaded once from Hugging Face, where they are published, into the app's private storage,
+// each checked against its SHA-256 before it is opened. Names, pinned URLs, hashes and sizes come from the one list
+// the server and every app share (server/models.json, docs/MODELS.md).
 import { Directory, File, Paths } from "expo-file-system";
 import N from "../../modules/cf-native/src/CfNativeModule";
+import { explicitSearchOffered } from "../store";
+import LIST from "../../../server/models.json";
 
 /** The image/text model: MobileCLIP S2, or LAION's uncensored CLIP ViT-B/32 for explicit search (docs/SEARCH.md). */
 export type Clip = "mobileclip-s2" | "laion-b32";
 /** text: needed by a phone that only searches (another device indexes, docs/SEARCH.md "One device indexes") */
-export interface Model { name: string; sha256: string; size: number; faces?: boolean; clip?: Clip; text?: boolean }
+export interface Model { name: string; url: string; sha256: string; size: number; faces?: boolean; clip?: Clip; text?: boolean }
 
-export const MODELS: Model[] = [
-  { name: "mobileclip-s2-vision.onnx", sha256: "d28b92d7a3a6ba99bd000cce5c91678c0e279dc934c887a3785908a811872a6c", size: 143020962, clip: "mobileclip-s2" },
-  { name: "mobileclip-s2-text.onnx", sha256: "f8aaa97cf17fbadd78b0bd6d5f6a1c57f712402cacc3055ea92c1a3331357dfe", size: 64117260, clip: "mobileclip-s2", text: true },
-  { name: "nsfw-laion-b32-vision.onnx", sha256: "b9ce24b91a8c62ef8d40ea786051709c93140104cbf2b6b4a2cc270df3838f9c", size: 351613724, clip: "laion-b32" },
-  { name: "nsfw-laion-b32-text.onnx", sha256: "48c25be37b352398f2533c9426dab6f9340535e14e46f884cc894236a5060722", size: 254193396, clip: "laion-b32", text: true },
-  { name: "mobileclip-s2-tokenizer.json", sha256: "72ed5c96db5729294468543e4bc75fce14ca63f58e37300290189ba1c1e52b85", size: 2224081, text: true },
-  { name: "yunet-2023mar.onnx", sha256: "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4", size: 232589, faces: true },
-  { name: "sface-2021dec.onnx", sha256: "0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79", size: 38696353, faces: true },
-];
+/** What each file is for here; where it comes from is in the shared list. */
+const ROLES: Record<string, Omit<Model, "name" | "url" | "sha256" | "size">> = {
+  "mobileclip-s2-vision.onnx": { clip: "mobileclip-s2" },
+  "mobileclip-s2-text.onnx": { clip: "mobileclip-s2", text: true },
+  "nsfw-laion-b32-vision.onnx": { clip: "laion-b32" },
+  "nsfw-laion-b32-text.onnx": { clip: "laion-b32", text: true },
+  "mobileclip-s2-tokenizer.json": { text: true },
+  "yunet-2023mar.onnx": { faces: true },
+  "sface-2021dec.onnx": { faces: true },
+};
+
+export const MODELS: Model[] = LIST.map((m) => ({ ...m, ...ROLES[m.name] }));
 
 /** Bumped when the models or how their output is used change: entries made with another value are made again. */
 const TAGS: Record<Clip, [string, string]> = {
@@ -52,9 +58,9 @@ let downloading: Promise<void> | null = null;
 let listeners = new Set<(done: number, total: number) => void>();
 
 /** Downloads what is missing; onProgress gets bytes of all files together. A second call joins the running download. */
-export function downloadModels(server: string, faces: boolean, clip: Clip, onProgress: (done: number, total: number) => void, indexes = true): Promise<void> {
+export function downloadModels(faces: boolean, clip: Clip, onProgress: (done: number, total: number) => void, indexes = true): Promise<void> {
   listeners.add(onProgress);
-  downloading ??= fetchAll(server, faces, clip, indexes, (d, t) => listeners.forEach((f) => f(d, t))).finally(() => { downloading = null; listeners = new Set(); });
+  downloading ??= fetchAll(faces, clip, indexes, (d, t) => listeners.forEach((f) => f(d, t))).finally(() => { downloading = null; listeners = new Set(); });
   return downloading;
 }
 
@@ -72,7 +78,9 @@ export function dropOtherModels(clip: Clip, indexes = true): string[] {
   return gone;
 }
 
-async function fetchAll(server: string, faces: boolean, clip: Clip, indexes: boolean, onProgress: (done: number, total: number) => void) {
+async function fetchAll(faces: boolean, clip: Clip, indexes: boolean, onProgress: (done: number, total: number) => void) {
+  // the Play build never offers explicit search, so it never fetches that model, whatever asked for it (store.ts)
+  if (clip !== "mobileclip-s2" && !explicitSearchOffered()) throw new Error("Explicit search isn't available in this version of the app.");
   modelDir().create({ intermediates: true, idempotent: true });
   const list = needed(faces, clip, indexes).filter((m) => !checked.has(m.name));
   const total = list.reduce((n, m) => n + m.size, 0);
@@ -83,7 +91,7 @@ async function fetchAll(server: string, faces: boolean, clip: Clip, indexes: boo
   });
   try {
     for (const m of list) {
-      await N.downloadModel(`${server.replace(/\/+$/, "")}/api/models/${m.name}`, path(m), m.sha256, m.size);
+      await N.downloadModel(m.url, path(m), m.sha256, m.size);
       checked.add(m.name);
       before += m.size;
       onProgress(before, total);

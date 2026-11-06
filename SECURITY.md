@@ -2,8 +2,9 @@
 
 ## Reporting a vulnerability
 
-Please **do not open a public issue** for a security problem. Use GitHub's private reporting ("Security" tab, "Report a
-vulnerability") on this repository. Include what you found, how to reproduce it (a local test is ideal) and what you
+Please **do not open a public issue** for a security problem. Use GitHub's private reporting:
+<https://github.com/basmatiactivist/cipherfilm/security/advisories/new> ("Security" tab, "Report a vulnerability").
+If you can't use GitHub, write to <contact@cipherfilm.app>. Include what you found, how to reproduce it (a local test is ideal) and what you
 think the impact is. Expect an answer within a few days; this is a small project maintained in spare time.
 
 ## What this project does and does not promise

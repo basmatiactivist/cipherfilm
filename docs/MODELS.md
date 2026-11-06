@@ -9,14 +9,25 @@ checked. How they are used is in docs/SEARCH.md.
 
 ## The files
 
-All files are shipped in the server image (`/models`, built in the `models` stage of the Dockerfile) and downloaded
-by each device from **your own server** (`GET /api/models/{name}`, only with a signed-in session; the `nsfw-*` files
-only for people allowed explicit search). Each one is pinned twice:
+Each device downloads the files once, directly from **Hugging Face**, where these open models are published, at a
+URL pinned to a fixed commit of the model's repository (`https://huggingface.co/<repo>/resolve/<commit>/<path>`, never
+a branch). Hugging Face answers with a redirect to its CDN (currently `us.aws.cdn.hf.co`; earlier `cdn-lfs*.hf.co` and
+`cas-bridge.xethub.hf.co`), which sends CORS headers, so the web app can fetch from it too. The files are not in the
+server image.
 
-1. **In the Dockerfile**, to a fixed commit of its Hugging Face repository and a SHA-256 (`ADD --checksum`): the image
-   build fails if a single byte differs, so a later change upstream can't slip in.
-2. **In the apps**, to the same SHA-256 (`mobile/src/search/models.ts`, the Mac app's model list, the web client): a
-   device checks every file before it opens it.
+**One list:** `server/models.json` holds each file's name, pinned URL, SHA-256 and size. The Android app and the web
+app read it when they are built; the Mac app has the same values, and a test (`mac/Tests/.../DownloadTests.swift`)
+fails if they differ; the server uses it to answer older apps (below). A device checks every file's size and SHA-256
+before it opens it, so a later change upstream, or anything else on the way, can't slip in.
+
+**What Hugging Face learns:** the device's IP address, that it downloaded these public files, and an ordinary
+user agent. No cookie, account, photo, search word or anything about the library goes there; the downloads carry no
+referrer. The web app's Content-Security-Policy allows `connect-src` to `https://huggingface.co` and `https://*.hf.co`
+only for this.
+
+**Older apps** (2.1.x) still ask their server, `GET /api/models/{name}`: the server answers with a redirect (302) to the
+pinned URL, with the same rules as when it had the files: a signed-in session, the `nsfw-*` files only for people
+allowed explicit search, 404 for anything not in the list.
 
 | File | Model | Made by | Source (pinned commit) | License | Size |
 |---|---|---|---|---|---|
@@ -28,7 +39,7 @@ only for people allowed explicit search). Each one is pinned twice:
 | `nsfw-laion-b32-vision.onnx` | OpenCLIP ViT-B/32 `laion2b_s34b_b79k`, image encoder, fp32 | LAION (weights), Immich (ONNX export) | [immich-app/ViT-B-32__laion2b-s34b-b79k](https://huggingface.co/immich-app/ViT-B-32__laion2b-s34b-b79k) `19a057a0…` | MIT | 352 MB |
 | `nsfw-laion-b32-text.onnx` | the same model's text encoder, fp32 | same | same | MIT | 254 MB |
 
-The full commits and SHA-256 values are in the Dockerfile and in docs/SEARCH.md.
+The full commits, SHA-256 values and sizes are in `server/models.json`.
 
 ## What we checked
 
@@ -64,9 +75,10 @@ can't run foreign code. The worst a wrong file could do is search badly; and a w
   was trained before that, on the original data. Its weights remain openly distributed (LAION, OpenCLIP, Immich).
   This is why explicit search is off for everyone until an admin allows it per person.
 - **No telemetry:** ONNX Runtime for Android ships a usage-telemetry client that reports to Microsoft. The Android
-  app removes it from its manifest and switches telemetry off in code. Cipherfilm talks only to its own server.
-- **Updates:** a model changes only with a new Cipherfilm release, through a new commit and SHA-256 in the
-  Dockerfile and the apps. Index entries name the model they were made with (`m`), so a new model re-indexes the
+  app removes it from its manifest and switches telemetry off in code. Cipherfilm talks only to its own server,
+  and to Hugging Face once for these files.
+- **Updates:** a model changes only with a new Cipherfilm release, through a new commit and SHA-256 in
+  `server/models.json` (and the Mac app's list). Index entries name the model they were made with (`m`), so a new model re-indexes the
   library instead of mixing vectors that don't compare.
 
 ## Credits

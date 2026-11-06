@@ -141,14 +141,15 @@ insides of packages (such as a Photos library). A file that fails three times is
 ## Search on the Mac
 
 Off until turned on (the question after the first unlock, or Settings › Search & People). Then the Mac downloads the
-models from your server once (signed in; about 250 MB, checked against the same SHA-256 values as the phone), fetches the entries
+models once from Hugging Face, at the pinned URLs in `server/models.json` (about 250 MB, checked against the same sizes and
+SHA-256 values as the phone; no cookie or other app header goes along, docs/MODELS.md), fetches the entries
 other devices made, and indexes every photo and video that has none, six at a time at low priority, also on battery
 (Settings › Search can limit it to power). Entries are sealed to the account's public key and stored on the
 server, so each photo is analysed once for all devices. The download has no overall time limit (a slow tailnet relay
-may bring a few hundred KB/s); two minutes without a byte count as a drop. Each file goes to `<name>.part` first and
+may bring a few hundred KB/s); a minute without a byte counts as a drop. Each file goes to `<name>.part` first and
 a drop, or quitting, resumes it with HTTP Range; drops and stalls are retried with backoff (2 s up to a minute) until
 the download is done, never given up. Search & People and the sidebar show the bytes, the speed and the time left, or
-why it is waiting ("The connection to the server dropped. Trying again in 4 s").
+why it is waiting ("The connection to Hugging Face dropped. Trying again in 4 s").
 
 Errors say what happened, not a generic "Can't connect": a request that pauses for a minute is "The server is slow to
 answer", a dropped connection, no network, a server that refuses the connection, an unknown name, an untrusted

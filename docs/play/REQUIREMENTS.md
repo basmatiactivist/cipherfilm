@@ -158,7 +158,7 @@ Sources: [Testing requirements for personal accounts](https://support.google.com
 Source: [User Data policy](https://support.google.com/googleplay/android-developer/answer/10144311)
 - [ ] Linked in Play Console **and inside the app** (Settings/Account screen, and the sign-in screen).
 - [ ] Must contain: the developer entity exactly as named on the store listing (or the app name), a privacy contact, the data types accessed, collected, used and shared, secure handling, and retention and deletion. It must be labelled as a privacy policy.
-- [ ] Cipherfilm-specific content: the developer runs no service and receives no data. Everything goes to the server the user enters. Photos, videos, filenames, EXIF/GPS (`ACCESS_MEDIA_LOCATION`), capture dates, album names, the search index and the face list are end-to-end encrypted. The server operator can see email, sign-in times, counts and sizes, album structure and a device label (list from `docs/THREAT_MODEL.md`). ML runs on the device. Models are downloaded from the user's own server. There are no analytics, ads or crash reporting, and ONNX telemetry is removed. Biometric data never leaves the OS. Deletion is covered in §4.7.
+- [ ] Cipherfilm-specific content: the developer runs no service and receives no data. Everything goes to the server the user enters. Photos, videos, filenames, EXIF/GPS (`ACCESS_MEDIA_LOCATION`), capture dates, album names, the search index and the face list are end-to-end encrypted. The server operator can see email, sign-in times, counts and sizes, album structure and a device label (list from `docs/THREAT_MODEL.md`). ML runs on the device. Models are downloaded once from Hugging Face, where they are published (it sees the phone's IP address, no user data). There are no analytics, ads or crash reporting, and ONNX telemetry is removed. Biometric data never leaves the OS. Deletion is covered in §4.7.
 
 ### 4.2 Photo and video permissions (`READ_MEDIA_IMAGES` / `READ_MEDIA_VIDEO`)
 Source: [Details on Google Play's Photo and Video Permissions policy](https://support.google.com/googleplay/android-developer/answer/14115180)
@@ -270,7 +270,7 @@ Sources: [App access](https://support.google.com/googleplay/android-developer/an
 - [ ] Run a **dedicated demo instance** on a public HTTPS domain (e.g. `demo.<project-domain>`, Caddy with Let's Encrypt). A separate small VPS or a separate compose project with its own volume works, sharing nothing with production. Configuration:
   - one ordinary user, `reviewer@<domain>`, with a strong static password, no recovery dependency, and no admin rights;
   - about 30 pre-loaded neutral demo photos and videos (own or CC0, no identifiable private people), plus one album;
-  - search models available (standard only), **explicit model disabled**, small quota (e.g. 2 GB);
+  - **explicit model disabled** (the Play build doesn't offer it anyway; the models come from Hugging Face, not the server), small quota (e.g. 2 GB);
   - a nightly reset job (restore a snapshot) so reviewer uploads don't pile up, with monitoring and an uptime alert.
 - [ ] App access instructions (≤ 500 chars each field):
   > Cipherfilm is a client for a self-hosted server. On the sign-in screen enter Server: `https://demo.<domain>` · Email: `reviewer@<domain>` · Password: `<…>`. No 2FA. After sign-in, grant photo access and tap "Back up" to see encrypted backup; the demo library already contains sample photos. Biometric unlock is optional (Account → Unlock with fingerprint or face).

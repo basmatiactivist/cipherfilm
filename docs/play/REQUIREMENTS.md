@@ -253,7 +253,7 @@ Notifications: `POST_NOTIFICATIONS` needs no declaration. Request it when the us
 Sources: [App access](https://support.google.com/googleplay/android-developer/answer/9859455), [Requirements for sign-in credentials](https://support.google.com/googleplay/android-developer/answer/15748846)
 
 - Credentials *"must be accessible at all times, reusable, and valid regardless of user location"*, in English, with no 2FA or OTP, plus *"clear instructions"* for special login fields. If a password expires, the app *"may be rejected"*.
-- The production instance is **tailnet-only** (`photos.tail3b37f7.ts.net`), so reviewers can't reach it. Never give it to Google.
+- The production instance is **tailnet-only**, so reviewers can't reach it. Never give it to Google.
 - [ ] Run a **dedicated demo instance** on a public HTTPS domain (e.g. `demo.<project-domain>`, Caddy with Let's Encrypt). A separate small VPS or a separate compose project with its own volume works, sharing nothing with production. Configuration:
   - one ordinary user, `reviewer@<domain>`, with a strong static password, no recovery dependency, and no admin rights;
   - about 30 pre-loaded neutral demo photos and videos (own or CC0, no identifiable private people), plus one album;

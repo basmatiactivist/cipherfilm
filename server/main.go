@@ -168,6 +168,9 @@ func main() {
 	if os.Getenv("TRUST_PROXY") == "1" && !app.trustProxy {
 		log.Printf("TRUST_PROXY=1 is ignored until PUBLIC_HOSTS is set: login limits count the proxy's address")
 	}
+	if n := len(app.demo); n > 0 {
+		log.Printf("DEMO_ACCOUNTS: %d read-only public demo account(s)", n)
+	}
 	if err := app.initSetup(); err != nil {
 		log.Fatal(err)
 	}

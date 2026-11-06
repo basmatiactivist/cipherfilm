@@ -172,8 +172,12 @@ lost device, make an invite link, status). A password can't be reset from the se
 | `TRUST_PROXY` | env / `.env` | `0`; `1` for options B and C | trust the last `X-Forwarded-For` entry from exactly one proxy; needs `PUBLIC_HOSTS` |
 | `TRUSTED_PROXIES` | `.env` | empty (loopback and private networks) | addresses or CIDRs whose `X-Forwarded-For` is believed, comma-separated |
 | `PUBLIC_HOSTS` | `.env` | empty (any); required with `TRUST_PROXY=1` (option B; set from `SITE_ADDRESS` in C) | names the app answers for, e.g. `photos.example.com` or `photos.<tailnet>.ts.net`; others get 421 |
+| `DEMO_ACCOUNTS` | `.env` | empty | e-mail addresses of public demo accounts, comma-separated: they can sign in, look and search, but not upload, edit, delete or change the account (403); see [deploy/demo](../deploy/demo/README.md) |
 | `DATA_VOLUME` | `.env` | `cipherfilm_data` | Docker volume for database and files |
 | `LISTEN_ADDR`, `DATA_DIR` | app env | `:8080`, `/data` | inside the container |
+
+`DEMO_ACCOUNTS` is only for a server whose login you publish on purpose, such as a demo that is reset from a seed. Never
+list an account with real photos or an administrator: anyone with the password can see everything in it.
 
 Built-in limits: 20 GB per invited user (changeable; thumbnails and previews count too), 50 unfinished uploads per user, 8 GB per file, sessions end 30 days after their last use or a year after signing in, trash empties after 30 days, 10 failed sign-ins per account and source address and 30 per source address overall, per 15 minutes. There is no ceiling across all sources, on purpose: it would let a stranger lock you out. Browsers that signed in before have their own limit of 20 per account.
 

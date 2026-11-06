@@ -23,6 +23,7 @@ services:
       LISTEN_ADDR: ":8080"
       TRUST_PROXY: "0"
       PUBLIC_HOSTS: "${PUBLIC_HOSTS:-}"   # the name(s) the app is reached by; requests for any other name are refused
+      DEMO_ACCOUNTS: "${DEMO_ACCOUNTS:-}" # public read-only demo logins (deploy/demo); normally empty
 
 volumes:
   appdata:

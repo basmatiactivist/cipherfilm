@@ -56,7 +56,7 @@ type userView struct {
 
 // sessionBundle is what a signed-in client needs to unlock its keys.
 func (a *App) sessionBundle(u *user, s *session) map[string]any {
-	return map[string]any{
+	b := map[string]any{
 		"user":              userView{u.ID, u.Email, u.Role, u.NSFW},
 		"csrf":              s.CSRF,
 		"session_id":        s.Pub,            // this device in the device list
@@ -67,6 +67,10 @@ func (a *App) sessionBundle(u *user, s *session) map[string]any {
 		"pubkey":            u.Pubkey,
 		"server_version":    version, // shown in the apps' settings
 	}
+	if a.isDemo(u) {
+		b["demo"] = true // the apps show a notice and hide what would be refused
+	}
+	return b
 }
 
 // ---- setup ----
@@ -459,6 +463,11 @@ func (a *App) recoverStart(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "invalid request")
 		return
 	}
+	// a new password for the published login would lock everyone else out
+	if a.demo[email] {
+		fail(w, 403, demoRefused)
+		return
+	}
 	ip := limiterIP(a.clientIP(r))
 	u, err := a.userByEmail(email)
 	slots := []slot{{a.loginIP, "recover|" + ip, false}, {a.loginAcct, "recover|" + email + "|" + ip, true}}
@@ -520,7 +529,7 @@ func (a *App) recoverFinish(w http.ResponseWriter, r *http.Request) {
 		fail(w, 403, "recovery session expired, start again")
 		return
 	}
-	if u, err := a.userByID(t.userID); err != nil || u.Status != "active" {
+	if u, err := a.userByID(t.userID); err != nil || u.Status != "active" || a.isDemo(u) {
 		fail(w, 403, "recovery session expired, start again")
 		return
 	}

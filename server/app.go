@@ -38,6 +38,7 @@ type App struct {
 	trustProxy bool
 	proxies    []netip.Prefix  // TRUSTED_PROXIES: the peers whose X-Forwarded-For counts; empty: loopback and private
 	hosts      map[string]bool // PUBLIC_HOSTS; empty: any
+	demo       map[string]bool // DEMO_ACCOUNTS: read-only public logins (demo.go)
 	dummyHash  string
 	loginIP    *limiter
 	loginAcct  *limiter         // per (account, source)
@@ -92,12 +93,17 @@ func newApp(dataDir string) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	demo, err := demoAccounts(os.Getenv("DEMO_ACCOUNTS"))
+	if err != nil {
+		return nil, err
+	}
 	dummy, _ := hashSecret(b64.EncodeToString(randBytes(32)))
 	a := &App{
 		db: db, dataDir: dataDir, secret: secret, dummyHash: dummy,
 		trustProxy: os.Getenv("TRUST_PROXY") == "1",
 		proxies:    proxies,
 		hosts:      publicHosts(os.Getenv("PUBLIC_HOSTS")),
+		demo:       demo,
 		loginIP:    newLimiter(15*time.Minute, 30),
 		loginAcct:  newLimiter(15*time.Minute, 10),
 		loginDev:   newLimiter(15*time.Minute, 20),
@@ -270,7 +276,12 @@ func (a *App) auth(admin bool, next func(http.ResponseWriter, *http.Request, *us
 		if s.renewed {
 			setSessionCookie(w, c.Value)
 		}
-		if admin && u.Role != "admin" {
+		if a.isDemo(u) && !demoAllows(r) {
+			fail(w, http.StatusForbidden, demoRefused)
+			return
+		}
+		// a published login never administers the server, even if it is listed by mistake
+		if admin && (u.Role != "admin" || a.isDemo(u)) {
 			fail(w, http.StatusNotFound, "not found")
 			return
 		}

@@ -19,7 +19,7 @@ export function Setup({ onKeys }: { onKeys: (k: auth.PendingKey) => void }) {
   const { busy, error, setError, run } = useAction();
   return (
     <Card title="Set up Cipherfilm" sealed>
-      <p>This creates the first account, the administrator. You'll find the setup token in the server's log (look for <em>FIRST-TIME SETUP</em>).</p>
+      <p>Creates the administrator account. The setup token is in the server log, after <em>FIRST-TIME SETUP</em>.</p>
       <form onSubmit={(e) => {
         e.preventDefault();
         const p = passwordProblem(pw, pw2);
@@ -30,7 +30,7 @@ export function Setup({ onKeys }: { onKeys: (k: auth.PendingKey) => void }) {
         <Field label="E-mail" id="email" type="email" value={email} onInput={setEmail} autocomplete="username" hint="Only used to sign in. Cipherfilm never sends e-mail." />
         <NewPasswordFields pw={pw} setPw={setPw} pw2={pw2} setPw2={setPw2} />
         <ErrorLine text={error} />
-        <Submit busy={busy} label="Create account" busyLabel="Creating your keys, this takes a second or two" />
+        <Submit busy={busy} label="Create account" busyLabel="Creating keys…" />
       </form>
     </Card>
   );
@@ -43,13 +43,13 @@ export function Invite({ token, onKeys, nav }: { token: string; onKeys: (k: auth
   const [pw2, setPw2] = useState("");
   const { busy, error, setError, run } = useAction();
   useEffect(() => {
-    auth.inviteEmail(token).then(setEmail, () => setBad("This invite link isn't valid any more. It may have expired or already been used. Ask for a new one."));
+    auth.inviteEmail(token).then(setEmail, () => setBad("This invite link has expired or was already used. Ask for a new one."));
   }, [token]);
   if (bad) return <Card title="Invite not valid"><p>{bad}</p><p class="aside"><a href="/" onClick={(e) => { e.preventDefault(); nav("/"); }}>Go to sign in</a></p></Card>;
   if (email === null) return <Card title="Accept your invite"><p>Checking your invite…</p></Card>;
   return (
     <Card title="Create your account" sealed>
-      <p>You've been invited to Cipherfilm. Choose a password for your own private library.</p>
+      <p>You've been invited to Cipherfilm. Choose a password.</p>
       <form onSubmit={(e) => {
         e.preventDefault();
         const p = passwordProblem(pw, pw2);
@@ -59,7 +59,7 @@ export function Invite({ token, onKeys, nav }: { token: string; onKeys: (k: auth
         <Field label="E-mail" id="email" type="email" value={email} onInput={() => {}} readOnly autocomplete="username" />
         <NewPasswordFields pw={pw} setPw={setPw} pw2={pw2} setPw2={setPw2} />
         <ErrorLine text={error} />
-        <Submit busy={busy} label="Create account" busyLabel="Creating your keys, this takes a second or two" />
+        <Submit busy={busy} label="Create account" busyLabel="Creating keys…" />
       </form>
     </Card>
   );
@@ -76,7 +76,7 @@ export function RecoveryKey({ pending, onDone, title = "Save your recovery key",
   const file = `Cipherfilm recovery key for ${email}\n\n${words.map((w, i) => `${i + 1}. ${w}`).join("\n")}\n\nKeep this somewhere safe and private. Anyone with it can reset your password.\n`;
   return (
     <Card title={title} sealed wide>
-      <p class="lead">This key is the only way back in if you forget your password.</p>
+      <p class="lead">The only way back in if you forget your password.</p>
       <ol class="words" aria-label="Recovery key, 24 words in order">
         {words.map((w, i) => <li key={i}><span class="n">{i + 1}</span>{w}</li>)}
       </ol>
@@ -85,10 +85,10 @@ export function RecoveryKey({ pending, onDone, title = "Save your recovery key",
         <a class="btn secondary" download="cipherfilm-recovery-key.txt" href={"data:text/plain;charset=utf-8," + encodeURIComponent(file)}>Download</a>
         <button class="btn secondary" onClick={() => window.print()}>Print</button>
       </div>
-      <p class="warning"><strong>If you lose both your password and this key, your photos can't be recovered.</strong> Nobody can reset it for you, not even the administrator. We can't see your photos, so we can't recover them either.</p>
-      {replacing && <p class="small">Backups of this server made before today still open only with your previous password or recovery key. Keep the old key too until those backups are gone.</p>}
+      <p class="warning"><strong>If you lose both your password and your recovery key, your photos are lost.</strong> Not even the administrator can recover them.</p>
+      {replacing && <p class="small">Server backups made before today still need your old password or old recovery key. Keep the old key until those backups are gone.</p>}
       <label class="check no-print"><input type="checkbox" checked={saved} onChange={(e) => setSaved((e.target as HTMLInputElement).checked)} /> I've saved my recovery key somewhere safe</label>
-      {error && <ErrorLine text={`This key isn't active yet: ${error} Check the connection and press Continue again.`} />}
+      {error && <ErrorLine text={`The new key isn't saved yet. ${error} Press Continue to try again.`} />}
       <button class="btn no-print" disabled={!saved || busy} onClick={() => run(async () => { await pending.commit(); onDone(); })}>{busy ? "Saving…" : "Continue"}</button>
     </Card>
   );
@@ -106,7 +106,7 @@ export function Recover({ nav, onKeys }: { nav: Nav; onKeys: (k: auth.PendingKey
   if (!handle) {
     return (
       <Card title="Reset your password" sealed>
-        <p>Enter your e-mail and the 24 words of your recovery key. Your photos stay exactly as they are.</p>
+        <p>Enter your e-mail and your 24-word recovery key. Your photos stay as they are.</p>
         <form onSubmit={(e) => { e.preventDefault(); run(async () => setHandle(await auth.recoverStart(email, words))); }}>
           <Field label="E-mail" id="email" type="email" value={email} onInput={setEmail} autocomplete="username" autofocus />
           <div class="field">
@@ -118,14 +118,14 @@ export function Recover({ nav, onKeys }: { nav: Nav; onKeys: (k: auth.PendingKey
           <ErrorLine text={error} />
           <Submit busy={busy} label="Check recovery key" busyLabel="Checking…" />
         </form>
-        <p class="warning small">Lost both your password and your recovery key? Then your photos can't be recovered. That's the price of nobody else being able to see them.</p>
+        <p class="warning small">If you lose both your password and your recovery key, your photos are lost.</p>
         {back}
       </Card>
     );
   }
   return (
     <Card title="Choose a new password" sealed>
-      <p>Your recovery key worked. Choose a new password. You'll then get a <strong>new</strong> recovery key, and the old one stops working.</p>
+      <p>Recovery key accepted. Choose a new password. You'll get a <strong>new</strong> recovery key, and the old one stops working.</p>
       <form onSubmit={(e) => {
         e.preventDefault();
         const p = passwordProblem(pw, pw2);
@@ -134,7 +134,7 @@ export function Recover({ nav, onKeys }: { nav: Nav; onKeys: (k: auth.PendingKey
       }}>
         <NewPasswordFields pw={pw} setPw={setPw} pw2={pw2} setPw2={setPw2} />
         <ErrorLine text={error} />
-        <Submit busy={busy} label="Set new password" busyLabel="Creating your keys, this takes a second or two" />
+        <Submit busy={busy} label="Set new password" busyLabel="Creating keys…" />
       </form>
     </Card>
   );
@@ -167,8 +167,8 @@ function ChangePassword() {
   const [done, setDone] = useState(false);
   const { busy, error, setError, run } = useAction();
   return (
-    <Acc icon="lock" title="Change password" sub="Your photos stay as they are; other devices are signed out">
-      <p>Your photos stay as they are. Other devices will be signed out.</p>
+    <Acc icon="lock" title="Change password" sub="Signs out your other devices">
+      <p>Your photos stay as they are. Your other devices are signed out.</p>
       <form onSubmit={(e) => {
         e.preventDefault();
         setDone(false);
@@ -180,7 +180,7 @@ function ChangePassword() {
         <NewPasswordFields label="New password" pw={pw} setPw={setPw} pw2={pw2} setPw2={setPw2} />
         <ErrorLine text={error} />
         {done && <p class="ok" role="status">Password changed.</p>}
-        <Submit busy={busy} label="Change password" busyLabel="Working, this takes a second or two" />
+        <Submit busy={busy} label="Change password" busyLabel="Changing…" />
       </form>
     </Acc>
   );
@@ -193,9 +193,9 @@ function DeleteAccount() {
   const [sure, setSure] = useState(false);
   const { busy, error, run } = useAction();
   return (
-    <Acc icon="trash" title="Delete account" sub="Remove your account and all your photos from this server">
-      <p class="warning">This deletes your account and <strong>all your photos, videos, albums, people and search data</strong> from this server, at once. Nobody can bring them back, not even an administrator. Every device is signed out and deletes what it keeps.</p>
-      <p>Download anything you want to keep first. Copies of the whole server that an administrator made (a server backup) follow their own schedule.</p>
+    <Acc icon="trash" title="Delete account" sub="Delete your account and all your photos">
+      <p class="warning">Deletes your account and <strong>all your photos, videos, albums, people and search data</strong> from this server right away. Not even an administrator can bring them back. All your devices are signed out and delete what they keep.</p>
+      <p>Download anything you want to keep first. Server backups an administrator made expire on their own schedule.</p>
       {mem.me!.user.role === "admin" && <p class="hint">If you are the only administrator, make someone else an administrator first.</p>}
       {!open ? (
         <button class="btn secondary warn" onClick={() => setOpen(true)}>Delete my account…</button>
@@ -205,7 +205,7 @@ function DeleteAccount() {
           run(async () => { await auth.deleteAccount(cur); window.dispatchEvent(new Event("cf-account-deleted")); });
         }}>
           <Field label="Your password" id="del-password" type="password" value={cur} onInput={setCur} autocomplete="current-password" autofocus />
-          <label class="check"><input type="checkbox" checked={sure} onChange={(e) => setSure((e.target as HTMLInputElement).checked)} /> I understand that my photos and videos are deleted permanently</label>
+          <label class="check"><input type="checkbox" checked={sure} onChange={(e) => setSure((e.target as HTMLInputElement).checked)} /> I understand my photos and videos are deleted permanently</label>
           <ErrorLine text={error} />
           <div class="row">
             <button type="submit" class="btn danger" disabled={busy || !sure || !cur}>{busy ? "Deleting…" : "Delete account"}</button>
@@ -223,7 +223,7 @@ function RecoveryKeyPanel({ onNew }: { onNew: (k: auth.PendingKey) => void }) {
   const { busy, error, run } = useAction();
   return (
     <Acc icon="key" title="Recovery key" sub="The only way back in if you forget your password">
-      <p>Your recovery key is the only way back in if you forget your password. Keep it somewhere safe and private, such as a password manager or a printed copy at home. For your protection it can't be shown again, but you can make a new one. <strong>The old key stops working once you have saved the new one.</strong></p>
+      <p>Keep it somewhere safe, like a password manager or a printed copy. It can't be shown again, but you can make a new one. <strong>The old key stops working once you save the new one.</strong></p>
       {!open ? (
         <button class="btn secondary" onClick={() => setOpen(true)}>Make a new recovery key…</button>
       ) : (
@@ -231,7 +231,7 @@ function RecoveryKeyPanel({ onNew }: { onNew: (k: auth.PendingKey) => void }) {
           <Field label="Your password" id="rk-password" type="password" value={cur} onInput={setCur} autocomplete="current-password" autofocus />
           <ErrorLine text={error} />
           <div class="row">
-            <Submit busy={busy} label="Make new recovery key" busyLabel="Working, this takes a second or two" />
+            <Submit busy={busy} label="Make new recovery key" busyLabel="Creating…" />
             <button type="button" class="btn secondary" onClick={() => { setOpen(false); setCur(""); }}>Cancel</button>
           </div>
         </form>
@@ -245,7 +245,7 @@ function StoragePanel() {
   const [u, setU] = useState<{ used_bytes: number; quota_bytes: number; unlimited: boolean } | null>(null);
   useEffect(() => { auth.loadUsage().then(setU, () => {}); }, []);
   return (
-    <Acc icon="cloud" title="Storage" sub="What you use, and what is left">
+    <Acc icon="cloud" title="Storage" sub="How much you use">
       {u && !u.unlimited && u.quota_bytes > 0 && <div class="meterbar big"><div style={{ width: `${Math.min(100, Math.round((u.used_bytes / u.quota_bytes) * 100))}%` }} /></div>}
       {u ? <p class="usage">{fmtGB(u.used_bytes)} used{u.unlimited ? ", no limit" : ` of ${fmtGB(u.quota_bytes)}`}. Items in the trash count until they're deleted.</p> : <p class="usage small">Checking…</p>}
     </Acc>
@@ -273,7 +273,7 @@ function DevicesPanel() {
   useEffect(() => { load(); }, []);
   const others = list?.filter((d) => !d.current).length ?? 0;
   return (
-    <Acc icon="shield" title="Devices" sub="Where you are signed in; sign out one you don't use">
+    <Acc icon="shield" title="Devices" sub="Where you're signed in">
       {!list ? <p class="small" role="status">Checking…</p> : (
         <ul class="devices">
           {list.map((d) => (
@@ -295,14 +295,14 @@ function DevicesPanel() {
           ))}
         </ul>
       )}
-      {ask && ask !== "others" && <p class="hint">{ask.device || "This device"} has to sign in again with your password, and deletes what it keeps of your library (thumbnails, search) as soon as it reaches the server.</p>}
+      {ask && ask !== "others" && <p class="hint">{ask.device || "This device"} must sign in again, and deletes what it keeps of your library (thumbnails, search) the next time it reaches the server.</p>}
       {others > 1 && (ask === "others" ? (
         <div class="row">
           <button class="btn danger" disabled={busy} onClick={() => run(async () => { await api("POST", "/api/me/sessions/end-others"); setAsk(null); await load(); })}>Sign out {others} devices</button>
           <button class="btn secondary" onClick={() => setAsk(null)}>Cancel</button>
         </div>
       ) : <button class="btn secondary" onClick={() => setAsk("others")}>Sign out all other devices…</button>)}
-      <p class="hint">Search: one device looks through your photos and stores what it finds, encrypted; the others use that. To change which one, open Search and people in the app that should do it and choose “Index here”.</p>
+      <p class="hint">Search: one device indexes your photos and stores the index encrypted; the others use it. To change which one, open Search and people in that app and choose “Index here”.</p>
       <ErrorLine text={error} />
     </Acc>
   );
@@ -324,11 +324,11 @@ function SearchPanel() {
   return (
     <Acc icon="search" title="Search" sub="Find photos by what is in them">
       {!indexChecked() ? <p class="small" role="status">Checking…</p> : n === 0 && other === 0 ? (
-        <p>Searching for what is in your photos (dog, beach, birthday) uses what your Android or Mac app found in them. <strong>Turn on search in the Android or Mac app</strong> (Search and people); once it has looked at your photos, this browser finds them too. It never looks at your photos itself.</p>
+        <p>To find photos by what's in them (dog, beach, birthday), <strong>turn on search in the Android or Mac app</strong> (Search and people). This browser then uses what the app found.</p>
       ) : (
-        <p>{n === 1 ? "1 photo" : `${n} photos`} can be found by what is in them. Type what you look for in the search box, also together with a date or a name (“beach 2023”, “Anna cake”).{n === 0 && " Your Android or Mac app is still looking at them with the model you chose."} The search model ({Math.round(TEXT_MODELS[family].size / 1e6)} MB) is downloaded once and the words never leave this browser.</p>
+        <p>{n === 1 ? "1 photo" : `${n} photos`} can be found by what is in them. Combine with a date or a name, like “beach 2023” or “Anna cake”.{n === 0 && " Your Android or Mac app is still indexing them with the model you chose."} Runs in this browser; your search words never leave it. Downloads {Math.round(TEXT_MODELS[family].size / 1e6)} MB once from Hugging Face.</p>
       )}
-      {indexChecked() && n + other > 0 && <p class="hint">Downloaded once from Hugging Face, where these open models are published. Hugging Face sees this browser's IP address, nothing about your photos.</p>}
+      {indexChecked() && n + other > 0 && <p class="hint">Hugging Face sees this browser's IP address, nothing of your photos.</p>}
       {allowed && explicit !== null && (
         <>
           <label class="check">
@@ -340,7 +340,7 @@ function SearchPanel() {
               }} />
             Explicit search
           </label>
-          <p class="hint">Uses a model that also knows explicit content. <strong>This applies to all your devices:</strong> the device that indexes your photos (Account › Devices) looks at your whole library again with it, and until it is done search finds fewer photos. In this browser it is a {Math.round(TEXT_MODELS.laionb32.size / 1e6)} MB download, removed when you sign out.</p>
+          <p class="hint">Uses a model that also knows explicit content. <strong>This applies to all your devices:</strong> the indexing device (Account › Devices) indexes your whole library again, and search finds fewer photos until it's done. In this browser it's a {Math.round(TEXT_MODELS.laionb32.size / 1e6)} MB download, removed when you sign out.</p>
           <ErrorLine text={error} />
         </>
       )}
@@ -471,7 +471,7 @@ export function Admin({ section }: { section: "users" | "defaults" | "server" | 
       <p class="lead privacy">{users.length} {users.length === 1 ? "person" : "people"} · {fmtGB(stored)} stored · {items} {items === 1 ? "item" : "items"}. Administrators can't see anyone's photos, album names or file names.</p>
       <section class="panel" aria-labelledby="inv-h">
         <h2 id="inv-h"><Icon name="plus" />Invite someone</h2>
-        <p>Cipherfilm doesn't send e-mail. You'll get a link to pass on yourself. It works once and expires in 7 days.</p>
+        <p>Cipherfilm doesn't send e-mail. Send the link yourself. It works once and expires after 7 days.</p>
         <form onSubmit={(e) => { e.preventDefault(); run(async () => {
           const gb = inviteGb.trim() === "" ? undefined : Number(inviteGb);
           if (gb !== undefined && (!Number.isFinite(gb) || gb < 0)) throw new Error("Enter the storage limit as a number of GB, or leave it empty.");
@@ -487,7 +487,7 @@ export function Admin({ section }: { section: "users" | "defaults" | "server" | 
         </form>
         {link && (
           <div class="linkbox sealed" role="status">
-            <p>Invite link for <strong class="email">{link.email}</strong>, valid until {new Date(link.exp * 1000).toLocaleDateString()}. It's shown only now.</p>
+            <p>Invite link for <strong class="email">{link.email}</strong>, valid until {new Date(link.exp * 1000).toLocaleDateString()}. It's shown only once.</p>
             <input readOnly value={link.url} aria-label="Invite link" onFocus={(e) => (e.target as HTMLInputElement).select()} />
             <button class="btn secondary" onClick={() => navigator.clipboard.writeText(link.url).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }, () => {})}><Icon name={copied ? "check" : "copy"} size={18} />{copied ? "Copied" : "Copy link"}</button>
           </div>
@@ -509,7 +509,7 @@ export function Admin({ section }: { section: "users" | "defaults" | "server" | 
       )}
       <section class="panel" aria-labelledby="usr-h">
         <h2 id="usr-h"><Icon name="users" />Users</h2>
-        <p class="hint">Explicit search is off for everyone until you allow it for someone: their apps and browser then offer an uncensored search model, which they turn on themselves.</p>
+        <p class="hint">Explicit search is off for everyone. Allow it for someone, and they can turn on an uncensored search model themselves.</p>
         {actError && <p class="error" role="alert">{actError}</p>}
         <ul class="people">
           {users.map((u) => (
@@ -561,7 +561,7 @@ export function Admin({ section }: { section: "users" | "defaults" | "server" | 
               <dt>Version</dt><dd>{status.version ?? "unknown"}</dd>
               <dt>Running for</dt><dd>{status.uptime_seconds >= 86400 ? `${Math.floor(status.uptime_seconds / 86400)} days` : status.uptime_seconds >= 3600 ? `${Math.floor(status.uptime_seconds / 3600)} hours` : `${Math.floor(status.uptime_seconds / 60)} minutes`}</dd>
               <dt>Off-site backup</dt><dd class={backupState(status).problem ? "bad" : undefined}>{backupState(status).text}</dd>
-              <dt>Database snapshot</dt><dd>{status.last_backup_at ? new Date(status.last_backup_at * 1000).toLocaleString() : "none yet. scripts/backup.sh or the nightly backup writes one."}</dd>
+              <dt>Database snapshot</dt><dd>{status.last_backup_at ? new Date(status.last_backup_at * 1000).toLocaleString() : "None yet. Written by scripts/backup.sh or the nightly backup."}</dd>
             </dl>
           </>
         ) : <p class="small">Checking…</p>}

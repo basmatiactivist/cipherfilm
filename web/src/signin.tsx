@@ -18,7 +18,7 @@ export function Login({ nav, onDone, notice }: { nav: Nav; onDone: () => void; n
         <Field label="E-mail" id="email" type="email" value={email} onInput={setEmail} autocomplete="username" autofocus />
         <Field label="Password" id="password" type="password" value={pw} onInput={setPw} autocomplete="current-password" />
         <ErrorLine text={error} />
-        <Submit busy={busy} label="Sign in" busyLabel="Unlocking, this takes a second or two" />
+        <Submit busy={busy} label="Sign in" busyLabel="Signing in…" />
       </form>
       <p class="aside"><a href="/recover" onClick={(e) => { e.preventDefault(); nav("/recover"); }}>Forgot your password? Use your recovery key</a></p>
       <VersionLine server={auth.serverVersion} />
@@ -31,12 +31,12 @@ export function Unlock({ onDone, onSignOut }: { onDone: () => void; onSignOut: (
   const { busy, error, run } = useAction();
   return (
     <Card title="Unlock your library" sealed>
-      <p>You're signed in as <strong class="email">{mem.me!.user.email}</strong>. Enter your password to unlock your photos on this device.</p>
+      <p>Signed in as <strong class="email">{mem.me!.user.email}</strong>. Enter your password to unlock.</p>
       <form onSubmit={(e) => { e.preventDefault(); run(async () => { await auth.unlock(pw); onDone(); }); }}>
         <input type="text" name="username" value={mem.me!.user.email} autocomplete="username" hidden readOnly />
         <Field label="Password" id="password" type="password" value={pw} onInput={setPw} autocomplete="current-password" autofocus />
         <ErrorLine text={error} />
-        <Submit busy={busy} label="Unlock" busyLabel="Unlocking, this takes a second or two" />
+        <Submit busy={busy} label="Unlock" busyLabel="Unlocking…" />
       </form>
       <p class="aside"><button class="link" onClick={onSignOut}>Sign out instead</button></p>
     </Card>

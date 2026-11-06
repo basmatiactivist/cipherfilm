@@ -70,14 +70,14 @@ function App() {
       // an ended session is a sign-out by the server: the same is forgotten (kept keys, search models, upload notes)
       forgetKeys();
       auth.forgetLocal();
-      setNotice("Your session has ended. Please sign in again.");
+      setNotice("Your session has ended. Sign in again.");
       history.replaceState(null, "", "/");
       setScreen({ n: "login" });
     };
     const revoked = () => {
       forgetKeys();
       auth.forgetLocal();
-      setNotice("This browser was signed out from another device. What it kept of your library was deleted.");
+      setNotice("This browser was signed out from another device. Its copy of your library was deleted.");
       history.replaceState(null, "", "/");
       setScreen({ n: "login" });
     };
@@ -115,7 +115,7 @@ function App() {
   };
 
   if (!isSecure()) {
-    return <Shell><Card title="Open Cipherfilm over https"><p>Your browser only allows the encryption features on a secure connection. Open the https address of this server and try again.</p></Card></Shell>;
+    return <Shell><Card title="Open Cipherfilm over https"><p>Encryption only works over a secure connection. Open this server's https address.</p></Card></Shell>;
   }
 
   return (

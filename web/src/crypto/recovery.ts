@@ -28,7 +28,7 @@ export async function wordsToKey(input: string): Promise<Uint8Array> {
   const data = new Uint8Array(33);
   words.forEach((w, i) => {
     const v = WORDLIST.indexOf(w);
-    if (v < 0) throw new Error(`Unknown word: ${w}`);
+    if (v < 0) throw new Error(`“${w}” isn't a recovery key word. Check for typos.`);
     for (let b = 0; b < 11; b++) {
       if ((v >> (10 - b)) & 1) {
         const bit = i * 11 + b;
@@ -37,6 +37,6 @@ export async function wordsToKey(input: string): Promise<Uint8Array> {
     }
   });
   const key = data.slice(0, 32);
-  if ((await checksum(key)) !== data[32]) throw new Error("Checksum mismatch: check the words for typos.");
+  if ((await checksum(key)) !== data[32]) throw new Error("Some words are wrong. Check for typos.");
   return key;
 }

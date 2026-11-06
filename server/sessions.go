@@ -101,7 +101,12 @@ func (a *App) mayIndex(u *user, s *session) bool {
 }
 
 func (a *App) listSessions(w http.ResponseWriter, r *http.Request, u *user, s *session) {
-	rows, err := a.db.Query(`SELECT pub,device,created_at,last_seen FROM sessions WHERE user_id=? AND expires_at>=? ORDER BY last_seen DESC`, u.ID, a.now().Unix())
+	// a public demo account is shared by strangers: each sees only its own device, not the others' names
+	only := ""
+	if a.isDemo(u) {
+		only = s.Pub
+	}
+	rows, err := a.db.Query(`SELECT pub,device,created_at,last_seen FROM sessions WHERE user_id=? AND expires_at>=? AND (?='' OR pub=?) ORDER BY last_seen DESC`, u.ID, a.now().Unix(), only, only)
 	if err != nil {
 		fail(w, 500, "server error")
 		return

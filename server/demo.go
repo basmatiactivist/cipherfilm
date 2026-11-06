@@ -17,13 +17,11 @@ const demoRefused = "This is the public demo: changes are turned off."
 var demoAllowed = map[string]bool{
 	"POST /api/auth/logout":  true,
 	"POST /api/items/thumbs": true, // a read: many thumbnails in one request
-	// search: the entries and the people document the account's own devices computed, bounded by its storage limit
-	"PUT /api/items/{id}/index":   true,
-	"DELETE /api/index":           true,
-	"PUT /api/me/blobs/{name}":    true,
-	"DELETE /api/me/blobs/{name}": true,
-	"PUT /api/me/indexer":         true,
-	"DELETE /api/me/indexer":      true,
+	// search: index entries the account's own devices computed (bounded by its storage limit) and taking the indexing
+	// role. Not the people document (names one visitor types would show to the next) and not deleting the index (one
+	// visitor would break search for everyone until the daily reset).
+	"PUT /api/items/{id}/index": true,
+	"PUT /api/me/indexer":       true,
 }
 
 // demoAccounts reads DEMO_ACCOUNTS: e-mail addresses, separated by commas or spaces, normalised like a sign-in.

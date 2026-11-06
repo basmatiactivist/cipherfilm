@@ -11,9 +11,9 @@ version into the GitHub release notes, so a release cannot be published without 
 - `DEMO_ACCOUNTS`: read-only public demo logins. Such an account can sign in, look, download and search (its own
   search index and people list are kept); uploads, edits, albums, account changes, recovery and admin actions get a
   403 ("This is the public demo: changes are turned off."). Every write route is closed to it unless listed, and a
-  test walks every route. Web, Android and Mac say "Public demo · read-only · resets every hour" and hide upload and
+  test walks every route. Web, Android and Mac say "Public demo · read-only · resets daily" and hide upload and
   account deletion; Android doesn't turn backup on for it and says why.
-- `deploy/demo`: how to run a demo server reset hourly from a seed, and a script that makes the demo account from an
+- `deploy/demo`: how to run a demo server reset daily from a seed, and a script that makes the demo account from an
   invite link.
 
 ## [2.1.4] - 2026-11-06

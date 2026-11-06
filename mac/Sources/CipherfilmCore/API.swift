@@ -53,7 +53,7 @@ public struct Me: Codable, Sendable {
   public let demo: Bool?
   public var isDemo: Bool { demo == true }
   /** Shown wherever a demo login looks at its photos, so nobody takes it for their own library. */
-  public static let demoNote = "Public demo · read-only · resets every hour"
+  public static let demoNote = "Public demo · read-only · resets daily"
 
   /** Whether this device may compute index entries: it is the indexer, or there is none yet (the first that writes
    *  one becomes it). */

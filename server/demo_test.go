@@ -64,9 +64,6 @@ func TestDemoAccountReadsAndSearchesButChangesNothing(t *testing.T) {
 	if code, _ := demo.do("PUT", "/api/items/"+item+"/index", map[string]any{"data_enc": rb(300)}, true); code != 200 {
 		t.Fatalf("index: %d", code)
 	}
-	if code, _ := demo.do("PUT", "/api/me/blobs/people", map[string]any{"data_enc": rb(300), "version": 0}, true); code != 200 {
-		t.Fatalf("people: %d", code)
-	}
 	// changes are refused, with a message the apps show as it is
 	for _, c := range []struct {
 		method, path string
@@ -77,6 +74,9 @@ func TestDemoAccountReadsAndSearchesButChangesNothing(t *testing.T) {
 		{"POST", "/api/albums", albumBody()},
 		{"POST", "/api/auth/password", map[string]any{}},
 		{"DELETE", "/api/me", map[string]any{}},
+		// names typed by one visitor would show to the next; wiping the index would break search for all of them
+		{"PUT", "/api/me/blobs/people", map[string]any{"data_enc": rb(300), "version": 0}},
+		{"DELETE", "/api/index", nil},
 	} {
 		if code, out := demo.do(c.method, c.path, c.body, true); code != 403 || out["error"] != demoRefused {
 			t.Fatalf("%s %s: %d %v", c.method, c.path, code, out)
@@ -182,5 +182,24 @@ func TestDemoDefaultDeny(t *testing.T) {
 		if !demoAllowed[rt] && !refused {
 			t.Errorf("%s: a demo account got %d %v; refuse it or add it to demoAllowed", rt, code, out)
 		}
+	}
+}
+
+func TestDemoAccountSeesOnlyItsOwnDevice(t *testing.T) {
+	t.Setenv("DEMO_ACCOUNTS", "demo@x.org")
+	e := newEnv(t)
+	admin, _ := e.setupAdmin("admin@x.org")
+	first, b := e.acceptInvite(e.invite(admin, "demo@x.org"))
+	second := e.login("demo@x.org", b)
+	for _, c := range []*client{first, second} {
+		if code, out := c.do("GET", "/api/me/sessions", nil, false); code != 200 || len(out["sessions"].([]any)) != 1 {
+			t.Fatalf("a visitor must see only its own device: %d %v", code, out)
+		}
+	}
+	// an ordinary account still sees all of its devices
+	other, ob := e.acceptInvite(e.invite(admin, "bob@x.org"))
+	e.login("bob@x.org", ob)
+	if _, out := other.do("GET", "/api/me/sessions", nil, false); len(out["sessions"].([]any)) != 2 {
+		t.Fatalf("bob: %v", out)
 	}
 }

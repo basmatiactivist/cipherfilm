@@ -4,10 +4,10 @@ A Cipherfilm server with one login published on a website, so anyone can try the
 encrypted, so the operator could never see what strangers store. That is why the demo account is read-only
 (`DEMO_ACCOUNTS`, [docs/SELF-HOSTING.md](../../docs/SELF-HOSTING.md#settings)): visitors can sign in, browse, open
 originals and videos and search, but uploads, edits, albums and account changes get a 403 ("This is the public demo:
-changes are turned off."). The apps say "Public demo · read-only · resets every hour" and hide what would fail. Other
+changes are turned off."). The apps say "Public demo · read-only · resets daily" and hide what would fail. Other
 accounts on the same server (your admin, an app-store reviewer) work as usual.
 
-The server is put back to a seed every hour: `seed.tar` (a backup made with `scripts/backup.sh`), restored by
+The server is put back to a seed every day (04:00 UTC): `seed.tar` (a backup made with `scripts/backup.sh`), restored by
 `reset.sh` from a systemd timer. That removes what visitors could still write (their search index, the people list)
 and ends every session, the reviewer's included.
 
@@ -56,7 +56,7 @@ Set `DEMO_ACCOUNTS` only after the photos are uploaded and the seed is made: fro
 anything. To change the seed later, remove it from `.env`, `docker compose up -d`, change the library, make the seed
 again and put the setting back. Never list your admin or an account with real photos.
 
-## 5. The hourly reset
+## 5. The daily reset
 
 `/etc/systemd/system/cipherfilm-demo-reset.service` (the path is your checkout):
 
@@ -72,9 +72,9 @@ ExecStart=/opt/cipherfilm/deploy/demo/reset.sh
 
 ```ini
 [Unit]
-Description=Reset the Cipherfilm demo every hour
+Description=Reset the Cipherfilm demo every day
 [Timer]
-OnCalendar=hourly
+OnCalendar=*-*-* 04:00:00 UTC
 Persistent=true
 [Install]
 WantedBy=timers.target

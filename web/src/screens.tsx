@@ -326,8 +326,9 @@ function SearchPanel() {
       {!indexChecked() ? <p class="small" role="status">Checking…</p> : n === 0 && other === 0 ? (
         <p>Searching for what is in your photos (dog, beach, birthday) uses what your Android or Mac app found in them. <strong>Turn on search in the Android or Mac app</strong> (Search and people); once it has looked at your photos, this browser finds them too. It never looks at your photos itself.</p>
       ) : (
-        <p>{n === 1 ? "1 photo" : `${n} photos`} can be found by what is in them. Type what you look for in the search box, also together with a date or a name (“beach 2023”, “Anna cake”).{n === 0 && " Your Android or Mac app is still looking at them with the model you chose."} The search model is downloaded once from your server ({Math.round(TEXT_MODELS[family].size / 1e6)} MB) and the words never leave this browser.</p>
+        <p>{n === 1 ? "1 photo" : `${n} photos`} can be found by what is in them. Type what you look for in the search box, also together with a date or a name (“beach 2023”, “Anna cake”).{n === 0 && " Your Android or Mac app is still looking at them with the model you chose."} The search model ({Math.round(TEXT_MODELS[family].size / 1e6)} MB) is downloaded once and the words never leave this browser.</p>
       )}
+      {indexChecked() && n + other > 0 && <p class="hint">Downloaded once from Hugging Face, where these open models are published. Hugging Face sees this browser's IP address, nothing about your photos.</p>}
       {allowed && explicit !== null && (
         <>
           <label class="check">

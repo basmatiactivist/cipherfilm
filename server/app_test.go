@@ -154,6 +154,10 @@ func TestHealthzAndHeaders(t *testing.T) {
 	if !strings.Contains(csp, "default-src 'none'") || strings.Contains(csp, "unsafe-inline") {
 		t.Fatalf("bad CSP: %s", csp)
 	}
+	// the web app talks to this server and, for the search model, to Hugging Face only
+	if !strings.Contains(csp, "; connect-src 'self' https://huggingface.co https://*.hf.co;") {
+		t.Fatalf("connect-src: %s", csp)
+	}
 	if resp.Header.Get("X-Content-Type-Options") != "nosniff" {
 		t.Fatal("missing nosniff")
 	}

@@ -5,6 +5,8 @@ WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 # no install scripts: nothing in the web build needs one, so no dependency runs code at install time
 RUN npm ci --ignore-scripts
+# the search models' list, shared with the server (web/src/search/rank.ts)
+COPY server/models.json /server/models.json
 COPY web/ ./
 # the same version as the server binary, shown under Account (vite.config.ts)
 ARG VERSION=dev

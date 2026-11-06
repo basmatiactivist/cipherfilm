@@ -1,29 +1,36 @@
 // Search by what is in a photo, as on Android and Mac (docs/SEARCH.md): the apps stored an image vector per photo in
 // the encrypted index; the browser turns the words into a vector with the matching text model and ranks by cosine.
 // Pure functions here (models, ranking); the model itself runs in content.worker.ts.
+import LIST from "../../../server/models.json";
 
 /** Which model made a vector: the start of the index entry's `m` tag. */
 export type Family = "mcs2" | "laionb32";
 
-export interface TextModel {
+/** A file from the one model list (server/models.json): its name, pinned Hugging Face URL, SHA-256 and size. */
+export interface ModelFile { file: string; url: string; sha256: string; size: number }
+
+const pinned = (file: string): ModelFile => {
+  const m = LIST.find((x) => x.name === file);
+  if (!m) throw new Error(`${file} is not in server/models.json`);
+  return { file, url: m.url, sha256: m.sha256, size: m.size };
+};
+
+export interface TextModel extends ModelFile {
   family: Family;
-  file: string;
-  sha256: string;
-  size: number;
   /** LAION's export takes int32 ids, MobileCLIP's int64 */
   int32: boolean;
 }
 
-export const TOKENIZER = { file: "mobileclip-s2-tokenizer.json", sha256: "72ed5c96db5729294468543e4bc75fce14ca63f58e37300290189ba1c1e52b85", size: 2224081 };
+export const TOKENIZER = pinned("mobileclip-s2-tokenizer.json");
 
-// the same files and hashes as the Dockerfile and mobile/src/search/models.ts
 export const TEXT_MODELS: Record<Family, TextModel> = {
-  mcs2: { family: "mcs2", file: "mobileclip-s2-text.onnx", sha256: "f8aaa97cf17fbadd78b0bd6d5f6a1c57f712402cacc3055ea92c1a3331357dfe", size: 64117260, int32: false },
-  laionb32: { family: "laionb32", file: "nsfw-laion-b32-text.onnx", sha256: "48c25be37b352398f2533c9426dab6f9340535e14e46f884cc894236a5060722", size: 254193396, int32: true },
+  mcs2: { family: "mcs2", ...pinned("mobileclip-s2-text.onnx"), int32: false },
+  laionb32: { family: "laionb32", ...pinned("nsfw-laion-b32-text.onnx"), int32: true },
 };
 
 export const CONTEXT = 77;
-/** The browser cache (Cache API) the model files are kept in, under their /api/models/ URL. */
+/** The browser cache (Cache API) the model files are kept in, under their old /api/models/ URL as the key (files
+ *  cached before they came from Hugging Face stay usable). */
 export const MODEL_CACHE = "cf-models-1";
 
 /** The model family of an index entry's tag ("mcs2+yunet23+sface21/2", "laionb32/1"), or undefined for others. */

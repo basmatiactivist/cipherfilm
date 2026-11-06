@@ -48,7 +48,7 @@ describe("search by content: ranking", () => {
 
 // The browser's text vector (this tokenizer and ONNX Runtime Web, as in content.worker.ts) against the Python reference
 // (onnxruntime 1.31.1 and Hugging Face's tokenizers on the same files). The models are 64 and 254 MB and not in the
-// repository: set CF_MODELS to a folder with them (from the server image's /models) to run this.
+// repository: set CF_MODELS to a folder with them (downloaded from the URLs in server/models.json) to run this.
 const dir = process.env.CF_MODELS;
 const have = (f: string) => !!dir && existsSync(join(dir, f));
 

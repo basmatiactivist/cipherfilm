@@ -1,11 +1,12 @@
 import { useSyncExternalStore } from "react";
-import { loadCachedLibrary, loadLibrary, prefetchThumbs, pruneCache, type Item } from "./library";
+import { forgetLists, loadCachedLibrary, loadLibrary, prefetchThumbs, pruneCache, type Item } from "./library";
 import { onWipe, session } from "./session";
 import { rememberLibrary } from "./backup";
 import { startSearch, warmSearch } from "./search/engine";
 import { api } from "./api";
 
-// One copy of the decrypted list for the library and the viewer; reloaded after uploads.
+// One copy of the decrypted list for the library and the viewer; brought up to date after uploads and live updates
+// (only what changed: library.ts).
 let items: Item[] | null = null;
 let error: string | undefined;
 let loading = false; // shown: the pull-to-refresh spinner
@@ -43,12 +44,15 @@ export async function refreshLibrary(opts?: { quiet?: boolean }) {
       // (not shown: its item keys are shared with the decrypted list, library.ts, and go with it at the next lock)
     }
     const list = await loadLibrary();
-    // the session may have locked or changed while the list was loading: then it is not shown, and its keys go
-    if (!current()) { list.forEach((i) => i.itemKey?.fill(0)); return; }
+    // the session may have locked or changed while the list was loading: then it is not shown, and its keys go (with
+    // the lists that share them)
+    if (!current()) { list.forEach((i) => i.itemKey?.fill(0)); forgetLists(); return; }
+    const same = list === items; // a live update that found nothing new: nothing to redo
     items = list;
     owner = forUser;
     error = undefined;
     loadedAt = Date.now();
+    if (same) return;
     prefetchThumbs(list);
     setTimeout(() => pruneCache(new Set(list.map((i) => i.id))), 2000);
     // the rest waits until the grid is on screen and scrolling: both read the whole list on the JS thread
@@ -72,6 +76,7 @@ export const libraryLoaded = () => busy || (items !== null && owner === session(
 
 export function forgetLibrary() {
   items?.forEach((i) => i.itemKey?.fill(0)); // the unwrapped item keys leave memory with the list
+  forgetLists(); // which shares them with the lists kept current by live updates (library.ts)
   items = null; owner = ""; error = undefined; loadedAt = 0; loading = false; busy = false; again = false; gen++; emit();
 }
 

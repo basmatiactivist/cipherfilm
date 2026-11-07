@@ -40,6 +40,10 @@ final class SearchEngine {
   /** what the run is doing, for an error message ("Fetching the index from the server: …") */
   private var step = ""
   private var pending: [Item] = []
+  // being indexed now, and skipped in this run (can't be read): a library refresh while they are in flight must not
+  // queue them again (they were indexed and counted twice: "Indexing 43 of 29")
+  private var inFlight: Set<String> = []
+  private var skipped: Set<String> = []
   private var indexedThisRun = 0
   private var items: [Item] = []
   private var settings = AccountSettings()
@@ -73,7 +77,7 @@ final class SearchEngine {
       index.clear(); tags = [:]; runVault = nil; people = PeopleDoc(); peopleVersion = 0; peopleLoaded = false; groupsAt = -1; groups = []
       version += 1
     }
-    phase = .off; done = 0; total = 0; message = nil
+    phase = .off; done = 0; total = 0; message = nil; skipped = []
   }
 
   private func live(_ v: Vault) -> Bool { !Task.isCancelled && runVault === v && v.isOpen }
@@ -164,6 +168,8 @@ final class SearchEngine {
         var offlineCount = 0
         var lastOffline: String?
         var refused = false
+        inFlight = Set(batch.map(\.id))
+        defer { inFlight = [] } // also the ones a refusal left unstarted
         await withTaskGroup(of: (Item, IndexEntry?, String?, APIError?).self) { g in
           var it = batch.makeIterator()
           func next() {
@@ -182,6 +188,7 @@ final class SearchEngine {
           }
           for _ in 0..<6 { next() }
           for await (item, e, enc, err) in g {
+            inFlight.remove(item.id)
             if let e, let enc {
               let d = e.decoded(faces: faces)
               index.put(item.id, clip: d.clip, faces: d.faces)
@@ -193,7 +200,7 @@ final class SearchEngine {
             } else if err?.status == 0 {
               pending.insert(item, at: 0); offlineCount += 1; lastOffline = err?.message // tried again on the next round
             } else {
-              done += 1 // can't be read: skipped this run
+              skipped.insert(item.id); done += 1 // can't be read: skipped this run
             }
             if live(vault) && !refused { next() }
           }
@@ -301,11 +308,11 @@ final class SearchEngine {
       done = min(total, items.filter { Models.good(tags[$0.id], faces: runFaces, clip: clip) }.count)
       return
     }
-    let queued = Set(pending.map(\.id))
+    let queued = Set(pending.map(\.id)).union(inFlight).union(skipped)
     let todo = items.filter { !$0.broken && $0.itemKey != nil && $0.kind != .other && ($0.hasPreview || $0.hasThumb) && !Models.good(tags[$0.id], faces: runFaces, clip: clip) && !queued.contains($0.id) }
     pending += todo
     total = items.filter { $0.kind != .other && !$0.broken }.count
-    done = max(0, total - pending.count)
+    done = min(total, max(0, total - pending.count - inFlight.count))
   }
 
   /** Starts the run again from the server's entries, for another model: entries made with the other one are made

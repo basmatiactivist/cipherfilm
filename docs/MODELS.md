@@ -25,8 +25,9 @@ user agent. No cookie, account, photo, search word or anything about the library
 referrer. The web app's Content-Security-Policy allows `connect-src` to `https://huggingface.co` and `https://*.hf.co`
 only for this.
 
-**Older apps** (2.1.x) still ask their server, `GET /api/models/{name}`: the server answers with a redirect (302) to the
-pinned URL, with the same rules as when it had the files: a signed-in session, the `nsfw-*` files only for people
+**Older apps** (up to 2.1.3) still ask their server, `GET /api/models/{name}`, and follow no redirect: the server
+fetches the pinned URL and passes the file through (a `Range` header goes along, so a download resumes), with the same
+rules as when it had the files: a signed-in session, the `nsfw-*` files only for people
 allowed explicit search, 404 for anything not in the list.
 
 | File | Model | Made by | Source (pinned commit) | License | Size |

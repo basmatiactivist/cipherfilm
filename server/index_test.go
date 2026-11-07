@@ -2,11 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestFavoritesAreOwnAndShowInTheList(t *testing.T) {
@@ -121,18 +124,44 @@ func TestUserBlobsKeepVersions(t *testing.T) {
 	}
 }
 
-// model asks for a search model without following the redirect (the tests stay off the network): the status, and
-// where it points.
-func (c *client) model(name string) (int, string) {
+// model asks for a search model: the status and what came back. fakeModelHost stands in for Hugging Face, so the tests
+// stay off the network.
+func (c *client) model(name string, header ...string) (int, string) {
 	c.e.t.Helper()
-	hc := *c.c
-	hc.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	resp, err := hc.Get(c.e.srv.URL + "/api/models/" + name)
+	req, _ := http.NewRequest("GET", c.e.srv.URL+"/api/models/"+name, nil)
+	if len(header) == 2 {
+		req.Header.Set(header[0], header[1])
+	}
+	resp, err := c.c.Do(req)
 	if err != nil {
 		c.e.t.Fatal(err)
 	}
-	resp.Body.Close()
-	return resp.StatusCode, resp.Header.Get("Location")
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(b)
+}
+
+// fakeModelHost serves every pinned model as "<name> bytes" (with Range) from a test server, via a redirect like
+// Hugging Face's to its CDN.
+func fakeModelHost(t *testing.T) {
+	t.Helper()
+	host := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/resolve/") {
+			http.Redirect(w, r, "/cdn/"+strings.TrimPrefix(r.URL.Path, "/resolve/"), http.StatusFound)
+			return
+		}
+		http.ServeContent(w, r, "", time.Time{}, strings.NewReader(strings.TrimPrefix(r.URL.Path, "/cdn/")+" bytes"))
+	}))
+	t.Cleanup(host.Close)
+	saved, savedClient := modelURLs, modelClient
+	modelURLs = map[string]string{}
+	for name := range saved {
+		modelURLs[name] = host.URL + "/resolve/" + name
+	}
+	c := host.Client()
+	c.CheckRedirect = modelClient.CheckRedirect
+	modelClient = c
+	t.Cleanup(func() { modelURLs, modelClient = saved, savedClient })
 }
 
 // The list every app uses: well-formed, the pins the docs name, nothing twice.
@@ -157,24 +186,32 @@ func TestModelListIsPinned(t *testing.T) {
 	}
 }
 
-func TestModelsRedirectToTheirPinnedURL(t *testing.T) {
+// Apps before 2.1.4 ask the server for the models and follow no redirect: it passes them through, resumable.
+func TestModelsArePassedThroughForOlderApps(t *testing.T) {
+	if !strings.Contains(modelURLs["mobileclip-s2-text.onnx"], "/resolve/0c311c620b36a2270b851db7bef9135f3eaae5d7/") {
+		t.Fatal("pin")
+	}
+	fakeModelHost(t)
 	e := newEnv(t)
 	if code, _ := e.client().model("mobileclip-s2-text.onnx"); code != 401 {
-		t.Fatalf("model redirect without a session: %d", code)
+		t.Fatalf("model without a session: %d", code)
 	}
 	c, _ := e.setupAdmin("admin@x.org")
-	code, loc := c.model("mobileclip-s2-text.onnx")
-	if code != 302 || loc != modelURLs["mobileclip-s2-text.onnx"] || !strings.Contains(loc, "/resolve/0c311c620b36a2270b851db7bef9135f3eaae5d7/") {
-		t.Fatalf("model: %d %q", code, loc)
+	if code, body := c.model("mobileclip-s2-text.onnx"); code != 200 || body != "mobileclip-s2-text.onnx bytes" {
+		t.Fatalf("model: %d %q", code, body)
+	}
+	if code, body := c.model("mobileclip-s2-text.onnx", "Range", "bytes=11-"); code != 206 || body != "s2-text.onnx bytes" {
+		t.Fatalf("resume: %d %q", code, body)
 	}
 	for _, p := range []string{"..%2Fsecret.txt", "nope.onnx", ".hidden", "Mobileclip-s2-text.onnx"} {
-		if code, loc := c.model(p); code != 404 || loc != "" {
-			t.Fatalf("%s: %d %q", p, code, loc)
+		if code, _ := c.model(p); code != 404 {
+			t.Fatalf("%s: %d", p, code)
 		}
 	}
 }
 
 func TestExplicitSearchIsOffUntilTheAdminAllowsIt(t *testing.T) {
+	fakeModelHost(t)
 	e := newEnv(t)
 	admin, _ := e.setupAdmin("admin@x.org")
 	bob, _ := e.acceptInvite(e.invite(admin, "bob@x.org"))
@@ -217,8 +254,8 @@ func TestExplicitSearchIsOffUntilTheAdminAllowsIt(t *testing.T) {
 	if !nsfw(bob) || nsfw(admin) {
 		t.Fatal("allowed for the wrong person")
 	}
-	if code, loc := bob.model("nsfw-laion-b32-vision.onnx"); code != 302 || loc != modelURLs["nsfw-laion-b32-vision.onnx"] {
-		t.Fatalf("allowed person doesn't get the model: %d %q", code, loc)
+	if code, body := bob.model("nsfw-laion-b32-vision.onnx"); code != 200 || body != "nsfw-laion-b32-vision.onnx bytes" {
+		t.Fatalf("allowed person doesn't get the model: %d %q", code, body)
 	}
 	if code, _ := e.client().model("nsfw-laion-b32-vision.onnx"); code != 401 {
 		t.Fatal("served without a session")

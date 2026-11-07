@@ -60,9 +60,21 @@ func TestDemoAccountReadsAndSearchesButChangesNothing(t *testing.T) {
 	if code, _ := demo.postRaw("/api/items/thumbs", map[string]any{"item_ids": []string{item}}); code != 200 {
 		t.Fatalf("thumbs: %d", code)
 	}
-	// the apps are told another device indexes, so they only read the index built before the account was listed
+	// the apps are told another device indexes, so they only read the index built before the account was listed;
+	// an app that tries anyway gets the same answer as when another device indexes
 	if me["indexer"] != demoIndexer {
 		t.Fatalf("indexer: %v", me["indexer"])
+	}
+	for _, c := range []struct {
+		method, path string
+		body         any
+	}{
+		{"PUT", "/api/items/" + item + "/index", map[string]any{"data_enc": rb(300)}},
+		{"PUT", "/api/me/indexer", nil},
+	} {
+		if code, out := demo.do(c.method, c.path, c.body, true); code != 409 || out["code"] != "not_indexer" {
+			t.Fatalf("%s %s: %d %v", c.method, c.path, code, out)
+		}
 	}
 	// changes are refused, with a message the apps show as it is
 	for _, c := range []struct {
@@ -74,9 +86,7 @@ func TestDemoAccountReadsAndSearchesButChangesNothing(t *testing.T) {
 		{"POST", "/api/albums", albumBody()},
 		{"POST", "/api/auth/password", map[string]any{}},
 		{"DELETE", "/api/me", map[string]any{}},
-		// visitors share the login: whatever one stores, the next reads (index entries, names), so nothing is stored
-		{"PUT", "/api/items/" + item + "/index", map[string]any{"data_enc": rb(300)}},
-		{"PUT", "/api/me/indexer", nil},
+		// visitors share the login: whatever one stores, the next reads (names), so nothing is stored
 		{"PUT", "/api/me/blobs/people", map[string]any{"data_enc": rb(300), "version": 0}},
 		{"DELETE", "/api/index", nil},
 	} {
@@ -177,7 +187,8 @@ func TestDemoDefaultDeny(t *testing.T) {
 		}
 		path = fill.ReplaceAllString(path, "zz0")
 		code, out := demo.do(method, path, map[string]any{}, true)
-		refused := code == 403 && out["error"] == demoRefused
+		refused := code == 403 && out["error"] == demoRefused ||
+			demoIndexWrite[rt] && code == 409 && out["code"] == "not_indexer" // refused as "another device indexes"
 		if demoAllowed[rt] && refused {
 			t.Errorf("%s: allowed, but refused", rt)
 		}

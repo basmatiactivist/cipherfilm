@@ -5,6 +5,17 @@ All notable changes to Cipherfilm are listed here. The format follows
 [Semantic Versioning](https://semver.org/). The release workflow copies the section of the tagged
 version into the GitHub release notes, so a release cannot be published without an entry here.
 
+## [2.1.7] - 2026-11-07
+
+### Fixed
+- Search on apps up to 2.1.3 (still in Google Play's closed test): they stopped with "the server answered 302",
+  because the server sent them on to Hugging Face and they follow no redirect. The server now passes the pinned files
+  through to them, resumable; newer apps keep downloading from Hugging Face directly.
+- Mac: "Indexing 43 of 29". A library refresh while photos were being indexed queued them again, so they were indexed
+  and counted twice.
+- Public demo: an app that tries to index gets the answer it gets when another device indexes, so every version only
+  reads the prebuilt index instead of failing or retrying.
+
 ## [2.1.6] - 2026-11-06
 
 ### Added

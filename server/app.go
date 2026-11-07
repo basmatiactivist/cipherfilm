@@ -283,6 +283,11 @@ func (a *App) auth(admin bool, next func(http.ResponseWriter, *http.Request, *us
 			setSessionCookie(w, c.Value)
 		}
 		if a.isDemo(u) && !demoAllows(r) {
+			if demoIndexWrite[r.Pattern] {
+				// as when another device indexes: every app version then only reads the index built beforehand
+				writeJSON(w, 409, map[string]string{"error": "another device indexes your photos", "code": "not_indexer"})
+				return
+			}
 			fail(w, http.StatusForbidden, demoRefused)
 			return
 		}

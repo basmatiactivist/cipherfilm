@@ -1,0 +1,3 @@
+• Die Einrichtung der Suche klappt wieder mit älteren App-Versionen.
+• Kleine Korrekturen.
+Benötigt Ihren eigenen Cipherfilm-Server: https://cipherfilm.app/de

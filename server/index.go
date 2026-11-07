@@ -4,11 +4,14 @@ import (
 	"database/sql"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Favorites, the search index and the people list. The phone computes the index itself (what is in a photo, where the
@@ -343,6 +346,58 @@ func (a *App) getModel(w http.ResponseWriter, r *http.Request, u *user, _ *sessi
 		fail(w, 404, "not found")
 		return
 	}
-	w.Header().Set("Cache-Control", "private, no-store") // per person: the explicit model's permission can change
-	http.Redirect(w, r, url, http.StatusFound)
+	// Apps since 2.1.4 download from Hugging Face themselves. Older ones ask here and follow no redirect (their
+	// download kept the session cookie to this server), so the file is passed through from its pinned URL; they
+	// check its SHA-256 as before. A Range header goes along, so their resume still works.
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, url, nil)
+	if err != nil {
+		fail(w, 500, "server error")
+		return
+	}
+	if rg := r.Header.Get("Range"); rg != "" {
+		req.Header.Set("Range", rg)
+	}
+	resp, err := modelClient.Do(req)
+	if err != nil {
+		fail(w, 502, "couldn't reach the model's host")
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+		fail(w, 502, "the model's host answered "+resp.Status)
+		return
+	}
+	h := w.Header()
+	h.Set("Content-Type", "application/octet-stream")
+	h.Set("Cache-Control", "private, no-store") // per person: the explicit model's permission can change
+	for _, k := range []string{"Content-Length", "Content-Range", "Accept-Ranges"} {
+		if v := resp.Header.Get(k); v != "" {
+			h.Set(k, v)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(idleWriter{w, http.NewResponseController(w)}, resp.Body)
+}
+
+// modelClient fetches a pinned model for an older app: Hugging Face's redirect to its CDN is followed (https only),
+// and a host that doesn't start answering within half a minute is given up on.
+var modelClient = &http.Client{
+	Transport: &http.Transport{Proxy: http.ProxyFromEnvironment, ResponseHeaderTimeout: 30 * time.Second, TLSHandshakeTimeout: 15 * time.Second},
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 6 || req.URL.Scheme != "https" {
+			return errors.New("a model is only fetched over https, in a few hops")
+		}
+		return nil
+	},
+}
+
+// idleWriter moves the write deadline forward before every write, so a long download is cut off only when it stalls.
+type idleWriter struct {
+	http.ResponseWriter
+	rc *http.ResponseController
+}
+
+func (iw idleWriter) Write(p []byte) (int, error) {
+	iw.rc.SetWriteDeadline(time.Now().Add(2 * time.Minute))
+	return iw.ResponseWriter.Write(p)
 }

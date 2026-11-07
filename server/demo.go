@@ -21,6 +21,13 @@ var demoAllowed = map[string]bool{
 	// index is built before the account is listed, and the apps only read it (demoIndexer).
 }
 
+// demoIndexWrite: the search writes a demo account's apps try on their own. They get the answer an app gets when
+// another device indexes ("not_indexer"), which every app version handles by only reading from then on.
+var demoIndexWrite = map[string]bool{
+	"PUT /api/items/{id}/index": true,
+	"PUT /api/me/indexer":       true,
+}
+
 // demoAccounts reads DEMO_ACCOUNTS: e-mail addresses, separated by commas or spaces, normalised like a sign-in.
 func demoAccounts(v string) (map[string]bool, error) {
 	out := map[string]bool{}

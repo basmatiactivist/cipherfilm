@@ -17,7 +17,7 @@ Open models, downloaded by the phone once (about 250 MB, by default only on Wi-F
 they are published, at URLs pinned to a commit. Each file's URL, SHA-256 and size are in `server/models.json`, the one
 list the server and every app use; the app checks size and SHA-256 before it opens a file. A dropped or stalled
 download continues with HTTP Range. Hugging Face sees the phone's IP address, nothing about the photos (docs/MODELS.md).
-Older apps that still ask `GET /api/models/{name}` get a redirect to the same URL.
+Older apps that still ask `GET /api/models/{name}` get the same file, passed through by the server.
 
 | File | Model | What for | License |
 |---|---|---|---|

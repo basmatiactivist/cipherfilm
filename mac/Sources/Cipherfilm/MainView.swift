@@ -446,8 +446,10 @@ struct Detail: View {
   }
 
   @ViewBuilder private func library(title: String, items: [Item], empty: (String, String, String)) -> some View {
-    PageTitle(title: title, subtitle: model.loading && items.isEmpty ? "Loading…" : items.isEmpty ? nil : "\(items.count) item\(items.count == 1 ? "" : "s")")
-    if items.isEmpty && !model.loading {
+    PageTitle(title: title, subtitle: items.isEmpty ? nil : "\(items.count) item\(items.count == 1 ? "" : "s")")
+    if items.isEmpty && model.loading {
+      Loading(label: "Opening your library…")
+    } else if items.isEmpty {
       Spacer(); EmptyState(icon: empty.0, title: empty.1, text: empty.2); Spacer()
     } else {
       PhotoGrid(items: items, selection: selection) { it, list in nav.viewer = ViewerState(ids: list.map(\.id), index: list.firstIndex(of: it) ?? 0) }
@@ -482,7 +484,7 @@ struct SearchResults: View {
                     more: r.items.count > shown ? { shown += 200 } : nil) { it, list in nav.viewer = ViewerState(ids: list.map(\.id), index: list.firstIndex(of: it) ?? 0) }
         }
       } else {
-        Spacer(); ProgressView(); Spacer()
+        Loading(label: "Searching…")
       }
     }
     .task(id: query + "\(model.search.version)\(model.items.count)") {

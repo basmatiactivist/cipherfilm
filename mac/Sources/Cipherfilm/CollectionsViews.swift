@@ -13,7 +13,9 @@ struct AlbumsView: View {
         PageTitle(title: "Albums", subtitle: model.albums.isEmpty ? nil : "\(model.albums.count) album\(model.albums.count == 1 ? "" : "s")")
         Button("New Album…") { creating = true }.buttonStyle(SecondaryButton()).padding(.trailing, 28)
       }
-      if model.albums.isEmpty {
+      if model.albums.isEmpty && model.loading {
+        Loading(label: "Opening your albums…")
+      } else if model.albums.isEmpty {
         Spacer(); EmptyState(icon: "rectangle.stack", title: "No albums yet", text: "Create an album, then right-click photos or drag them onto it."); Spacer()
       } else {
         ScrollView {
@@ -138,10 +140,12 @@ struct PeopleView: View {
     let hidden = (groups ?? []).filter { $0.person?.hidden == true }
     VStack(spacing: 0) {
       HStack(alignment: .bottom) {
-        PageTitle(title: "People", subtitle: groups == nil ? "Grouping faces…" : "Faces are grouped on this Mac. Names are encrypted.")
+        PageTitle(title: "People", subtitle: groups == nil ? nil : "Faces are grouped on this Mac. Names are encrypted.")
         if !hidden.isEmpty { Toggle("Show hidden (\(hidden.count))", isOn: $showHidden).toggleStyle(.switch).controlSize(.small).padding(.trailing, 28) }
       }
-      if let groups, groups.isEmpty {
+      if groups == nil {
+        Loading(label: "Grouping faces…")
+      } else if let groups, groups.isEmpty {
         Spacer()
         EmptyState(icon: "person.2", title: model.search.phase == .indexing || model.search.phase == .download ? "Looking at your photos" : "No people yet",
                    text: "Someone shows up here once they are in three photos.")

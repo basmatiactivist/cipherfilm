@@ -107,7 +107,7 @@ struct RootView: View {
   var body: some View {
     Group {
       switch model.phase {
-      case .starting: ProgressView().controlSize(.large).frame(maxWidth: .infinity, maxHeight: .infinity)
+      case .starting: Loading(label: "Opening Cipherfilm…")
       case .noServer: ServerView()
       case .signedOut: SignInView()
       case .locked: UnlockView()
@@ -123,7 +123,7 @@ struct RootView: View {
     } message: { Text(model.alert ?? "") }
     .overlay(alignment: .bottom) {
       if let w = model.working {
-        HStack(spacing: 10) { ProgressView().controlSize(.small); Text(w).font(Typo.label) }
+        HStack(spacing: 10) { Loader(); Text(w).font(Typo.label) }
           .padding(.horizontal, 16).padding(.vertical, 10)
           .background(RoundedRectangle(cornerRadius: Radius.card).fill(Ink.card).shadow(color: Ink.shade, radius: Metric.menuShadowRadius, y: Metric.menuShadowY))
           .padding(.bottom, 90)

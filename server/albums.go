@@ -105,6 +105,7 @@ func (a *App) createAlbum(w http.ResponseWriter, r *http.Request, u *user, s *se
 		fail(w, 400, "too many albums")
 		return
 	}
+	a.changed(u.ID, tAlbums)
 	writeJSON(w, 201, map[string]bool{"ok": true})
 }
 
@@ -119,6 +120,7 @@ func (a *App) renameAlbum(w http.ResponseWriter, r *http.Request, u *user, s *se
 		return
 	}
 	a.db.Exec(`UPDATE albums SET name_enc=? WHERE id=? AND user_id=?`, req.NameEnc, id, u.ID)
+	a.changed(u.ID, tAlbums)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
@@ -129,6 +131,7 @@ func (a *App) deleteAlbum(w http.ResponseWriter, r *http.Request, u *user, s *se
 		return
 	}
 	a.db.Exec(`DELETE FROM albums WHERE id=? AND user_id=?`, id, u.ID)
+	a.changed(u.ID, tAlbums)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
@@ -182,6 +185,7 @@ func (a *App) addAlbumItems(w http.ResponseWriter, r *http.Request, u *user, s *
 		fail(w, 500, "server error")
 		return
 	}
+	a.changed(u.ID, tAlbums)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
@@ -196,5 +200,6 @@ func (a *App) removeAlbumItem(w http.ResponseWriter, r *http.Request, u *user, s
 		return
 	}
 	a.db.Exec(`DELETE FROM album_items WHERE album_id=? AND item_id=?`, id, iid)
+	a.changed(u.ID, tAlbums)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }

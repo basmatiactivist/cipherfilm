@@ -144,6 +144,7 @@ func (a *App) endSession(w http.ResponseWriter, r *http.Request, u *user, s *ses
 		fail(w, 404, "not found")
 		return
 	}
+	a.live.recheck(u.ID)
 	a.audit(u.Email, "signed out a device", u.Email, device)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
@@ -156,6 +157,7 @@ func (a *App) endOtherSessions(w http.ResponseWriter, r *http.Request, u *user, 
 		return
 	}
 	n, _ := res.RowsAffected()
+	a.live.recheck(u.ID)
 	if n > 0 {
 		a.audit(u.Email, "signed out other devices", u.Email, "")
 	}

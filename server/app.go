@@ -52,6 +52,7 @@ type App struct {
 	lists      map[string]chan struct{} // per user: the list pages being built and sent (see listing)
 	acceptMu   sync.Mutex               // one invite acceptance at a time (see inviteAccept)
 	adminMu    sync.Mutex               // serialises admin changes to accounts (see adminGuard)
+	live       *hub                     // the open live-update streams (events.go)
 	now        func() time.Time
 }
 
@@ -116,6 +117,7 @@ func newApp(dataDir string) (*App, error) {
 		now:        time.Now,
 		reserved:   map[string]int64{},
 		lists:      map[string]chan struct{}{},
+		live:       newHub(time.Now()),
 	}
 	// Without PUBLIC_HOSTS a page on any name that resolves to the app (DNS rebinding) is served as its own origin,
 	// and could pick its own X-Forwarded-For; the header is then not trusted at all.

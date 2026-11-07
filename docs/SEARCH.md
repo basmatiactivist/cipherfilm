@@ -54,20 +54,44 @@ per device, because all devices share one index: it is stored as `"explicit": tr
 The Android app from Google Play (built with `CF_STORE=play`, `mobile/src/store.ts`) never offers explicit search
 and always uses `mobileclip-s2`, whatever the account chose; the server's permission stays as it is, and the APK from
 the GitHub releases, the web app and the Mac app keep the option. On an account that chose explicit search, a Play
-phone searches the standard model's entries; if it is the indexing device, it builds those (and the other devices
-see explicit search filled only by whichever of them indexes).
+phone searches the standard model's entries, which the indexing device keeps complete (below); if the Play phone is
+itself the indexing device, it builds only those, and the account's explicit-search devices find LAION's index empty
+until one of them indexes ("Index on this device instead").
 
 Every index write (`PUT /api/items/{id}/index`) carries the entry's tag in the clear as `"model"` (the entry itself
 stays sealed). Where explicit search is allowed, the server takes writes only with it (409 otherwise): an app from
 before explicit search would take the other model's entries for outdated and overwrite them, back and forth; it is
 asked to update instead. The server learns only which of the two models an account uses, nothing about the photos.
 
-Switching re-indexes the whole library on the indexing device (below). The server keeps entries **per model family**
-(`item_index` key `(item_id, model)`, the family being the tag up to `+` or `/`: `mcs2`, `laionb32`), so the two
-models' entries never overwrite each other. The device that switches deletes the other family's entries
-(`DELETE /api/index?model=<family>`). Entries from before 1.9.0 have the family `''` and are returned with either;
-the first write of a family for an item replaces such an entry. Faces are unaffected (the same YuNet and SFace), but
-they are in the same entry and are computed again with it.
+The server keeps entries **per model family** (`item_index` key `(item_id, model)`, the family being the tag up to
+`+` or `/`: `mcs2`, `laionb32`), so the two models' entries never overwrite each other. Entries from before 1.9.0 have
+the family `''` and are returned with either; the first write of a family for an item replaces such an entry.
+
+**MobileCLIP's index stays complete.** Every device reads the family it searches with: `laionb32` where the account
+chose explicit search and the device offers it, `mcs2` everywhere else (the Play build, an older app, a device of
+someone the admin didn't allow, the web app's standard search). So while explicit search is on, the indexing device
+(below) keeps **both** families current: for every photo it runs both image models (LAION's and MobileCLIP's) on the
+same decoded picture, finds the faces once, and stores two entries, `laionb32+…` and `mcs2+…`, with the same faces
+(the people document names faces by their place in an entry, so both list them alike). It downloads MobileCLIP's
+image model next to LAION's two (not MobileCLIP's text model: it searches with LAION). The Android background task
+and the Mac's watched folders do the same for new photos. With explicit search off it computes `mcs2` only, as
+before.
+
+- Turning explicit search **on** deletes nothing: the indexing device adds LAION's entries; MobileCLIP's stay and
+  are kept current.
+- Turning it **off** deletes LAION's entries (`DELETE /api/index?model=laionb32`, frees their storage); MobileCLIP's
+  are already there, so nothing is indexed again.
+- An item counts as done only when both of its entries are current. An item missing one of them (MobileCLIP's were
+  deleted by apps before this change, which dropped them when explicit search was turned on) gets only that one made
+  again: one image model pass, the faces taken from its other entry.
+- So a device notices entries deleted on the server since its last visit, the first page of `GET /api/index` carries
+  `count`, the number of the family's entries in all; a device whose cached copy holds more fetches the family again
+  from the start and makes again what is missing.
+
+The cost while explicit search is on, on the indexing device only: one more image encoder pass per photo (MobileCLIP
+S2, the smaller of the two; no second decode, no second face detection), MobileCLIP's image model (143 MB) on disk
+and in memory next to LAION's, and a second entry per photo on the server (a few KB; it counts toward the storage
+limit). Reading devices are unchanged.
 
 ## One device indexes (1.9.0)
 

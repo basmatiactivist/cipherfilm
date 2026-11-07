@@ -294,3 +294,43 @@ func TestOldAppsCantOverwriteEntriesWhereExplicitSearchIsAllowed(t *testing.T) {
 		t.Fatalf("new app: %d", code)
 	}
 }
+
+// The first page says how many entries a family has in all, so a device can tell that some were deleted since its
+// last visit (an older app dropped MobileCLIP's when explicit search was turned on) and fetch them all again.
+func TestIndexListCountsTheFamily(t *testing.T) {
+	e := newEnv(t)
+	admin, _ := e.setupAdmin("admin@x.org")
+	_, me := admin.do("GET", "/api/me", nil, false)
+	admin.do("PATCH", "/api/admin/users/"+me["user"].(map[string]any)["id"].(string), map[string]any{"nsfw": true}, true)
+	i1, i2 := e.readyItem(admin), e.readyItem(admin)
+	for _, w := range []struct{ id, model string }{{i1, "mcs2+yunet23+sface21/2"}, {i2, "mcs2/2"}, {i1, "laionb32+yunet23+sface21/1"}} {
+		if code, _ := admin.do("PUT", "/api/items/"+w.id+"/index", map[string]any{"data_enc": rb(200), "model": w.model}, true); code != 200 {
+			t.Fatalf("index %s: %d", w.model, code)
+		}
+	}
+	count := func(q string) any { _, out := admin.do("GET", "/api/index"+q, nil, false); return out["count"] }
+	if c := count("?model=mcs2"); c != float64(2) {
+		t.Fatalf("mcs2: %v", c)
+	}
+	if c := count("?model=laionb32"); c != float64(1) {
+		t.Fatalf("laionb32: %v", c)
+	}
+	if c := count(""); c != float64(3) {
+		t.Fatalf("all: %v", c)
+	}
+	// counted whatever since says, so a device that has everything still learns about deletions
+	if c := count("?model=mcs2&since=99999999999999"); c != float64(2) {
+		t.Fatalf("since: %v", c)
+	}
+	admin.do("DELETE", "/api/index?model=mcs2", nil, true)
+	if c := count("?model=mcs2"); c != float64(0) {
+		t.Fatalf("after deleting: %v", c)
+	}
+	if c := count("?model=laionb32"); c != float64(1) {
+		t.Fatalf("laionb32 after deleting mcs2: %v", c)
+	}
+	// not on later pages (after=): the first one is enough
+	if c := count("?model=laionb32&after=1." + i1); c != nil {
+		t.Fatalf("later page: %v", c)
+	}
+}

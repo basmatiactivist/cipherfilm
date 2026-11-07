@@ -112,12 +112,14 @@ export async function setHidden(g: Group, hidden: boolean): Promise<string> {
   return id;
 }
 
-/** Explicit search on or off for the account: all its devices switch model and index everything again. */
+/** Explicit search on or off for the account: all its devices switch model. Turned on, the indexing device indexes
+ *  the library with LAION too; turned off, MobileCLIP's index is there already. */
 export async function setExplicit(on: boolean) {
   let was = false;
   await change((d) => { was = d.explicit === true; if (on) d.explicit = true; else delete d.explicit; });
-  // the other model's entries on the server go (they are kept per model, docs/SEARCH.md); best effort
-  if (was !== on) await api("DELETE", `/api/index?model=${on ? "mcs2" : "laionb32"}`).catch(() => {});
+  // MobileCLIP's entries stay: the indexing device keeps them current next to LAION's, for the devices that can't use
+  // explicit search (docs/SEARCH.md). Turned off, LAION's go (they are kept per model); best effort
+  if (was && !on) await api("DELETE", "/api/index?model=laionb32").catch(() => {});
 }
 
 export async function forgetPerson(person: Person) {

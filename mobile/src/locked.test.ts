@@ -42,6 +42,7 @@ vi.mock("./keepAlive", () => ({ keepRunning: () => false, letGo: () => {}, onlyH
 vi.mock("./search/models", () => ({
   haveModels: async () => true, modelPath: () => "/doc/models", family: () => "mcs2",
   modelTag: (_c: string, f: boolean) => (f ? "mcs2+yunet23+sface21/2" : "mcs2/2"), dropOtherModels: () => [],
+  STANDARD: "mobileclip-s2", keepsStandard: () => false, toCompute: () => ["mobileclip-s2"],
 }));
 vi.mock("@crypto/account", () => ({
   normEmail: (e: string) => e.trim().toLowerCase(),
@@ -59,7 +60,7 @@ vi.mock("../modules/cf-native/src/CfNativeModule", () => ({
     readRange: async (_u: string, _o: number, len: number) => new Uint8Array(len),
     jpeg: async () => ({ bytes: new Uint8Array(4), width: 1, height: 1 }),
     mediaInfo: async () => ({}),
-    visionOpen: async () => {}, visionClose: () => {}, visionAnalyze: async () => ({ clip: new Uint8Array(8) }),
+    visionOpen: async () => {}, visionClose: () => {}, visionAnalyze: async () => ({ clips: [new Uint8Array(8)] }),
     backupNotify: () => {}, backupNotifyCancel: () => {}, retryBackupSoon: () => {}, watchNewMedia: () => {},
     keepRunningLost: () => false, clearCookies: () => {},
     // what a lock wipes

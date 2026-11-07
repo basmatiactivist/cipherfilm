@@ -8,7 +8,7 @@ const st = vi.hoisted(() => ({
   saves: [] as { path: string; extra: string }[],
   calls: [] as string[], // network, in order, with the native loads
   opened: 0, // entries opened (decrypted)
-  vision: { clip: null as string | null, dir: null as string | null, text: false, image: false, faces: false },
+  vision: { clip: null as string | null, dir: null as string | null, text: false, image: false, faces: false, also: null as string | null },
   visionOpens: [] as boolean[],
   wipe: (() => {}) as (how?: "locked" | "ended") => void,
   have: true, // the models are on the phone
@@ -87,6 +87,7 @@ vi.mock("./settings", () => ({
 vi.mock("./models", () => ({
   haveModels: async () => st.have, modelPath: () => "/doc/models", family: () => "mcs2", modelTag: (_c: string, f: boolean) => (f ? "mcs2+faces/2" : "mcs2/2"),
   dropOtherModels: () => [], downloadModels: async () => { await st.download; st.have = true; }, downloadSize: () => 0, tokenizerFile: () => ({ text: async () => "{}" }),
+  STANDARD: "mobileclip-s2", keepsStandard: () => false, toCompute: () => [],
 }));
 vi.mock("./tokenizer", () => ({ Tokenizer: class { encode() { return [1]; } } }));
 
@@ -97,7 +98,7 @@ describe("search after unlocking", () => {
   beforeEach(() => {
     st.wipe(); // as a lock does
     Object.assign(st, { copy: null, loads: [], saves: [], calls: [], opened: 0, visionOpens: [], master: new Uint8Array(32).fill(7), gate: null, entries: [], have: true, download: null, holds: [] });
-    st.vision = { clip: null, dir: null, text: false, image: false, faces: false };
+    st.vision = { clip: null, dir: null, text: false, image: false, faces: false, also: null };
   });
 
   it("searches from the copy on the phone before anything comes from the server, with the text model only", async () => {

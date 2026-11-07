@@ -27,8 +27,12 @@ final class SearchEngine {
   private var visionFaces = false
   private var visionClip = ClipModel.mobileclip
   private var visionReader = false
+  private var visionStandard = false
   private var tokenizer: Tokenizer?
   private var tags: [String: String] = [:]
+  /** MobileCLIP's entries, on the Mac that indexes with LAION: it keeps them current for the devices that can't use
+   *  explicit search (docs/SEARCH.md). Only which there are, from which model; they aren't searched here. */
+  private var stdTags: [String: String] = [:]
   private var run: Task<Void, Never>?
   private var runVault: Vault?
   private var runFaces = false
@@ -74,7 +78,7 @@ final class SearchEngine {
   func stop(clear: Bool) {
     run?.cancel(); run = nil
     if clear {
-      index.clear(); tags = [:]; runVault = nil; people = PeopleDoc(); peopleVersion = 0; peopleLoaded = false; groupsAt = -1; groups = []
+      index.clear(); tags = [:]; stdTags = [:]; runVault = nil; people = PeopleDoc(); peopleVersion = 0; peopleLoaded = false; groupsAt = -1; groups = []
       version += 1
     }
     phase = .off; done = 0; total = 0; message = nil; skipped = []
@@ -95,11 +99,11 @@ final class SearchEngine {
       clip = ClipModel.choose(allowed: allowed, explicit: people.explicit == true)
       indexes = AppModel.shared.me?.mayIndex ?? true
       if AppModel.shared.settings.explicitSeen != (people.explicit == true) { AppModel.shared.settings.explicitSeen = people.explicit == true }
-      // the other model's two files go before the chosen one is fetched (tokenizer and face models are shared); a
-      // Mac that only reads keeps just the text model
-      models.remove(clip == .laion ? .mobileclip : .laion)
+      // the other model's files go before the chosen one is fetched (tokenizer and face models are shared; indexing
+      // with LAION keeps MobileCLIP's image model); a Mac that only reads keeps just the text model
+      models.removeUnused(clip: clip, reader: !indexes)
       if !indexes { models.removeIndexing() }
-      let clip = clip, reader = !indexes
+      let clip = clip, reader = !indexes, standardToo = clip.keepsStandard(indexes: indexes)
       step = "Downloading the search models"
       if !models.have(faces: faces, clip: clip, reader: reader) {
         phase = .download; done = 0; total = Int(models.missingBytes(faces: faces, clip: clip, reader: reader)); message = nil; rate = 0; rateAt = nil; retry = nil
@@ -108,11 +112,11 @@ final class SearchEngine {
       }
       phase = .loading
       step = "Opening the search models"
-      if vision == nil || visionFaces != faces || visionClip != clip || visionReader != reader {
+      if vision == nil || visionFaces != faces || visionClip != clip || visionReader != reader || visionStandard != standardToo {
         let dir = models.dir
         vision = nil
-        vision = try await Task.detached(priority: .utility) { try Vision(dir: dir, faces: faces, clip: clip, threads: 4, textOnly: reader) }.value
-        visionFaces = faces; visionClip = clip; visionReader = reader
+        vision = try await Task.detached(priority: .utility) { try Vision(dir: dir, faces: faces, clip: clip, threads: 4, textOnly: reader, standardToo: standardToo) }.value
+        visionFaces = faces; visionClip = clip; visionReader = reader; visionStandard = standardToo
       }
       guard live(vault) else { return }
       let pair = try vault.pair()
@@ -124,6 +128,14 @@ final class SearchEngine {
       var cache = IndexCache.read(vault, clip.family)
       try await pull(vault, &cache, pair: pair, faces: faces, all: true)
       guard live(vault) else { return }
+      // next to LAION's, this Mac keeps MobileCLIP's entries complete when it indexes: which there are
+      let std = ClipModel.standard.family
+      var stdCache = IndexCache()
+      if standardToo {
+        stdCache = IndexCache.read(vault, std)
+        try await pullStandard(vault, &stdCache, pair: pair)
+        guard live(vault) else { return }
+      }
 
       // what has no entry yet, newest first: six photos in flight at once (downloading the preview is the slow part;
       // the models take about 65 ms a photo), each one stored on the server as soon as it is done, so a stop or quit
@@ -141,6 +153,7 @@ final class SearchEngine {
           phase = .ready
           if indexes { done = total }
           cache.write(vault, clip.family)
+          if standardToo { stdCache.write(vault, std) }
           try await Task.sleep(nanoseconds: 3_000_000_000)
           // another device may have turned explicit search on or off, an admin changed the permission, or the
           // person chose another device to index (or this one)
@@ -170,30 +183,50 @@ final class SearchEngine {
         var refused = false
         inFlight = Set(batch.map(\.id))
         defer { inFlight = [] } // also the ones a refusal left unstarted
-        await withTaskGroup(of: (Item, IndexEntry?, String?, APIError?).self) { g in
+        // per photo, the models whose entry is missing; with only one missing, the faces come from the other entry, so
+        // both list the same faces (the people document names them by place) and they are found once
+        var plans: [String: (want: [ClipModel], known: [IndexEntry.Face]?)] = [:]
+        for item in batch {
+          let want = Models.toCompute(tags[item.id], standard: stdTags[item.id], faces: faces, clip: clip, indexes: indexes)
+          let other = faces && standardToo && want.count == 1 ? (want[0] == clip ? stdCache : cache).entries[item.id] : nil
+          plans[item.id] = (want, other.flatMap { try? B64.decode($0) }.flatMap { try? IndexEntry.open($0, pair: pair, itemId: item.id) }?.faces)
+        }
+        await withTaskGroup(of: (Item, [(IndexEntry, String)], APIError?).self) { g in
           var it = batch.makeIterator()
           func next() {
             guard let item = it.next() else { return }
+            let (want, known) = plans[item.id] ?? ([clip], nil)
             g.addTask(priority: .utility) {
+              var stored: [(IndexEntry, String)] = []
               do {
                 let pic = try await vault.bestPicture(of: item)
-                let e = try await Task.detached(priority: .utility) { IndexEntry(analysis: try v.analyze(pic, faces: faces), faces: faces, model: clip) }.value
-                let enc = B64.encode(try e.seal(pk: pk, itemId: item.id))
-                try await Self.put(enc, model: e.m, item: item.id, api: vault.api)
-                return (item, e, enc, nil)
+                let es = try await Task.detached(priority: .utility) { IndexEntry.entries(try v.analyze(pic, faces: faces && known == nil, clips: want), faces: faces, known: known) }.value
+                for e in es {
+                  let enc = B64.encode(try e.seal(pk: pk, itemId: item.id))
+                  try await Self.put(enc, model: e.m, item: item.id, api: vault.api)
+                  stored.append((e, enc))
+                }
+                return (item, stored, nil)
               } catch {
-                return (item, nil, nil, (error as? APIError) ?? APIError(status: -1, message: error.localizedDescription))
+                return (item, stored, (error as? APIError) ?? APIError(status: -1, message: error.localizedDescription))
               }
             }
           }
           for _ in 0..<6 { next() }
-          for await (item, e, enc, err) in g {
+          for await (item, stored, err) in g {
             inFlight.remove(item.id)
-            if let e, let enc {
-              let d = e.decoded(faces: faces)
-              index.put(item.id, clip: d.clip, faces: d.faces)
-              tags[item.id] = e.m
-              cache.entries[item.id] = enc
+            for (e, enc) in stored {
+              if clip.owns(e.m) {
+                let d = e.decoded(faces: faces)
+                index.put(item.id, clip: d.clip, faces: d.faces)
+                tags[item.id] = e.m
+                cache.entries[item.id] = enc
+              } else {
+                stdTags[item.id] = e.m
+                stdCache.entries[item.id] = enc
+              }
+            }
+            if err == nil {
               done += 1; indexedThisRun += 1; sinceWrite += 1
             } else if err?.code == "not_indexer" {
               refused = true // another device indexes now: this Mac only reads from here on
@@ -207,12 +240,13 @@ final class SearchEngine {
         }
         if refused {
           cache.write(vault, clip.family)
+          if standardToo { stdCache.write(vault, std) }
           await refreshMe(vault.api)
           restart(); return
         }
         // screens that show people or search results are worked out again at most every few seconds
         if Date().timeIntervalSince(lastBump) > 4 { version += 1; lastBump = Date() }
-        if sinceWrite >= 20 { cache.write(vault, clip.family); sinceWrite = 0 }
+        if sinceWrite >= 20 { cache.write(vault, clip.family); if standardToo { stdCache.write(vault, std) }; sinceWrite = 0 }
         if offlineCount == batch.count {
           phase = .error; message = "Couldn't load photos to index: \(lastOffline ?? APIError.offline) Trying again in 30 s."
           try await Task.sleep(nanoseconds: 30_000_000_000)
@@ -227,26 +261,44 @@ final class SearchEngine {
     }
   }
 
+  /** Adds the server's entries of a family since the cache's last visit. When the server has fewer than the cache,
+   *  some were deleted there (an older app dropped MobileCLIP's when explicit search was turned on): the cache starts
+   *  over. anew: the cache now holds exactly the server's entries (it started from none). A server that doesn't count
+   *  yet is taken at its word. */
+  private func fetch(_ vault: Vault, _ cache: inout IndexCache, family: String) async throws -> (fresh: [String: String], anew: Bool) {
+    if cache.since == 0 { cache.entries = [:] }
+    var anew = cache.since == 0
+    while true {
+      var after = ""
+      var fresh: [String: String] = [:]
+      var pages = 0, got = 0
+      var count: Int?
+      while true {
+        struct Page: Decodable { struct E: Decodable { let item_id: String; let data_enc: String; let updated_at: Int64 }; let entries: [E]; let next: String?; let count: Int? }
+        let q = after.isEmpty ? "since=\(cache.since)" : "after=" + (after.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? after)
+        let page = try await vault.api.get(Page.self, "/api/index?model=\(family)&\(q)")
+        if after.isEmpty { count = page.count }
+        for e in page.entries { cache.entries[e.item_id] = e.data_enc; fresh[e.item_id] = e.data_enc; cache.since = max(cache.since, e.updated_at) }
+        pages += 1; got += page.entries.count
+        guard let n = page.next, !n.isEmpty else { break }
+        guard pages < Vault.maxListPages, got <= Vault.maxListItems, n != after else { throw APIError(status: -1, message: "The server's index list doesn't end.") }
+        after = n
+      }
+      guard !anew, let count, cache.entries.count > count else { return (fresh, anew) }
+      cache = IndexCache(); anew = true
+    }
+  }
+
   /** Fetches the server's entries for the active model since the cache's last visit and opens them into the index;
    *  all: the whole cache (at the start), otherwise only what is new. */
   private func pull(_ vault: Vault, _ cache: inout IndexCache, pair: KeyPair, faces: Bool, all: Bool) async throws {
-    var after = ""
-    var fresh: [String: String] = [:]
-    var pages = 0, got = 0
-    while true {
-      struct Page: Decodable { struct E: Decodable { let item_id: String; let data_enc: String; let updated_at: Int64 }; let entries: [E]; let next: String? }
-      let q = after.isEmpty ? "since=\(cache.since)" : "after=" + (after.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? after)
-      let page = try await vault.api.get(Page.self, "/api/index?model=\(clip.family)&\(q)")
-      for e in page.entries { cache.entries[e.item_id] = e.data_enc; fresh[e.item_id] = e.data_enc; cache.since = max(cache.since, e.updated_at) }
-      pages += 1; got += page.entries.count
-      guard let n = page.next, !n.isEmpty else { break }
-      guard pages < Vault.maxListPages, got <= Vault.maxListItems, n != after else { throw APIError(status: -1, message: "The server's index list doesn't end.") }
-      after = n
-    }
-    if !all && fresh.isEmpty { return }
+    let (fresh, anew) = try await fetch(vault, &cache, family: clip.family)
+    if !all && !anew && fresh.isEmpty { return }
     cache.write(vault, clip.family)
     let ids = Set(items.map(\.id))
-    let entries = all ? cache.entries : fresh
+    // entries deleted on the server meanwhile: out of the index, and made again by the device that indexes
+    if anew { for id in tags.keys where cache.entries[id] == nil { tags.removeValue(forKey: id); index.remove(id) } }
+    let entries = all || anew ? cache.entries : fresh
     let idx = index, clip = clip
     let opened = await Task.detached(priority: .utility) { () -> ([String: String], [String]) in
       var tags: [String: String] = [:]
@@ -264,6 +316,27 @@ final class SearchEngine {
     for id in opened.1 { cache.entries.removeValue(forKey: id) } // damaged or not for this item: made again
     for id in tags.keys where !ids.contains(id) { tags.removeValue(forKey: id); index.remove(id) }
     version += 1
+  }
+
+  /** MobileCLIP's entries on the server, on the Mac that indexes with LAION: which photos have one and from which
+   *  model (only the tag is read; this Mac searches with LAION's). */
+  private func pullStandard(_ vault: Vault, _ cache: inout IndexCache, pair: KeyPair) async throws {
+    let fam = ClipModel.standard.family
+    _ = try await fetch(vault, &cache, family: fam)
+    cache.write(vault, fam)
+    let ids = Set(items.map(\.id))
+    let entries = cache.entries
+    let opened = await Task.detached(priority: .utility) { () -> ([String: String], [String]) in
+      var tags: [String: String] = [:]
+      var bad: [String] = []
+      for (id, enc) in entries where ids.contains(id) {
+        guard let blob = try? B64.decode(enc), let e = try? IndexEntry.open(blob, pair: pair, itemId: id) else { bad.append(id); continue }
+        tags[id] = e.m
+      }
+      return (tags, bad)
+    }.value
+    stdTags = opened.0
+    for id in opened.1 { cache.entries.removeValue(forKey: id) } // damaged or not for this item: made again
   }
 
   /** The account as the server sees it now: who indexes, whether explicit search is allowed. */
@@ -309,7 +382,8 @@ final class SearchEngine {
       return
     }
     let queued = Set(pending.map(\.id)).union(inFlight).union(skipped)
-    let todo = items.filter { !$0.broken && $0.itemKey != nil && $0.kind != .other && ($0.hasPreview || $0.hasThumb) && !Models.good(tags[$0.id], faces: runFaces, clip: clip) && !queued.contains($0.id) }
+    let todo = items.filter { !$0.broken && $0.itemKey != nil && $0.kind != .other && ($0.hasPreview || $0.hasThumb) && !queued.contains($0.id)
+      && !Models.toCompute(tags[$0.id], standard: stdTags[$0.id], faces: runFaces, clip: clip, indexes: indexes).isEmpty }
     pending += todo
     total = items.filter { $0.kind != .other && !$0.broken }.count
     done = min(total, max(0, total - pending.count - inFlight.count))
@@ -326,17 +400,17 @@ final class SearchEngine {
   }
 
   /** The person's choice of explicit search, saved in the people document for all their devices; this Mac switches
-   *  models and indexes the library again. */
+   *  models (and, where it indexes, looks at the library with LAION too). */
   func setExplicit(_ on: Bool) async throws {
     let old = clip
     try await change { d in d.explicit = on ? true : nil }
     AppModel.shared.settings.explicitSeen = on
-    if let v = runVault { await dropFamily(ClipModel.choose(allowed: AppModel.shared.me?.user.nsfw == true, explicit: on) == old ? nil : old, vault: v) }
+    if let v = runVault { await dropFamily(ClipModel.dropped(from: old, to: ClipModel.choose(allowed: AppModel.shared.me?.user.nsfw == true, explicit: on)), vault: v) }
     restart()
   }
 
-  /** After a switch of model: the old model's entries go (on the server, for every device, and here); the indexing
-   *  device makes the new model's. */
+  /** After turning explicit search off: LAION's entries go (on the server, for every device, and here). MobileCLIP's
+   *  always stay: the indexing device keeps them current next to LAION's, for the devices that can't use it. */
   private func dropFamily(_ old: ClipModel?, vault: Vault) async {
     guard let old else { return }
     try? await vault.api.json("DELETE", "/api/index?model=\(old.family)")
@@ -354,7 +428,7 @@ final class SearchEngine {
       doc.explicit = explicit ? true : nil
       do {
         _ = try await People.save(vault, doc, version: version)
-        await dropFamily(old == ClipModel.choose(allowed: allowed, explicit: explicit) ? nil : old, vault: vault)
+        await dropFamily(ClipModel.dropped(from: old, to: ClipModel.choose(allowed: allowed, explicit: explicit)), vault: vault)
         break
       } catch let e as APIError where e.status == 409 && attempt < 4 { continue }
     }
@@ -397,11 +471,15 @@ final class SearchEngine {
 
   nonisolated static func indexFile(_ url: URL, id: String, video: Bool, faces: Bool, clip: ClipModel, pk: Data, api: API) async {
     let store = ModelStore(dir: Paths.models)
+    // with LAION, MobileCLIP's entry too, from the same look at the photo (docs/SEARCH.md "Explicit search")
+    let both = clip.keepsStandard(indexes: true)
     guard store.have(faces: faces, clip: clip), let img = await Media.jpeg(url, video: video, maxPx: 2048, quality: 0.9),
-          let v = try? Vision(dir: Paths.models, faces: faces, clip: clip, threads: 2), let a = try? v.analyze(img.data, faces: faces) else { return }
-    let entry = IndexEntry(analysis: a, faces: faces, model: clip)
-    guard let enc = try? entry.seal(pk: pk, itemId: id) else { return }
-    try? await put(B64.encode(enc), model: entry.m, item: id, api: api)
+          let v = try? Vision(dir: Paths.models, faces: faces, clip: clip, threads: 2, standardToo: both),
+          let a = try? v.analyze(img.data, faces: faces, clips: both ? [clip, .standard] : [clip]) else { return }
+    for entry in IndexEntry.entries(a, faces: faces) {
+      guard let enc = try? entry.seal(pk: pk, itemId: id) else { return }
+      try? await put(B64.encode(enc), model: entry.m, item: id, api: api)
+    }
   }
 
   /** Stores a sealed entry with its model tag in the clear: where explicit search is allowed the server refuses entries

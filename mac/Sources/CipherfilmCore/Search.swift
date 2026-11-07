@@ -43,6 +43,17 @@ public enum ClipModel: String, Sendable, Codable {
 
   /** Whether an entry's tag was made with this model (its image vector can be compared with this model's). */
   public func owns(_ tag: String?) -> Bool { tag == self.tag || tag == tagNoFaces }
+
+  /** The model every device can search with: the Android app from Google Play, an older app, a person not allowed. */
+  public static let standard = ClipModel.mobileclip
+
+  /** While explicit search is on, the indexing device keeps MobileCLIP's entries current too (docs/SEARCH.md,
+   *  "Explicit search"), so the devices that only read those always find a complete index. */
+  public func keepsStandard(indexes: Bool) -> Bool { indexes && self != .standard }
+
+  /** The family whose entries go on the server when the account's model changes: LAION's when explicit search is
+   *  turned off (they free space); MobileCLIP's never, other devices search with them. */
+  public static func dropped(from old: ClipModel, to new: ClipModel) -> ClipModel? { old == .laion && new != .laion ? .laion : nil }
 }
 
 public enum Models {
@@ -61,9 +72,20 @@ public enum Models {
   /** Whether an entry is up to date: made with this model, and with faces when faces are wanted. */
   public static func good(_ tag: String?, faces: Bool, clip: ClipModel = .mobileclip) -> Bool { faces ? tag == clip.tag : clip.owns(tag) }
 
-  /** reader: a device that only reads the index (another one computes it) needs just the text model and the tokenizer. */
+  /** reader: a device that only reads the index (another one computes it) needs just the text model and the tokenizer.
+   *  Indexing with LAION also needs MobileCLIP's image model (not its text model: this device searches with LAION). */
   public static func needed(faces: Bool, clip: ClipModel = .mobileclip, reader: Bool = false) -> [ModelFile] {
-    reader ? [clip.text, tokenizer] : all(clip).filter { faces || !$0.faces }
+    if reader { return [clip.text, tokenizer] }
+    let also = clip.keepsStandard(indexes: true) ? [ClipModel.standard.vision] : []
+    return (all(clip) + also).filter { faces || !$0.faces }
+  }
+
+  /** What the indexing device still computes for a photo, from the tags of its entries (the account's model's and,
+   *  next to LAION, MobileCLIP's): the models whose entry isn't current. Empty when the photo is done. */
+  public static func toCompute(_ tag: String?, standard: String?, faces: Bool, clip: ClipModel, indexes: Bool = true) -> [ClipModel] {
+    var out = good(tag, faces: faces, clip: clip) ? [] : [clip]
+    if clip.keepsStandard(indexes: indexes) && !good(standard, faces: faces, clip: .standard) { out.append(.standard) }
+    return out
   }
 
   public static func sha256(of url: URL) -> String? {
@@ -139,6 +161,16 @@ public final class ModelStore: @unchecked Sendable {
   /** Removes the files of a model no longer used (the explicit model's 600 MB after it is turned off). */
   public func remove(_ clip: ClipModel) { remove([clip.vision, clip.text]) }
 
+  /** Removes the image and text models that using `clip` doesn't need (MobileCLIP's text model next to LAION; its
+   *  image model too where this device only reads). Returns their names. */
+  @discardableResult
+  public func removeUnused(clip: ClipModel, reader: Bool) -> [String] {
+    let keep = Set(Models.needed(faces: true, clip: clip, reader: reader).map(\.name))
+    let gone = [ClipModel.mobileclip, .laion].flatMap { [$0.vision, $0.text] }.filter { !keep.contains($0.name) }
+    remove(gone)
+    return gone.map(\.name)
+  }
+
   /** A device that only reads the index keeps no image or face models (hundreds of MB it would never run). */
   public func removeIndexing() { remove([ClipModel.mobileclip.vision, ClipModel.laion.vision] + Models.faceFiles) }
 
@@ -166,10 +198,24 @@ public struct IndexEntry: Codable, Sendable {
   public var faces: [Face]?
 
   public init(analysis a: Analysis, faces: Bool, model: ClipModel = .mobileclip) {
+    self.init(vector: a.clip, faces: faces ? Self.faces(a.faces) : nil, model: model)
+  }
+
+  /** faces: nil where faces are off */
+  public init(vector: Data, faces: [Face]?, model: ClipModel) {
     v = 1
-    m = faces ? model.tag : model.tagNoFaces
-    clip = B64.encode(a.clip)
-    self.faces = faces ? (a.faces ?? []).map { Face(box: $0.box, score: $0.score, emb: B64.encode($0.emb)) } : nil
+    m = faces != nil ? model.tag : model.tagNoFaces
+    clip = B64.encode(vector)
+    self.faces = faces
+  }
+
+  static func faces(_ found: [FaceFound]?) -> [Face] { (found ?? []).map { Face(box: $0.box, score: $0.score, emb: B64.encode($0.emb)) } }
+
+  /** The entries for one look at a photo, one per model in a.clips; the faces found once go into each, or those given
+   *  (known: from the photo's other entry, when only one was missing), so both list the same faces. */
+  public static func entries(_ a: Analyses, faces: Bool, known: [Face]? = nil) -> [IndexEntry] {
+    let fs = faces ? known ?? Self.faces(a.faces) : nil
+    return a.clips.map { IndexEntry(vector: $0.vector, faces: fs, model: $0.model) }
   }
 
   public func seal(pk: Data, itemId: String) throws -> Data {

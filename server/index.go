@@ -223,7 +223,15 @@ func (a *App) listIndex(w http.ResponseWriter, r *http.Request, u *user, s *sess
 	if len(out) < indexPage && sent < pageBytes {
 		next = ""
 	}
-	writeJSON(w, 200, map[string]any{"entries": out, "next": next, "now": a.now().UnixMilli()})
+	res := map[string]any{"entries": out, "next": next, "now": a.now().UnixMilli()}
+	// On the first page, how many entries there are in all: a device whose copy holds more knows some were deleted
+	// (another device switched models with an app that dropped them) and fetches everything again.
+	if after == "" {
+		var n int64
+		a.db.QueryRow(`SELECT COUNT(*) FROM item_index WHERE user_id=? AND (?=1 OR model IN (?,''))`, u.ID, all, fam).Scan(&n)
+		res["count"] = n
+	}
+	writeJSON(w, 200, res)
 }
 
 // clearIndex removes the whole index and the people list, when search is turned off with "also delete"; with

@@ -15,6 +15,16 @@ version into the GitHub release notes, so a release cannot be published without 
 - Web: lock and sign-out overwrite the master key's bytes, not only drop the reference.
 - CI runs on branches only; a release tag is checked (identity included) and built by the release workflow alone.
 
+### Fixed
+- Search and people were empty on devices without explicit search (the Android app from Google Play, older apps,
+  devices of people not allowed it) once an account turned explicit search on: switching deleted the standard
+  (MobileCLIP) index and only the explicit one was built. Now the indexing device (Android, Mac) keeps both current
+  while explicit search is on: each photo is looked at once with both image models, faces are found once, and two
+  entries are stored. Turning explicit search on deletes nothing; turning it off still deletes the explicit index.
+  Accounts that lost the standard index get it back: the indexing device notices the missing entries (the index
+  list now counts them on its first page) and makes only those, with the faces it already found. Costs one more image
+  model pass per photo, and MobileCLIP's image model (143 MB) on the indexing device, while explicit search is on.
+
 ## [2.1.8] - 2026-11-07
 
 Simpler self-hosting, and the privacy policy inside the Android app.

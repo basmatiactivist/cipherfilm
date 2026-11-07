@@ -244,8 +244,10 @@ struct SearchSettings: View {
   private func switchText(to clip: ClipModel) -> String {
     let old = clip == .laion ? "MobileCLIP" : "the explicit model"
     let get = size(clip).map { "downloads \(clip == .laion ? "the explicit model" : "MobileCLIP") (\($0))" } ?? "uses the model already here"
-    let then = model.search.indexes ? "and looks at every photo and video again" : "and searches with what your indexing device finds again"
-    return "This Mac deletes \(old), \(get) \(then). Your other devices switch too."
+    guard model.search.indexes else { return "This Mac deletes \(old), \(get) and searches with what your indexing device finds again. Your other devices switch too." }
+    // the indexing Mac keeps MobileCLIP's results current next to LAION's, for devices without explicit search
+    if clip == .laion { return "This Mac \(get) and looks at every photo and video again. It keeps MobileCLIP's results up to date too, for devices without explicit search. Your other devices switch too." }
+    return "This Mac deletes the explicit model and searches with MobileCLIP's results, kept up to date all along. Your other devices switch too."
   }
 
   private var indexedBy: String {

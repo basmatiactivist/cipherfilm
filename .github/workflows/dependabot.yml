@@ -35,7 +35,7 @@ jobs:
         if: contains(fromJSON('["version-update:semver-minor","version-update:semver-patch"]'), steps.meta.outputs.update-type)
         env: { GH_TOKEN: "${{ github.token }}", PR: "${{ github.event.pull_request.html_url }}" }
         run: |
-          gh pr edit "$PR" --add-label automerge
+          gh pr edit "$PR" --add-label automerge || echo "no automerge label in this repository"  # a label is only a marker
           gh pr merge "$PR" --auto --squash --delete-branch || echo "auto-merge is not enabled for this repository yet"
       - name: Leave major and unclassified updates for a person
         if: always() && !contains(fromJSON('["version-update:semver-minor","version-update:semver-patch"]'), steps.meta.outputs.update-type)

@@ -4,6 +4,11 @@
 # upgraded together with the others, but the pull request must pass the cross-implementation test
 # vectors (make test) and the e2e suite before merging.
 version: 2
+# The e2e suite's Playwright library (npm, e2e/) and its browser image (compose.e2e.yaml) only work in the same version:
+# one pull request moves both, after its cooldown.
+multi-ecosystem-groups:
+  e2e-stack:
+    schedule: { interval: weekly }
 updates:
   - package-ecosystem: gomod
     directory: /server
@@ -46,10 +51,9 @@ updates:
     groups: { android-native: { patterns: ["*"] } }
   - package-ecosystem: npm
     directory: /e2e
-    schedule: { interval: weekly }
     cooldown: { default-days: 7, semver-major-days: 30, semver-minor-days: 7, semver-patch-days: 3 }
-    open-pull-requests-limit: 2
-    groups: { e2e: { patterns: ["*"] } }
+    multi-ecosystem-group: e2e-stack
+    patterns: ["*"]
   # the base images, pinned by tag and digest: an update moves both
   - package-ecosystem: docker
     directory: /
@@ -62,20 +66,15 @@ updates:
   # docs/RELEASING.md lists them.
   - package-ecosystem: docker-compose
     directory: /
-    schedule: { interval: weekly }
     cooldown: { default-days: 7 }   # docker, docker-compose and github-actions take no per-semver days
-    open-pull-requests-limit: 2
-    groups: { compose: { patterns: ["*"] } }
+    multi-ecosystem-group: e2e-stack
+    patterns: ["*"]
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
     cooldown: { default-days: 7 }   # docker, docker-compose and github-actions take no per-semver days
     open-pull-requests-limit: 2
     groups: { actions: { patterns: ["*"] } }
-  # the Mac app: swift-sodium (libsodium); ONNX Runtime is pinned in mac/scripts/fetch-onnxruntime.sh
-  - package-ecosystem: swift
-    directory: /mac
-    schedule: { interval: weekly }
-    cooldown: { default-days: 7, semver-major-days: 30, semver-minor-days: 7, semver-patch-days: 3 }
-    open-pull-requests-limit: 2
-    groups: { mac: { patterns: ["*"] } }
+  # Not here: the Mac app (swift). Its package needs the ONNX Runtime framework that scripts/fetch-onnxruntime.sh
+  # downloads, so Dependabot can't resolve it; swift-sodium is checked by hand (docs/RELEASING.md). Security alerts
+  # for it still come from the dependency graph.

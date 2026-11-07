@@ -139,12 +139,15 @@ in Google Cloud (Keys) or remove the user in Play Console.
 ## Dependencies
 
 Dependabot opens one grouped pull request per area each week (Go server, decrypt tool, uploader, web, Android app
-and its native module's Gradle files, e2e, Mac app, Dockerfile, compose files, GitHub Actions) and merges it itself once the full CI is green; major versions wait for a
-person (and a grouped pull request that a refresh turns into a major update has its auto-merge turned off again). Two things it can't do alone:
+and its native module's Gradle files, Dockerfile, GitHub Actions, and the e2e stack: Playwright's npm package and its
+browser image in `compose.e2e.yaml` together, since they only work in the same version) and merges it itself once the
+full CI is green; major versions wait for a person (and a grouped pull request that a refresh turns into a major update
+has its auto-merge turned off again). GitHub shows whether it accepted `.github/dependabot.yml` only on
+Insights › Dependency graph › Dependabot: a rejected file stops every update without any other sign. What it doesn't do:
 
-- **Playwright** is pinned twice and both must match: `@playwright/test` in `e2e/package.json` and the
-  `mcr.microsoft.com/playwright:vX.Y.Z-noble` image in `compose.e2e.yaml`. A pull request that bumps only one
-  fails the e2e job; bump the other in the same branch.
+- **The Mac app's Swift packages** (`swift-sodium`, pinned exactly in `mac/Package.swift`): the package needs the
+  ONNX Runtime framework that `scripts/fetch-onnxruntime.sh` downloads, so Dependabot can't resolve it. Check
+  swift-sodium's releases by hand before each release, like ONNX Runtime's version in that script.
 - **Helper images** in the `Makefile` and `scripts/` (`alpine`, `golang`, `node`) are invisible to Dependabot.
   Check them by hand before each release; Go and Node must match the `Dockerfile`.
 
@@ -173,7 +176,8 @@ Settings that live on GitHub, not in the repository, set once the repository is 
 
 - **Actions › General:** workflow permissions "Read repository contents"; Actions may not create or approve pull
   requests; fork pull requests from outside collaborators need approval before their workflows run.
-- **Allow auto-merge** (General), so Dependabot's minor and patch updates merge once the required checks pass.
+- **Allow auto-merge** (General), so Dependabot's minor and patch updates merge once the required checks pass, and
+  the label `automerge` (it marks them; the merge works without it).
 - **Ruleset for `master`:** no force pushes or deletion; pull requests need the checks `identity` (it checks the
   pull request's own commits), `tokens`, `server`, `web`, `mobile`, `decrypt-tool` and `e2e`; the owner may bypass
   (to push directly).

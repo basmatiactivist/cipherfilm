@@ -1,7 +1,8 @@
 #!/bin/sh
 # Stops a commit or tag from carrying a real e-mail address to GitHub, where it can't be removed again
 # (closed pull requests keep old commits for good). Allowed: <id>+<login>@users.noreply.github.com (bots: <login>[bot]) and
-# GitHub's own noreply@github.com; in messages (Co-authored-by: and the like) also noreply@anthropic.com.
+# GitHub's own noreply@github.com; in messages (Co-authored-by: and the like) also noreply@anthropic.com and
+# support@github.com (Dependabot signs off with it).
 # Never prints an address, so CI logs stay clean too.
 #   check-identity.sh                        the author and committer the next commit gets (pre-commit hook)
 #   check-identity.sh [--committer] REVS...  the commits git log REVS lists, and every tag among REVS: author,
@@ -12,7 +13,7 @@ set -eu
 fix="git config user.email <id>+<login>@users.noreply.github.com (the address is on github.com/settings/emails)"
 # the whole address must match, not just its end; awk reads it from the environment, so nothing in it is unescaped
 okre='^([0-9]+[+][A-Za-z0-9-]+([[]bot[]])?@users[.]noreply[.]github[.]com|noreply@github[.]com)$'
-msgre='^([0-9]+[+][A-Za-z0-9-]+([[]bot[]])?@users[.]noreply[.]github[.]com|noreply@github[.]com|noreply@anthropic[.]com)$'
+msgre='^([0-9]+[+][A-Za-z0-9-]+([[]bot[]])?@users[.]noreply[.]github[.]com|noreply@github[.]com|support@github[.]com|noreply@anthropic[.]com)$'
 ok() { A=$1 awk -v re="$okre" 'BEGIN { exit !(ENVIRON["A"] ~ re) }'; }
 bad=0
 

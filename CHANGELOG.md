@@ -7,38 +7,9 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+Live updates across devices, faster Android backups, and a loading badge everywhere.
+
 ### Added
-- `APP_BIND`: the address the app listens on (default `127.0.0.1`), so a reverse proxy that runs in a Docker container
-  can reach it (the Docker bridge's address).
-
-### Changed
-- Web: lock and sign-out overwrite the master key's bytes, not only drop the reference.
-- CI runs on branches only; a release tag is checked (identity included) and built by the release workflow alone.
-
-### Fixed
-- Android: a backup run that dies between finishing uploads and their account check (they are checked in batches)
-  no longer uploads those files again: they are noted on the phone and confirmed by the next run.
-- Search and people were empty on devices without explicit search (the Android app from Google Play, older apps,
-  devices of people not allowed it) once an account turned explicit search on: switching deleted the standard
-  (MobileCLIP) index and only the explicit one was built. Now the indexing device (Android, Mac) keeps both current
-  while explicit search is on: each photo is looked at once with both image models, faces are found once, and two
-  entries are stored. Turning explicit search on deletes nothing; turning it off still deletes the explicit index.
-  Accounts that lost the standard index get it back: the indexing device notices the missing entries (the index
-  list now counts them on its first page) and makes only those, with the faces it already found. Costs one more image
-  model pass per photo, and MobileCLIP's image model (143 MB) on the indexing device, while explicit search is on.
-- Android: automatic backup uploads three files at once, and checks which account the session belongs to every few
-  files instead of before and after each one, so many small photos wait far less on a slow link. A folder's place
-  still moves only past files that are done, and nothing counts as backed up before a check confirms it went to the
-  right account.
-- A loading badge on the web, Android and the Mac, so a wait is always visible: the Cipherfilm mark on a round seal
-  whose edge is a turning teal ring; while it waits, tiles pass over the photo in the mark and the padlock closes, as in
-  the website's picture. It shows large with what is happening while the app starts, the library, albums, favorites,
-  trash, people and search load, and while a photo decrypts or a video is prepared; small in busy buttons ("Signing
-  in…", "Saving…") and status lines. It follows light and dark mode, appears only when a wait is noticeable and, with
-  reduced motion, only fades. Upload and download progress bars are unchanged.
-
-- Web: albums no longer say "No albums yet" (and an album "no longer exists") while they are still loading, and
-  favorites no longer say "No favorites yet" while the library loads.
 - Live updates: a photo uploaded on the phone shows in the web app and the Mac app within a second or two, without a
   reload, and so do deletes, the trash, restores, favorites, albums and names of people. The server keeps a change
   counter per account and pings that account's other devices over `GET /api/events` (Server-Sent Events) with only
@@ -60,6 +31,37 @@ version into the GitHub release notes, so a release cannot be published without 
   change's own transaction) and keeps a tombstone for each deleted item for 30 days. A cursor older than the kept
   tombstones, from before a restore (`restore.sh` starts a new epoch), or otherwise unknown, gets `"reset": true` and
   the app loads the whole list once. The migration runs at the first start; nothing to do.
+  Even with a cursor, each app loads the whole list at least once a day.
+- A loading badge on the web, Android and the Mac, so a wait is always visible: the Cipherfilm mark on a round seal
+  whose edge is a turning teal ring; while it waits, tiles pass over the photo in the mark and the padlock closes, as in
+  the website's picture. It shows large with what is happening while the app starts, the library, albums, favorites,
+  trash, people and search load, and while a photo decrypts or a video is prepared; small in busy buttons ("Signing
+  in…", "Saving…") and status lines. It follows light and dark mode, appears only when a wait is noticeable and, with
+  reduced motion, only fades. Upload and download progress bars are unchanged.
+- `APP_BIND`: the address the app listens on (default `127.0.0.1`), so a reverse proxy that runs in a Docker container
+  can reach it (the Docker bridge's address).
+
+### Changed
+- Android: automatic backup uploads three files at once, and checks which account the session belongs to every few
+  files instead of before and after each one, so many small photos wait far less on a slow link. A folder's place
+  still moves only past files that are done, and nothing counts as backed up before a check confirms it went to the
+  right account.
+- Web: lock and sign-out overwrite the master key's bytes, not only drop the reference.
+- CI runs on branches only; a release tag is checked (identity included) and built by the release workflow alone.
+
+### Fixed
+- Search and people were empty on devices without explicit search (the Android app from Google Play, older apps,
+  devices of people not allowed it) once an account turned explicit search on: switching deleted the standard
+  (MobileCLIP) index and only the explicit one was built. Now the indexing device (Android, Mac) keeps both current
+  while explicit search is on: each photo is looked at once with both image models, faces are found once, and two
+  entries are stored. Turning explicit search on deletes nothing; turning it off still deletes the explicit index.
+  Accounts that lost the standard index get it back: the indexing device notices the missing entries (the index
+  list now counts them on its first page) and makes only those, with the faces it already found. Costs one more image
+  model pass per photo, and MobileCLIP's image model (143 MB) on the indexing device, while explicit search is on.
+- Android: a backup run that dies between finishing uploads and their account check (they are checked in batches)
+  no longer uploads those files again: they are noted on the phone and confirmed by the next run.
+- Web: albums no longer say "No albums yet" (and an album "no longer exists") while they are still loading, and
+  favorites no longer say "No favorites yet" while the library loads.
 
 ## [2.1.8] - 2026-11-07
 

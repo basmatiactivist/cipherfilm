@@ -4,8 +4,8 @@
 # upgraded together with the others, but the pull request must pass the cross-implementation test
 # vectors (make test) and the e2e suite before merging.
 version: 2
-# The e2e suite's Playwright library (npm, e2e/) and its browser image (compose.e2e.yaml) only work in the same version:
-# one pull request moves both, after its cooldown.
+# The e2e stack in one pull request: its npm packages (e2e/) and the images in the compose files (Caddy). Playwright's
+# browser image takes its version from @playwright/test in e2e/package.json (Makefile), so the two can't drift apart.
 multi-ecosystem-groups:
   e2e-stack:
     schedule: { interval: weekly }
@@ -61,7 +61,7 @@ updates:
     cooldown: { default-days: 7 }   # docker, docker-compose and github-actions take no per-semver days
     open-pull-requests-limit: 2
     groups: { docker: { patterns: ["*"] } }
-  # images in the compose files: Caddy and the Playwright browsers of the e2e stack.
+  # images in the compose files: Caddy of the e2e stack (Playwright's image follows e2e/package.json).
   # The helper images in the Makefile and scripts/ (alpine, golang, node) are not seen by Dependabot;
   # docs/RELEASING.md lists them.
   - package-ecosystem: docker-compose

@@ -23,7 +23,8 @@ services:
       default:
         aliases: [cipherfilm.test]
   playwright:
-    image: mcr.microsoft.com/playwright:v1.64.1-noble
+    # the browsers must match @playwright/test in e2e/package.json, which `make` reads (the only place to bump it)
+    image: mcr.microsoft.com/playwright:v${PLAYWRIGHT_VERSION:?run through make, which reads it from e2e/package.json}-noble
     profiles: [test]
     depends_on: [proxy]
     working_dir: /e2e

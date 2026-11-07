@@ -139,8 +139,9 @@ in Google Cloud (Keys) or remove the user in Play Console.
 ## Dependencies
 
 Dependabot opens one grouped pull request per area each week (Go server, decrypt tool, uploader, web, Android app
-and its native module's Gradle files, Dockerfile, GitHub Actions, and the e2e stack: Playwright's npm package and its
-browser image in `compose.e2e.yaml` together, since they only work in the same version) and merges it itself once the
+and its native module's Gradle files, Dockerfile, GitHub Actions, and the e2e stack with its compose images; Playwright's
+browser image in `compose.e2e.yaml` takes its version from `@playwright/test` in `e2e/package.json`, through the
+`Makefile`, so only the npm package is bumped) and merges it itself once the
 full CI is green; major versions wait for a person (and a grouped pull request that a refresh turns into a major update
 has its auto-merge turned off again). GitHub shows whether it accepted `.github/dependabot.yml` only on
 Insights › Dependency graph › Dependabot: a rejected file stops every update without any other sign. What it doesn't do:

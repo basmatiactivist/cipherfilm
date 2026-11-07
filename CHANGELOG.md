@@ -51,7 +51,7 @@ Live updates across devices, faster Android backups, and a loading badge everywh
 - Dependabot works again: GitHub had rejected the whole `.github/dependabot.yml` (per-semver cooldowns aren't supported
   for docker, docker-compose and GitHub Actions), so no version update ran since the repository was created. The
   identity check accepts GitHub's bot noreply addresses (`…+dependabot[bot]@users.noreply.github.com`) and
-  Dependabot's sign-off. Playwright's npm package and browser image now update in one pull request; the Mac app's
+  Dependabot's sign-off. Playwright's browser image for the e2e suite follows its npm package (one version to bump); the Mac app's
   Swift package is checked by hand (Dependabot can't resolve it without the downloaded ONNX Runtime).
 
 ### Fixed

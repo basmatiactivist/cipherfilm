@@ -17,6 +17,8 @@ test-web:
 	docker run --rm -v "$(CURDIR)/web:/web" -v /web/node_modules -v "$(CURDIR)/server/models.json:/server/models.json:ro" -w /web node:26-alpine sh -c 'npm ci --silent && npm run build --silent && npm test --silent'
 lock:      ## regenerate web/package-lock.json
 	docker run --rm -v "$(CURDIR)/web:/web" -w /web node:26-alpine npm install --package-lock-only
+# Playwright's browser image in compose.e2e.yaml follows the npm package, so Dependabot bumps one version, not two
+export PLAYWRIGHT_VERSION := $(shell sed -n 's/.*"@playwright\/test": "\([0-9][0-9.]*\)".*/\1/p' e2e/package.json)
 E2E = docker compose -f compose.e2e.yaml
 leakcheck: ## assert the e2e stack's data volume holds none of the plaintext markers the e2e uploaded
 	@test -s e2e/test-results/markers.txt || (echo "run make e2e first" && exit 1)

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { router } from "expo-router";
-import { ActivityIndicator, Appbar, Button, Dialog, Divider, List, Portal, ProgressBar, Switch, Text } from "react-native-paper";
+import { Appbar, Button, Dialog, Divider, List, Portal, ProgressBar, Switch, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import N from "../../modules/cf-native/src/CfNativeModule";
 import { api, server } from "../api";
@@ -17,6 +17,7 @@ import { deleteModels, downloadSize } from "../search/models";
 import { loadSettings, onSettingsChange, pinAccount, saveSettings, type SearchSettings } from "../search/settings";
 import { Problem, SwitchItem, useAppTheme } from "../ui";
 import { radius, text } from "../tokens";
+import { Loader } from "../Loader";
 
 const mb = (n: number) => `${Math.round(n / 1e6)} MB`;
 
@@ -128,7 +129,7 @@ export default function SearchSettingsScreen() {
                   : p.phase === "error" ? `Stopped: ${p.message}` : "Getting ready…"}
               </Text>
             </View>
-            {busy ? <ActivityIndicator /> : <Switch value={s.enabled} onValueChange={(v) => (v ? turnOn() : setOff(true))} accessibilityLabel="Search what's in your photos" />}
+            {busy ? <Loader /> : <Switch value={s.enabled} onValueChange={(v) => (v ? turnOn() : setOff(true))} accessibilityLabel="Search what's in your photos" />}
           </View>
           {s.enabled && (p.phase === "download" || p.phase === "indexing") ? (
             <ProgressBar progress={p.total ? p.done / p.total : 0} color={t.colors.primary} style={{ height: 5, borderRadius: 3, marginTop: 12, backgroundColor: t.colors.outlineVariant }} />

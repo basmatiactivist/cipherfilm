@@ -10,6 +10,7 @@ import { deleteAlbum, removeFromAlbum, renameAlbum } from "../../albums";
 import { NameDialog } from "../albums";
 import { Problem, useAppTheme } from "../../ui";
 import { text } from "../../tokens";
+import { busyIcon } from "../../Loader";
 
 /** One album: the same timeline, only its photos; Remove from album, rename and delete (the photos stay). */
 export default function AlbumScreen() {
@@ -83,7 +84,7 @@ export default function AlbumScreen() {
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={() => setDeleting(false)}>Cancel</Button>
-            <Button onPress={remove} loading={deleteBusy} disabled={deleteBusy}>Delete album</Button>
+            <Button onPress={remove} icon={deleteBusy ? busyIcon : undefined} disabled={deleteBusy}>Delete album</Button>
           </Dialog.Actions>
         </Dialog>
       </Portal>

@@ -6,6 +6,7 @@ import { Column, Field, type FieldHandle, Lead, Problem, Screen, Title, useAppTh
 import { declineBiometric, enableBiometric, login, offerBiometric, useSession } from "../session";
 import { useAction } from "../useAction";
 import { away } from "../autolock";
+import { busyIcon } from "../Loader";
 
 export default function SignIn() {
   const t = useAppTheme();
@@ -33,7 +34,7 @@ export default function SignIn() {
           onSubmitEditing={() => passwordField.current?.focus()} submitBehavior="submit" />
         <Field inputRef={passwordField} label="Password" value={password} onChangeText={setPassword} secureTextEntry textContentType="password" autoComplete="current-password" returnKeyType="go" onSubmitEditing={go}
           hint={busy ? "Unlocking…" : undefined} />
-        <Button mode="contained" onPress={go} loading={busy} disabled={busy || !email || !password} contentStyle={{ height: 48 }}>Sign in</Button>
+        <Button mode="contained" onPress={go} icon={busy ? busyIcon : undefined} disabled={busy || !email || !password} contentStyle={{ height: 48 }}>Sign in</Button>
         <Button mode="text" onPress={() => router.push("/server")} style={{ marginTop: 8 }}>Use a different address</Button>
         <Text variant="bodySmall" style={{ color: t.colors.onSurfaceVariant, marginTop: 24 }}>
           New here, or forgot your password? Use Cipherfilm in the browser.

@@ -4,7 +4,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { Image } from "expo-image";
 import { clearSharedPayloads, getSharedPayloads } from "expo-sharing";
 import { useKeepAwake } from "expo-keep-awake";
-import { ActivityIndicator, Appbar, Button, ProgressBar, Snackbar, Text } from "react-native-paper";
+import { Appbar, Button, ProgressBar, Snackbar, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import N from "../../modules/cf-native/src/CfNativeModule";
 import { away } from "../autolock";
@@ -16,6 +16,7 @@ import { takePicked } from "../pending";
 import { Problem, useAppTheme } from "../ui";
 import { Icon } from "../icons";
 import { radius, text } from "../tokens";
+import { Loader, Loading } from "../Loader";
 
 interface Job { file: Shared; state: "queued" | "working" | "done" | "error"; done: number; error?: string }
 const FILES_AT_ONCE = 2;
@@ -190,7 +191,7 @@ export default function ShareScreen() {
             {finished || asking ? null : <ProgressBar progress={progress} color={t.colors.primary} style={{ height: 5, borderRadius: 3, backgroundColor: t.colors.outlineVariant }} />}
           </>
         ) : !problem ? (
-          <View style={st.wait}><ActivityIndicator /><Text variant="bodyMedium" style={{ marginLeft: 12 }}>Reading shared files…</Text></View>
+          <Loading inline label="Reading shared files…" style={st.wait} />
         ) : null}
       </View>
       <FlatList
@@ -233,7 +234,7 @@ function Row({ job, asking }: { job: Job; asking: boolean }) {
         </Text>
       </View>
       <View style={st.state}>
-        {state === "done" ? <Icon name="check" color={t.colors.primary} /> : state === "working" ? <ActivityIndicator size={18} /> : state === "error" ? <Icon name="x" color={t.colors.error} /> : null}
+        {state === "done" ? <Icon name="check" color={t.colors.primary} /> : state === "working" ? <Loader /> : state === "error" ? <Icon name="x" color={t.colors.error} /> : null}
       </View>
     </View>
   );

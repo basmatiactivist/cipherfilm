@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BackHandler, Pressable, RefreshControl, ScrollView, SectionList, StyleSheet, useWindowDimensions, View } from "react-native";
 import { type ReactNode } from "react";
 import { router, useFocusEffect } from "expo-router";
-import { ActivityIndicator, Button, Dialog, List, Portal, ProgressBar, Snackbar, Text, TextInput } from "react-native-paper";
+import { Button, Dialog, List, Portal, ProgressBar, Snackbar, Text, TextInput } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import N from "../modules/cf-native/src/CfNativeModule";
 import { Problem, useAppTheme } from "./ui";
@@ -16,6 +16,7 @@ import { refreshAlbums } from "./albumsStore";
 import { prepareShare, saveItems } from "./outbox";
 import { setViewerList } from "./viewerList";
 import { radius, text } from "./tokens";
+import { Loading } from "./Loader";
 
 const GAP = 4;
 const dayFmt = new Intl.DateTimeFormat(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
@@ -62,6 +63,9 @@ const Row = memo(function Row(p: { row: Item[]; size: number; selecting: boolean
     </View>
   );
 });
+
+/** What the first load of each place says. */
+const OPENING: Record<string, string> = { search: "Searching…", trash: "Opening the trash…", person: "Loading people…" };
 
 export function Gallery({ items, error, loading, onRefresh, header, empty, bottom = 0, fab, nav, extraAction, actions, album, flat, within }: Props) {
   const t = useAppTheme();
@@ -229,7 +233,7 @@ export function Gallery({ items, error, loading, onRefresh, header, empty, botto
           <Row row={row} size={size} selecting={selecting} sel={row.map((it) => (selected.has(it.id) ? "1" : "0")).join("")} onPress={press} onLongPress={hold} />
         )}
         ListHeaderComponent={error ? <View style={{ paddingTop: 8 }}><Problem>{error}</Problem></View> : undefined}
-        ListEmptyComponent={items && !error ? <>{empty}</> : undefined}
+        ListEmptyComponent={items && !error ? <>{empty}</> : !items && !error ? <Loading label={OPENING[within ?? ""] ?? (album ? "Opening the album…" : "Opening your library…")} /> : undefined}
         initialNumToRender={12}
         maxToRenderPerBatch={6}
         updateCellsBatchingPeriod={30}
@@ -315,7 +319,7 @@ export function AlbumPicker({ visible, onDismiss, onPick }: { visible: boolean; 
       <Dialog.ScrollArea style={{ paddingHorizontal: 0 }}>
         <ScrollView>
           {error ? <View style={{ paddingHorizontal: 24 }}><Problem>{error}</Problem></View> : null}
-          {!albums && !error ? <ActivityIndicator style={{ margin: 24 }} /> : null}
+          {!albums && !error ? <Loading inline label="Loading albums…" style={{ margin: 24 }} /> : null}
           {albums?.map((a) => (
             <List.Item key={a.id} title={a.name} description={a.itemIds.length === 1 ? "1 item" : `${a.itemIds.length} items`} onPress={() => onPick(a)}
               left={() => <View style={{ justifyContent: "center", marginLeft: 16 }}><Icon name="folderPlus" color={t.colors.primary} /></View>} style={{ minHeight: 56 }} />

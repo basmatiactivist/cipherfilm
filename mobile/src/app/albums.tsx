@@ -12,6 +12,7 @@ import { refreshAlbums, useAlbums } from "../albumsStore";
 import { createAlbum, type Album } from "../albums";
 import { Problem, useAppTheme } from "../ui";
 import { radius, text } from "../tokens";
+import { busyIcon } from "../Loader";
 
 const GAP = 12;
 // Favorites sits first in the grid, like an album
@@ -135,7 +136,7 @@ export function NameDialog({ visible, title, action, initial = "", onDismiss, on
       </Dialog.Content>
       <Dialog.Actions>
         <Button onPress={onDismiss}>Cancel</Button>
-        <Button onPress={go} loading={busy} disabled={!name.trim() || busy}>{action}</Button>
+        <Button onPress={go} icon={busy ? busyIcon : undefined} disabled={!name.trim() || busy}>{action}</Button>
       </Dialog.Actions>
     </Dialog>
   );

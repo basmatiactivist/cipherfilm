@@ -15,6 +15,7 @@ import { search, SUGGESTIONS, type Result } from "../search/query";
 import { loadSettings, onSettingsChange, type SearchSettings } from "../search/settings";
 import { useAppTheme } from "../ui";
 import { radius, text } from "../tokens";
+import { Loader } from "../Loader";
 
 const mb = (n: number) => `${Math.round(n / 1e6)} MB`;
 
@@ -56,7 +57,8 @@ export default function Search() {
 
   const bar = (
     <View style={{ paddingTop: inset.top + 8, paddingHorizontal: 16 + inset.left, paddingBottom: 8 }}>
-      <Searchbar placeholder="Search your photos" value={q} onChangeText={(v) => { setQ(v); setSimilar(null); }} loading={busy}
+      <Searchbar placeholder="Search your photos" value={q} onChangeText={(v) => { setQ(v); setSimilar(null); }}
+        right={busy ? ({ style }) => <View style={[style, { marginRight: 16 }]}><Loader /></View> : undefined}
         icon="search" clearIcon="x" style={{ backgroundColor: t.colors.surfaceVariant }} inputStyle={{ minHeight: 0 }}
         autoCorrect={false} returnKeyType="search" accessibilityLabel="Search your photos"
         searchAccessibilityLabel="Search" clearAccessibilityLabel="Clear the search" />

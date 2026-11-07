@@ -68,7 +68,7 @@ func runBackup(dataDir string) error {
 // (their records are taken over from the replaced database that restore.sh leaves in .previous/), so they still
 // delete what they keep. And everything in the restored trash gets a fresh 30 days: the cleanup counts from today's
 // date and would otherwise purge, within seconds of starting, exactly the deleted items a restore is usually meant
-// to bring back.
+// to bring back. The incremental lists' cursors (since.go) start a new epoch.
 func runAfterRestore(dataDir string) error {
 	db, err := openDB(filepath.Join(dataDir, "app.db"))
 	if err != nil {
@@ -115,6 +115,10 @@ func runAfterRestore(dataDir string) error {
 		return err
 	}
 	trashed, _ := res.RowsAffected()
+	// the change numbers went back with the database: every device's ?since cursor is void, they load their lists anew
+	if _, err := tx.Exec(`INSERT INTO settings(key,value) VALUES ('sync_epoch', lower(hex(randomblob(8)))) ON CONFLICT(key) DO UPDATE SET value=excluded.value`); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}

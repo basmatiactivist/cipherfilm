@@ -138,6 +138,11 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
+	// the incremental lists' change numbers, tombstones and triggers (since.go): after migrate, which they build on
+	if err := migrateSync(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return db, nil
 }
 

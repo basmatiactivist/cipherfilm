@@ -538,9 +538,20 @@ func pageAfter(r *http.Request) (ts int64, id string, has, ok bool) {
 }
 
 func (a *App) listItems(w http.ResponseWriter, r *http.Request, u *user, s *session) {
+	if r.URL.Query().Has("since") {
+		left, unlimited := a.quotaLeft(u.ID)
+		a.listSince(w, r, u, false, map[string]any{"quota_left": left, "unlimited": unlimited})
+		return
+	}
 	ts, after, has, ok := pageAfter(r)
 	if !ok {
 		fail(w, 400, "invalid request")
+		return
+	}
+	// read before the rows: whatever changes while the pages load comes with the client's first ?since
+	st, err := a.syncState(u.ID)
+	if err != nil {
+		fail(w, 500, "server error")
 		return
 	}
 	q, args := `SELECT id,kind,size_bytes,segment_count,wrapped_item_key,meta_enc,has_thumb,has_preview,created_at,favorite FROM items WHERE user_id=? AND state='ready' AND trashed_at IS NULL`, []any{u.ID}
@@ -572,7 +583,7 @@ func (a *App) listItems(w http.ResponseWriter, r *http.Request, u *user, s *sess
 	var left int64
 	var unlimited bool
 	left, unlimited = a.quotaLeft(u.ID)
-	writeJSON(w, 200, map[string]any{"items": out, "next": next, "quota_left": left, "unlimited": unlimited})
+	writeJSON(w, 200, map[string]any{"items": out, "next": next, "quota_left": left, "unlimited": unlimited, "cursor": st.cursor(st.rev)})
 }
 
 func (a *App) getBlob(kind string) func(http.ResponseWriter, *http.Request, *user, *session) {
@@ -628,6 +639,7 @@ func (a *App) janitor() {
 	for {
 		a.sweepStale()
 		a.purgeExpiredTrash()
+		a.pruneTombstones()
 		a.sweepOrphans()
 		time.Sleep(time.Hour)
 	}
@@ -716,9 +728,19 @@ func (a *App) trashItems(toTrash bool) func(http.ResponseWriter, *http.Request, 
 }
 
 func (a *App) listTrash(w http.ResponseWriter, r *http.Request, u *user, s *session) {
+	days := int(trashRetention.Hours() / 24)
+	if r.URL.Query().Has("since") {
+		a.listSince(w, r, u, true, map[string]any{"retention_days": days})
+		return
+	}
 	ts, after, has, ok := pageAfter(r)
 	if !ok {
 		fail(w, 400, "invalid request")
+		return
+	}
+	st, err := a.syncState(u.ID)
+	if err != nil {
+		fail(w, 500, "server error")
 		return
 	}
 	q, args := `SELECT id,kind,size_bytes,segment_count,wrapped_item_key,meta_enc,has_thumb,has_preview,created_at,trashed_at FROM items WHERE user_id=? AND state='ready' AND trashed_at IS NOT NULL`, []any{u.ID}
@@ -747,7 +769,7 @@ func (a *App) listTrash(w http.ResponseWriter, r *http.Request, u *user, s *sess
 	if len(out) < listPage && sent < pageBytes {
 		next = ""
 	}
-	writeJSON(w, 200, map[string]any{"items": out, "next": next, "retention_days": int(trashRetention.Hours() / 24)})
+	writeJSON(w, 200, map[string]any{"items": out, "next": next, "retention_days": days, "cursor": st.cursor(st.rev)})
 }
 
 // purgeTrash permanently deletes the given trashed items, blobs included. There is no "everything" form: the client

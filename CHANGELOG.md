@@ -5,6 +5,16 @@ All notable changes to Cipherfilm are listed here. The format follows
 [Semantic Versioning](https://semver.org/). The release workflow copies the section of the tagged
 version into the GitHub release notes, so a release cannot be published without an entry here.
 
+## [Unreleased]
+
+### Added
+- `APP_BIND`: the address the app listens on (default `127.0.0.1`), so a reverse proxy that runs in a Docker container
+  can reach it (the Docker bridge's address).
+
+### Changed
+- Web: lock and sign-out overwrite the master key's bytes, not only drop the reference.
+- CI runs on branches only; a release tag is checked (identity included) and built by the release workflow alone.
+
 ## [2.1.8] - 2026-11-07
 
 Simpler self-hosting, and the privacy policy inside the Android app.

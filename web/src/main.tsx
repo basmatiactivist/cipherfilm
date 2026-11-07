@@ -3,7 +3,7 @@ import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { isSecure } from "./env";
 import * as auth from "./auth";
-import { mem } from "./state";
+import { dropMasterKey, mem } from "./state";
 import { dropRequests } from "./api";
 import { clearCaches } from "./cache";
 import { clearPeople } from "./people/people";
@@ -30,7 +30,7 @@ type Screen =
 /** Drops every key and decrypted byte this tab holds: locking, an ended session. */
 function forgetKeys() {
   dropRequests(); // answers still on their way belong to the keys going now
-  mem.masterKey = null;
+  dropMasterKey();
   forgetKept(); // a lock asks for the password again, also after a reload
   forgetDecrypted();
   clearCaches();

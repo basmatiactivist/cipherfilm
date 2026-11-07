@@ -21,6 +21,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false, fetch-depth: 0 }  # full history of every branch, for the check below
+      - name: The tag and every commit use noreply addresses
+        # what CI checked for tags before it ran on branches only; full ref names, so no tag name is read as an option
+        run: git for-each-ref --format='%(refname)' refs/tags | xargs scripts/check-identity.sh --committer HEAD
       - name: The tagged commit is on master
         run: |
           git merge-base --is-ancestor HEAD origin/master \

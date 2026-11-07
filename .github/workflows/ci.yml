@@ -1,6 +1,7 @@
 name: CI
 on:
   push:
+    branches: ["**"]  # a release tag is checked and built by release.yml, not a second time here
   pull_request:
 permissions:
   contents: read
@@ -14,7 +15,8 @@ jobs:
         with: { fetch-depth: 0, persist-credentials: false }
       - name: commits and tags use noreply addresses
         if: github.event_name == 'push'
-        # full ref names (refs/tags/...), so no tag name is ever read as an option
+        # every tag too (a new one is checked again by release.yml before anything is built); full ref names
+        # (refs/tags/...), so no tag name is ever read as an option
         run: git for-each-ref --format='%(refname)' refs/tags | xargs scripts/check-identity.sh --committer HEAD
       - name: the pull request's commits use noreply addresses
         if: github.event_name == 'pull_request'

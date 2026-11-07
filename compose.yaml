@@ -14,7 +14,9 @@ services:
     pids_limit: 256
     mem_limit: 768m
     ports:
-      - "127.0.0.1:${APP_PORT:-8080}:8080"   # loopback only: reachable just through the proxy on this host
+      # loopback by default: reachable just through a proxy on this host. A proxy in a Docker container reaches it with
+      # APP_BIND set to the Docker bridge's address (e.g. 172.17.0.1, the host as containers see it)
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-8080}:8080"
     volumes:
       - appdata:/data
     environment:

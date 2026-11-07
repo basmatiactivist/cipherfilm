@@ -88,9 +88,11 @@ describe("signing out", () => {
     const { mem } = await import("./state");
     await (await setup("tok", "a@x.org", "pw")).commit();
     expect(mem.masterKey).not.toBeNull();
+    const held = mem.masterKey!; // what a module still holding the key would see
     server.hangLogout = true; // a slow or unreachable server
     void logout();
     expect(mem.masterKey).toBeNull();
+    expect([...held].every((b) => b === 0)).toBe(true); // the bytes are overwritten, not only dropped
     expect(mem.me).toBeNull();
     expect(server.dropped).toBe(1); // requests still on their way are dropped
   });

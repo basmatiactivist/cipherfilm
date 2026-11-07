@@ -35,7 +35,10 @@ Then point your proxy at `http://127.0.0.1:8080`. It must:
 - **Not add or change security headers.** The app sets its own strict Content-Security-Policy, HSTS and others.
 
 Plain HTTP between proxy and app is fine on the same host. A proxy in a Docker container can't reach the host's
-`127.0.0.1`: run it with host networking, or attach it to this stack's network and use `http://app:8080`.
+`127.0.0.1`. Either set `APP_BIND` to the Docker bridge's address (often `172.17.0.1`; `ip -4 addr show docker0`) and
+point the proxy at `http://host.docker.internal:8080` (add `extra_hosts: ["host.docker.internal:host-gateway"]` to the
+proxy's service), or attach the proxy to this stack's network and use `http://app:8080`, or run it with host networking.
+Never bind to `0.0.0.0` on a machine reachable from the internet: that serves plain HTTP to everyone.
 
 Example only, for Caddy (it gets the certificate itself):
 
@@ -130,7 +133,8 @@ lost device, make an invite link, status). A password can't be reset from the se
 | `TRUSTED_PROXIES` | `.env` | empty (loopback and private networks) | addresses or CIDRs whose `X-Forwarded-For` is believed, comma-separated |
 | `DEMO_ACCOUNTS` | `.env` | empty | e-mail addresses of public demo accounts, comma-separated: they can sign in, look and search, but not upload, edit, delete or change the account (403); see [deploy/demo](../deploy/demo/README.md) |
 | `DEMO_LOGIN` | `.env` | empty | `EMAIL PASSWORD` of one `DEMO_ACCOUNTS` login: the sign-in page shows it with an "Open the demo" button. The password is published, so only for a demo |
-| `APP_PORT` | `.env` | `8080` | port on `127.0.0.1` your proxy connects to |
+| `APP_PORT` | `.env` | `8080` | port your proxy connects to |
+| `APP_BIND` | `.env` | `127.0.0.1` | address the app listens on; the Docker bridge's address for a proxy in a container (see Deploy) |
 | `DATA_VOLUME` | `.env` | `cipherfilm_data` | Docker volume for database and files |
 | `LISTEN_ADDR`, `DATA_DIR` | app env | `:8080`, `/data` | inside the container |
 

@@ -17,3 +17,11 @@ export interface Me {
 
 /** Key material lives only in this module's memory: a reload or tab close locks the library. */
 export const mem: { masterKey: Uint8Array | null; me: Me | null } = { masterKey: null, me: null };
+
+/** Drops the master key and overwrites its bytes. The reference goes first: work still running compares mem.masterKey
+ *  with the key it started with and stops (SignedOut); requests on their way were aborted before (dropRequests). */
+export function dropMasterKey() {
+  const k = mem.masterKey;
+  mem.masterKey = null;
+  k?.fill(0);
+}

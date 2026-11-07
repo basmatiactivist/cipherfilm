@@ -5,7 +5,7 @@ import {
   unlockMasterKey, unlockWithRecovery,
 } from "./crypto/account";
 import type { KdfParams } from "./crypto/kdf";
-import { mem, Me } from "./state";
+import { dropMasterKey, mem, Me } from "./state";
 import { clearCaches } from "./cache";
 import { clearPeople } from "./people/people";
 import { clearPlayer } from "./player";
@@ -180,7 +180,7 @@ export function logout(): Promise<void> {
 export function forgetLocal(): void {
   dropRequests(); // answers still on their way belong to the keys going now
   void forgetKeptForGood();
-  mem.masterKey = null;
+  dropMasterKey();
   mem.me = null;
   setCsrf("");
   forgetDecrypted();

@@ -48,6 +48,9 @@ Live updates across devices, faster Android backups, and a loading badge everywh
   right account.
 - Web: lock and sign-out overwrite the master key's bytes, not only drop the reference.
 - CI runs on branches only; a release tag is checked (identity included) and built by the release workflow alone.
+- Dependabot works again: GitHub had rejected the whole `.github/dependabot.yml` (per-semver cooldowns aren't supported
+  for docker, docker-compose and GitHub Actions), so no version update ran since the repository was created. The
+  identity check accepts GitHub's bot noreply addresses (`…+dependabot[bot]@users.noreply.github.com`).
 
 ### Fixed
 - Search and people were empty on devices without explicit search (the Android app from Google Play, older apps,

@@ -96,15 +96,16 @@ You need Docker with Compose and HTTPS in front: any reverse proxy (Caddy, nginx
 Tailscale Serve, …) pointed at `http://127.0.0.1:8080`.
 
 ```bash
-git clone https://github.com/basmatiactivist/cipherfilm && cd cipherfilm
-cp .env.example .env              # set PUBLIC_HOSTS to the name your proxy serves
-docker compose up -d --build      # or use the released image, see below
+mkdir cipherfilm && cd cipherfilm
+curl -fsSLO https://raw.githubusercontent.com/basmatiactivist/cipherfilm/master/compose.yaml
+echo "PUBLIC_HOSTS=photos.example.com" > .env      # the name your proxy serves
+docker compose up -d
 docker compose logs app | grep "FIRST-TIME SETUP"
 ```
 
 Open the site, paste the one-time token, create the admin account and save the recovery key. Then invite people from
-**Admin → Invite someone**. Instead of building, you can use the released multi-architecture image
-`ghcr.io/basmatiactivist/cipherfilm:2`.
+**Admin → Invite someone**. Updates: `docker compose pull && docker compose up -d` (the image follows every 2.x
+release).
 
 Proxy requirements, backups, updates, settings and troubleshooting: **[docs/SELF-HOSTING.md](docs/SELF-HOSTING.md)**.
 

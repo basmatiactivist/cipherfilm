@@ -20,7 +20,7 @@ reverse proxy (Caddy, nginx, Traefik, a Cloudflare Tunnel, Tailscale Serve, …)
 
 ```bash
 mkdir cipherfilm && cd cipherfilm
-curl -fsSLO https://raw.githubusercontent.com/basmatiactivist/cipherfilm/master/deploy/quickstart/compose.yaml
+curl -fsSLO https://raw.githubusercontent.com/basmatiactivist/cipherfilm/master/compose.yaml
 echo "PUBLIC_HOSTS=photos.example.com" > .env      # the name your proxy serves
 docker compose up -d
 docker compose logs app | grep "FIRST-TIME SETUP"
@@ -30,8 +30,9 @@ Point your proxy at `http://127.0.0.1:8080` ([what it must do](SELF-HOSTING.md#d
 `https://photos.example.com`, paste the token from the last line and create the first account.
 **Update:** `docker compose pull && docker compose up -d` in the same folder.
 
-The image is `ghcr.io/basmatiactivist/cipherfilm`: `:2` (the default here) follows every 2.x release, `:X.Y.Z` pins
-one version (`CIPHERFILM_TAG=X.Y.Z` in `.env`). Backups, settings and building from source:
+The image is `ghcr.io/basmatiactivist/cipherfilm:2`: it follows every 2.x release, so `docker compose pull` always
+gets the newest. To pin one version, set `CIPHERFILM_IMAGE=ghcr.io/basmatiactivist/cipherfilm:X.Y.Z` in `.env`.
+Backups, settings and building from source:
 [SELF-HOSTING.md](SELF-HOSTING.md).
 
 ## Web app

@@ -12,12 +12,14 @@ settings. Download links for every app are in [INSTALL.md](INSTALL.md).
 
 ## Deploy
 
-[compose.yaml](../compose.yaml) runs only the app, read-only as a non-root user, on `127.0.0.1:8080`, with its data
-in the Docker volume `cipherfilm_data`.
+[compose.yaml](../compose.yaml) runs only the app, from the released image, read-only as a non-root user, on
+`127.0.0.1:8080`, with its data in the Docker volume `cipherfilm_data`.
 
 ```bash
-cp .env.example .env      # set PUBLIC_HOSTS to the name your proxy serves
-docker compose up -d --build
+mkdir cipherfilm && cd cipherfilm
+curl -fsSLO https://raw.githubusercontent.com/basmatiactivist/cipherfilm/master/compose.yaml
+echo "PUBLIC_HOSTS=photos.example.com" > .env      # the name your proxy serves; more settings: .env.example
+docker compose up -d
 docker compose logs app | grep "FIRST-TIME SETUP"
 ```
 
@@ -98,18 +100,18 @@ every session (an older backup would revive revoked ones) and prints a health re
 ## Updating
 
 ```bash
-scripts/backup.sh /path/to/backups
-git pull
-docker compose up -d --build
+docker compose exec -T app /app backup      # a database snapshot first, then let your backup tool run
+docker compose pull && docker compose up -d
 ```
 
-Database changes are applied automatically at start. Browsers pick up the new web app on the next load.
+Database changes are applied automatically at start; browsers pick up the new web app on the next load. The image
+`ghcr.io/basmatiactivist/cipherfilm:2` (amd64 and arm64) follows every 2.x release; a new major version (3.x) is
+never pulled on its own, as it may need changes. `:X.Y.Z` pins one version, `:latest` follows everything. Release
+notes: [CHANGELOG.md](../CHANGELOG.md) and the Releases page.
 
-Releases are published as a multi-architecture image (amd64 and arm64) on GitHub's container registry, built
-from a version tag. Instead of building yourself, set
-`CIPHERFILM_IMAGE=ghcr.io/basmatiactivist/cipherfilm:2` in `.env` and run `docker compose pull && docker compose up -d`.
-`:2` follows every 2.x release, `:2.1.3` pins one exact version, `:latest` is the newest stable release.
-Release notes are in [CHANGELOG.md](../CHANGELOG.md) and on the Releases page; read them before a major upgrade.
+**From source** instead: `docker build -t cipherfilm:local .` in a checkout, then `CIPHERFILM_IMAGE=cipherfilm:local`
+in `.env`.
+
 Check the running version in the admin area under Server, or with `docker compose exec app /app version`.
 How releases are made: [docs/RELEASING.md](RELEASING.md).
 

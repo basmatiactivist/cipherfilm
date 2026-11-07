@@ -8,6 +8,9 @@ version into the GitHub release notes, so a release cannot be published without 
 ## [Unreleased]
 
 ### Changed
+- `compose.yaml` uses the released image (`ghcr.io/basmatiactivist/cipherfilm:2`) instead of building from source, and
+  replaces `deploy/quickstart/compose.yaml`: download it with `curl` and start it. Building from source:
+  docs/SELF-HOSTING.md.
 - Deployment simplified: Cipherfilm only needs HTTPS in front. `compose.yaml` is the one production file; the app
   listens on `127.0.0.1:8080` for any reverse proxy (Caddy, nginx, Traefik, a Cloudflare Tunnel, Tailscale Serve, …),
   and `PUBLIC_HOSTS` is required. The one-file quickstart is the app only, too, with `PUBLIC_HOSTS` instead of

@@ -59,6 +59,7 @@ function css() {
   for (const [k, v] of entries(T.size)) if (!k.endsWith("-mac") && k !== "touch-android") L.push(`  --${k}: ${typeof v.value === "number" ? v.value + "px" : v.value};`);
   for (const [k, v] of entries(T.elevation)) L.push(`  --shadow-${k}: ${v.web};`);
   L.push(`  --fast: ${T.motion.fast.ms / 1000}s;`, `  --medium: ${T.motion.medium.ms / 1000}s;`);
+  L.push(`  --turn: ${T.motion.turn.ms / 1000}s;`, `  --seal: ${T.motion.seal.ms / 1000}s;`, `  --breathe: ${T.motion.breathe.ms / 1000}s;`);
   L.push(`  --ease-out: ${T.motion["ease-out"].value};`, `  --ease-standard: ${T.motion["ease-standard"].value};`);
   L.push("}", "@media (prefers-color-scheme: dark) {", "  :root {", "    color-scheme: dark;");
   for (const [k, v] of colors) L.push(`    --${k}: ${v.dark};`);
@@ -103,7 +104,9 @@ ${typ}
 export const space = { ${entries(T.space).map(([k, v]) => `s${k}: ${v}`).join(", ")} } as const;
 export const radius = { ${entries(T.radius).map(([k, v]) => `${k}: ${v}`).join(", ")} } as const;
 export const touch = ${T.size["touch-android"].value};
-export const motion = { fast: ${T.motion.fast.ms}, medium: ${T.motion.medium.ms} } as const;
+export const motion = { fast: ${T.motion.fast.ms}, medium: ${T.motion.medium.ms}, turn: ${T.motion.turn.ms}, seal: ${T.motion.seal.ms}, breathe: ${T.motion.breathe.ms} } as const;
+/** The loading badge (Loader.tsx): inline and on its own, in dp. */
+export const loader = { small: ${T.size.loader.value}, large: ${T.size["loader-large"].value} } as const;
 `;
 }
 
@@ -153,11 +156,16 @@ enum Metric {
   static let field: CGFloat = ${T.size["field-mac"].value}
   static let menuShadowRadius: CGFloat = ${T.elevation.menu.radius}
   static let menuShadowY: CGFloat = ${T.elevation.menu.y}
+  static let loader: CGFloat = ${T.size["loader-mac"].value}
+  static let loaderLarge: CGFloat = ${T.size["loader-large-mac"].value}
 }
 
 enum Motion {
-  static let fast = ${T.motion.fast.ms / 1000}
-  static let medium = ${T.motion.medium.ms / 1000}
+  static let fast: Double = ${T.motion.fast.ms / 1000}
+  static let medium: Double = ${T.motion.medium.ms / 1000}
+  static let turn: Double = ${T.motion.turn.ms / 1000}
+  static let seal: Double = ${T.motion.seal.ms / 1000}
+  static let breathe: Double = ${T.motion.breathe.ms / 1000}
 }
 `;
 }

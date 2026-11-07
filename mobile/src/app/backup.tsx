@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AppState, PermissionsAndroid, ScrollView, StyleSheet, View } from "react-native";
 import { router } from "expo-router";
-import { ActivityIndicator, Appbar, Button, Divider, List, RadioButton, Switch, Text } from "react-native-paper";
+import { Appbar, Button, Divider, List, RadioButton, Switch, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import N, { type BackupState } from "../../modules/cf-native/src/CfNativeModule";
 import { DEMO_BACKUP, blocker, chooseFolders, disableBackup, enableBackup, loadConfig, loadStatus, notBackedUp, onBackupChange, rememberLibrary, runBackup, saveConfig, startAfter, waitingCount, type Config, type Status } from "../backup";
@@ -15,6 +15,7 @@ import { useMediaDisclosure } from "../disclosure";
 import { isPlayBuild } from "../store";
 import { away, expectAway } from "../autolock";
 import { ownBatteryRules, useOnReturn } from "../deviceState";
+import { Loader, Loading } from "../Loader";
 
 type MediaFolder = Awaited<ReturnType<typeof N.mediaFolders>>[number];
 const fmtTime = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
@@ -143,7 +144,7 @@ export default function Backup() {
                   : older ? "New photos and videos are backed up" : device.media === "partial" ? "Everything Cipherfilm can see is backed up" : "Everything is backed up") : "Off"}
               </Text>
             </View>
-            {busy ? <ActivityIndicator /> : <Switch value={on} onValueChange={toggle} accessibilityLabel="Back up automatically" />}
+            {busy ? <Loader /> : <Switch value={on} onValueChange={toggle} accessibilityLabel="Back up automatically" />}
           </View>
           {on ? (
             <>
@@ -205,7 +206,7 @@ export default function Backup() {
         <List.Subheader>Folders to back up</List.Subheader>
         {device.media === "none" ? (
           <Text variant="bodyMedium" style={st.hint}>Allow access to photos and videos to see your folders.</Text>
-        ) : !folders ? <ActivityIndicator style={{ margin: 16 }} /> : folders.map((f) => (
+        ) : !folders ? <Loading inline label="Looking for photo folders…" style={{ margin: 16 }} /> : folders.map((f) => (
           <List.Item key={f.id} title={f.name} description={`${f.path.replace(/\/$/, "")} · ${f.count === 1 ? "1 item" : `${f.count} items`}`}
             onPress={() => { const n = new Set(chosen); n.has(f.id) ? n.delete(f.id) : n.add(f.id); apply(n); }}
             accessibilityRole="checkbox" accessibilityState={{ checked: chosen.has(f.id) }}

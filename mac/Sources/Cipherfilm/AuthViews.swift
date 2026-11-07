@@ -63,7 +63,7 @@ struct ServerView: View {
         TextField("photos.example.org", text: $address).field().onSubmit(go)
       }
       if let error { Note(text: error) }
-      Button(action: go) { Text(busy ? "Checking…" : "Continue").frame(maxWidth: .infinity) }
+      Button(action: go) { BusyLabel(busy, "Continue", "Checking…").frame(maxWidth: .infinity) }
         .buttonStyle(PrimaryButton()).disabled(busy || address.trimmingCharacters(in: .whitespaces).isEmpty)
         .keyboardShortcut(.defaultAction)
     }
@@ -97,7 +97,7 @@ struct SignInView: View {
         SecureField("", text: $password).field().textContentType(.password).onSubmit(go)
       }
       if let error { Note(text: error) }
-      Button(action: go) { Text(busy ? "Signing in…" : "Sign in").frame(maxWidth: .infinity) }
+      Button(action: go) { BusyLabel(busy, "Sign in", "Signing in…").frame(maxWidth: .infinity) }
         .buttonStyle(PrimaryButton()).disabled(busy || email.isEmpty || password.isEmpty)
         .keyboardShortcut(.defaultAction)
       Button("Use another server") { model.forgetServer() }.buttonStyle(TextLink()).font(Typo.caption)
@@ -127,7 +127,7 @@ struct UnlockView: View {
         SecureField("", text: $password).field().onSubmit(go)
       }
       if let error { Note(text: error) }
-      Button(action: go) { Text(busy ? "Unlocking…" : "Unlock").frame(maxWidth: .infinity) }
+      Button(action: go) { BusyLabel(busy, "Unlock", "Unlocking…").frame(maxWidth: .infinity) }
         .buttonStyle(PrimaryButton()).disabled(busy || password.isEmpty)
         .keyboardShortcut(.defaultAction)
       if model.touchID {
@@ -178,10 +178,10 @@ struct SignOutSheet: View {
       HStack {
         Spacer()
         Button("Cancel") { dismiss() }.buttonStyle(SecondaryButton()).keyboardShortcut(.cancelAction)
-        Button(busy ? "Signing out…" : "Sign out") {
+        Button {
           busy = true
           Task { await model.signOut(deleteExport: deleteExport); dismiss() }
-        }.buttonStyle(PrimaryButton()).disabled(busy)
+        } label: { BusyLabel(busy, "Sign out", "Signing out…") }.buttonStyle(PrimaryButton()).disabled(busy)
       }
     }
     .padding(24).frame(width: 440)

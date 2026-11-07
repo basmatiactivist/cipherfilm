@@ -15,6 +15,7 @@ import { Logo } from "./icons";
 import { Library } from "./library";
 import { Login, Unlock } from "./signin";
 import { lazy } from "./lazy";
+import { Loading } from "./loader";
 
 // first-time and recovery screens: most visits never show them
 const Setup = lazy(() => import("./screens").then((m) => m.Setup));
@@ -120,7 +121,7 @@ function App() {
 
   return (
     <Shell app={screen.n === "home"}>
-      {screen.n === "boot" && <p class="boot" role="status">Loading…</p>}
+      {screen.n === "boot" && <Loading label="Opening Cipherfilm…" />}
       {screen.n === "setup" && <Setup onKeys={(k) => keys(k, "home")} />}
       {screen.n === "login" && <Login nav={nav} notice={notice} onDone={() => { setNotice(""); history.replaceState(null, "", "/"); setScreen({ n: "home" }); }} />}
       {screen.n === "unlock" && <Unlock onDone={() => setScreen({ n: "home" })} onSignOut={signOut} />}

@@ -17,9 +17,10 @@ import { Icon, IconName, Logo } from "./icons";
 import { loadUsage } from "./auth";
 import { hasIndex, searchFamily, usePeople } from "./people/people";
 import { lazy } from "./lazy";
+import { Loading } from "./loader";
 
 // Loaded when first shown; the lightbox is fetched ahead once the grid is up, so the first photo opens at once.
-const Lightbox = lazy(() => import("./lightbox").then((m) => m.Lightbox), () => <div class="lightbox lbwait"><p class="lbmsg" role="status">Loading…</p></div>);
+const Lightbox = lazy(() => import("./lightbox").then((m) => m.Lightbox), () => <div class="lightbox lbwait"><Loading stage label="Opening the viewer…" /></div>);
 const PeopleList = lazy(() => import("./people/ui").then((m) => m.PeopleList));
 const PersonHeader = lazy(() => import("./people/ui").then((m) => m.PersonHeader), () => null);
 const Account = lazy(() => import("./screens").then((m) => m.Account));
@@ -50,6 +51,7 @@ function NavItem(p: { icon: IconName; label: string; current: boolean; onClick: 
 export function Library(props: { email: string; admin: boolean; onSignOut: () => void; onLock: () => void }) {
   const [items, setItems] = useState<Item[] | null>(null);
   const [albums, setAlbums] = useState<Album[]>([]);
+  const [albumsLoaded, setAlbumsLoaded] = useState(false);
   const [page, setPage] = useState<Page>({ n: "timeline" });
   const view = page as View;
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -85,7 +87,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   useEffect(() => { const m = matchMedia("(max-width: 600px)"); const f = () => setNarrow(m.matches); m.addEventListener("change", f); return () => m.removeEventListener("change", f); }, []);
 
   const refreshItems = () => loadItems().then((r) => { setItems(r.items); setError(""); prefetchThumbs(r.items); }, (e) => setError(msg(e)));
-  const refreshAlbums = () => loadAlbums().then(setAlbums, (e) => setError(msg(e)));
+  const refreshAlbums = () => loadAlbums().then(setAlbums, (e) => setError(msg(e))).finally(() => setAlbumsLoaded(true));
   const refreshTrash = () => loadTrash().then((r) => { setTrash(r.items); setRetention(r.retentionDays); }, (e) => setError(msg(e)));
   const refreshUsage = () => loadUsage().then(setUsage, () => {});
   useEffect(() => { refreshItems(); refreshAlbums(); refreshTrash(); refreshUsage(); }, []);
@@ -575,6 +577,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
 
           {view.n === "timeline" && (
             <>
+              {!items && <Loading label="Opening your library…" />}
               {empty && (
                 <section class="panel empty">
                   <span class="emptyicon"><Icon name="photos" size={32} /></span>
@@ -583,14 +586,14 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
                   {!demo && <button class="btn" onClick={() => input.current?.click()}><Icon name="upload" />Add photos and videos</button>}
                 </section>
               )}
-              {q && content.status && <p class="small" role="status">{content.status}</p>}
+              {q && content.status && <Loading inline={timelineItems.length > 0} label={content.status} />}
               {q && items && items.length > 0 && timelineItems.length === 0 && !content.status && <p class="small">Nothing matches “{searched.trim()}”. Search covers file names, dates (2023, March, 14.03.2023), cameras, albums and people{searchable ? ", and what's in your photos" : ""}.{!searchable && " To search by what's in photos (dog, beach), turn on search in the Android or Mac app."}</p>}
               {items && items.length > 0 && albums.length > 0 && !selectMode && !q && <p class="small hint desktoponly">Tip: drag photos onto an album to file them.</p>}
               {timelineItems.length > 0 && <Timeline items={timelineItems} flat={!!ranked} selectMode={selectMode} selected={selected} onToggle={pick} onContext={(id, e) => setCtx({ x: e.clientX, y: e.clientY, kind: "item", id })} dragIds={dragIds} onOpen={(id) => openLb(timelineItems.findIndex((i) => i.id === id))} />}
             </>
           )}
 
-          {view.n === "favorites" && (shown.length === 0 ? (
+          {view.n === "favorites" && (!items ? <Loading label="Opening your library…" /> : shown.length === 0 ? (
             <section class="panel empty"><span class="emptyicon"><Icon name="heart" size={32} /></span><h2>No favorites yet</h2><p>Open a photo and press the heart (or F). Favorites from your phone or Mac show up here too.</p></section>
           ) : (
             <>
@@ -614,7 +617,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
                   )}
                 </div>
               )}
-              {trash && trash.length === 0 ? (
+              {!trash ? <Loading label="Opening the trash…" /> : trash.length === 0 ? (
                 <section class="panel empty"><span class="emptyicon"><Icon name="trash" size={32} /></span><h2>The trash is empty</h2><p>Items you move to the trash stay here for {retention} days.</p></section>
               ) : (
                 trash && <Timeline items={trashItemsShown} selectMode={selectMode} selected={selected} onToggle={pick} onContext={(id, e) => setCtx({ x: e.clientX, y: e.clientY, kind: "item", id })} onOpen={(id) => openLb(trashItemsShown.findIndex((i) => i.id === id))} />
@@ -622,11 +625,12 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
             </>
           )}
 
-          {view.n === "albums" && <AlbumList onContext={(id, e) => setCtx({ x: e.clientX, y: e.clientY, kind: "album", id })} albums={albums} items={items ?? []} dropTarget={(a) => dropTarget((ids) => addIdsToAlbum(a, ids))} onOpen={(id) => go({ n: "album", id })} onCreated={(a) => { setAlbums((x) => [...x, a]); go({ n: "album", id: a.id }); }} setError={setError} />}
+          {view.n === "albums" && !albumsLoaded && <Loading label="Opening your albums…" />}
+          {view.n === "albums" && albumsLoaded && <AlbumList onContext={(id, e) => setCtx({ x: e.clientX, y: e.clientY, kind: "album", id })} albums={albums} items={items ?? []} dropTarget={(a) => dropTarget((ids) => addIdsToAlbum(a, ids))} onOpen={(id) => go({ n: "album", id })} onCreated={(a) => { setAlbums((x) => [...x, a]); go({ n: "album", id: a.id }); }} setError={setError} />}
 
           {view.n === "people" && <PeopleList groups={people.groups} ready={people.ready} error={people.error} byId={byId} onOpen={(key) => openPerson(key)} />}
 
-          {view.n === "person" && !person && (people.ready && people.groups ? <p>This person is no longer in your library. <button class="link" onClick={() => go({ n: "people" })}>Back to people</button></p> : <p class="small" role="status">Loading people…</p>)}
+          {view.n === "person" && !person && (people.ready && people.groups ? <p>This person is no longer in your library. <button class="link" onClick={() => go({ n: "people" })}>Back to people</button></p> : <Loading label="Loading people…" />)}
           {view.n === "person" && person && (
             <>
               <PersonHeader key={person.key} group={person} item={person.cover && byId.get(person.cover.item)} onRenamed={(key) => setPage({ n: "person", key })} />
@@ -634,13 +638,14 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
             </>
           )}
 
-          {view.n === "album" && !album && <p>This album no longer exists. <button class="link" onClick={() => go({ n: "albums" })}>Back to albums</button></p>}
+          {view.n === "album" && !album && !albumsLoaded && <Loading label="Opening the album…" />}
+          {view.n === "album" && !album && albumsLoaded && <p>This album no longer exists. <button class="link" onClick={() => go({ n: "albums" })}>Back to albums</button></p>}
           {view.n === "album" && album && (
             <>
               <AlbumHeader album={album} count={shown.length} onZip={() => zip(shown, album.name)}
                 onRename={(n) => setAlbums((x) => x.map((a) => (a.id === album.id ? { ...a, name: n } : a)))}
                 onDeleted={() => { setAlbums((x) => x.filter((a) => a.id !== album.id)); go({ n: "albums" }); }} setError={setError} />
-              {shown.length === 0 ? (
+              {!items ? <Loading label="Opening the album…" /> : shown.length === 0 ? (
                 <section class="panel empty"><span class="emptyicon"><Icon name="albums" size={32} /></span><h2>This album is empty</h2><p>In the timeline, choose Select, pick photos and add them to this album. Or drag photos onto the album.</p></section>
               ) : (
                 <Timeline items={shownItems} flat={!!ranked} selectMode={selectMode} selected={selected} onToggle={pick} onContext={(id, e) => setCtx({ x: e.clientX, y: e.clientY, kind: "item", id })} dragIds={dragIds} onOpen={(id) => openLb(shownItems.findIndex((i) => i.id === id))} />

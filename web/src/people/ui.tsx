@@ -3,6 +3,7 @@ import type { Item } from "../items";
 import { cachedPreview, cachedThumb, dropImage, thumbUrl, wantImage } from "../cache";
 import { Icon } from "../icons";
 import { useAction } from "../components";
+import { Loader, Loading } from "../loader";
 import { faceCrop, facesIn, hasIndex, knownNames, MAX_NAME, nameFace, nameGroup, type FaceInPhoto, type Group } from "./people";
 import type { Cover } from "./faces";
 
@@ -59,7 +60,7 @@ function NameForm(p: { id: string; initial?: string; label: string; save: (name:
         onInput={(e) => setName((e.target as HTMLInputElement).value)} onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); p.cancel(); } }} />
       {names.length > 0 && <datalist id={`${p.id}-names`}>{names.map((n) => <option key={n} value={n} />)}</datalist>}
       <div class="row">
-        <button class="btn small" type="submit" disabled={busy || !name.trim()}>{busy ? "Saving…" : "Save"}</button>
+        <button class="btn small" type="submit" disabled={busy || !name.trim()}>{busy ? <><Loader />Saving…</> : "Save"}</button>
         <button class="btn secondary small" type="button" onClick={p.cancel}>Cancel</button>
       </div>
       {error && <p class="error" role="alert">{error}</p>}
@@ -108,7 +109,7 @@ export function PhotoPeople(p: { item: Item; all: Group[]; ready: boolean; onPer
 /** The People page: named people first, then groups not named yet. */
 export function PeopleList(p: { groups: Group[] | null; ready: boolean; error: string; byId: Map<string, Item>; onOpen: (key: string) => void }) {
   if (p.error && !p.groups) return <p class="error" role="alert">{p.error}</p>;
-  if (!p.ready || !p.groups) return <p class="small" role="status">Loading people…</p>;
+  if (!p.ready || !p.groups) return <Loading label="Loading people…" />;
   if (!hasIndex()) {
     return (
       <section class="panel empty">

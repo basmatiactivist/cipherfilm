@@ -236,7 +236,7 @@ struct PhotoView: View {
           .onTapGesture(count: 2) { withAnimation(.easeOut(duration: Motion.fast)) { if zoom > 1 { zoom = 1; offset = .zero } else { zoom = 2.5 }; base = zoom } }
           .padding(16)
       } else {
-        ProgressView().controlSize(.large).tint(Ink.onStage)
+        Loading(label: "Decrypting…", stage: true)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -261,7 +261,7 @@ struct VideoView: View {
       if let player {
         PlayerView(player: player)
       } else {
-        ProgressView().controlSize(.large).tint(Ink.onStage)
+        Loading(label: "Preparing video…", stage: true)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)

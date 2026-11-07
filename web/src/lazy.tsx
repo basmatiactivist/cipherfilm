@@ -1,11 +1,10 @@
 import type { ComponentType } from "preact";
 import { useEffect, useState } from "preact/hooks";
-
-export const Loading = () => <p class="boot" role="status">Loading…</p>;
+import { Loading } from "./loader";
 
 /** A component whose code is fetched the first time it renders, or earlier with preload(); `fallback` shows meanwhile.
  *  The chunks come from this origin, so the CSP's script-src 'self' covers them. */
-export function lazy<P extends object>(load: () => Promise<ComponentType<P>>, fallback: () => any = Loading) {
+export function lazy<P extends object>(load: () => Promise<ComponentType<P>>, fallback: () => any = () => <Loading />) {
   let C: ComponentType<P> | undefined;
   let pending: Promise<void> | undefined;
   // a failed fetch (offline, or a new release removed the old chunk) is tried again next time

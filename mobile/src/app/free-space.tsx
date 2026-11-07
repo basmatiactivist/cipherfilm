@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppState, ScrollView, StyleSheet, View } from "react-native";
 import { router } from "expo-router";
-import { ActivityIndicator, Appbar, Button, Dialog, Divider, List, Portal, RadioButton, Text } from "react-native-paper";
+import { Appbar, Button, Dialog, Divider, List, Portal, RadioButton, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import N, { type PhoneMedia } from "../../modules/cf-native/src/CfNativeModule";
 import { away } from "../autolock";
@@ -11,6 +11,7 @@ import { Icon } from "../icons";
 import { Problem, useAppTheme } from "../ui";
 import { radius, text } from "../tokens";
 import { useMediaDisclosure } from "../disclosure";
+import { busyIcon, Loading } from "../Loader";
 
 const DAY = 86400_000;
 const AGES = [{ key: "0", label: "All of them", days: 0 }, { key: "30", label: "Older than 30 days", days: 30 }, { key: "90", label: "Older than 3 months", days: 90 }, { key: "365", label: "Older than a year", days: 365 }];
@@ -119,7 +120,7 @@ export default function FreeSpace() {
         ) : !matched && libraryError ? (
           <View style={{ padding: 16 }}><Problem>{`Couldn't load your library, so nothing can be removed. ${libraryError}`}</Problem></View>
         ) : !matched ? (
-          <View style={{ alignItems: "center", padding: 32 }}><ActivityIndicator /><Text variant="bodyMedium" style={{ marginTop: 12 }}>Comparing this phone with your library…</Text></View>
+          <Loading label="Comparing this phone with your library…" />
         ) : (
           <>
             <View style={[st.card, { backgroundColor: chosen.length ? t.colors.primaryContainer : t.colors.surfaceVariant }]}>
@@ -139,7 +140,7 @@ export default function FreeSpace() {
                 </>
               ) : null}
               {!canTrash ? <Text variant="bodySmall" style={{ marginTop: 8 }}>Removing needs Android 11 or newer. Delete them in your gallery app instead.</Text> : null}
-              <Button mode="contained" icon="trash" disabled={!chosen.length || busy || !canTrash} loading={busy} onPress={() => setAsking(true)} style={st.button}>Remove from this phone</Button>
+              <Button mode="contained" icon={busy ? busyIcon : "trash"} disabled={!chosen.length || busy || !canTrash} onPress={() => setAsking(true)} style={st.button}>Remove from this phone</Button>
             </View>
             {done ? <Text variant="bodyMedium" style={st.hint}>Moved {done.n} ({gb(done.bytes)}) to the phone's trash. You can restore them in your gallery app for 30 days.</Text> : null}
             <View style={{ paddingHorizontal: 16 }}><Problem>{error}</Problem></View>

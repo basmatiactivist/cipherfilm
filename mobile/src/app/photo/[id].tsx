@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, FlatList, PanResponder, Pressable, StatusBar, StyleSheet, useWindowDimensions, View, type GestureResponderEvent } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { Image } from "expo-image";
-import { ActivityIndicator, Dialog, IconButton, Modal, Portal, ProgressBar, Snackbar, Text } from "react-native-paper";
+import { Dialog, IconButton, Modal, Portal, ProgressBar, Snackbar, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { previewUri, when, type Item } from "../../library";
 import { libraryItems, refreshLibrary, setFavorite } from "../../libraryStore";
@@ -19,6 +19,7 @@ import { Icon, type IconName } from "../../icons";
 import { prepareShare, saveItems } from "../../outbox";
 import { useAppTheme } from "../../ui";
 import { stage } from "../../tokens";
+import { Loader } from "../../Loader";
 
 const fmtWhen = new Intl.DateTimeFormat(undefined, { dateStyle: "full", timeStyle: "short" });
 const fmtSize = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`);
@@ -198,7 +199,7 @@ function Page({ item, width, height, active, onZoom }: { item: Item; width: numb
           <Image source={{ uri }} style={{ width, height }} contentFit="contain" cachePolicy="memory" accessibilityLabel={item.meta?.name} />
         </Zoomable>
       ) : null}
-      {!sharp && item.has_preview && !ready ? <ActivityIndicator color={stage.onStage} style={st.spinner} /> : null}
+      {!sharp && item.has_preview && !ready ? <Loader large style={st.spinner} /> : null}
       {ready ? (
         // the whole page, like the still under it (same fit, so it lines up); the controls keep clear of the bars
         <VideoView item={item.id} controlsInset={[inset.top + 56, inset.bottom + 80]} style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0 }} />

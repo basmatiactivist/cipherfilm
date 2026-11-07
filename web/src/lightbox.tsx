@@ -8,6 +8,7 @@ import { cachedPreview, cachedThumb, previewUrl, thumbUrl } from "./cache";
 import { dayOf, fmtDay } from "./grid";
 import type { Group } from "./people/people";
 import { PhotoPeople } from "./people/ui";
+import { Loading } from "./loader";
 
 const fmtBytes = (n: number) => (n >= 1e9 ? (n / 1e9).toFixed(1) + " GB" : n >= 1e6 ? (n / 1e6).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1e3)) + " KB");
 
@@ -39,7 +40,7 @@ function VideoPlayer({ item }: { item: Item }) {
     return () => { alive = false; forgetStream(item.id); if (blobUrl) URL.revokeObjectURL(blobUrl); };
   }, [item.id]);
   if (err) return <p class="lbmsg">{err}</p>;
-  if (!src) return <p class="lbmsg" role="status">{status}</p>;
+  if (!src) return <Loading stage label={status} />;
   return (
     <video key={src} src={src} controls playsInline preload="metadata" poster={cachedThumb(item.id)} aria-label={item.meta?.name}
       onError={() => setErr("This video can't be played here. This browser may not support its format (iPhone videos often use HEVC), or it couldn't be verified. Download the original instead.")} />
@@ -127,7 +128,7 @@ export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number)
         ) : url ? (
           <img src={url} alt={name} draggable={false} />
         ) : it.kind === "image" ? (
-          <p class="lbmsg" role="status">Decrypting…</p>
+          <Loading stage label="Decrypting…" />
         ) : (
           <p class="lbmsg">No preview for this file. Download the original to open it.</p>
         )}

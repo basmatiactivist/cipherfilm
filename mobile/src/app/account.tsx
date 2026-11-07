@@ -14,6 +14,7 @@ import { setShake, useShake } from "../shake";
 import { CHOICES, away, expectAway, setAutoLock, useAutoLock } from "../autolock";
 import { PRIVACY_URL } from "../store";
 import { text } from "../tokens";
+import { busyIcon } from "../Loader";
 
 const gb = (n: number) => (n < 1e9 ? `${Math.max(n > 0 ? 0.1 : 0, n / 1e6).toFixed(1)} MB` : `${(n / 1e9).toFixed(n < 1e10 ? 2 : 1)} GB`);
 
@@ -172,7 +173,7 @@ export default function Account() {
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={closeDel} disabled={delBusy}>Cancel</Button>
-            <Button textColor={t.colors.error} onPress={doDelete} loading={delBusy} disabled={delBusy || !delPw}>Delete account</Button>
+            <Button textColor={t.colors.error} onPress={doDelete} icon={delBusy ? busyIcon : undefined} disabled={delBusy || !delPw}>Delete account</Button>
           </Dialog.Actions>
         </Dialog>
       </Portal>

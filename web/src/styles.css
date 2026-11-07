@@ -17,6 +17,40 @@ a:hover { color: var(--teal-ink); }
 .version { margin: var(--space-4) 0 0; }
 .email { overflow-wrap: anywhere; }
 .boot { text-align: center; color: var(--muted); }
+
+/* loading badge (loader.tsx): the mark on a round seal, the outer edge a teal arc turning around it */
+.loader { flex: none; display: block; width: var(--loader); height: var(--loader); overflow: visible; }
+.loader.large { width: var(--loader-large); height: var(--loader-large); }
+.ld-disc { fill: var(--card); }
+.ld-track { fill: none; stroke: var(--rule); }
+@media (prefers-color-scheme: dark) { .ld-track { stroke: var(--rule-strong); } } /* the night rule is too faint to edge the badge */
+.ld-arc { fill: none; stroke: var(--teal); stroke-linecap: round; stroke-dasharray: 26 74; transform-origin: 24px 24px; }
+.ld-shackle, .ld-body { fill: var(--teal); }
+.ld-cells rect { fill: var(--card); opacity: 0; }
+.loading { display: grid; justify-items: center; align-content: center; gap: var(--space-4); min-height: min(52vh, 420px); padding: var(--space-8) var(--space-4); text-align: center; }
+.loading p { margin: 0; max-width: 40ch; color: var(--muted); }
+.loading.onstage { min-height: 0; margin: 0 72px; }
+.loading.onstage p { color: var(--on-stage); }
+.pending { display: flex; align-items: center; gap: var(--space-2); }
+.btn .loader { margin-left: calc(-1 * var(--space-1)); }
+@media (prefers-reduced-motion: no-preference) {
+  /* it appears only when a wait is noticeable, so a quick load doesn't flash it */
+  .loading, .pending .loader, .btn .loader { animation: ld-in var(--medium) var(--ease-out) 0.2s both; }
+  .ld-arc { animation: ld-turn var(--turn) linear infinite; }
+  .large .ld-shackle { animation: ld-shackle var(--seal) var(--ease-standard) infinite both; }
+  .large .ld-cells rect { animation: ld-cell var(--seal) var(--ease-out) infinite both; }
+  .large .ld-cells .c1 { animation-delay: 0.1s; } .large .ld-cells .c2 { animation-delay: 0.2s; } .large .ld-cells .c3 { animation-delay: 0.3s; }
+  .large .ld-cells .c4 { animation-delay: 0.4s; } .large .ld-cells .c5 { animation-delay: 0.5s; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ld-arc { stroke-dasharray: none; animation: ld-breathe var(--breathe) ease-in-out infinite alternate; }
+}
+@keyframes ld-in { from { opacity: 0; } }
+@keyframes ld-turn { from { rotate: -90deg; } to { rotate: 270deg; } }
+@keyframes ld-breathe { from { opacity: 0.35; } }
+/* open, the tiles pass over the photo, the shackle snaps shut and stays, then opens for the next loop */
+@keyframes ld-shackle { 0%, 46% { translate: 0 -1.7px; } 56% { translate: 0 0.25px; } 60%, 86% { translate: 0 0; } 100% { translate: 0 -1.7px; } }
+@keyframes ld-cell { 0% { opacity: 0; } 8% { opacity: 0.5; } 26%, 100% { opacity: 0; } }
 .skip { position: absolute; left: -9999px; top: 8px; z-index: 60; padding: var(--space-3) var(--space-4); font-weight: 700; color: var(--teal); background: var(--card); border: 2px solid var(--teal); border-radius: var(--radius-control); }
 .skip:focus { left: 8px; }
 main:focus { outline: none; }

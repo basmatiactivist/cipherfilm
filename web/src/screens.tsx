@@ -3,6 +3,7 @@ import { useEffect, useState } from "preact/hooks";
 import { api } from "./api";
 import * as auth from "./auth";
 import { mem } from "./state";
+import { Loader, Loading } from "./loader";
 import { BackupReport, backupState } from "./backup";
 import { explicitChosen, indexChecked, loadPeople, refreshIndex, searchFamily, setExplicit } from "./people/people";
 import { vectorCount } from "./search/content";
@@ -46,7 +47,7 @@ export function Invite({ token, onKeys, nav }: { token: string; onKeys: (k: auth
     auth.inviteEmail(token).then(setEmail, () => setBad("This invite link has expired or was already used. Ask for a new one."));
   }, [token]);
   if (bad) return <Card title="Invite not valid"><p>{bad}</p><p class="aside"><a href="/" onClick={(e) => { e.preventDefault(); nav("/"); }}>Go to sign in</a></p></Card>;
-  if (email === null) return <Card title="Accept your invite"><p>Checking your invite…</p></Card>;
+  if (email === null) return <Card title="Accept your invite"><Loading inline label="Checking your invite…" /></Card>;
   return (
     <Card title="Create your account" sealed>
       <p>You've been invited to Cipherfilm. Choose a password.</p>
@@ -89,7 +90,7 @@ export function RecoveryKey({ pending, onDone, title = "Save your recovery key",
       {replacing && <p class="small">Server backups made before today still need your old password or old recovery key. Keep the old key until those backups are gone.</p>}
       <label class="check no-print"><input type="checkbox" checked={saved} onChange={(e) => setSaved((e.target as HTMLInputElement).checked)} /> I've saved my recovery key somewhere safe</label>
       {error && <ErrorLine text={`The new key isn't saved yet. ${error} Press Continue to try again.`} />}
-      <button class="btn no-print" disabled={!saved || busy} onClick={() => run(async () => { await pending.commit(); onDone(); })}>{busy ? "Saving…" : "Continue"}</button>
+      <button class="btn no-print" disabled={!saved || busy} onClick={() => run(async () => { await pending.commit(); onDone(); })}>{busy ? <><Loader />Saving…</> : "Continue"}</button>
     </Card>
   );
 }
@@ -209,7 +210,7 @@ function DeleteAccount() {
           <label class="check"><input type="checkbox" checked={sure} onChange={(e) => setSure((e.target as HTMLInputElement).checked)} /> I understand my photos and videos are deleted permanently</label>
           <ErrorLine text={error} />
           <div class="row">
-            <button type="submit" class="btn danger" disabled={busy || !sure || !cur}>{busy ? "Deleting…" : "Delete account"}</button>
+            <button type="submit" class="btn danger" disabled={busy || !sure || !cur}>{busy ? <><Loader />Deleting…</> : "Delete account"}</button>
             <button type="button" class="btn secondary" onClick={() => { setOpen(false); setCur(""); setSure(false); }}>Cancel</button>
           </div>
         </form>
@@ -248,7 +249,7 @@ function StoragePanel() {
   return (
     <Acc icon="cloud" title="Storage" sub="How much you use">
       {u && !u.unlimited && u.quota_bytes > 0 && <div class="meterbar big"><div style={{ width: `${Math.min(100, Math.round((u.used_bytes / u.quota_bytes) * 100))}%` }} /></div>}
-      {u ? <p class="usage">{fmtGB(u.used_bytes)} used{u.unlimited ? ", no limit" : ` of ${fmtGB(u.quota_bytes)}`}. Items in the trash count until they're deleted.</p> : <p class="usage small">Checking…</p>}
+      {u ? <p class="usage">{fmtGB(u.used_bytes)} used{u.unlimited ? ", no limit" : ` of ${fmtGB(u.quota_bytes)}`}. Items in the trash count until they're deleted.</p> : <div class="usage"><Loading inline label="Checking…" /></div>}
     </Acc>
   );
 }
@@ -275,7 +276,7 @@ function DevicesPanel() {
   const others = list?.filter((d) => !d.current).length ?? 0;
   return (
     <Acc icon="shield" title="Devices" sub="Where you're signed in">
-      {!list ? <p class="small" role="status">Checking…</p> : (
+      {!list ? <Loading inline label="Checking…" /> : (
         <ul class="devices">
           {list.map((d) => (
             <li key={d.id}>
@@ -324,7 +325,7 @@ function SearchPanel() {
   const n = vectorCount(family), other = vectorCount(family === "mcs2" ? "laionb32" : "mcs2");
   return (
     <Acc icon="search" title="Search" sub="Find photos by what is in them">
-      {!indexChecked() ? <p class="small" role="status">Checking…</p> : n === 0 && other === 0 ? (
+      {!indexChecked() ? <Loading inline label="Checking…" /> : n === 0 && other === 0 ? (
         <p>To find photos by what's in them (dog, beach, birthday), <strong>turn on search in the Android or Mac app</strong> (Search and people). This browser then uses what the app found.</p>
       ) : (
         <p>{n === 1 ? "1 photo" : `${n} photos`} can be found by what is in them. Combine with a date or a name, like “beach 2023” or “Anna cake”.{n === 0 && " Your Android or Mac app is still indexing them with the model you chose."} Runs in this browser; your search words never leave it. Downloads {Math.round(TEXT_MODELS[family].size / 1e6)} MB once from Hugging Face.</p>
@@ -446,13 +447,14 @@ export function Admin({ section }: { section: "users" | "defaults" | "server" | 
   const [defaultQuota, setDefaultQuota] = useState(0);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [status, setStatus] = useState<ServerStatus | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const { busy, error, run } = useAction();
-  const load = () => api<{ users: AdminUser[]; invites: AdminInvite[]; default_quota_bytes: number }>("GET", "/api/admin/users").then((r) => { setUsers(r.users); setInvites(r.invites); setDefaultQuota(r.default_quota_bytes); });
+  const load = () => api<{ users: AdminUser[]; invites: AdminInvite[]; default_quota_bytes: number }>("GET", "/api/admin/users").then((r) => { setUsers(r.users); setInvites(r.invites); setDefaultQuota(r.default_quota_bytes); setLoaded(true); });
   const loadMore = () => {
     api<{ entries: AuditEntry[] }>("GET", "/api/admin/audit").then((r) => setAudit(r.entries), () => {});
     api<ServerStatus>("GET", "/api/admin/status").then(setStatus, () => {});
   };
-  useEffect(() => { load().catch(() => {}); loadMore(); }, []);
+  useEffect(() => { load().catch(() => setLoaded(true)); loadMore(); }, []);
   const changed = () => { load(); loadMore(); };
   // a row action (delete, disable, role, revoke) that fails says so instead of doing nothing
   const [actError, setActError] = useState("");
@@ -469,7 +471,7 @@ export function Admin({ section }: { section: "users" | "defaults" | "server" | 
     <div class="settings admin">
       {status && backupState(status).problem && section !== "server" && <p class="warning small" role="alert">{backupState(status).problem} Details under Server.</p>}
       {section === "users" && (<>
-      <p class="lead privacy">{users.length} {users.length === 1 ? "person" : "people"} · {fmtGB(stored)} stored · {items} {items === 1 ? "item" : "items"}. Administrators can't see anyone's photos, album names or file names.</p>
+      {!loaded ? <Loading inline label="Loading accounts…" /> : <p class="lead privacy">{users.length} {users.length === 1 ? "person" : "people"} · {fmtGB(stored)} stored · {items} {items === 1 ? "item" : "items"}. Administrators can't see anyone's photos, album names or file names.</p>}
       <section class="panel" aria-labelledby="inv-h">
         <h2 id="inv-h"><Icon name="plus" />Invite someone</h2>
         <p>Cipherfilm doesn't send e-mail. Send the link yourself. It works once and expires after 7 days.</p>
@@ -565,7 +567,7 @@ export function Admin({ section }: { section: "users" | "defaults" | "server" | 
               <dt>Database snapshot</dt><dd>{status.last_backup_at ? new Date(status.last_backup_at * 1000).toLocaleString() : "None yet. Written by scripts/backup.sh or the nightly backup."}</dd>
             </dl>
           </>
-        ) : <p class="small">Checking…</p>}
+        ) : <Loading inline label="Checking…" />}
       </section>)}
       {section === "activity" && (
       <section class="panel" aria-labelledby="act-h">

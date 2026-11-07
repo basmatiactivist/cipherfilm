@@ -1,13 +1,14 @@
 import { useMemo, useState } from "react";
 import { FlatList, StyleSheet, useWindowDimensions, View } from "react-native";
 import { router } from "expo-router";
-import { ActivityIndicator, Appbar, Text } from "react-native-paper";
+import { Appbar, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FaceAvatar } from "../Faces";
 import { usePeople } from "../search/people";
 import { useSearchProgress } from "../search/engine";
 import { useAppTheme } from "../ui";
 import { text } from "../tokens";
+import { Loading } from "../Loader";
 
 /** Everyone the phone found, named people first. Hidden people are behind the eye in the bar. */
 export default function People() {
@@ -28,7 +29,7 @@ export default function People() {
         <Appbar.Content title={showHidden ? "Hidden people" : "People"} titleStyle={text.page} />
         <Appbar.Action icon={showHidden ? "people" : "lock"} accessibilityLabel={showHidden ? "Show people" : "Show hidden people"} onPress={() => setShowHidden((v) => !v)} />
       </Appbar.Header>
-      {!groups ? <ActivityIndicator style={{ marginTop: 48 }} /> : (
+      {!groups ? <Loading label="Loading people…" /> : (
         <FlatList data={list} key={cols} numColumns={cols} keyExtractor={(g) => g.key}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: inset.bottom + 24, gap: 16, flexGrow: 1 }}
           renderItem={({ item: g }) => <View style={{ width: (width - 32) / cols, alignItems: "center" }}><FaceAvatar group={g} size={size} count onPress={() => router.push({ pathname: "/person/[key]", params: { key: g.key } })} /></View>}

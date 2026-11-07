@@ -6,6 +6,7 @@ import { Column, Field, Lead, Problem, Screen, Title } from "../ui";
 import { declineBiometric, enableBiometric, offerBiometric, signOut, unlockWithBiometric, unlockWithPassword, useSession } from "../session";
 import { useAction } from "../useAction";
 import { away } from "../autolock";
+import { busyIcon } from "../Loader";
 
 export default function Unlock() {
   const { me, biometric, byHand } = useSession();
@@ -43,7 +44,7 @@ export default function Unlock() {
         {biometric ? <Button mode="contained" icon="fingerprint" onPress={bio} disabled={busy} contentStyle={{ height: 48 }} style={{ marginBottom: 24 }}>Use fingerprint</Button> : null}
         <Field label="Password" value={password} onChangeText={setPassword} secureTextEntry textContentType="password" autoComplete="current-password" returnKeyType="go" onSubmitEditing={go}
           hint={busy && password ? "Unlocking…" : undefined} />
-        <Button mode={biometric ? "outlined" : "contained"} onPress={go} loading={busy && !!password} disabled={busy || !password} contentStyle={{ height: 48 }}>Unlock</Button>
+        <Button mode={biometric ? "outlined" : "contained"} onPress={go} icon={busy && !!password ? busyIcon : undefined} disabled={busy || !password} contentStyle={{ height: 48 }}>Unlock</Button>
         <Button mode="text" onPress={() => setConfirmOut(true)} style={{ marginTop: 8 }}>Sign out</Button>
       </Column>
       <Portal>

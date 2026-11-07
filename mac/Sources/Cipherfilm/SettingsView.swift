@@ -115,7 +115,7 @@ struct DeleteAccountSheet: View {
       HStack {
         Spacer()
         Button("Cancel") { dismiss() }.buttonStyle(SecondaryButton()).keyboardShortcut(.cancelAction).disabled(busy)
-        Button(busy ? "Deleting…" : "Delete Account") {
+        Button {
           busy = true; error = nil
           Task {
             do { try await model.deleteAccount(password: password); dismiss() } catch {
@@ -123,7 +123,7 @@ struct DeleteAccountSheet: View {
             }
             busy = false
           }
-        }.buttonStyle(PrimaryButton()).disabled(busy || !sure || password.isEmpty)
+        } label: { BusyLabel(busy, "Delete Account", "Deleting…") }.buttonStyle(PrimaryButton()).disabled(busy || !sure || password.isEmpty)
       }
     }
     .padding(24).frame(width: 460)

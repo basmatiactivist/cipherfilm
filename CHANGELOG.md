@@ -28,6 +28,15 @@ version into the GitHub release notes, so a release cannot be published without 
   files instead of before and after each one, so many small photos wait far less on a slow link. A folder's place
   still moves only past files that are done, and nothing counts as backed up before a check confirms it went to the
   right account.
+- A loading badge on the web, Android and the Mac, so a wait is always visible: the Cipherfilm mark on a round seal
+  whose edge is a turning teal ring; while it waits, tiles pass over the photo in the mark and the padlock closes, as in
+  the website's picture. It shows large with what is happening while the app starts, the library, albums, favorites,
+  trash, people and search load, and while a photo decrypts or a video is prepared; small in busy buttons ("Signing
+  in…", "Saving…") and status lines. It follows light and dark mode, appears only when a wait is noticeable and, with
+  reduced motion, only fades. Upload and download progress bars are unchanged.
+
+- Web: albums no longer say "No albums yet" (and an album "no longer exists") while they are still loading, and
+  favorites no longer say "No favorites yet" while the library loads.
 
 ## [2.1.8] - 2026-11-07
 

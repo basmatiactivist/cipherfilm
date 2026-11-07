@@ -1,0 +1,5 @@
+• Live updates: photos added or changed on another device show up within seconds while the app is open.
+• Faster automatic backup of many photos: three at a time.
+• Search keeps working on this phone when another device has turned on explicit search.
+• A new loading badge wherever something loads.
+Needs your own Cipherfilm server: https://cipherfilm.app

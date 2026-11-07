@@ -1,0 +1,5 @@
+• Live-Updates: Fotos, die auf einem anderen Gerät hinzukommen oder sich ändern, erscheinen bei offener App in Sekunden.
+• Schnelleres automatisches Backup vieler Fotos: drei gleichzeitig.
+• Die Suche funktioniert auf diesem Handy weiter, wenn ein anderes Gerät die explizite Suche eingeschaltet hat.
+• Ein neues Ladesymbol überall, wo etwas lädt.
+Benötigt Ihren eigenen Cipherfilm-Server: https://cipherfilm.app/de

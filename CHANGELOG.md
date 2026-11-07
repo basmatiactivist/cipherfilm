@@ -7,7 +7,10 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
-Live updates across devices, faster Android backups, and a loading badge everywhere.
+## [2.2.0] - 2026-11-07
+
+Live updates across devices, faster Android backups, a loading badge everywhere, and search that stays complete with
+explicit search on. The database gets a change counter per account at the first start (automatic, nothing to do).
 
 ### Added
 - Live updates: a photo uploaded on the phone shows in the web app and the Mac app within a second or two, without a

@@ -30,14 +30,13 @@ export function Loader({ large }: { large?: boolean }) {
   );
 }
 
-/** Something is loading: the large badge with what is happening, centred where the content will be. `inline` is the
- *  small badge in a status line ("Checking…"). Announced politely to screen readers. */
+/** Something is loading: the large badge alone, centred where the content will be (it says enough; what is happening
+ *  goes to screen readers). `inline` is the small badge in a status line, with its words ("Checking…"). */
 export function Loading({ label = "Loading…", inline, stage }: { label?: string; inline?: boolean; stage?: boolean }) {
   if (inline) return <p class="small pending" role="status"><Loader /><span>{label}</span></p>;
   return (
-    <div class={"loading" + (stage ? " onstage" : "")} role="status">
+    <div class={"loading" + (stage ? " onstage" : "")} role="status" aria-label={label}>
       <Loader large />
-      <p>{label}</p>
     </div>
   );
 }

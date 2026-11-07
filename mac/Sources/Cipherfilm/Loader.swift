@@ -86,11 +86,11 @@ struct Loading: View {
       if inline {
         HStack(spacing: 10) { Loader(); Text(label).font(Typo.label).foregroundStyle(stage ? Ink.onStage : Ink.muted) }
       } else {
-        VStack(spacing: Space.s4) {
-          Loader(large: true)
-          Text(label).font(Typo.body).foregroundStyle(stage ? Ink.onStage : Ink.muted).multilineTextAlignment(.center).frame(maxWidth: 380)
-        }
-        .padding(40).frame(maxWidth: .infinity, maxHeight: .infinity)
+        // the large badge alone says enough; what is happening is its accessibility label
+        Loader(large: true)
+          .padding(40).frame(maxWidth: .infinity, maxHeight: .infinity)
+          .accessibilityElement(children: .ignore) // the badge itself is hidden from VoiceOver; its frame speaks
+          .accessibilityLabel(label)
       }
     }
     .opacity(shown ? 1 : 0)

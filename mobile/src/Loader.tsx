@@ -113,14 +113,14 @@ export function Loading({ label = "Loading…", inline, stage, style }: { label?
     <Animated.View accessible accessibilityRole="progressbar" accessibilityLabel={label} accessibilityLiveRegion="polite"
       style={[inline ? s.inline : s.block, { opacity: fade }, style]}>
       <Loader large={!inline} />
-      <Text variant={inline ? "bodyMedium" : "bodyLarge"} style={[inline ? s.inlineText : s.blockText, { color }]}>{label}</Text>
+      {/* the large badge alone says enough; what is happening is its accessibility label */}
+      {inline ? <Text variant="bodyMedium" style={[s.inlineText, { color }]}>{label}</Text> : null}
     </Animated.View>
   );
 }
 
 const s = StyleSheet.create({
   block: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 64, paddingHorizontal: 24, gap: 16 },
-  blockText: { textAlign: "center", maxWidth: 320 },
   inline: { flexDirection: "row", alignItems: "center", gap: 12 },
   inlineText: { flexShrink: 1 },
 });

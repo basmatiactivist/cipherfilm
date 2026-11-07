@@ -1,6 +1,7 @@
 import { ComponentChildren } from "preact";
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import { paint } from "./auth";
+import { Loader } from "./loader";
 
 export const MIN_PASSWORD = 10;
 
@@ -82,7 +83,7 @@ export function ErrorLine({ text }: { text: string }) {
 export function Submit(p: { busy: boolean; label: string; busyLabel: string; danger?: boolean }) {
   return (
     <button type="submit" class={"btn" + (p.danger ? " danger" : "")} disabled={p.busy} aria-busy={p.busy}>
-      {p.busy ? p.busyLabel : p.label}
+      {p.busy ? <><Loader />{p.busyLabel}</> : p.label}
     </button>
   );
 }

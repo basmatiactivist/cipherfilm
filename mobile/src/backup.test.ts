@@ -70,7 +70,7 @@ const srv = vi.hoisted(() => ({
   cookie: "", // whose session the cookie holds
   alive: new Set<string>(), // sessions the server still accepts
   log: [] as string[],
-  hook: (_method: string, _path: string, _who: string): Response | void => {},
+  hook: (_method: string, _path: string, _who: string): Response | void | Promise<Response | void> => {},
   items: 0,
 }));
 vi.mock("expo/fetch", () => ({
@@ -80,7 +80,7 @@ vi.mock("expo/fetch", () => ({
     const path = u.pathname;
     const json = (status: number, v: unknown, headers: Record<string, string> = {}) => new Response(JSON.stringify(v), { status, headers });
     const who = srv.alive.has(srv.cookie) ? srv.cookie : "";
-    const hooked = srv.hook(method, path, who);
+    const hooked = await srv.hook(method, path, who);
     if (hooked) return hooked;
     if (path === "/api/setup/status") return json(200, {});
     if (path === "/api/auth/params") { srv.log.push(`${u.origin} params`); return json(200, KDF); }
@@ -112,6 +112,7 @@ async function load() {
 }
 
 const SERVER = "https://a.test";
+const photos = (n: number) => Array.from({ length: n }, (_, k) => ({ id: k + 1, uri: `content://m/${k + 1}`, name: `IMG_${k + 1}.jpg`, size: 10, mime: "image/jpeg" }));
 const config = (pubkey: string, server = SERVER) => ({ enabled: true, server, userId: "alice", email: "alice@x.test", pubkey, wifiOnly: false, chargingOnly: false, includeExisting: true, folders: { cam: { name: "Camera", after: 0 } } });
 
 describe("automatic backup", () => {
@@ -121,7 +122,7 @@ describe("automatic backup", () => {
     store.set("cf.server", SERVER);
     Object.assign(srv, { cookie: "alice", alive: new Set(["alice"]), log: [], hook: () => {}, items: 0 });
     notes.length = 0;
-    media.splice(0, media.length, ...[1, 2, 3].map((id) => ({ id, uri: `content://m/${id}`, name: `IMG_${id}.jpg`, size: 10, mime: "image/jpeg" })));
+    media.splice(0, media.length, ...photos(3));
   });
   afterEach(() => { vi.useRealTimers(); });
 
@@ -166,9 +167,13 @@ describe("automatic backup", () => {
     const run = backup.runBackup("app");
     await vi.advanceTimersByTimeAsync(200_000);
     await run;
-    expect(srv.log.filter((l) => l.endsWith("as bob"))).toEqual([]);
-    expect((await backup.loadConfig())!.folders.cam.after).toBe(1);
-    expect((await backup.loadStatus()).problem).toMatch(/another account/);
+    // files 1 and 3 were under way beside it and went to bob's session; none is counted, and no file starts after
+    expect(srv.log.filter((l) => l.startsWith("create") && l.endsWith("as bob"))).toEqual(["create 03 as bob"]);
+    expect(srv.log.filter((l) => l.startsWith("finalize") && l.endsWith("as alice"))).toEqual([]);
+    expect((await backup.loadConfig())!.folders.cam.after).toBe(0);
+    const st = await backup.loadStatus();
+    expect(st.uploaded).toBe(0);
+    expect(st.problem).toMatch(/another account/);
   });
 
   it("with nothing waiting, a run doesn't ask the server, so a server that is down is no problem then", async () => {
@@ -261,24 +266,31 @@ describe("automatic backup", () => {
     await session.start();
     await backup.saveConfig(config(pubkey));
     held.play = true;
-    // file 2 takes longer than an automatic run may last (no foreground service there)
-    let slow = true;
-    srv.hook = (method, path) => { if (slow && method === "PUT" && /\/items\/0+2\/segments\/0$/.test(path)) vi.setSystemTime(Date.now() + 20 * 60_000); };
+    // file 2 takes longer than an automatic run may last (no foreground service there); files 1 and 3 beside it are small
+    let slow = true, finals = 0;
+    let small!: () => void;
+    const others = new Promise<void>((r) => { small = r; });
+    srv.hook = async (method, path) => {
+      if (path.endsWith("/finalize") && ++finals === 2) small();
+      if (slow && method === "PUT" && /\/items\/0+2\/segments\/0$/.test(path)) { await others; vi.setSystemTime(Date.now() + 20 * 60_000); }
+    };
     await backup.runBackup("background");
     let st = await backup.loadStatus();
     expect(st.needsYou?.map((w) => w.name)).toEqual(["IMG_2.jpg"]);
     expect(st.failures).toEqual({}); // not counted as a failure: it isn't one
     expect(notes.some(([title]) => title === "A large video is waiting")).toBe(true);
-    expect(await backup.waitingCount()).toBe(2); // file 3 and the big one
-    // the next automatic run goes past it
+    expect((await backup.loadConfig())!.folders.cam.after).toBe(3);
+    // a new photo, and the next automatic run goes past the big one
+    media.push({ id: 4, uri: "content://m/4", name: "IMG_4.jpg", size: 10, mime: "image/jpeg" });
+    expect(await backup.waitingCount()).toBe(2); // file 4 and the big one
     await backup.runBackup("background");
-    expect(srv.log.filter((l) => l.startsWith("finalize")).map((l) => l.split(" ")[1])).toEqual(["01", "03"]); // 02 was the aborted try
+    expect(srv.log.filter((l) => l.startsWith("finalize")).map((l) => l.split(" ")[1])).toEqual(["01", "03", "04"]); // 02 was the aborted try
     // Back up now uploads it, and skips what is already there
     slow = false;
     await backup.runBackup("manual");
     st = await backup.loadStatus();
     expect(st.needsYou).toBeUndefined();
-    expect(srv.log.filter((l) => l.startsWith("finalize")).map((l) => l.split(" ")[1])).toEqual(["01", "03", "04"]);
+    expect(srv.log.filter((l) => l.startsWith("finalize")).map((l) => l.split(" ")[1])).toEqual(["01", "03", "04", "05"]);
     expect(await backup.waitingCount()).toBe(0);
     held.play = false;
   });
@@ -310,10 +322,9 @@ describe("automatic backup", () => {
     const { session, backup, pubkey } = await load();
     await session.start();
     await backup.saveConfig(config(pubkey));
-    // the session changes hands right after the check before the first file (the run's second /api/me)
-    let mes = 0;
-    srv.hook = (_m, path, who) => {
-      if (path === "/api/me" && who === "alice" && ++mes === 2) { srv.cookie = "bob"; srv.alive.add("bob"); return new Response(JSON.stringify(me("alice")), { status: 200 }); }
+    // the session changes hands right after the run's check, as the first file starts
+    srv.hook = (method, path) => {
+      if (method === "POST" && path === "/api/items" && !srv.items) { srv.cookie = "bob"; srv.alive.add("bob"); }
     };
     const run = backup.runBackup("app");
     await vi.advanceTimersByTimeAsync(200_000);
@@ -373,6 +384,7 @@ describe("automatic backup", () => {
       f(c);
       files.set("/doc/backup/config.json", JSON.stringify(c));
     };
+    media.splice(0, media.length, ...photos(9));
     let finals = 0;
     srv.hook = (_m, path) => {
       if (!path.endsWith("/finalize")) return;
@@ -382,8 +394,12 @@ describe("automatic backup", () => {
     await backup.runBackup("app");
     const c = (await backup.loadConfig())!;
     expect(c.enabled).toBe(false); // not switched back on by the run
-    expect(c.folders).toEqual({ cam: { name: "Camera", after: 1 }, shots: { name: "Screenshots", after: 7 } });
-    expect(srv.log.filter((l) => l.startsWith("finalize"))).toHaveLength(2); // stopped once it was turned off
+    expect(c.folders.shots).toEqual({ name: "Screenshots", after: 7 });
+    expect(c.folders.cam.after).toBe(0); // counted at the run's end, when backup was already off
+    // stopped once it was turned off: only the files already under way went on
+    expect(srv.log.filter((l) => l.startsWith("finalize")).length).toBeLessThanOrEqual(2 + 3);
+    // what went to the library is known, so turning it on again doesn't upload it twice
+    expect(JSON.parse(files.get("/doc/backup/known.json")!).prints).toHaveLength(srv.log.filter((l) => l.startsWith("finalize")).length);
   });
 
   it("shows one notification that follows the files, then one summary", async () => {
@@ -402,6 +418,128 @@ describe("automatic backup", () => {
     expect(backup.backupSummary(0, 0, "Waiting for Wi-Fi.")).toBeNull();
     expect(backup.backupSummary(1, 0)).toEqual({ title: "Backup done", text: "1 photo or video backed up." });
     expect(backup.backupSummary(4, 2, "Your storage on the server is full.")).toEqual({ title: "Backup incomplete", text: "4 photos and videos backed up. 2 couldn't be backed up. Stopped: Your storage on the server is full." });
+  });
+
+  it("uploads several files at once, and finishes them all", async () => {
+    const { session, backup, pubkey } = await load();
+    await session.start();
+    await backup.saveConfig(config(pubkey));
+    media.splice(0, media.length, ...photos(10));
+    // files between their create and their finalize
+    let open = 0, most = 0;
+    srv.hook = (method, path) => {
+      if (method === "POST" && path === "/api/items") most = Math.max(most, ++open);
+      if (path.endsWith("/finalize")) open--;
+    };
+    await backup.runBackup("app");
+    expect(most).toBe(3);
+    expect(srv.log.filter((l) => l.startsWith("finalize"))).toHaveLength(10);
+    expect((await backup.loadConfig())!.folders.cam.after).toBe(10);
+    const st = await backup.loadStatus();
+    expect(st.uploaded).toBe(10);
+    expect(st.attempt).toBeUndefined();
+    expect(notes.filter((n) => !n[2])).toEqual([["Backup done", "10 photos and videos backed up.", false]]);
+  });
+
+  it("asks the server whose session it is every few files, not before and after each", async () => {
+    const { session, backup, pubkey } = await load();
+    await session.start();
+    await backup.saveConfig(config(pubkey));
+    media.splice(0, media.length, ...photos(30));
+    let mes = 0;
+    srv.hook = (_m, path) => { if (path === "/api/me") mes++; };
+    await backup.runBackup("app");
+    expect(srv.log.filter((l) => l.startsWith("finalize"))).toHaveLength(30);
+    expect(mes).toBe(6); // the run's first check, then one per 6 files (61 when it was twice per file)
+  });
+
+  it("still stops, and counts nothing of it, when the session changes hands between two checks", async () => {
+    const { session, backup, pubkey } = await load();
+    await session.start();
+    await backup.saveConfig(config(pubkey));
+    media.splice(0, media.length, ...photos(30));
+    // the cookie silently holds bob's session from the 8th file on
+    srv.hook = (method, path) => { if (method === "POST" && path === "/api/items" && srv.items === 7) { srv.cookie = "bob"; srv.alive.add("bob"); } };
+    await backup.runBackup("app");
+    const st = await backup.loadStatus();
+    expect(st.problem).toMatch(/another account/);
+    const after = (await backup.loadConfig())!.folders.cam.after;
+    // only what a check confirmed in alice's hands: the first 6 files
+    expect(after).toBe(6);
+    expect(st.uploaded).toBe(6);
+    expect(srv.log.filter((l) => l.startsWith("create")).length).toBeLessThan(30); // no new files once it saw bob
+  });
+
+  it("a failure in one of the files under way stops the run, and the others still count", async () => {
+    const { session, backup, pubkey } = await load();
+    await session.start();
+    await backup.saveConfig(config(pubkey));
+    media.splice(0, media.length, ...photos(5));
+    // file 2's upload is refused; files 1 and 3 are under way beside it
+    srv.hook = (method, path) => (method === "POST" && path === "/api/items" && srv.items === 1 ? (srv.items++, new Response(JSON.stringify({ error: "bad" }), { status: 400 })) : undefined);
+    await backup.runBackup("app");
+    let st = await backup.loadStatus();
+    expect(st.problem).toMatch(/^IMG_2\.jpg: /);
+    expect(st.failures).toEqual({ "2": 1 });
+    expect(srv.log.filter((l) => l.startsWith("finalize"))).toEqual(["finalize 01 as alice", "finalize 03 as alice"]); // no new file after it
+    expect(st.uploaded).toBe(2);
+    expect((await backup.loadConfig())!.folders.cam.after).toBe(1); // never past file 2
+    // the next run tries file 2 again, skips file 3 as known, and does the rest
+    srv.hook = () => {};
+    await backup.runBackup("app");
+    st = await backup.loadStatus();
+    expect(st.problem).toBeUndefined();
+    expect(st.failures).toEqual({});
+    expect(srv.log.filter((l) => l.startsWith("create")).slice(2)).toHaveLength(3); // files 2, 4 and 5
+    expect((await backup.loadConfig())!.folders.cam.after).toBe(5);
+  });
+
+  it("a run that dies with files under way never moves past them; the next counts a try for each and goes on", async () => {
+    const { session, backup, pubkey } = await load();
+    await session.start();
+    await backup.saveConfig(config(pubkey));
+    media.splice(0, media.length, ...photos(10));
+    // file 2 never finishes: the app is killed while it uploads
+    srv.hook = (method, path) => (method === "PUT" && /\/items\/0+2\/segments\/0$/.test(path) ? new Promise<Response>(() => {}) : undefined);
+    void backup.runBackup("app");
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(srv.log.filter((l) => l.startsWith("finalize"))).toHaveLength(9); // all but file 2
+    expect((await backup.loadConfig())!.folders.cam.after).toBe(1);
+    const left = JSON.parse(files.get("/doc/backup/status.json")!);
+    expect(left.attempt).toEqual(["2"]);
+    expect(left.current).toBe("IMG_2.jpg");
+    // the files counted behind it are known: the next run doesn't upload them again
+    expect(JSON.parse(files.get("/doc/backup/known.json")!).prints.length).toBeGreaterThanOrEqual(6);
+    // the app starts again
+    srv.hook = () => {};
+    const again = await load();
+    await again.backup.runBackup("app");
+    const st = await again.backup.loadStatus();
+    expect(st.stalled).toBeUndefined();
+    expect(st.attempt).toBeUndefined();
+    expect(st.failures).toEqual({}); // one try was counted for file 2, then it went through
+    expect((await again.backup.loadConfig())!.folders.cam.after).toBe(10);
+    expect(srv.log.filter((l) => l.startsWith("finalize")).length).toBeLessThanOrEqual(9 + 1 + 3); // file 2, and at most the few counted at no check
+  });
+
+  it("a file the last run died on goes alone, so the files beside it get no try counted when it dies again", async () => {
+    const { session, backup, pubkey } = await load();
+    await session.start();
+    await backup.saveConfig(config(pubkey));
+    media.splice(0, media.length, ...photos(6));
+    // the last run died with files 1, 2 and 3 under way
+    files.set("/doc/backup/status.json", JSON.stringify({ running: false, uploaded: 0, skipped: [], failures: {}, attempt: ["1", "2", "3"], current: "IMG_1.jpg" }));
+    let open = 0, most = 0;
+    srv.hook = (method, path) => {
+      if (method === "POST" && path === "/api/items") most = Math.max(most, ++open);
+      if (path.endsWith("/finalize")) open--;
+    };
+    await backup.runBackup("app");
+    expect(most).toBe(3); // files 4 to 6 together again
+    expect(srv.log.slice(0, 6)).toEqual(["create 01 as alice", "finalize 01 as alice", "create 02 as alice", "finalize 02 as alice", "create 03 as alice", "finalize 03 as alice"]);
+    const st = await backup.loadStatus();
+    expect(st.uploaded).toBe(6);
+    expect(st.failures).toEqual({});
   });
 
   it("a backup run leaves the app's server and token as they are", async () => {

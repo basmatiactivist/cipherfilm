@@ -55,7 +55,7 @@ vi.mock("../modules/cf-native/src/CfNativeModule", () => ({
   default: {
     backupState: () => ({ media: "full", online: true, unmetered: true, charging: true }),
     countFolderAfter: async (_b: string, after: number) => media.filter((m) => m.id > after).length,
-    folderMedia: async (_b: string, after: number, n: number) => media.filter((m) => m.id > after).slice(0, n),
+    folderMedia: async (_b: string, after: number, n: number) => media.filter((m) => m.id > after).sort((a, b) => a.id - b.id).slice(0, n), // by id, as MediaStore gives them
     phoneMedia: async () => media,
     readRange: async (_u: string, _o: number, len: number) => new Uint8Array(len),
     jpeg: async () => ({ bytes: new Uint8Array(4), width: 1, height: 1 }),
@@ -119,8 +119,8 @@ describe("while the app is locked", () => {
     session.lock();
     expect(session.session()).toMatchObject({ phase: "locked", masterKey: null });
     expect(await task.run!()).toBe(1); // Success
-    // IMG_2 and IMG_3, each indexed at once; then the library's IMG_1, which had no entry
-    expect(srv.log).toEqual(["finalize 1", "index 1", "finalize 2", "index 2", `index ${INDEXED}`]);
+    // IMG_2 and IMG_3 (at once), each indexed once counted; then the library's IMG_1, which had no entry
+    expect(srv.log).toEqual(["finalize 1", "finalize 2", "index 1", "index 2", `index ${INDEXED}`]);
     expect(session.session().phase).toBe("locked");
   });
 
@@ -129,7 +129,7 @@ describe("while the app is locked", () => {
     srv.hook = (_m, path) => { if (path.endsWith("/finalize")) session.lock(); };
     await backup.runBackup("app");
     expect(session.session().phase).toBe("locked");
-    expect(srv.log).toEqual(["finalize 1", "index 1", "finalize 2", "index 2"]);
+    expect(srv.log).toEqual(["finalize 1", "finalize 2", "index 1", "index 2"]);
     expect((await backup.loadConfig())!.folders.cam.after).toBe(3);
     expect((await backup.loadStatus()).problem).toBeUndefined();
   });

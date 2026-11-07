@@ -24,6 +24,10 @@ version into the GitHub release notes, so a release cannot be published without 
   Accounts that lost the standard index get it back: the indexing device notices the missing entries (the index
   list now counts them on its first page) and makes only those, with the faces it already found. Costs one more image
   model pass per photo, and MobileCLIP's image model (143 MB) on the indexing device, while explicit search is on.
+- Android: automatic backup uploads three files at once, and checks which account the session belongs to every few
+  files instead of before and after each one, so many small photos wait far less on a slow link. A folder's place
+  still moves only past files that are done, and nothing counts as backed up before a check confirms it went to the
+  right account.
 
 ## [2.1.8] - 2026-11-07
 

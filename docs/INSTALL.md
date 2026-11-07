@@ -75,10 +75,19 @@ then open [play.google.com/apps/testing/app.cipherfilm](https://play.google.com/
 phone (or in a browser signed in to the same account), tap **Become a tester** and install Cipherfilm from Play. Play
 installs updates from then on.
 
-The Play build is the same app with two differences Google Play requires: it has no explicit search (docs/SEARCH.md),
-and for battery optimisation it opens Android's list instead of asking directly. The APK from GitHub keeps both.
-Both are signed with the same key (Google Play signs with it too), so you can switch between the Play build and the
-APK without uninstalling: each installs as an update over the other.
+### Google Play or the APK?
+
+The same app, with three differences Google Play's rules require:
+
+| | Google Play | APK (GitHub, Obtainium) |
+|---|---|---|
+| Explicit search | not offered | offered where the server's admin allows it (docs/SEARCH.md) |
+| Automatic backup | in short background runs that continue in the next one; **Back up now** runs until it is done | runs until it is done, also in the background |
+| Battery optimisation | opens Android's list, you pick Cipherfilm | asks directly |
+| Updates | through Google Play | through Obtainium, or a new APK by hand |
+
+Both are signed with the same key (Google Play signs with it too), so you can switch between them without
+uninstalling: each installs as an update over the other.
 
 ### Checking the signature
 

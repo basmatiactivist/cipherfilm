@@ -188,11 +188,15 @@ words comes first.
 **Explicit search** (docs/SEARCH.md): shown in Settings › Search & People only to a person an admin allowed it
 (`user.nsfw`). Turning it on asks first, saves `explicit: true` in the encrypted people document (so the phone and
 other devices switch too), downloads LAION's ViT-B/32 (about 600 MB; `nsfw-*` files, fetched with the session cookie)
-and indexes the library again; turning it off goes back to MobileCLIP and indexes again. Each switch deletes the
-other model's two files before downloading the chosen one (the tokenizer and the face models are shared and stay),
-and clears the index in memory. The device that switches deletes the old model's entries on the server
-(`DELETE /api/index?model=<family>`, after the people document is saved) and its cached copy here; the indexing
-device then makes the new model's. Entries
+and indexes the library again; turning it off goes back to MobileCLIP, whose entries the indexing device kept current.
+Each switch deletes the other model's files before downloading the chosen one (the tokenizer and the face models are
+shared and stay; a Mac that indexes with LAION keeps MobileCLIP's image model), and clears the index in memory. While
+explicit search is on, the indexing Mac stores two entries per photo, LAION's and MobileCLIP's, from one look at it
+(faces found once), so devices without explicit search find a complete index; a MobileCLIP entry that is missing (or
+was deleted on the server, which `count` on the index list's first page shows) is made again, with the faces of the
+photo's LAION entry. Turning explicit search off deletes LAION's entries on the server
+(`DELETE /api/index?model=laionb32`, after the people document is saved) and the cached copy here; turning it on
+deletes nothing. Entries
 made with the other model are made again, and until then their image vectors stay out of search (their faces are
 still used). The Mac checks the choice and the permission about once a minute while idle, so a change made on another
 device or by an admin takes effect without a restart; files from watched folders use the choice last seen. LAION's

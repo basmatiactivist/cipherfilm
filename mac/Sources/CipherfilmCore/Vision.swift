@@ -167,6 +167,14 @@ public struct Analysis: Sendable {
   public var faces: [FaceFound]?
 }
 
+/** One look at a photo with several image models (LAION's and MobileCLIP's while explicit search is on): a vector
+ *  from each, in the order asked, and the faces once. */
+public struct Analyses: Sendable {
+  public var clips: [(model: ClipModel, vector: Data)]
+  public var faces: [FaceFound]?
+  public init(clips: [(model: ClipModel, vector: Data)], faces: [FaceFound]?) { self.clips = clips; self.faces = faces }
+}
+
 public final class Vision: @unchecked Sendable {
   public static let clipDim = 512
   public static let faceDim = 128
@@ -176,16 +184,20 @@ public final class Vision: @unchecked Sendable {
 
   public let model: ClipModel
   private let image: OrtModel?
+  /** MobileCLIP's image model next to LAION's, on the device that indexes while explicit search is on */
+  private let standard: OrtModel?
   private let text: OrtModel
   private let det: OrtModel?
   private let rec: OrtModel?
   public var hasFaces: Bool { det != nil }
 
   /** Opens the models in a folder (checked against their SHA-256 before). textOnly: only the text model, on a device
-   *  that reads the index another one computes; it can search but not look at photos. */
-  public init(dir: URL, faces: Bool, clip: ClipModel = .mobileclip, threads: Int32 = 2, textOnly: Bool = false) throws {
+   *  that reads the index another one computes; it can search but not look at photos. standardToo: MobileCLIP's image
+   *  model as well, next to LAION's (ClipModel.keepsStandard). */
+  public init(dir: URL, faces: Bool, clip: ClipModel = .mobileclip, threads: Int32 = 2, textOnly: Bool = false, standardToo: Bool = false) throws {
     model = clip
     image = textOnly ? nil : try OrtModel(path: dir.appendingPathComponent(clip.vision.name), threads: threads)
+    standard = textOnly || !standardToo || clip == .standard ? nil : try OrtModel(path: dir.appendingPathComponent(ClipModel.standard.vision.name), threads: threads)
     text = try OrtModel(path: dir.appendingPathComponent(clip.text.name), threads: threads)
     if faces && !textOnly {
       det = try OrtModel(path: dir.appendingPathComponent("yunet-2023mar.onnx"), threads: threads)
@@ -201,8 +213,19 @@ public final class Vision: @unchecked Sendable {
 
   /** The image vector and the faces in a JPEG. */
   public func analyze(_ jpeg: Data, faces: Bool) throws -> Analysis {
+    let a = try analyze(jpeg, faces: faces, clips: [model])
+    return Analysis(clip: a.clips[0].vector, faces: a.faces)
+  }
+
+  /** The image vector of each model in clips (this one's, MobileCLIP's next to it, or both) and the faces in a JPEG,
+   *  found once whatever the number of models. */
+  public func analyze(_ jpeg: Data, faces: Bool, clips: [ClipModel]) throws -> Analyses {
+    let run = try clips.map { m -> (ClipModel, OrtModel) in
+      guard let s = m == model ? image : m == .standard ? standard : nil else { throw CryptoError.failed("this device only reads the index") }
+      return (m, s)
+    }
     guard let bmp = Pixels.decode(jpeg, maxPx: 1280) else { throw CryptoError.failed("not an image") }
-    var out = Analysis(clip: Self.half(Self.normalize(try clip(bmp))), faces: nil)
+    var out = Analyses(clips: try run.map { ($0.0, Self.half(Self.normalize(try clip(bmp, $0.0, $0.1)))) }, faces: nil)
     if faces, let det, let rec {
       out.faces = try detect(det, bmp).map { f in
         let box = [f.x / Float(bmp.w), f.y / Float(bmp.h), f.w / Float(bmp.w), f.h / Float(bmp.h)].map { (Double($0) * 10000).rounded() / 10000 }
@@ -257,10 +280,9 @@ public final class Vision: @unchecked Sendable {
     return (buf, P)
   }
 
-  private func clip(_ src: Pixels) throws -> [Float] {
-    guard let image else { throw CryptoError.failed("this device only reads the index") }
-    let (buf, P) = Self.clipInput(src, model)
-    return try image.vector(.float(buf, [1, 3, Int64(P), Int64(P)]), dim: Self.clipDim)
+  private func clip(_ src: Pixels, _ m: ClipModel, _ s: OrtModel) throws -> [Float] {
+    let (buf, P) = Self.clipInput(src, m)
+    return try s.vector(.float(buf, [1, 3, Int64(P), Int64(P)]), dim: Self.clipDim)
   }
 
   // ---- YuNet (OpenCV zoo, 2023mar): 640x640 BGR 0..255, three strides, score = sqrt(cls * obj) ----

@@ -25,7 +25,8 @@ private func cosine(_ a: [Float], _ b: [Float]) -> Float {
     // an entry from the other model is made again; one without faces is enough when faces are off
     #expect(!Models.good("mcs2+yunet23+sface21/2", faces: true, clip: .laion))
     #expect(Models.good("laionb32/1", faces: false, clip: .laion) && !Models.good("laionb32/1", faces: true, clip: .laion))
-    #expect(Models.needed(faces: false, clip: .laion).map(\.name) == ["nsfw-laion-b32-vision.onnx", "nsfw-laion-b32-text.onnx", "mobileclip-s2-tokenizer.json"])
+    // indexing with LAION runs MobileCLIP's image model too (ExplicitIndexTests)
+    #expect(Models.needed(faces: false, clip: .laion).map(\.name) == ["nsfw-laion-b32-vision.onnx", "nsfw-laion-b32-text.onnx", "mobileclip-s2-tokenizer.json", "mobileclip-s2-vision.onnx"])
   }
 
   @Test func peopleDocKeepsTheChoice() throws {

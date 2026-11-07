@@ -75,8 +75,8 @@ each upload (`mobile/scripts/play-notes.sh`, docs/RELEASING.md "Google Play from
 ### 4.1 Privacy policy
 
 - URL: `https://cipherfilm.app/privacy`
-- The page needs the app section in `privacy-policy-changes.md`. The app must also link it on the sign-in screen and
-  under Account (REQUIREMENTS §4.1); the app has no such link yet.
+- The page has the app section (`privacy-policy-changes.md`). The app links it on the connect screen (before sign-in)
+  and under Account › About, since 2.1.8 (REQUIREMENTS §4.1).
 
 ### 4.2 App access
 
@@ -263,7 +263,7 @@ Service: `TransferService`, type `dataSync`.
 Description:
 
 ```text
-Cipherfilm uploads the user's photos and videos, end-to-end encrypted, to the user's own server when the user backs up the folders they chose or shares items to the app. A single video can be several gigabytes and takes minutes to hours to upload. The foreground service shows a notification with the upload's progress and keeps the transfer running when the user leaves the app; it stops as soon as the upload is done.
+Cipherfilm uploads the user's photos and videos, end-to-end encrypted, to the user's own server when the user taps "Back up now" or shares items to the app. A single video can be several gigabytes and takes minutes to hours to upload. The foreground service shows a notification with the upload's progress and keeps the transfer running when the user leaves the app; it stops as soon as the upload is done.
 ```
 
 User impact if deferred or interrupted:
@@ -271,6 +271,10 @@ User impact if deferred or interrupted:
 ```text
 If the upload is deferred, the user's new photos and videos are not backed up and are not protected if the phone is lost. If it is interrupted, partly uploaded large videos must restart, which wastes the user's data and battery, and the user cannot free up space on the phone until the backup is complete.
 ```
+
+> Since 2.1.8 the Play build starts this service only for transfers the user starts ("Back up now", a share): automatic
+> backups of new photos run in plain WorkManager runs and continue in the next run, as Google's "backup and restore"
+> example asks (a daily auto backup is not the user-initiated case).
 
 > Resolved in 2.1.0 (REQUIREMENTS §4.3): search indexing no longer runs in this service. Besides backup and
 > share-to-upload it carries only the download of the search model (from Hugging Face), which is a download

@@ -4,8 +4,8 @@
 // the library but never read any. Android runs it through WorkManager (expo-background-task) about every 15 minutes
 // when it allows; it also runs when the app opens, and on "Back up now". Once there is something to upload, a
 // foreground service (N.keepRunning) keeps it going until it is done: off the screen, with the notification swiped
-// away or the app swiped out of the recent apps. Where Android doesn't allow that, a run stops after a few minutes and
-// the next one goes on where it stopped.
+// away or the app swiped out of the recent apps. The Google Play build holds it only for "Back up now" (Play's rules
+// for data transfers). Without it, a run stops after a few minutes and the next one goes on where it stopped.
 import { Directory, File, Paths } from "expo-file-system";
 import * as BackgroundTask from "expo-background-task";
 import * as TaskManager from "expo-task-manager";
@@ -16,6 +16,7 @@ import N from "../modules/cf-native/src/CfNativeModule";
 import { api, ApiError, remote, type Remote } from "./api";
 import { uploadFile, type Shared } from "./upload";
 import { keepRunning, letGo } from "./keepAlive";
+import { isPlayBuild } from "./store";
 import { fingerprint } from "./prints";
 import { indexUploaded, rememberUploaded, runBackgroundIndex } from "./search/background";
 import { forgetSettings, loadSettings } from "./search/settings";
@@ -234,9 +235,14 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
     const pk = unb64(s, c.pubkey);
     const kept = await readJson<{ userId?: string; prints?: string[] }>(KNOWN(), {});
     const known = new Set(kept.userId === c.userId && Array.isArray(kept.prints) ? kept.prints : []);
-    holding = true;
     const total = waiting;
-    held = keepRunning("backup", "Backing up", total === 1 ? "1 photo or video" : `${total} photos and videos`);
+    // The foreground service keeps a run going off screen. Google Play allows it (dataSync, "backup and restore") only for
+    // a transfer the person started: there only "Back up now" holds it, and automatic runs work in WorkManager's time
+    // and go on in the next run. The GitHub build keeps it for every run.
+    if (!isPlayBuild() || trigger === "manual") {
+      holding = true;
+      held = keepRunning("backup", "Backing up", total === 1 ? "1 photo or video" : `${total} photos and videos`);
+    }
     if (held) deadline = Infinity;
     const outOfTime = () => Date.now() > deadline || (held && N.keepRunningLost()) || !current();
     // the one progress notification (the foreground service's), updated in place: which file, n of m, how far

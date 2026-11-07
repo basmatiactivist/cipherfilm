@@ -32,7 +32,10 @@ vi.mock("expo-file-system", () => {
 vi.mock("expo-background-task", () => ({ registerTaskAsync: async () => {}, unregisterTaskAsync: async () => {}, BackgroundTaskResult: { Success: 1, Failed: 2 } }));
 vi.mock("expo-task-manager", () => ({ defineTask: () => {} }));
 vi.mock("react-native", () => ({ Platform: { constants: { Model: "Test" } }, AppState: { currentState: "active" } }));
-vi.mock("./keepAlive", () => ({ keepRunning: () => false, letGo: () => {}, onlyHolder: () => false }));
+// which runs asked for the foreground service, and which build this is (Google Play or GitHub)
+const held = vi.hoisted(() => ({ runs: [] as string[], play: false }));
+vi.mock("./keepAlive", () => ({ keepRunning: (h: string) => { held.runs.push(h); return false; }, letGo: () => {}, onlyHolder: () => false }));
+vi.mock("./store", () => ({ isPlayBuild: () => held.play }));
 vi.mock("./search/background", () => ({ indexUploaded: async () => {}, rememberUploaded: async () => {}, runBackgroundIndex: async () => 0 }));
 vi.mock("./search/settings", () => ({ loadSettings: async () => ({ enabled: false, background: false }), forgetSettings: () => {} }));
 // sign-in without Argon2: the proof and the master key are fixed stand-ins
@@ -238,6 +241,19 @@ describe("automatic backup", () => {
     await backup.runBackup("app");
     expect(srv.log.filter((l) => l.startsWith("finalize"))).toHaveLength(3);
     expect(JSON.parse(files.get("/doc/backup/known.json")!).userId).toBe("alice");
+  });
+
+  it("the Google Play build holds the foreground service only for Back up now", async () => {
+    for (const [play, trigger, holds] of [[true, "app", false], [true, "background", false], [true, "manual", true], [false, "background", true]] as const) {
+      const { session, backup, pubkey } = await load();
+      await session.start();
+      await backup.saveConfig(config(pubkey));
+      held.runs = []; held.play = play;
+      await backup.runBackup(trigger);
+      expect(held.runs.includes("backup"), `${play ? "play" : "github"} ${trigger}`).toBe(holds);
+      expect(srv.log.filter((l) => l.startsWith("finalize"))).toHaveLength(3); // it backs up either way
+      held.play = false;
+    }
   });
 
   it("skips a photo the account's library already has", async () => {

@@ -13,6 +13,9 @@ Simpler self-hosting, and the privacy policy inside the Android app.
 - Android: a "Privacy policy" link on the connect screen and under Account (Google Play asks for it inside the app).
 
 ### Changed
+- Android, Google Play build: automatic backups no longer run in the foreground service; only "Back up now" and shares
+  do (Google Play's rules for data transfers). Automatic runs work in WorkManager's time and continue in the next run.
+  The GitHub build is unchanged.
 - `compose.yaml` uses the released image (`ghcr.io/basmatiactivist/cipherfilm:2`) instead of building from source, and
   replaces `deploy/quickstart/compose.yaml`: download it with `curl` and start it. Building from source:
   docs/SELF-HOSTING.md.

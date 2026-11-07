@@ -5,7 +5,8 @@ import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 // Live updates: two signed-in devices (two browser contexts, two sessions) of one account. What one uploads, moves to
-// the trash or restores shows on the other within a few seconds, without a reload.
+// the trash or restores shows on the other within a few seconds, without a reload, and through the incremental list
+// (?since): the whole list is never fetched again.
 const ADMIN = "admin@example.org";
 const ADMIN_PW = pw("admin");
 const LIV = "liv@example.org";
@@ -61,6 +62,13 @@ test("a change on one device shows on the other within seconds, without a reload
   await expect(web.page.getByRole("heading", { name: "Your library is empty" })).toBeVisible();
   let navigations = 0;
   web.page.on("framenavigated", (f) => { if (f === web.page.mainFrame()) navigations++; });
+  // from here on the library comes only as changes: the whole list (GET /api/items, or its ?after pages) never again
+  const lists = { whole: 0, since: 0 };
+  web.page.on("request", (r) => {
+    const u = new URL(r.url());
+    if (r.method() !== "GET" || u.pathname !== "/api/items") return;
+    if (u.searchParams.has("since")) lists.since++; else lists.whole++;
+  });
 
   const lines: string[] = [];
   const timed = async (what: string, act: () => Promise<number>, shown: () => Promise<void>) => {
@@ -95,6 +103,9 @@ test("a change on one device shows on the other within seconds, without a reload
     });
 
   expect(navigations).toBe(0); // all without a reload
+  console.log(`[live] library requests on the other device: ${lists.whole} whole, ${lists.since} ?since`);
+  expect(lists.whole).toBe(0);
+  expect(lists.since).toBeGreaterThanOrEqual(4); // upload, trash, restore, favorite
   mkdirSync("test-results", { recursive: true });
   appendFileSync("test-results/live.txt", lines.join("\n") + "\n");
   await phone.ctx.close();

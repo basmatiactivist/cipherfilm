@@ -175,7 +175,7 @@ What the JSON holds:
   macOS 13 pt. The serif roles are the "time and place" ones.
 - **space** (the 4-point steps), **radius** (tile 3, pill 4, control 6, card 8), **size** (touch 44 web / 48 Android,
   Mac control and field heights, top bar, sidebar, icon grid, focus ring, measure), **elevation** (the two shadows),
-  **motion** (150 and 250 ms, two curves).
+  **motion** (150 and 250 ms, two curves; the loading badge's turn, seal and breathe).
 - **contrast**: the text and surface pairs the build checks in light and dark, each with its minimum ratio.
 
 ### Changing a token
@@ -273,7 +273,7 @@ Flat. Depth comes from hairline borders (sand), tonal steps (card white over pap
 
 ## Shapes
 
-Small, quiet corners: 6px controls (buttons, inputs, nav items, menu items), 8px cards, panels, accordions, menus, album covers and the drop veil, 4px pills and filmstrip thumbs, 3px photo tiles. Circles are reserved for avatars, faces of people, the empty-state icon disc, tile badges, selection dots and lightbox prev/next. Borders are 1px sand; selection is a 4px inset teal outline; focus is a 3px teal outline with 2px offset (white in the lightbox). Icons are 24px-grid line glyphs with rounded caps at 1.8 stroke.
+Small, quiet corners: 6px controls (buttons, inputs, nav items, menu items), 8px cards, panels, accordions, menus, album covers and the drop veil, 4px pills and filmstrip thumbs, 3px photo tiles. Circles are reserved for avatars, faces of people, the empty-state icon disc, tile badges, selection dots, lightbox prev/next and the loading badge. Borders are 1px sand; selection is a 4px inset teal outline; focus is a 3px teal outline with 2px offset (white in the lightbox). Icons are 24px-grid line glyphs with rounded caps at 1.8 stroke.
 
 ## Components
 
@@ -312,6 +312,21 @@ Small, quiet corners: 6px controls (buttons, inputs, nav items, menu items), 8px
 ### Lightbox
 - Full-screen black dialog. Top row of 44px icon-only buttons (back, favorite, info, download, trash or restore) with the file name and "n of m" beside them; 44px translucent circular prev/next; filmstrip of 52px thumbnails (4px radius, white border on current); info panel 340px in paper and ink (overlay on phones) showing date, file, size, camera, location and the people in the photo.
 
+### Loading Badge
+- One design on all three clients (`web/src/loader.tsx`, `mobile/src/Loader.tsx`, `mac/Sources/Cipherfilm/Loader.swift`),
+  on a 48 grid: a card-colored disc, the mark centred on it (1.2x the 24-grid mark large, 1.3x small), and on its outer
+  edge a ring: a rule track (rule-strong at night) with a teal arc of 26% and round caps turning once per `motion.turn`
+  (1.1 s, linear). Ring width 2.5 units large, 5 small.
+- Large (`size.loader-large`, 88 web and Android, 72 on the Mac) with a muted caption saying what is opening ("Opening
+  your library…"), centred where the content will be; it also seals the mark once per `motion.seal` (2.4 s): the
+  shackle stands open, a 4 by 3 grid of tiles in the disc's color glints across the photo from the top left (the
+  website's hero), then the shackle snaps shut. Small (`size.loader`, 20; 16 on the Mac) in front of a busy button's
+  words and in status lines, without the sealing.
+- Fades in after 0.2 s so a quick load doesn't flash. Reduced motion: no turning or sealing, the full ring fades
+  between 35% and 100% over `motion.breathe`. Announced as a polite status with its caption (or "Loading"); the badge
+  itself is hidden from assistive tech. On the black viewer the caption turns white; the disc stays a seal.
+- For indeterminate waits only. Determinate progress (uploads, downloads, model downloads) keeps its meter.
+
 ### Selection Bar, Toasts, Drag Tray, Pills, Meters
 - Fixed selection bar in card white with a top rule: Done, the count, Select all or Deselect all, Favorite, Add to album, Download, Move to trash.
 - Toasts: the result of an action (moss note with Undo, or a brick error with a dismiss button) floats in a card under the top bar, centred on the content, so it is seen at any scroll position. Notes leave after 6 seconds (12 with Undo); errors stay until dismissed. Drag tray: floating card with the menu shadow and dashed-edge chips that turn teal on hover. Drop veil: teal-wash with a 3px dashed teal border. Pills: 4px radius, status-tinted. Meters: 5px (8px large) rule track with teal fill.
@@ -333,4 +348,5 @@ Small, quiet corners: 6px controls (buttons, inputs, nav items, menu items), 8px
 - **Don't** introduce a second accent hue or tint the chrome with photo-derived color.
 - **Don't** use the serif for buttons, labels, menus or body copy.
 - **Don't** use external fonts, CDNs or icon fonts.
-- **Don't** draw the padlock mark anywhere beyond the logo, the app icon and the favicon.
+- **Don't** draw the padlock mark anywhere beyond the logo, the app icon, the favicon and the loading badge.
+- **Don't** use the platform's own spinner (`ActivityIndicator`, `ProgressView()`) for a wait; use the loading badge.

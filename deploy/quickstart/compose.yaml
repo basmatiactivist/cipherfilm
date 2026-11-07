@@ -1,8 +1,9 @@
-# Cipherfilm in one file: the released image plus Caddy for automatic HTTPS (Let's Encrypt).
-# Needs a DNS name pointing at this machine and ports 80 and 443 reachable. Put the name in .env:
-#   DOMAIN=photos.example.com
+# Cipherfilm in one file: the released image, on 127.0.0.1:8080. It needs HTTPS in front: point any reverse proxy
+# (Caddy, nginx, Traefik, a Cloudflare Tunnel, Tailscale Serve, ...) at http://127.0.0.1:8080.
+# Put the name your proxy serves in .env:
+#   PUBLIC_HOSTS=photos.example.com
 # then: docker compose up -d && docker compose logs app | grep "FIRST-TIME SETUP"
-# Private use without open ports (Tailscale) or behind your own proxy: see the README in the repository.
+# Proxy requirements: docs/SELF-HOSTING.md in the repository.
 name: cipherfilm
 
 services:
@@ -15,38 +16,17 @@ services:
     security_opt: ["no-new-privileges:true"]
     pids_limit: 256
     mem_limit: 768m
+    ports:
+      - "127.0.0.1:${APP_PORT:-8080}:8080"   # loopback only: reachable just through the proxy on this host
     volumes:
       - data:/data
     environment:
       LISTEN_ADDR: ":8080"
-      TRUST_PROXY: "1"              # exactly one proxy in front: Caddy
-      PUBLIC_HOSTS: "${DOMAIN:?set DOMAIN in .env, e.g. photos.example.com}"
-
-  caddy:
-    image: caddy:2.11.7-alpine   # a fixed version: the app relies on how it sets X-Forwarded-For
-    restart: unless-stopped
-    # The app sets its own security headers; Caddy only gets the certificate, terminates TLS and forwards, with the
-    # real client address as the only X-Forwarded-For entry.
-    command: 'caddy reverse-proxy --from ${DOMAIN} --to app:8080 --header-up "X-Forwarded-For: {http.request.remote.host}"'
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    volumes:
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on: [app]
-    read_only: true
-    tmpfs: [/tmp]
-    cap_drop: [ALL]
-    cap_add: [NET_BIND_SERVICE]   # ports 80 and 443
-    security_opt: ["no-new-privileges:true"]
-    pids_limit: 256
-    mem_limit: 256m
+      PUBLIC_HOSTS: "${PUBLIC_HOSTS:?set PUBLIC_HOSTS in .env to the name your proxy serves, e.g. photos.example.com}"
+      # 1 with exactly ONE proxy in front that adds X-Forwarded-For; 0 behind a chain, a Cloudflare Tunnel or Tailscale Serve
+      TRUST_PROXY: "${TRUST_PROXY:-1}"
+      TRUSTED_PROXIES: "${TRUSTED_PROXIES:-}"   # peers whose X-Forwarded-For is believed; empty: loopback and private
 
 volumes:
   data:
     name: cipherfilm_data
-  caddy_data:
-    name: cipherfilm_caddy_data
-  caddy_config:

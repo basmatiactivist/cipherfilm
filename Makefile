@@ -47,19 +47,9 @@ migration-test: ## move the e2e stack to a second, empty stack with scripts/back
 	docker run --rm -v "$(CURDIR)/dist:/d" alpine:3.24 rm -rf /d/migration
 	@echo "migration test passed: backup, restore on a new stack, sign-in and offline decrypt all work"
 
-prod-config: ## validate every production compose combination
-	@for o in tailscale proxy caddy; do \
-	  echo "== compose.yaml + compose.$$o.yaml"; \
-	  TS_AUTHKEY=tskey-test SITE_ADDRESS=photos.example.com PUBLIC_HOSTS=photos.example.com COMPOSE_FILE=compose.yaml:compose.$$o.yaml docker compose config -q || exit 1; \
-	done; echo "== compose.yaml + compose.tailscale.yaml + compose.kopia.yaml"; \
-	TS_AUTHKEY=tskey-test KOPIA_SERVER_PASSWORD=test COMPOSE_FILE=compose.yaml:compose.tailscale.yaml:compose.kopia.yaml docker compose config -q || exit 1; \
-	echo "== compose.yaml + compose.tailscale.yaml (+ compose.kopia.yaml) + compose.domain.yaml"; \
-	for k in "" compose.kopia.yaml:; do \
-	  TS_AUTHKEY=tskey-test KOPIA_SERVER_PASSWORD=test DOMAIN=photos.example.com TS_DOMAIN=photos.tailnet.ts.net CF_API_TOKEN=test \
-	    COMPOSE_FILE=compose.yaml:compose.tailscale.yaml:$${k}compose.domain.yaml docker compose config -q || exit 1; \
-	done; echo "== deploy/quickstart/compose.yaml"; \
-	DOMAIN=photos.example.com docker compose -f deploy/quickstart/compose.yaml config -q || exit 1; \
-	echo "== compose.yaml (base only)"; docker compose -f compose.yaml config -q && echo "all valid"
+prod-config: ## validate the production compose files
+	@echo "== compose.yaml"; PUBLIC_HOSTS=photos.example.com docker compose -f compose.yaml config -q || exit 1; \
+	echo "== deploy/quickstart/compose.yaml"; PUBLIC_HOSTS=photos.example.com docker compose -f deploy/quickstart/compose.yaml config -q && echo "all valid"
 multiarch: ## prove the image builds for amd64 and arm64 (not loaded, just built)
 	docker buildx build --platform linux/amd64,linux/arm64 -o type=oci,dest=/tmp/cipherfilm-multiarch.tar . && echo "multi-arch build OK: /tmp/cipherfilm-multiarch.tar"
 

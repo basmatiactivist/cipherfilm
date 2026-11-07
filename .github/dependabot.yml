@@ -52,16 +52,16 @@ updates:
     groups: { e2e: { patterns: ["*"] } }
   # the base images, pinned by tag and digest: an update moves both
   - package-ecosystem: docker
-    directories: [/, /deploy/domain]
+    directory: /
     schedule: { interval: weekly }
     cooldown: { default-days: 7, semver-major-days: 30, semver-minor-days: 7, semver-patch-days: 3 }
     open-pull-requests-limit: 2
     groups: { docker: { patterns: ["*"] } }
-  # images in the compose files: Caddy, Tailscale, the Playwright browsers, and Caddy in the one-file quickstart.
+  # images in the compose files: Caddy and the Playwright browsers of the e2e stack.
   # The helper images in the Makefile and scripts/ (alpine, golang, node) are not seen by Dependabot;
   # docs/RELEASING.md lists them.
   - package-ecosystem: docker-compose
-    directories: [/, /deploy/quickstart]
+    directory: /
     schedule: { interval: weekly }
     cooldown: { default-days: 7, semver-major-days: 30, semver-minor-days: 7, semver-patch-days: 3 }
     open-pull-requests-limit: 2

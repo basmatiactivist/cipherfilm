@@ -1,7 +1,0 @@
-# The app sets its own security headers (CSP, HSTS, ...); Caddy only terminates TLS and forwards.
-# Caddy replaces any X-Forwarded-For a client sends with the real client address.
-{$SITE_ADDRESS} {
-	reverse_proxy app:8080 {
-		header_up X-Forwarded-For {remote_host} # exactly one entry, the real client: what the app (TRUST_PROXY=1) reads
-	}
-}

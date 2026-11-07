@@ -1,9 +1,6 @@
-# Production base: the app only. It publishes NO ports and does not provide HTTPS.
-# Pick how people reach it by adding exactly one overlay (see README "Choose how to deploy"):
-#   compose.tailscale.yaml   private, via your tailnet (no public ports)
-#   compose.proxy.yaml       behind your own reverse proxy on this host
-#   compose.caddy.yaml       public domain with automatic HTTPS (Caddy)
-# Select one in .env with COMPOSE_FILE, e.g. COMPOSE_FILE=compose.yaml:compose.tailscale.yaml
+# Production: the app only. It listens on 127.0.0.1 and does not provide HTTPS: put any reverse proxy with HTTPS in
+# front (Caddy, nginx, Traefik, a Cloudflare Tunnel, Tailscale Serve, ...) and point it at http://127.0.0.1:${APP_PORT}.
+# Proxy requirements: docs/SELF-HOSTING.md.
 name: cipherfilm-prod
 
 services:
@@ -17,12 +14,20 @@ services:
     security_opt: ["no-new-privileges:true"]
     pids_limit: 256
     mem_limit: 768m
+    ports:
+      - "127.0.0.1:${APP_PORT:-8080}:8080"   # loopback only: reachable just through the proxy on this host
     volumes:
       - appdata:/data
     environment:
       LISTEN_ADDR: ":8080"
-      TRUST_PROXY: "0"
-      PUBLIC_HOSTS: "${PUBLIC_HOSTS:-}"   # the name(s) the app is reached by; requests for any other name are refused
+      # the name(s) your proxy serves; requests for any other name are refused (DNS rebinding), and X-Forwarded-For
+      # is only taken for requests to these names
+      PUBLIC_HOSTS: "${PUBLIC_HOSTS:?set PUBLIC_HOSTS in .env to the name your proxy serves, e.g. photos.example.com}"
+      # 1 with exactly ONE proxy in front that adds X-Forwarded-For, so login limits see real client addresses.
+      # 0 behind a chain of proxies, a Cloudflare Tunnel or Tailscale Serve.
+      TRUST_PROXY: "${TRUST_PROXY:-1}"
+      # peers whose X-Forwarded-For is believed (addresses or CIDRs); empty: loopback and private networks
+      TRUSTED_PROXIES: "${TRUSTED_PROXIES:-}"
       DEMO_ACCOUNTS: "${DEMO_ACCOUNTS:-}" # public read-only demo logins (deploy/demo); normally empty
       DEMO_LOGIN: "${DEMO_LOGIN:-}"       # "EMAIL PASSWORD" of one of them, shown on the sign-in page; normally empty
 

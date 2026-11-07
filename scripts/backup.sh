@@ -1,7 +1,7 @@
 #!/bin/sh
 # Backs up the database and the encrypted files into one tar file. Safe to run while the app is running.
 #   scripts/backup.sh [destination-dir]        (default ./backups)
-# Uses the compose files selected in .env (COMPOSE_FILE). Set DATA_VOLUME if you changed the volume name.
+# Uses compose.yaml (or the files in COMPOSE_FILE). Set DATA_VOLUME if you changed the volume name.
 set -eu
 DEST="${1:-./backups}"
 VOLUME="${DATA_VOLUME:-cipherfilm_data}"

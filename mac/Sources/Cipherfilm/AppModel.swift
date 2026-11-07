@@ -341,15 +341,20 @@ final class AppModel {
     if !quiet { loading = true }
     defer { loading = false }
     do {
-      async let l = vault.loadLibrary()
+      // only what changed since the last load (ListSync.swift); the albums are small and come whole
+      async let l = vault.syncLibrary()
       async let a = vault.loadAlbums()
-      let (list, al) = try await (l, a)
+      let (r, al) = try await (l, a)
       guard self.vault === vault else { return }
-      setItems(list)
+      // the server's list is the truth also when nothing changed: a change made here (favorite, trash) that the
+      // server refused goes back
+      setItems(r.items)
+      let albumsChanged = al != albums
       albums = al
       loadError = nil
-      images.prefetch(Array(list.prefix(400)), vault)
-      vault.pruneCache(keeping: Set(list.map(\.id)))
+      guard r.changed || albumsChanged else { return }
+      images.prefetch(Array(r.items.prefix(400)), vault)
+      if r.changed { vault.pruneCache(keeping: Set(r.items.map(\.id))) }
       libraryChanged()
     } catch {
       if !quiet { loadError = error.localizedDescription }

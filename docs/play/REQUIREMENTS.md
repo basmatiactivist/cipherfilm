@@ -228,7 +228,7 @@ Sources: [Account deletion requirements](https://support.google.com/googleplay/a
   - Deactivation or "freeze" doesn't count. Retained data must be disclosed.
 - When this was written the server only supported admin deletion (`DELETE /api/admin/users/{id}`, CLI `delete-user`).
 - [x] **Built (2.1.0):** `DELETE /api/me` (requires re-entering the password / `auth` proof; refuses for the last active admin), plus **Account → Delete account** in the mobile app and the web app. It deletes items, albums, index and blobs, then signs out every device.
-- [ ] **Web page** `https://<site>/delete-account`: "Cipherfilm accounts live on the server your administrator runs; the Cipherfilm developer holds no account data. To delete your account: in the app, Account → Delete account; or in Cipherfilm in the browser; or ask your server administrator (they can run `/app delete-user EMAIL --yes`). Deletion removes all photos, videos, albums and search data from that server immediately. Backups of the server made by its administrator (e.g. Kopia) follow the administrator's retention."
+- [ ] **Web page** `https://<site>/delete-account`: "Cipherfilm accounts live on the server your administrator runs; the Cipherfilm developer holds no account data. To delete your account: in the app, Account → Delete account; or in Cipherfilm in the browser; or ask your server administrator (they can run `/app delete-user EMAIL --yes`). Deletion removes all photos, videos, albums and search data from that server immediately. Backups of the server made by its administrator (e.g. with `scripts/backup.sh`) follow the administrator's retention."
 
 ### 4.8 Sensitive content: optional explicit-content search model
 Source: [Sexual content and profanity policy](https://support.google.com/googleplay/android-developer/answer/9878810)
@@ -267,7 +267,7 @@ Sources: [App access](https://support.google.com/googleplay/android-developer/an
 
 - Credentials *"must be accessible at all times, reusable, and valid regardless of user location"*, in English, with no 2FA or OTP, plus *"clear instructions"* for special login fields. If a password expires, the app *"may be rejected"*.
 - The production instance is **tailnet-only**, so reviewers can't reach it. Never give it to Google.
-- [ ] Run a **dedicated demo instance** on a public HTTPS domain (e.g. `demo.<project-domain>`, Caddy with Let's Encrypt). A separate small VPS or a separate compose project with its own volume works, sharing nothing with production. Configuration:
+- [ ] Run a **dedicated demo instance** on a public HTTPS domain (e.g. `demo.<project-domain>`, behind an HTTPS proxy with Let's Encrypt). A separate small VPS or a separate compose project with its own volume works, sharing nothing with production. Configuration:
   - one ordinary user, `reviewer@<domain>`, with a strong static password, no recovery dependency, and no admin rights;
   - about 30 pre-loaded neutral demo photos and videos (own or CC0, no identifiable private people), plus one album;
   - **explicit model disabled** (the Play build doesn't offer it anyway; the models come from Hugging Face, not the server), small quota (e.g. 2 GB);

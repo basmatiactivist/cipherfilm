@@ -15,23 +15,24 @@ You need a **server** first; the apps connect to it. The Android app is also in 
 
 ## Server (Docker)
 
-One folder, one file, one command. You need a machine with Docker (Linux or macOS, amd64 or arm64), a DNS name
-pointing at it, and ports 80 and 443 open. HTTPS comes automatically from Let's Encrypt.
+One folder, one file. You need a machine with Docker (Linux or macOS, amd64 or arm64) and HTTPS in front: any
+reverse proxy (Caddy, nginx, Traefik, a Cloudflare Tunnel, Tailscale Serve, …).
 
 ```bash
 mkdir cipherfilm && cd cipherfilm
 curl -fsSLO https://raw.githubusercontent.com/basmatiactivist/cipherfilm/master/deploy/quickstart/compose.yaml
-echo "DOMAIN=photos.example.com" > .env
+echo "PUBLIC_HOSTS=photos.example.com" > .env      # the name your proxy serves
 docker compose up -d
 docker compose logs app | grep "FIRST-TIME SETUP"
 ```
 
-Open `https://photos.example.com`, paste the token from the last line and create the first account.
+Point your proxy at `http://127.0.0.1:8080` ([what it must do](SELF-HOSTING.md#deploy)). Open
+`https://photos.example.com`, paste the token from the last line and create the first account.
 **Update:** `docker compose pull && docker compose up -d` in the same folder.
 
 The image is `ghcr.io/basmatiactivist/cipherfilm`: `:2` (the default here) follows every 2.x release, `:X.Y.Z` pins
-one version (`CIPHERFILM_TAG=X.Y.Z` in `.env`). For private use without open ports (Tailscale) or behind a proxy you
-already run, use the full setup in [SELF-HOSTING.md](SELF-HOSTING.md#choose-how-to-deploy).
+one version (`CIPHERFILM_TAG=X.Y.Z` in `.env`). Backups, settings and building from source:
+[SELF-HOSTING.md](SELF-HOSTING.md).
 
 ## Web app
 

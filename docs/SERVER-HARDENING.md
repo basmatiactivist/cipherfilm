@@ -70,8 +70,7 @@ systemctl disable --now nftables.service
 boot. `ufw limit` refuses an address that opens more than six SSH connections in 30 seconds; scripts should reuse one
 connection (`ControlMaster`).
 
-Docker publishes container ports past ufw. That is fine for Cipherfilm: option C (Caddy) publishes exactly 80 and
-443, option B binds only to `127.0.0.1`, and option A publishes nothing.
+Docker publishes container ports past ufw. That is fine for Cipherfilm: it binds only to `127.0.0.1`.
 
 ## 4. fail2ban
 

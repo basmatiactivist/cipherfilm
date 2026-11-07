@@ -14,8 +14,8 @@ reviewer's included, so it runs only daily.
 
 ## 1. The server
 
-A normal install from the Cipherfilm checkout ([docs/SELF-HOSTING.md](../../docs/SELF-HOSTING.md)), e.g. a public
-domain with Caddy, with your own admin account. Leave `DEMO_ACCOUNTS` empty for now.
+A normal install from the Cipherfilm checkout ([docs/SELF-HOSTING.md](../../docs/SELF-HOSTING.md)), on a public
+domain behind an HTTPS proxy, with your own admin account. Leave `DEMO_ACCOUNTS` empty for now.
 
 ## 2. The demo account
 

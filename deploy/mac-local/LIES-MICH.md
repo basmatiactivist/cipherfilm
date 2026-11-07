@@ -54,7 +54,7 @@ Beim ersten Start blockiert macOS die Datei eventuell: `xattr -d com.apple.quara
 
 ## Gut zu wissen
 
-- Erreichbar nur von diesem Mac. Für Zugriff vom Handy brauchst du Tailscale oder einen eigenen Proxy (siehe `docs/SELF-HOSTING.md` im Projekt, Abschnitt "Choose how to deploy"). Das gilt auch für die Android-App.
+- Erreichbar nur von diesem Mac. Für Zugriff vom Handy brauchst du HTTPS davor, z. B. Tailscale Serve oder einen eigenen Proxy (siehe `docs/SELF-HOSTING.md` im Projekt, Abschnitt "Deploy"). Das gilt auch für die Android-App.
 - Die Entwicklungsinstanz `https://cipherfilm.orb.local` ist getrennt und hat andere Daten. Lösche sie nicht aus Versehen mit `make reset` im Projektordner: das betrifft nur sie, nicht fotocrypt.
 - Wer Zugriff auf diesen Ordner und dein Passwort hat, kommt an die Fotos. Wer nur den Ordner hat, nicht.
 

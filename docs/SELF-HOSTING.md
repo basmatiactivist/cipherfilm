@@ -6,91 +6,50 @@ settings. Download links for every app are in [INSTALL.md](INSTALL.md).
 ## Requirements
 
 - Docker with the Compose plugin (`docker compose`) on a Linux or macOS machine (amd64 or arm64).
-- **HTTPS.** The browser's encryption features, the Service Worker (video, big downloads) and the secure
-  session cookie need it. Cipherfilm doesn't provide HTTPS itself; one of the three options below does.
+- **HTTPS in front of it.** The browser's encryption features, the Service Worker (video, big downloads) and the
+  secure session cookie need it. Cipherfilm doesn't provide HTTPS itself: use any reverse proxy you like (Caddy,
+  nginx, Traefik, a Cloudflare Tunnel, Tailscale Serve, …).
 
-## Choose how to deploy
+## Deploy
 
-Pick exactly one. They share one base file, [compose.yaml](../compose.yaml), which runs only the app, publishes
-**no ports**, runs read-only as a non-root user, and stores data in the Docker volume `cipherfilm_data`.
-
-| Option | Who it is for | HTTPS from | Open ports on the host |
-|---|---|---|---|
-| **A. Tailscale** | Private use; reachable only by devices on your tailnet | Tailscale Serve | none |
-| **B. Your own reverse proxy** | You already run nginx, Caddy, Traefik, a Cloudflare Tunnel, … | your proxy | `127.0.0.1:8080` only |
-| **C. Caddy (bundled)** | A public site on your own domain | Let's Encrypt, automatic | 80 and 443 |
-
-Copy [.env.example](../.env.example) to `.env`, choose the option with `COMPOSE_FILE`, fill in its settings and
-start:
+[compose.yaml](../compose.yaml) runs only the app, read-only as a non-root user, on `127.0.0.1:8080`, with its data
+in the Docker volume `cipherfilm_data`.
 
 ```bash
-cp .env.example .env      # edit it
+cp .env.example .env      # set PUBLIC_HOSTS to the name your proxy serves
 docker compose up -d --build
 docker compose logs app | grep "FIRST-TIME SETUP"
 ```
 
-### A. Tailscale
+Then point your proxy at `http://127.0.0.1:8080`. It must:
 
-1. In the [Tailscale admin console](https://login.tailscale.com/admin/dns) turn on **HTTPS certificates**
-   (and MagicDNS); Serve needs them.
-2. Create an **auth key** (Settings → Keys). A one-off key is enough: it is only used the first time
-   (`TS_AUTH_ONCE=true`, and the node's state is kept in the `cipherfilm_tsstate` volume).
-3. In `.env`: `COMPOSE_FILE=compose.yaml:compose.tailscale.yaml`, `TS_AUTHKEY=…`, `TS_HOSTNAME=photos`, and
-   `PUBLIC_HOSTS=photos.<your-tailnet>.ts.net` (recommended: the app then refuses requests for any other name).
-4. `docker compose up -d --build`. The site is at `https://photos.<your-tailnet>.ts.net`.
+- **Forward `Host` and add `X-Forwarded-For`.** Login rate limits use the client address. With exactly one proxy in
+  front, keep `TRUST_PROXY=1`. Behind a Cloudflare Tunnel, Tailscale Serve or several proxies set `TRUST_PROXY=0`;
+  then all clients share one address, so a stranger's failed logins can block *new* browsers for up to 15 minutes
+  (browsers that signed in before are not affected). `X-Forwarded-For` is only believed for requests to a name in
+  `PUBLIC_HOSTS` and from an address in `TRUSTED_PROXIES` (default: loopback and private networks, which covers a
+  proxy on the same host).
+- **Allow request bodies of at least 5 MB** (encrypted parts are about 4.2 MB).
+- **Not add or change security headers.** The app sets its own strict Content-Security-Policy, HSTS and others.
 
-The app shares the Tailscale container's network, so nothing is published on the host.
-[deploy/tailscale/serve.json](../deploy/tailscale/serve.json) makes Tailscale Serve forward HTTPS to the app and
-sets `AllowFunnel` to `false`, so it is never exposed to the public internet.
+Plain HTTP between proxy and app is fine on the same host. A proxy in a Docker container can't reach the host's
+`127.0.0.1`: run it with host networking, or attach it to this stack's network and use `http://app:8080`.
 
-A name of your own (`photos.example.com`) works too, still only inside the tailnet: [docs/OWN-DOMAIN.md](OWN-DOMAIN.md).
+Example only, for Caddy (it gets the certificate itself):
 
-Tested on a Debian 13 VPS with the released image. After the first start,
-`docker compose exec tailscale tailscale serve status` shows `https://<name>.<tailnet>.ts.net (tailnet only)`; the
-first certificate takes a few seconds. Then, in the admin console, turn off **key expiry** for the machine (otherwise
-it drops off the tailnet after about 180 days) and delete the used auth key. The host needs no open ports except SSH;
-see [docs/SERVER-HARDENING.md](SERVER-HARDENING.md).
-
-### B. Your own reverse proxy
-
-1. `.env`: `COMPOSE_FILE=compose.yaml:compose.proxy.yaml`, `PUBLIC_HOSTS=photos.example.com` (the name your proxy
-   serves; required) and optionally `APP_PORT=8080`.
-2. Point your proxy at `http://127.0.0.1:8080`. Requirements:
-   - **Forward `Host` and add `X-Forwarded-For`.** Login rate limits use the client address; with exactly one
-     proxy in front, leave `TRUST_PROXY=1`. Behind a Cloudflare Tunnel or several proxies set
-     `TRUST_PROXY=0`. Then all clients share one address, so a stranger's failed logins can block *new* browsers
-     for up to 15 minutes; browsers that signed in before are not affected (device cookie).
-     `X-Forwarded-For` is only believed for requests to a name in `PUBLIC_HOSTS` and from an address in
-     `TRUSTED_PROXIES` (default: loopback and private networks, which covers a proxy on the same host; set it to your
-     proxy's address or CIDR if it sits elsewhere).
-   - Allow request bodies of at least **5 MB** (encrypted parts are about 4.2 MB).
-   - **Don't add or change security headers.** The app sets its own strict Content-Security-Policy, HSTS and others.
-   - Plain HTTP between proxy and app is fine if both are on the same host.
-
-```nginx
-server {
-  listen 443 ssl;
-  http2 on;
-  server_name photos.example.com;
-  # ssl_certificate ...;
-  client_max_body_size 8m;
-  location / {
-    proxy_pass http://127.0.0.1:8080;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_request_buffering off;
-  }
+```caddyfile
+photos.example.com {
+	reverse_proxy 127.0.0.1:8080 {
+		header_up X-Forwarded-For {remote_host}   # exactly one entry, the real client
+	}
 }
 ```
 
-### C. Caddy with automatic HTTPS
+For private use with no open ports, [Tailscale Serve](https://tailscale.com/kb/1312/serve) works too:
+`tailscale serve --bg 8080` on the host, with `PUBLIC_HOSTS=<machine>.<tailnet>.ts.net` and `TRUST_PROXY=0`.
 
-1. Point a DNS name at the machine and make ports 80 and 443 reachable.
-2. `.env`: `COMPOSE_FILE=compose.yaml:compose.caddy.yaml`, `SITE_ADDRESS=photos.example.com`.
-3. `docker compose up -d --build`. Caddy gets and renews the certificate.
-
-This puts the login page on the public internet. The app is invite-only (no public sign-up), rate-limits
-logins, and stores nothing readable, but keep it updated.
+A public site puts the login page on the internet. The app is invite-only (no public sign-up), rate-limits logins and
+stores nothing readable, but keep it updated. Hardening the host: [SERVER-HARDENING.md](SERVER-HARDENING.md).
 
 ## First start: create the admin
 
@@ -110,35 +69,31 @@ person's storage and change their limit (default 20 GB; the admin has no limit).
 
 ## Backup and restore
 
-What is backed up: the database (accounts, encrypted keys, encrypted metadata) and the encrypted files. All
-of it is ciphertext. **It is not a backup of anyone's recovery key or password.**
+Back up with any tool you like (restic, Borg, a volume snapshot, …). Before each run, write a consistent
+database snapshot:
 
 ```bash
-scripts/backup.sh /path/to/backups     # writes cipherfilm-YYYYMMDD-HHMMSS.tar, safe while the app runs
+docker compose exec -T app /app backup     # writes backup/ in the data folder
 ```
 
-The script first takes a consistent snapshot of the database, *then* copies the files, so everything the
-snapshot refers to is in the backup (an upload that finished in between is not in it). Run it from
-cron, e.g. `15 3 * * * cd /opt/cipherfilm && scripts/backup.sh /mnt/backups`, and keep copies on another
-machine. If you changed `DATA_VOLUME`, export it for the scripts.
+Then back up the data volume (`cipherfilm_data`), at least `backup/` (snapshot and server secret) and `blobs/` (the
+encrypted files). Restore from the snapshot, not the live `app.db`. It is all ciphertext, and **not a backup of
+anyone's recovery key or password.** Your tool can show its result under Admin › Server with
+`docker compose exec -T app /app backup-report ok` (or `failed snapshot`, `failed upload`).
 
-**Restore** (this replaces everything in the volume):
+No tool? `scripts/backup.sh /path/to/backups` does both steps into one `.tar`, safe while the app runs. Keep copies
+on another machine. If you changed `DATA_VOLUME`, export it for the scripts.
+
+**Restore** (replaces everything in the volume; the old data is kept in `.previous/`):
 
 ```bash
 scripts/restore.sh /path/to/cipherfilm-20261102-035500.tar --yes
 ```
 
-It checks the archive (required files present, no symlinks or paths outside the data directory) and stops the app
-(refusing to go on if it keeps running). It moves the current data aside to `.previous/` in the volume (a rename, no
-extra space; nothing is lost if it was the wrong archive), puts the backup in place, ends every session (an older
-backup would revive revoked ones) and gives items in the restored trash a fresh 30 days. Then it starts the app and
-prints a health report (database integrity, number of users and items, items with missing files). You can run
-`docker compose exec app /app check` any time.
+From your own tool's backup: `tar -cf restore.tar -C restored-folder backup blobs`, then restore that. The script ends
+every session (an older backup would revive revoked ones) and prints a health report.
 
-**Off-site, every night:** with the Tailscale option, `compose.kopia.yaml` adds Kopia, which saves the same data to
-Nextcloud (WebDAV), S3, SFTP and others, with its UI only in your tailnet: [docs/BACKUP-KOPIA.md](BACKUP-KOPIA.md).
-
-**Test your backups:** restore one on a spare machine and sign in as a user.
+**Test your restore** on a spare machine with `scripts/restore.sh`, and sign in as a user.
 
 ## Updating
 
@@ -168,12 +123,12 @@ lost device, make an invite link, status). A password can't be reset from the se
 
 | Setting | Where | Default | Meaning |
 |---|---|---|---|
-| `COMPOSE_FILE` | `.env` | | which deployment option |
-| `TRUST_PROXY` | env / `.env` | `0`; `1` for options B and C | trust the last `X-Forwarded-For` entry from exactly one proxy; needs `PUBLIC_HOSTS` |
+| `PUBLIC_HOSTS` | `.env` | required | names your proxy serves, e.g. `photos.example.com`; others get 421 |
+| `TRUST_PROXY` | `.env` | `1` | trust the last `X-Forwarded-For` entry from exactly one proxy; `0` for a chain, a Cloudflare Tunnel or Tailscale Serve |
 | `TRUSTED_PROXIES` | `.env` | empty (loopback and private networks) | addresses or CIDRs whose `X-Forwarded-For` is believed, comma-separated |
-| `PUBLIC_HOSTS` | `.env` | empty (any); required with `TRUST_PROXY=1` (option B; set from `SITE_ADDRESS` in C) | names the app answers for, e.g. `photos.example.com` or `photos.<tailnet>.ts.net`; others get 421 |
 | `DEMO_ACCOUNTS` | `.env` | empty | e-mail addresses of public demo accounts, comma-separated: they can sign in, look and search, but not upload, edit, delete or change the account (403); see [deploy/demo](../deploy/demo/README.md) |
 | `DEMO_LOGIN` | `.env` | empty | `EMAIL PASSWORD` of one `DEMO_ACCOUNTS` login: the sign-in page shows it with an "Open the demo" button. The password is published, so only for a demo |
+| `APP_PORT` | `.env` | `8080` | port on `127.0.0.1` your proxy connects to |
 | `DATA_VOLUME` | `.env` | `cipherfilm_data` | Docker volume for database and files |
 | `LISTEN_ADDR`, `DATA_DIR` | app env | `:8080`, `/data` | inside the container |
 
@@ -198,7 +153,7 @@ Everyone can delete their own account: **Account › Delete account** in the web
 (Settings › General). It asks for the password, then deletes the account with all its photos, videos, albums, people
 and search data from the server at once (`DELETE /api/me` with the current sign-in proof, as for a password change),
 signs out every device, and each device deletes what it keeps. The only active administrator has to make someone
-else an administrator first. Copies of the whole server an administrator made (`scripts/backup.sh`, Kopia) follow
+else an administrator first. Copies of the whole server an administrator made (`scripts/backup.sh`, their own backup tool) follow
 their own retention. An administrator can also delete an account (Admin › Users, or `delete-user EMAIL --yes`,
 [docs/SERVER-COMMANDS.md](SERVER-COMMANDS.md)). The Cipherfilm developer holds no account data: accounts exist
 only on the server your administrator runs.

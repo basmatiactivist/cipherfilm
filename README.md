@@ -92,12 +92,12 @@ Every app needs a Cipherfilm server, yours or someone else's. Step by step, with
 
 ## Run your own server
 
-You need Docker with Compose and HTTPS. Three ways to get HTTPS are included: **Tailscale** (private, no open
-ports), **your own reverse proxy**, or **bundled Caddy** with Let's Encrypt.
+You need Docker with Compose and HTTPS in front: any reverse proxy (Caddy, nginx, Traefik, a Cloudflare Tunnel,
+Tailscale Serve, …) pointed at `http://127.0.0.1:8080`.
 
 ```bash
 git clone https://github.com/basmatiactivist/cipherfilm && cd cipherfilm
-cp .env.example .env              # choose the option with COMPOSE_FILE and fill in its settings
+cp .env.example .env              # set PUBLIC_HOSTS to the name your proxy serves
 docker compose up -d --build      # or use the released image, see below
 docker compose logs app | grep "FIRST-TIME SETUP"
 ```
@@ -106,7 +106,7 @@ Open the site, paste the one-time token, create the admin account and save the r
 **Admin → Invite someone**. Instead of building, you can use the released multi-architecture image
 `ghcr.io/basmatiactivist/cipherfilm:2`.
 
-All options, backups, updates, settings and troubleshooting: **[docs/SELF-HOSTING.md](docs/SELF-HOSTING.md)**.
+Proxy requirements, backups, updates, settings and troubleshooting: **[docs/SELF-HOSTING.md](docs/SELF-HOSTING.md)**.
 
 ## How it works, briefly
 
@@ -145,7 +145,6 @@ Don't rely on it where losing or leaking the data would be catastrophic, and kee
 | [CRYPTO.md](docs/CRYPTO.md) · [THREAT_MODEL.md](docs/THREAT_MODEL.md) | the encryption and what it does and doesn't protect |
 | [SEARCH.md](docs/SEARCH.md) · [MODELS.md](docs/MODELS.md) | on-device search and the models it uses |
 | [MAC.md](docs/MAC.md) | the Mac app |
-| [BACKUP-KOPIA.md](docs/BACKUP-KOPIA.md) | nightly off-site backups |
 | [RELEASING.md](docs/RELEASING.md) | how releases are built and signed |
 
 ## Development
@@ -154,12 +153,12 @@ Don't rely on it where losing or leaking the data would be catastrophic, and kee
 make up          # build and start at https://cipherfilm.orb.local (OrbStack)
 make test        # Go and web unit tests (in Docker)
 make e2e         # throwaway stack, Playwright browser tests, then a check that no plaintext reached the server
-make prod-config # validate all production compose combinations
+make prod-config # validate the production compose files
 ```
 
 `server/` Go and SQLite (no CGO) · `web/` Preact, TypeScript, libsodium · `mobile/` Android (Expo, Kotlin) ·
 `mac/` SwiftUI ([mac/README.md](mac/README.md)) · `tools/` upload and decrypt tools · `e2e/` Playwright ·
-`deploy/` Tailscale, Caddy and local setups · `docs/` everything else. The original design is in [PLAN.md](PLAN.md).
+`deploy/` quickstart, demo and local setups · `docs/` everything else. The original design is in [PLAN.md](PLAN.md).
 
 Contributions are welcome: [CONTRIBUTING.md](CONTRIBUTING.md). Please report vulnerabilities privately, as described
 in [SECURITY.md](SECURITY.md).

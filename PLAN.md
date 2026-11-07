@@ -1,6 +1,6 @@
 # PLAN: private end-to-end encrypted photo gallery
 
-Status: **historical planning document** from before the build (milestones M1 to M8 are done; the current release is listed in CHANGELOG.md). The implemented system is described in the README, docs/SELF-HOSTING.md, docs/CRYPTO.md and docs/THREAT_MODEL.md and differs in details, for example in the Android and Mac apps, on-device search, Caddy and own-proxy deployments, and sessions that last 30 days from their last use.
+Status: **historical planning document** from before the build (milestones M1 to M8 are done; the current release is listed in CHANGELOG.md). The implemented system is described in the README, docs/SELF-HOSTING.md, docs/CRYPTO.md and docs/THREAT_MODEL.md and differs in details, for example in the Android and Mac apps, on-device search, deployment behind any HTTPS reverse proxy, and sessions that last 30 days from their last use.
 Companion docs: [docs/CRYPTO.md](docs/CRYPTO.md), [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
 
 ## 1. Stack and reasons
@@ -107,7 +107,7 @@ GET  /api/me/usage ; GET /healthz
 ## 7. Deployment
 
 - `compose.dev.yaml` (OrbStack): app only, labelled `dev.orbstack.domains=photos.orb.local` for automatic HTTPS. `make up` / `make reset`. Verify the label mechanism against the OrbStack docs at M1.
-- Production (decided in M7): `compose.yaml` base + one overlay: `compose.tailscale.yaml`, `compose.proxy.yaml` or `compose.caddy.yaml`, so the operator chooses how HTTPS is provided. Originally: `tailscale` sidecar (`TS_AUTHKEY`, `TS_HOSTNAME`, `TS_SERVE_CONFIG` for Serve -> `http://127.0.0.1:8080`), app with `network_mode: service:tailscale`, **no `ports:`**. Exact serve config and env names checked against current Tailscale docs at M7.
+- Production: `compose.yaml`, the app on `127.0.0.1:8080` behind any HTTPS reverse proxy the operator runs (since the release after 2.1.7; M7 shipped one overlay each for Tailscale, an own proxy and Caddy). Originally: `tailscale` sidecar (`TS_AUTHKEY`, `TS_HOSTNAME`, `TS_SERVE_CONFIG` for Serve -> `http://127.0.0.1:8080`), app with `network_mode: service:tailscale`, **no `ports:`**. Exact serve config and env names checked against current Tailscale docs at M7.
 - Volumes: `appdata` (SQLite + blobs), `tsstate`. Backup: SQLite `VACUUM INTO`/`.backup` plus blob dir snapshot (rsync), documented with restore steps. Blobs are written before DB commit and orphan-swept, so a consistent backup is "DB first, then blobs".
 - Multi-arch via `docker buildx --platform linux/amd64,linux/arm64`.
 - Limits: per-user quota, max segment size, request body caps, login rate limit (per IP and per account, in memory: resets on restart), session idle and absolute expiry, trash purge job (daily, deletes blobs from disk).

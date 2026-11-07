@@ -24,7 +24,7 @@ Private by construction rather than by policy: the server never holds a key that
 
 ## Operating Context
 
-Reachable over Tailscale (no public ports), behind the operator's own reverse proxy, or on a public domain with Caddy (docs/INSTALL.md). Invite-only: the admin creates an invite link and hands it over manually. No email is ever sent. Originals (JPEG, PNG, WebP, HEIC, MP4/MOV) are stored unchanged. About 100 GB expected. UI language: English.
+Runs behind any HTTPS reverse proxy the operator picks: a public site, or private over Tailscale Serve with no open ports (docs/SELF-HOSTING.md). Invite-only: the admin creates an invite link and hands it over manually. No email is ever sent. Originals (JPEG, PNG, WebP, HEIC, MP4/MOV) are stored unchanged. About 100 GB expected. UI language: English.
 
 ## Capabilities and Constraints
 

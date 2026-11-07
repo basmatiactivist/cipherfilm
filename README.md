@@ -87,6 +87,9 @@ hour. To keep your own photos, [run your own server](#run-your-own-server).
 | **Mac** | from the [latest release](https://github.com/basmatiactivist/cipherfilm/releases/latest) | Apple silicon, macOS 15 or newer |
 | **Web** | comes with your server, in any current browser | also iPhone and iPad |
 
+The Play build differs in three small ways Google Play requires (no explicit search, automatic backup in shorter
+background runs, battery settings opened instead of asked): [Google Play or the APK?](docs/INSTALL.md#google-play-or-the-apk)
+
 Every app needs a Cipherfilm server, yours or someone else's. Step by step, with the APK's signing certificate:
 [docs/INSTALL.md](docs/INSTALL.md).
 

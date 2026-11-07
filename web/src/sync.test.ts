@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { applyChanges, ListSync, type Page } from "./sync";
+import { describe, expect, it, vi } from "vitest";
+import { applyChanges, FULL_EVERY, ListSync, type Page } from "./sync";
 
 interface It { id: string; t: number; v?: string }
 const order = (a: It, b: It) => b.t - a.t;
@@ -71,6 +71,28 @@ describe("ListSync", () => {
     expect(decrypted).toEqual(["d"]);
     // the whole list was fetched once only
     expect(s.asked.filter((p) => p === "/api/items").length).toBe(1);
+  });
+
+  it("loads the whole list again once a day, whatever the cursor says (a database put back by hand)", async () => {
+    vi.useFakeTimers();
+    try {
+      const s = fake({
+        "/api/items": { items: [rec("a", 1)], cursor: "e.1" },
+        "/api/items?since=e.1": { items: [], removed: [], cursor: "e.1", more: false },
+      });
+      const l = new ListSync<It>({ path: "/api/items", get: s.get, decrypt, order });
+      await l.load();
+      expect((await l.load()).full).toBe(false);
+      vi.advanceTimersByTime(FULL_EVERY + 1);
+      expect((await l.load()).full).toBe(true);
+      // a list kept on the device from more than a day ago loads whole too
+      const kept = new ListSync<It>({ path: "/api/items", get: s.get, decrypt, order });
+      kept.seed([rec("a", 1)], "e.1", Date.now() - FULL_EVERY - 1);
+      expect((await kept.load()).full).toBe(true);
+      const fresh = new ListSync<It>({ path: "/api/items", get: s.get, decrypt, order });
+      fresh.seed([rec("a", 1)], "e.1", Date.now());
+      expect((await fresh.load()).full).toBe(false);
+    } finally { vi.useRealTimers(); }
   });
 
   it("follows pages of changes in order", async () => {
@@ -146,7 +168,7 @@ describe("ListSync", () => {
     const seen: string[] = [];
     const s = fake({ "/api/items?since=e.4": { items: [rec("b", 2)], removed: ["a"], cursor: "e.6", more: false } });
     const l = new ListSync<It>({ path: "/api/items", get: s.get, decrypt, order, onPage: (raw, removed, full) => seen.push(`${full}:${raw.map((r) => r.id)}:${removed}`) });
-    l.seed([rec("a", 1), rec("c", 3)], "e.4");
+    l.seed([rec("a", 1), rec("c", 3)], "e.4", Date.now()); // a copy from today: only changes
     l.seed([rec("x", 9)], "e.0"); // only before the first list
     expect(ids((await l.load()).items)).toEqual(["c", "b"]);
     expect(s.asked).toEqual(["/api/items?since=e.4"]);

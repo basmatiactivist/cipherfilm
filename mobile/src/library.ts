@@ -154,7 +154,7 @@ function saveList(now: boolean) {
     const dir = userDir();
     if (!dir || !dirty) return;
     dirty = false;
-    keep(new File(dir, "list.json"), JSON.stringify({ cursor: library.at, items: [...records.values()] })).catch(() => {});
+    keep(new File(dir, "list.json"), JSON.stringify({ cursor: library.at, wholeAt: library.wholeAt, items: [...records.values()] })).catch(() => {});
   };
   if (now) write(); else saveTimer = setTimeout(write, 5000);
 }
@@ -187,10 +187,11 @@ export async function loadCachedLibrary(): Promise<Item[] | null> {
     // before incremental lists the file held only the records
     const raw: any[] = Array.isArray(kept) ? kept : kept.items;
     const cursor = !Array.isArray(kept) && typeof kept.cursor === "string" ? kept.cursor : undefined;
+    const wholeAt = !Array.isArray(kept) && typeof kept.wholeAt === "number" ? kept.wholeAt : 0;
     const items = await decryptAll(raw);
     if (!library.current) {
       records = new Map(raw.map((x) => [x.id, x]));
-      library.seed(items, cursor);
+      library.seed(items, cursor, wholeAt);
     }
     return items;
   } catch { return null; }

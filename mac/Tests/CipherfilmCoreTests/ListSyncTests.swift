@@ -88,10 +88,20 @@ private let newest: @Sendable (Item, Item) -> Bool = { $0.when > $1.when }
     #expect(r.full && r.items.map(\.id) == ["z"])
   }
 
+  @Test func aKeptCopyWholeMoreThanADayAgoLoadsWholeOnce() async throws {
+    let s = Script(["/api/items": [["items": [], "next": "", "cursor": "e.9"]],
+                    "/api/items?since=e.9": [["items": [], "removed": [], "cursor": "e.9", "more": false]]])
+    let l = ListSync(path: "/api/items", order: newest)
+    await l.seed([item("a", 1)], records: [], cursor: "e.4", wholeAt: Date().timeIntervalSince1970 - fullEvery - 60)
+    #expect(try await sync(s, l).full)
+    #expect(try await sync(s, l).full == false)
+    #expect(s.asked == ["/api/items", "/api/items?since=e.9"])
+  }
+
   @Test func aKeptCopyAsksOnlyForChangesAndCountsAsAChangeOnce() async throws {
     let s = Script(["/api/items?since=e.4": [["items": [], "removed": [], "cursor": "e.4", "more": false]]])
     let l = ListSync(path: "/api/items", order: newest)
-    await l.seed([item("a", 1)], records: [], cursor: "e.4")
+    await l.seed([item("a", 1)], records: [], cursor: "e.4", wholeAt: Date().timeIntervalSince1970)
     let first = try await sync(s, l)
     #expect(!first.full && first.changed && first.items.map(\.id) == ["a"])
     #expect(try await sync(s, l).changed == false)

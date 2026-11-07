@@ -15,6 +15,10 @@ struct ListPage: Decodable {
   let reset: Bool?
 }
 
+/** Even with a cursor the whole list loads at least once a day: a safety net for anything the cursor can't see (a
+ *  database put back by hand without a new epoch). Same as FULL_EVERY in web/src/sync.ts. */
+public let fullEvery: TimeInterval = 24 * 60 * 60
+
 public actor ListSync {
   public struct Loaded: Sendable {
     public let items: [Item]
@@ -35,14 +39,17 @@ public actor ListSync {
   /** seeded from the cache and not loaded since: the first load counts as a change (the app's follow-ups, search
    *  and the watcher, haven't seen the list yet) */
   private var seeded = false
+  /** when the whole list last loaded (or the kept copy did), seconds since 1970 */
+  private(set) var wholeAt: TimeInterval = 0
   private var busy = false
   private var waiting: [CheckedContinuation<Void, Never>] = []
 
   init(path: String, order: @escaping @Sendable (Item, Item) -> Bool) { self.path = path; self.order = order }
 
   /** Starts from a kept copy and its cursor, if nothing was loaded yet: the first load then asks only for changes. */
-  func seed(_ items: [Item], records: [RawItem], cursor: String?) {
+  func seed(_ items: [Item], records: [RawItem], cursor: String?, wholeAt: TimeInterval = 0) {
     guard list == nil else { return }
+    self.wholeAt = wholeAt
     list = items.sorted(by: order)
     self.records = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
     self.cursor = cursor
@@ -50,16 +57,16 @@ public actor ListSync {
   }
 
   /** The records and the cursor they are current to, taken together. */
-  func kept() -> (records: [RawItem], cursor: String?) { (Array(records.values), cursor) }
+  func kept() -> (records: [RawItem], cursor: String?, wholeAt: TimeInterval) { (Array(records.values), cursor, wholeAt) }
 
-  func forget() { list = nil; records = [:]; cursor = nil; seeded = false; gen += 1 }
+  func forget() { list = nil; records = [:]; cursor = nil; seeded = false; wholeAt = 0; gen += 1 }
 
   /** Brings the list up to date; loads run one after another (a load during another may have missed its change). */
   func load(get: @Sendable (String) async throws -> Data, decrypt: @Sendable ([RawItem]) throws -> [Item]) async throws -> Loaded {
     await acquire()
     defer { release() }
     let g = gen
-    if let list, let cursor, let r = try await changes(list, cursor, g, get, decrypt) { return r }
+    if let list, let cursor, Date().timeIntervalSince1970 - wholeAt < fullEvery, let r = try await changes(list, cursor, g, get, decrypt) { return r }
     return try await whole(g, get, decrypt)
   }
 
@@ -95,6 +102,7 @@ public actor ListSync {
       list = items
       records = Dictionary(raw.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
       cursor = first.cursor
+      wholeAt = Date().timeIntervalSince1970
     }
     return Loaded(items: items, retentionDays: days, full: true, changed: true)
   }

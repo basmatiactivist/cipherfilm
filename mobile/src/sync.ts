@@ -20,6 +20,10 @@ export interface ListSyncOptions<T extends { id: string }> {
 
 export interface Loaded<T> { items: T[]; extra: Record<string, unknown>; full: boolean }
 
+/** A safety net: at least once a day the whole list loads again, whatever the cursor says. Changes the server can't
+ *  tell about (a database put back by hand without restore.sh, a future bug) then stay wrong at most a day. */
+export const FULL_EVERY = 24 * 60 * 60 * 1000;
+
 /** Applies one page of changes: removed ids go, changed records replace theirs or are added. Pages apply in order, so
  *  an item changed on one page and purged on the next is gone. Returns the same array when nothing changed. */
 export function applyChanges<T extends { id: string }>(list: T[], changed: T[], removed: Iterable<string>, order: (a: T, b: T) => number): T[] {
@@ -43,21 +47,24 @@ export function applyChanges<T extends { id: string }>(list: T[], changed: T[], 
 export class ListSync<T extends { id: string }> {
   private list: T[] | null = null;
   private cursor: string | undefined;
+  /** when the whole list last loaded (ms), for FULL_EVERY; 0: never on this device */
+  private fullAt = 0;
   private gen = 0;
   private tail: Promise<unknown> = Promise.resolve();
   private queued: Promise<Loaded<T>> | null = null;
   constructor(private o: ListSyncOptions<T>) {}
 
-  /** The list as last loaded (null before the first load), and the cursor it is current to. */
+  /** The list as last loaded (null before the first load), the cursor it is current to, and when it last loaded whole. */
   get current() { return this.list; }
   get at() { return this.cursor; }
+  get wholeAt() { return this.fullAt; }
 
   /** Starts from a list kept on the device and its cursor, if nothing was loaded yet: the first load then asks only
    *  for what changed since that copy was made. */
-  seed(list: T[], cursor: string | undefined) { if (!this.list) { this.list = [...list].sort(this.o.order); this.cursor = cursor; } }
+  seed(list: T[], cursor: string | undefined, wholeAt = 0) { if (!this.list) { this.list = [...list].sort(this.o.order); this.cursor = cursor; this.fullAt = wholeAt; } }
 
   /** Drops the list and its cursor (lock, sign-out): the next load is a whole one. */
-  forget() { this.list = null; this.cursor = undefined; this.gen++; }
+  forget() { this.list = null; this.cursor = undefined; this.fullAt = 0; this.gen++; }
 
   /** Brings the list up to date: only the changes when it can, else the whole list. */
   load(): Promise<Loaded<T>> {
@@ -70,7 +77,7 @@ export class ListSync<T extends { id: string }> {
 
   private async step(): Promise<Loaded<T>> {
     const gen = this.gen;
-    if (this.list && this.cursor) {
+    if (this.list && this.cursor && Date.now() - this.fullAt < FULL_EVERY) {
       const r = await this.changes(this.cursor, gen);
       if (r) return r;
     }
@@ -91,7 +98,7 @@ export class ListSync<T extends { id: string }> {
     const items = this.o.decrypt(raw).sort(this.o.order);
     if (gen === this.gen) this.o.onPage?.(raw, [], true);
     // the first page's cursor: what changed while the later pages loaded comes with the next ?since
-    if (gen === this.gen) { this.list = items; this.cursor = typeof first.cursor === "string" ? first.cursor : undefined; }
+    if (gen === this.gen) { this.list = items; this.cursor = typeof first.cursor === "string" ? first.cursor : undefined; this.fullAt = Date.now(); }
     return { items, extra: first, full: true };
   }
 

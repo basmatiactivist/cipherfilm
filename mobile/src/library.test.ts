@@ -103,12 +103,21 @@ describe("the library on the phone", () => {
   });
 
   it("the next start shows the kept list and asks only for what changed after it", async () => {
-    st.files.set(LIST, JSON.stringify({ cursor: "e.3", items: [rec(A, 1), rec(B, 2)] }));
+    st.files.set(LIST, JSON.stringify({ cursor: "e.3", wholeAt: Date.now(), items: [rec(A, 1), rec(B, 2)] }));
     st.answers["/api/items?since=e.3"] = { items: [rec(C, 3)], removed: [A], cursor: "e.4", more: false };
     const lib = await import("./library");
     expect(ids((await lib.loadCachedLibrary())!)).toEqual([B, A]);
     expect(ids(await lib.loadLibrary())).toEqual([C, B]);
     expect(st.asked).toEqual(["/api/items?since=e.3"]);
+  });
+
+  it("a kept list whose last whole load is more than a day old loads whole once (the daily safety net)", async () => {
+    st.files.set(LIST, JSON.stringify({ cursor: "e.3", wholeAt: Date.now() - 25 * 3600_000, items: [rec(A, 1)] }));
+    st.answers["/api/items"] = { items: [rec(A, 1), rec(B, 2)], next: "", cursor: "e.9" };
+    const lib = await import("./library");
+    await lib.loadCachedLibrary();
+    expect(ids(await lib.loadLibrary())).toEqual([B, A]);
+    expect(st.asked).toEqual(["/api/items"]);
   });
 
   it("a list.json from before (records only), a reset, and a lock all load the whole list", async () => {

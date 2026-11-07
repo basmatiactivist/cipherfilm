@@ -27,6 +27,20 @@ let gen = 0;
 
 /** Loads the server's list; quiet: for live updates (live.ts), without the spinner and without an error banner (the
  *  list on screen stays as it is if the load fails). */
+/** The follow-ups of a new list (thumbnails ahead, cache pruning, backup bookkeeping, search) each go over the whole
+ *  library. After a load the person asked for they run at once; after live updates once the changes have been quiet
+ *  for 5 seconds, and at least every 30 (a backup elsewhere sends a change per photo). */
+let followTimer: ReturnType<typeof setTimeout> | null = null;
+let followSince = 0;
+function afterChange(quiet: boolean, run: () => void) {
+  if (followTimer) clearTimeout(followTimer);
+  followTimer = null;
+  if (!quiet) { followSince = 0; run(); return; }
+  if (!followSince) followSince = Date.now();
+  const wait = Math.max(0, Math.min(5000, followSince + 30_000 - Date.now()));
+  followTimer = setTimeout(() => { followTimer = null; followSince = 0; run(); }, wait);
+}
+
 export async function refreshLibrary(opts?: { quiet?: boolean }) {
   const quiet = opts?.quiet === true;
   if (busy) { again = true; if (!quiet && !loading) { loading = true; emit(); } return; }
@@ -53,14 +67,18 @@ export async function refreshLibrary(opts?: { quiet?: boolean }) {
     error = undefined;
     loadedAt = Date.now();
     if (same) return;
-    prefetchThumbs(list);
-    setTimeout(() => pruneCache(new Set(list.map((i) => i.id))), 2000);
-    // the rest waits until the grid is on screen and scrolling: both read the whole list on the JS thread
-    setTimeout(() => {
+    afterChange(quiet, () => {
       if (!current()) return;
-      rememberLibrary(forUser, list).catch(() => {}); // the backup skips what is already here
-      startSearch(list).catch(() => {}); // search: the index for what is new
-    }, 1500);
+      const now = items ?? list; // the newest list when a later change replaced it meanwhile
+      prefetchThumbs(now);
+      setTimeout(() => current() && pruneCache(new Set(now.map((i) => i.id))), 2000);
+      // the rest waits until the grid is on screen and scrolling: both read the whole list on the JS thread
+      setTimeout(() => {
+        if (!current()) return;
+        rememberLibrary(forUser, now).catch(() => {}); // the backup skips what is already here
+        startSearch(now).catch(() => {}); // search: the index for what is new
+      }, 1500);
+    });
   } catch (e) {
     if (current() && !quiet) error = e instanceof Error ? e.message : "Couldn't load your photos.";
   } finally {
@@ -77,6 +95,8 @@ export const libraryLoaded = () => busy || (items !== null && owner === session(
 export function forgetLibrary() {
   items?.forEach((i) => i.itemKey?.fill(0)); // the unwrapped item keys leave memory with the list
   forgetLists(); // which shares them with the lists kept current by live updates (library.ts)
+  if (followTimer) clearTimeout(followTimer);
+  followTimer = null; followSince = 0;
   items = null; owner = ""; error = undefined; loadedAt = 0; loading = false; busy = false; again = false; gen++; emit();
 }
 

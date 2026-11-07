@@ -124,6 +124,7 @@ public final class Vault: @unchecked Sendable {
       if master != nil { Sodium.memzero(&master!) }
       if pairCache != nil { Sodium.memzero(&pairCache!.sk) }
       master = nil; pairCache = nil
+      listWrite?.cancel(); listWrite = nil
     }
   }
 
@@ -206,16 +207,18 @@ public final class Vault: @unchecked Sendable {
   public let librarySync = ListSync(path: "/api/items", order: { $0.when > $1.when })
   public let trashSync = ListSync(path: "/api/trash", order: { ($0.trashedAt ?? 0) > ($1.trashedAt ?? 0) })
   /** the cached list read at unlock, handed to librarySync by the first load */
-  private var pendingSeed: (items: [Item], records: [RawItem], cursor: String?)?
+  private var pendingSeed: (items: [Item], records: [RawItem], cursor: String?, wholeAt: TimeInterval)?
+  /** the list.json write waiting for changes to settle (a burst of uploads would otherwise rewrite it each time) */
+  private var listWrite: Task<Void, Never>?
 
   /** What list.json holds: the server's records and the cursor they are current to (before incremental lists, the
    *  records alone). */
-  private struct KeptList: Codable { let cursor: String?; let items: [RawItem] }
+  private struct KeptList: Codable { let cursor: String?; var wholeAt: TimeInterval?; let items: [RawItem] }
 
   private func load(_ sync: ListSync) async throws -> ListSync.Loaded {
     _ = try masterKey()
     if sync === librarySync, let s = lock.withLock({ defer { pendingSeed = nil }; return pendingSeed }) {
-      await sync.seed(s.items, records: s.records, cursor: s.cursor)
+      await sync.seed(s.items, records: s.records, cursor: s.cursor, wholeAt: s.wholeAt)
     }
     return try await sync.load(get: { [api] in try await api.json("GET", $0) }, decrypt: { [self] in try self.decrypt($0) })
   }
@@ -224,11 +227,23 @@ public final class Vault: @unchecked Sendable {
    *  keeps the records with their cursor, written when something changed. */
   public func syncLibrary() async throws -> ListSync.Loaded {
     let r = try await load(librarySync)
-    if r.changed {
-      let (records, cursor) = await librarySync.kept()
-      if let d = try? JSONEncoder().encode(KeptList(cursor: cursor, items: records)) { keep("list.json", d) }
-    }
+    if r.changed { keepList(now: r.full) }
     return r
+  }
+
+  /** Writes list.json: at once after a whole load, otherwise once changes have been quiet for 5 seconds (the list can be
+   *  a few MB; a ping per upload would rewrite it each time). Records and cursor are taken together when it writes, so
+   *  the file always holds a matching pair. A lock cancels a waiting write: the older file still matches its cursor. */
+  private func keepList(now: Bool) {
+    let sync = librarySync
+    let t = Task { [weak self] in
+      if !now { try? await Task.sleep(nanoseconds: 5_000_000_000) }
+      guard !Task.isCancelled, let self else { return }
+      let (records, cursor, wholeAt) = await sync.kept()
+      guard let d = try? JSONEncoder().encode(KeptList(cursor: cursor, wholeAt: wholeAt, items: records)) else { return }
+      self.lock.withLock { if !Task.isCancelled, self.master != nil { self.keep("list.json", d) } }
+    }
+    lock.withLock { listWrite?.cancel(); listWrite = t }
   }
 
   /** The whole library, newest capture first. */
@@ -238,9 +253,9 @@ public final class Vault: @unchecked Sendable {
    *  asks only for what changed since. */
   public func loadCachedLibrary() -> [Item]? {
     guard let d = cached("list.json") else { return nil }
-    let kept = (try? JSONDecoder().decode(KeptList.self, from: d)) ?? (try? JSONDecoder().decode([RawItem].self, from: d)).map { KeptList(cursor: nil, items: $0) }
+    let kept = (try? JSONDecoder().decode(KeptList.self, from: d)) ?? (try? JSONDecoder().decode([RawItem].self, from: d)).map { KeptList(cursor: nil, wholeAt: nil, items: $0) }
     guard let kept, let items = try? decrypt(kept.items) else { return nil }
-    lock.withLock { pendingSeed = (items, kept.items, kept.cursor) }
+    lock.withLock { pendingSeed = (items, kept.items, kept.cursor, kept.wholeAt ?? 0) }
     return items
   }
 

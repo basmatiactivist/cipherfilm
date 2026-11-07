@@ -105,9 +105,9 @@ enum Metric {
 }
 
 enum Motion {
-  static let fast = 0.15
-  static let medium = 0.25
-  static let turn = 1.1
-  static let seal = 2.4
-  static let breathe = 2
+  static let fast: Double = 0.15
+  static let medium: Double = 0.25
+  static let turn: Double = 1.1
+  static let seal: Double = 2.4
+  static let breathe: Double = 2
 }

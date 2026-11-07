@@ -161,11 +161,11 @@ enum Metric {
 }
 
 enum Motion {
-  static let fast = ${T.motion.fast.ms / 1000}
-  static let medium = ${T.motion.medium.ms / 1000}
-  static let turn = ${T.motion.turn.ms / 1000}
-  static let seal = ${T.motion.seal.ms / 1000}
-  static let breathe = ${T.motion.breathe.ms / 1000}
+  static let fast: Double = ${T.motion.fast.ms / 1000}
+  static let medium: Double = ${T.motion.medium.ms / 1000}
+  static let turn: Double = ${T.motion.turn.ms / 1000}
+  static let seal: Double = ${T.motion.seal.ms / 1000}
+  static let breathe: Double = ${T.motion.breathe.ms / 1000}
 }
 `;
 }

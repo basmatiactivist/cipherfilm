@@ -33,12 +33,27 @@ export const modelTag = (clip: Clip, faces: boolean) => TAGS[clip][faces ? 0 : 1
 /** The server keeps entries per model family (the tag up to "+" or "/"): mcs2 or laionb32. */
 export const family = (clip: Clip) => TAGS[clip][1].split("/")[0];
 
+/** The model every device can search with: the Play build, an older app or a person not allowed explicit search. */
+export const STANDARD: Clip = "mobileclip-s2";
+/** While explicit search is on, the indexing device keeps MobileCLIP's entries current too (docs/SEARCH.md "Explicit
+ *  search"), so devices that only read MobileCLIP's always find a complete index. */
+export const keepsStandard = (clip: Clip, indexes = true) => indexes && clip !== STANDARD;
+const good = (tag: string | undefined, faces: boolean, clip: Clip) => tag === modelTag(clip, true) || (!faces && tag === modelTag(clip, false));
+/** What the indexing device still computes for an item, from its entries' tags (the account's model's and, alongside
+ *  LAION, MobileCLIP's): those not current. Empty when the item is done. */
+export function toCompute(tag: string | undefined, standard: string | undefined, faces: boolean, clip: Clip, indexes = true): Clip[] {
+  const out: Clip[] = good(tag, faces, clip) ? [] : [clip];
+  if (keepsStandard(clip, indexes) && !good(standard, faces, STANDARD)) out.push(STANDARD);
+  return out;
+}
+
 export const modelDir = () => new Directory(Paths.document, "models");
 const path = (m: Model) => new File(modelDir(), m.name).uri.replace(/^file:\/\//, "");
 
-/** What this phone needs: everything for the model if it indexes, only the text side if it only searches. */
+/** What this phone needs: everything for the model if it indexes, only the text side if it only searches. Indexing
+ *  with LAION also needs MobileCLIP's image model (its text model stays away: this phone searches with LAION). */
 export const needed = (faces: boolean, clip: Clip, indexes = true) =>
-  MODELS.filter((m) => (indexes ? faces || !m.faces : m.text) && (!m.clip || m.clip === clip));
+  MODELS.filter((m) => (indexes ? faces || !m.faces : m.text) && (!m.clip || m.clip === clip || (keepsStandard(clip, indexes) && m.clip === STANDARD && !m.text)));
 export const downloadSize = (faces: boolean, clip: Clip, indexes = true) =>
   needed(faces, clip, indexes).filter((m) => !new File(modelDir(), m.name).exists).reduce((n, m) => n + m.size, 0);
 
@@ -65,7 +80,8 @@ export function downloadModels(faces: boolean, clip: Clip, onProgress: (done: nu
 }
 
 /** Deletes the other image/text model's files (switching: 600 MB of LAION shouldn't stay after going back, and
- *  MobileCLIP not after going to LAION); the tokenizer and the face models are shared and stay. Returns what went. */
+ *  MobileCLIP not after going to LAION, except its image model on the phone that indexes); the tokenizer and the face
+ *  models are shared and stay. Returns what went. */
 export function dropOtherModels(clip: Clip, indexes = true): string[] {
   const gone: string[] = [];
   const keep = new Set(needed(true, clip, indexes).map((m) => m.name));

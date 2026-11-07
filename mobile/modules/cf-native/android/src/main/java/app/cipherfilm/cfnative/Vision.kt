@@ -52,6 +52,9 @@ internal object Vision {
   private var dir: File? = null
   private var clipKind: Clip = CLIPS.getValue("mobileclip-s2")
   private var image: OrtSession? = null
+  // MobileCLIP's image model next to LAION's, on the phone that indexes while explicit search is on (docs/SEARCH.md)
+  private var alsoKind: Clip? = null
+  private var also: OrtSession? = null
   private var text: OrtSession? = null
   private var det: OrtSession? = null
   private var rec: OrtSession? = null
@@ -61,20 +64,24 @@ internal object Vision {
     setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
   }
 
-  /** indexes = false: a phone that only searches (another device indexes) loads only the text model. */
-  @Synchronized fun open(path: String, faces: Boolean, clip: String, indexes: Boolean) {
+  /** indexes = false: a phone that only searches (another device indexes) loads only the text model. alsoClip: a
+   *  second image model the phone that indexes runs on every photo too (MobileCLIP next to LAION), or null. */
+  @Synchronized fun open(path: String, faces: Boolean, clip: String, indexes: Boolean, alsoClip: String?) {
     val d = File(path)
     val k = CLIPS[clip] ?: throw IllegalArgumentException("unknown model $clip")
+    val a = alsoClip?.let { CLIPS[it] ?: throw IllegalArgumentException("unknown model $it") }?.takeIf { it !== k && indexes }
     if (dir != d || k !== clipKind) close()
     dir = d
     clipKind = k
     if (text == null) text = env.createSession(File(d, k.text).path, opts())
+    if (a !== alsoKind) { runCatching { also?.close() }; also = null; alsoKind = null }
     if (!indexes) {
       listOf(image, det, rec).forEach { runCatching { it?.close() } }
       image = null; det = null; rec = null
       return
     }
     if (image == null) image = env.createSession(File(d, k.vision).path, opts())
+    if (a != null && also == null) { also = env.createSession(File(d, a.vision).path, opts()); alsoKind = a }
     if (faces) {
       if (det == null) det = env.createSession(File(d, "yunet-2023mar.onnx").path, opts())
       if (rec == null) rec = env.createSession(File(d, "sface-2021dec.onnx").path, opts())
@@ -87,22 +94,27 @@ internal object Vision {
   @Synchronized fun state(): Map<String, Any?> = mapOf(
     "clip" to CLIPS.entries.firstOrNull { it.value === clipKind }?.key, "dir" to dir?.path,
     "text" to (text != null), "image" to (image != null), "faces" to (det != null && rec != null),
+    "also" to (if (also != null) CLIPS.entries.firstOrNull { it.value === alsoKind }?.key else null),
   )
 
   @Synchronized fun close() {
-    listOf(image, text, det, rec).forEach { runCatching { it?.close() } }
-    image = null; text = null; det = null; rec = null; dir = null
+    listOf(image, also, text, det, rec).forEach { runCatching { it?.close() } }
+    image = null; also = null; alsoKind = null; text = null; det = null; rec = null; dir = null
   }
 
   // ---- one photo ----
 
-  /** The image vector and the faces in a JPEG; vectors as little-endian float16. */
-  fun analyze(jpeg: ByteArray, faces: Boolean): Map<String, Any> {
-    val img = image ?: throw IllegalStateException("search models not loaded")
+  /** The image vector of each model named (in that order) and the faces in a JPEG, found once whatever the number of
+   *  models; vectors as little-endian float16. */
+  fun analyze(jpeg: ByteArray, faces: Boolean, clips: List<String>): Map<String, Any> {
+    val models = clips.map { c ->
+      val k = CLIPS[c] ?: throw IllegalArgumentException("unknown model $c")
+      (if (k === clipKind) image else if (k === alsoKind) also else null)?.let { it to k } ?: throw IllegalStateException("search models not loaded")
+    }
     val bmp = decode(jpeg, 1280) ?: throw UnusableImage()
     try {
       if (min(bmp.width, bmp.height) < MIN_SIDE) throw UnusableImage()
-      val out = mutableMapOf<String, Any>("clip" to half(normalize(clip(img, bmp))))
+      val out = mutableMapOf<String, Any>("clips" to models.map { (s, k) -> half(normalize(clip(s, k, bmp))) })
       val d = det; val r = rec
       if (faces && d != null && r != null) {
         out["faces"] = detect(d, bmp).map { f ->
@@ -161,8 +173,7 @@ internal object Vision {
 
   // ---- CLIP: centre square, scaled to the model's size; MobileCLIP 0..1, LAION with CLIP's mean and std ----
 
-  private fun clip(s: OrtSession, src: Bitmap): FloatArray {
-    val k = clipKind
+  private fun clip(s: OrtSession, k: Clip, src: Bitmap): FloatArray {
     val CLIP_PX = k.px
     // cropped before scaling, so a very wide or tall picture never becomes a huge bitmap on the way
     val side = min(src.width, src.height)

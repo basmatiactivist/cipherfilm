@@ -8,7 +8,8 @@ export interface BackupState {
   media: "full" | "partial" | "none"; location: boolean; notifications: boolean; sdk: number;
 }
 
-export interface Analysis { clip: Bytes; faces?: { box: number[]; score: number; emb: Bytes }[] }
+/** clips: one image vector per model asked for, in that order; faces found once */
+export interface Analysis { clips: Bytes[]; faces?: { box: number[]; score: number; emb: Bytes }[] }
 export interface Hit { id: string; score: number }
 export interface FaceGroup { person: string | null; faces: string[]; items: string[]; cover: { key: string; item: string; box: number[] } | null }
 export interface PhoneMedia { id: number; uri: string; name: string; size: number; mime: string; bucket: string; folder: string; taken: number }
@@ -79,12 +80,14 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   downloadModel(url: string, path: string, sha256: string, size: number): Promise<boolean>;
   checkModel(path: string, sha256: string): Promise<boolean>;
   /** clip: "mobileclip-s2" or "laion-b32" (explicit search, docs/SEARCH.md) */
-  /** indexes = false: only the text model (a phone that only searches) */
-  visionOpen(dir: string, faces: boolean, clip: string, indexes: boolean): Promise<void>;
+  /** indexes = false: only the text model (a phone that only searches); also: a second image model to run on every
+   *  photo (MobileCLIP next to LAION on the phone that indexes, docs/SEARCH.md "Explicit search"), or null */
+  visionOpen(dir: string, faces: boolean, clip: string, indexes: boolean, also: string | null): Promise<void>;
   visionClose(): void;
   /** what visionOpen has open (dir is the model folder's path) */
-  visionState(): { clip: string | null; dir: string | null; text: boolean; image: boolean; faces: boolean };
-  visionAnalyze(jpeg: Bytes, faces: boolean): Promise<Analysis>;
+  visionState(): { clip: string | null; dir: string | null; text: boolean; image: boolean; faces: boolean; also: string | null };
+  /** clips: the open image models to run (the main one, the second one, or both) */
+  visionAnalyze(jpeg: Bytes, faces: boolean, clips: string[]): Promise<Analysis>;
   visionText(ids: number[]): Promise<Bytes>;
   faceCrop(jpeg: Bytes, box: number[], px: number): Promise<Bytes | null>;
   indexPut(item: string, clip: Bytes | null, boxes: number[][], scores: number[], embs: Bytes): Promise<void>;

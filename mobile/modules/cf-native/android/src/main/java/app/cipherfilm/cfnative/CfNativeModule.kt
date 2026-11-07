@@ -125,10 +125,10 @@ class CfNativeModule : Module() {
       Models.download(url, File(path), sha256, size.toLong()) { done, total -> sendEvent("onModelProgress", mapOf("path" to path, "done" to done.toDouble(), "total" to total.toDouble())) }
     }
     AsyncFunction("checkModel") { path: String, sha256: String -> Models.check(File(path), sha256) }
-    AsyncFunction("visionOpen") { dir: String, faces: Boolean, clip: String, indexes: Boolean -> Vision.open(dir, faces, clip, indexes) }
+    AsyncFunction("visionOpen") { dir: String, faces: Boolean, clip: String, indexes: Boolean, also: String? -> Vision.open(dir, faces, clip, indexes, also) }
     Function("visionClose") { Vision.close() }
     Function("visionState") { Vision.state() }
-    AsyncFunction("visionAnalyze") { jpeg: ByteArray, faces: Boolean -> Vision.analyze(jpeg, faces) }
+    AsyncFunction("visionAnalyze") { jpeg: ByteArray, faces: Boolean, clips: List<String> -> Vision.analyze(jpeg, faces, clips) }
     AsyncFunction("visionText") { ids: List<Int> -> Vision.textVector(ids.toIntArray()) }
     AsyncFunction("faceCrop") { jpeg: ByteArray, box: List<Double>, px: Int -> if (box.size == 4) Vision.faceCrop(jpeg, box, px.coerceIn(32, 512)) else null }
     AsyncFunction("indexPut") { item: String, clip: ByteArray?, boxes: List<List<Double>>, scores: List<Double>, embs: ByteArray -> SearchIndex.put(item, clip, boxes, scores, embs) }

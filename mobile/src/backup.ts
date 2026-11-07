@@ -53,6 +53,9 @@ export interface Status {
   /** files too big for a run without the foreground service (the Google Play build's automatic runs): skipped there,
    *  uploaded by the next "Back up now" */
   needsYou?: { id: number; bucket: string; name: string }[];
+  /** files uploaded and finalized but not yet confirmed by an account check (they are counted in batches): a run that
+   *  dies before the check leaves them here, and the next one confirms them instead of uploading them again */
+  unconfirmed?: { userId: string; print: string }[];
 }
 
 const DIR = () => new Directory(Paths.document, "backup");
@@ -256,6 +259,15 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
     const pk = unb64(s, c.pubkey);
     const kept = await readJson<{ userId?: string; prints?: string[] }>(KNOWN(), {});
     const known = new Set(kept.userId === c.userId && Array.isArray(kept.prints) ? kept.prints : []);
+    // uploaded by a run that died before its account check: confirmed now (this session still belongs to c.userId,
+    // checked above), so they are skipped as known instead of uploaded twice
+    const left = (status.unconfirmed ?? []).filter((u) => u.userId === c.userId && typeof u.print === "string");
+    if (status.unconfirmed?.length) {
+      left.forEach((u) => known.add(u.print));
+      status.unconfirmed = undefined;
+      if (left.length) await writeJson(KNOWN(), { userId: c.userId, prints: [...known] });
+      await save();
+    }
     const total = waiting;
     // The foreground service keeps a run going off screen. Google Play allows it (dataSync, "backup and restore") only for
     // a transfer the person started: there only "Back up now" holds it, and automatic runs work in WorkManager's time
@@ -332,12 +344,20 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
       try {
         await stillMine();
       } catch (e) {
-        if (e instanceof Error && e.message === OTHER_ACCOUNT) { abandon = true; stop(ANOTHER); return; }
+        if (e instanceof Error && e.message === OTHER_ACCOUNT) {
+          // they went to whoever holds the session now, not to c.userId: not backed up, so not noted as such
+          const gone = new Set(ready.map((u) => u.print));
+          status.unconfirmed = status.unconfirmed?.filter((u) => !gone.has(u.print));
+          abandon = true; stop(ANOTHER); return;
+        }
         unconfirmed.unshift(...ready); // counted at a later check, or uploaded again by the next run
         if (!soft) stop(e instanceof ApiError ? serverProblem(e) : e instanceof Error ? e.message : String(e));
         return;
       }
       checkedAt = Date.now();
+      const settled = new Set(ready.map((u) => u.print));
+      status.unconfirmed = status.unconfirmed?.filter((u) => !settled.has(u.print));
+      if (!status.unconfirmed?.length) status.unconfirmed = undefined;
       let behind = false;
       for (const u of ready) {
         // for search: at once while the file is at hand, but never inside the upload service (a data transfer,
@@ -382,8 +402,11 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
           }
         }
         going.delete(key); sync();
-        // counted as backed up only once it is certain the file went to c.userId
+        // counted as backed up only once it is certain the file went to c.userId; noted at once, so a run that dies
+        // before that check doesn't upload it again
         unconfirmed.push({ m, print, id, past });
+        status.unconfirmed = [...(status.unconfirmed ?? []), { userId: c.userId, print }];
+        await save();
         settle("due");
       } catch (e) {
         going.delete(key); sync(); // a failure seen here is counted below

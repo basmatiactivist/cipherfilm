@@ -16,6 +16,8 @@ version into the GitHub release notes, so a release cannot be published without 
 - CI runs on branches only; a release tag is checked (identity included) and built by the release workflow alone.
 
 ### Fixed
+- Android: a backup run that dies between finishing uploads and their account check (they are checked in batches)
+  no longer uploads those files again: they are noted on the phone and confirmed by the next run.
 - Search and people were empty on devices without explicit search (the Android app from Google Play, older apps,
   devices of people not allowed it) once an account turned explicit search on: switching deleted the standard
   (MobileCLIP) index and only the explicit one was built. Now the indexing device (Android, Mac) keeps both current

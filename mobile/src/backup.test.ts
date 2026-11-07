@@ -519,7 +519,44 @@ describe("automatic backup", () => {
     expect(st.attempt).toBeUndefined();
     expect(st.failures).toEqual({}); // one try was counted for file 2, then it went through
     expect((await again.backup.loadConfig())!.folders.cam.after).toBe(10);
-    expect(srv.log.filter((l) => l.startsWith("finalize")).length).toBeLessThanOrEqual(9 + 1 + 3); // file 2, and at most the few counted at no check
+    // only file 2 again: the files finished but not yet confirmed when the app died were noted, and confirmed now
+    expect(srv.log.filter((l) => l.startsWith("finalize")).length).toBe(9 + 1);
+    expect(st.unconfirmed).toBeUndefined();
+  });
+
+  it("a run that dies between upload and account check doesn't upload those files again; another account's never count", async () => {
+    const { session, backup, pubkey } = await load();
+    await session.start();
+    await backup.saveConfig(config(pubkey));
+    media.splice(0, media.length, ...photos(3));
+    // the app dies after the uploads, before the run's account check: /api/me never answers again
+    let calls = 0;
+    srv.hook = (method, path) => (method === "GET" && path === "/api/me" && ++calls > 1 ? new Promise<Response>(() => {}) : undefined);
+    void backup.runBackup("app");
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(srv.log.filter((l) => l.startsWith("finalize"))).toHaveLength(3);
+    const left = JSON.parse(files.get("/doc/backup/status.json")!);
+    expect(left.unconfirmed?.length).toBe(3); // noted on the phone
+    // the app starts again: the same account, so they are confirmed, not uploaded a second time
+    srv.hook = () => {};
+    const again = await load();
+    await again.backup.runBackup("app");
+    expect(srv.log.filter((l) => l.startsWith("finalize"))).toHaveLength(3);
+    expect((await again.backup.loadStatus()).unconfirmed).toBeUndefined();
+    expect((await again.backup.loadConfig())!.folders.cam.after).toBe(3);
+  });
+
+  it("files a check finds in another account's session are not noted as backed up", async () => {
+    const { session, backup, pubkey } = await load();
+    await session.start();
+    await backup.saveConfig(config(pubkey));
+    media.splice(0, media.length, ...photos(3));
+    // the session silently becomes bob's while the files upload: the check finds bob
+    srv.hook = (method, path) => { if (method === "POST" && path.endsWith("/finalize")) { srv.cookie = "bob"; srv.alive.add("bob"); } };
+    await backup.runBackup("app");
+    const st = await backup.loadStatus();
+    expect(st.unconfirmed ?? []).toEqual([]);
+    expect(st.uploaded).toBe(0);
   });
 
   it("a file the last run died on goes alone, so the files beside it get no try counted when it dies again", async () => {

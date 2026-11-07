@@ -14,6 +14,8 @@ export interface ListSyncOptions<T extends { id: string }> {
   order: (a: T, b: T) => number;
   /** the most pages one load follows: a server that never ends its list can't keep the app reading */
   maxPages?: number;
+  /** sees every answer as it is applied (full: a whole list, which replaces everything), for a copy of the records */
+  onPage?: (raw: any[], removed: string[], full: boolean) => void;
 }
 
 export interface Loaded<T> { items: T[]; extra: Record<string, unknown>; full: boolean }
@@ -46,8 +48,13 @@ export class ListSync<T extends { id: string }> {
   private queued: Promise<Loaded<T>> | null = null;
   constructor(private o: ListSyncOptions<T>) {}
 
-  /** The list as last loaded (null before the first load). */
+  /** The list as last loaded (null before the first load), and the cursor it is current to. */
   get current() { return this.list; }
+  get at() { return this.cursor; }
+
+  /** Starts from a list kept on the device and its cursor, if nothing was loaded yet: the first load then asks only
+   *  for what changed since that copy was made. */
+  seed(list: T[], cursor: string | undefined) { if (!this.list) { this.list = [...list].sort(this.o.order); this.cursor = cursor; } }
 
   /** Drops the list and its cursor (lock, sign-out): the next load is a whole one. */
   forget() { this.list = null; this.cursor = undefined; this.gen++; }
@@ -82,6 +89,7 @@ export class ListSync<T extends { id: string }> {
       next = page.next;
     }
     const items = this.o.decrypt(raw).sort(this.o.order);
+    if (gen === this.gen) this.o.onPage?.(raw, [], true);
     // the first page's cursor: what changed while the later pages loaded comes with the next ?since
     if (gen === this.gen) { this.list = items; this.cursor = typeof first.cursor === "string" ? first.cursor : undefined; }
     return { items, extra: first, full: true };
@@ -98,6 +106,7 @@ export class ListSync<T extends { id: string }> {
       if (last.reset) return null;
       if (typeof last.cursor !== "string" || !Array.isArray(last.removed)) return null; // not an answer to ?since
       list = applyChanges(list, last.items.length ? this.o.decrypt(last.items) : [], last.removed, this.o.order);
+      if (gen === this.gen) this.o.onPage?.(last.items, last.removed, false);
       if (last.more && last.cursor === cur) throw new Error("The server's list doesn't end.");
       cur = last.cursor;
     } while (last.more);

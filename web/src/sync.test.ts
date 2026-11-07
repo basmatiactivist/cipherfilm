@@ -142,6 +142,17 @@ describe("ListSync", () => {
     expect(n).toBe(2); // the first, and one more for all that came while it ran
   });
 
+  it("seed: a list kept on the device asks only for what changed since; onPage sees every answer", async () => {
+    const seen: string[] = [];
+    const s = fake({ "/api/items?since=e.4": { items: [rec("b", 2)], removed: ["a"], cursor: "e.6", more: false } });
+    const l = new ListSync<It>({ path: "/api/items", get: s.get, decrypt, order, onPage: (raw, removed, full) => seen.push(`${full}:${raw.map((r) => r.id)}:${removed}`) });
+    l.seed([rec("a", 1), rec("c", 3)], "e.4");
+    l.seed([rec("x", 9)], "e.0"); // only before the first list
+    expect(ids((await l.load()).items)).toEqual(["c", "b"]);
+    expect(s.asked).toEqual(["/api/items?since=e.4"]);
+    expect(seen).toEqual(["false:b:a"]);
+  });
+
   it("stops a server whose pages never end", async () => {
     const s = fake({
       "/api/items": { items: [], cursor: "e.1" },

@@ -86,8 +86,10 @@ The same app, with three differences Google Play's rules require:
 | Battery optimisation | opens Android's list, you pick Cipherfilm | asks directly |
 | Updates | through Google Play | through Obtainium, or a new APK by hand |
 
-Both are signed with the same key (Google Play signs with it too), so you can switch between them without
-uninstalling: each installs as an update over the other.
+Photos are backed up the same way by both. For large videos and long uploads the APK is more convenient: it runs until
+everything is up, also with the app closed, while the Play build needs a tap on Back up now for a video too large for
+one background run. Both are signed with the same key (Google Play signs with it too), so you can switch between them
+without uninstalling: each installs as an update over the other.
 
 ### Checking the signature
 

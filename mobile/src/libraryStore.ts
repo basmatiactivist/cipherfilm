@@ -8,7 +8,9 @@ import { api } from "./api";
 // One copy of the decrypted list for the library and the viewer; reloaded after uploads.
 let items: Item[] | null = null;
 let error: string | undefined;
-let loading = false;
+let loading = false; // shown: the pull-to-refresh spinner
+let busy = false; // a load runs (also a quiet one, which shows no spinner)
+let again = false; // asked for while one ran: that one may have fetched the list before the change, so once more after it
 let loadedAt = 0; // when the server's list last arrived (not the cached one)
 const subs = new Set<() => void>();
 let snap: { items: Item[] | null; error?: string; loading: boolean; loadedAt: number } = { items, error, loading, loadedAt };
@@ -22,10 +24,14 @@ let owner = ""; // the account the list was decrypted for
 // doesn't keep the next one (after unlocking) from starting
 let gen = 0;
 
-export async function refreshLibrary() {
-  if (loading) return;
+/** Loads the server's list; quiet: for live updates (live.ts), without the spinner and without an error banner (the
+ *  list on screen stays as it is if the load fails). */
+export async function refreshLibrary(opts?: { quiet?: boolean }) {
+  const quiet = opts?.quiet === true;
+  if (busy) { again = true; if (!quiet && !loading) { loading = true; emit(); } return; }
   const mine = gen;
-  loading = true; error = undefined; emit();
+  busy = true;
+  if (!quiet) { loading = true; error = undefined; emit(); }
   const forUser = session().me?.user.id ?? "";
   const current = () => mine === gen && session().me?.user.id === forUser && !!session().masterKey;
   try {
@@ -41,6 +47,7 @@ export async function refreshLibrary() {
     if (!current()) { list.forEach((i) => i.itemKey?.fill(0)); return; }
     items = list;
     owner = forUser;
+    error = undefined;
     loadedAt = Date.now();
     prefetchThumbs(list);
     setTimeout(() => pruneCache(new Set(list.map((i) => i.id))), 2000);
@@ -51,15 +58,21 @@ export async function refreshLibrary() {
       startSearch(list).catch(() => {}); // search: the index for what is new
     }, 1500);
   } catch (e) {
-    if (current()) error = e instanceof Error ? e.message : "Couldn't load your photos.";
+    if (current() && !quiet) error = e instanceof Error ? e.message : "Couldn't load your photos.";
   } finally {
-    if (mine === gen) { loading = false; emit(); }
+    if (mine === gen) {
+      busy = false; loading = false; emit();
+      if (again) { again = false; refreshLibrary({ quiet: true }); }
+    }
   }
 }
 
+/** Whether a list is loaded (or loading) for the account: only then does a live update load it again. */
+export const libraryLoaded = () => busy || (items !== null && owner === session().me?.user.id);
+
 export function forgetLibrary() {
   items?.forEach((i) => i.itemKey?.fill(0)); // the unwrapped item keys leave memory with the list
-  items = null; owner = ""; error = undefined; loadedAt = 0; loading = false; gen++; emit();
+  items = null; owner = ""; error = undefined; loadedAt = 0; loading = false; busy = false; again = false; gen++; emit();
 }
 
 // a lock, sign-out or account change takes the decrypted list along

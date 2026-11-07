@@ -15,7 +15,8 @@ import { ShortcutsHelp } from "./shortcuts";
 import { Field, KeepButton, Submit, fmtGB, useAction } from "./components";
 import { Icon, IconName, Logo } from "./icons";
 import { loadUsage } from "./auth";
-import { hasIndex, searchFamily, usePeople } from "./people/people";
+import { hasIndex, loadPeople, refreshIndex, searchFamily, usePeople } from "./people/people";
+import { coalesce, startLive } from "./live";
 import { lazy } from "./lazy";
 import { Loading } from "./loader";
 
@@ -91,6 +92,22 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const refreshTrash = () => loadTrash().then((r) => { setTrash(r.items); setRetention(r.retentionDays); }, (e) => setError(msg(e)));
   const refreshUsage = () => loadUsage().then(setUsage, () => {});
   useEffect(() => { refreshItems(); refreshAlbums(); refreshTrash(); refreshUsage(); }, []);
+  // what other devices change shows here within a second or two (live.ts): only the lists that changed load again
+  useEffect(() => {
+    const sync = coalesce(async (what) => {
+      const jobs: Promise<unknown>[] = [];
+      // while this tab uploads, it loads the list itself every few seconds (runJob) and once all are done
+      if (what.has("items") && !jobsRef.current.some((j) => j.state === "working" || j.state === "queued")) jobs.push(refreshItems());
+      if (what.has("trash")) jobs.push(refreshTrash());
+      if (what.has("items") || what.has("trash")) jobs.push(refreshUsage());
+      if (what.has("albums")) jobs.push(refreshAlbums());
+      if (what.has("people")) jobs.push(loadPeople().catch(() => {}));
+      if (what.has("index")) jobs.push(refreshIndex(true).catch(() => {}));
+      await Promise.all(jobs);
+    });
+    const stop = startLive({ onChange: (what) => sync.ping(what), probe: loadUsage });
+    return () => { stop(); sync.stop(); };
+  }, []);
   // once the grid has its first thumbnails, the lightbox's code comes ahead of the first click
   useEffect(() => { if (items) { const t = setTimeout(() => Lightbox.preload().catch(() => {}), 1500); return () => clearTimeout(t); } }, [!!items]);
 

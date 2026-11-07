@@ -33,6 +33,25 @@ Then point your proxy at `http://127.0.0.1:8080`. It must:
   proxy on the same host).
 - **Allow request bodies of at least 5 MB** (encrypted parts are about 4.2 MB).
 - **Not add or change security headers.** The app sets its own strict Content-Security-Policy, HSTS and others.
+- **Not buffer `/api/events`.** It is a long-lived stream (Server-Sent Events) that tells a person's other devices
+  when something changed, so a photo uploaded on the phone shows in the browser within a second or two. The app sends
+  `X-Accel-Buffering: no` and a heartbeat every 25 seconds; keep the proxy's read timeout above that. Caddy, Traefik,
+  Tailscale Serve and Cloudflare Tunnels pass it on as it is. With nginx, add a location for it:
+
+  ```nginx
+  location /api/events {
+      proxy_pass http://127.0.0.1:8080;
+      proxy_http_version 1.1;
+      proxy_set_header Host $host;
+      proxy_set_header X-Forwarded-For $remote_addr;
+      proxy_buffering off;
+      proxy_read_timeout 1h;
+  }
+  ```
+
+  A proxy that holds the stream back anyway only makes it slower: the apps then load the lists every 15 seconds.
+  Serve HTTP/2 (`listen 443 ssl; http2 on;`; the others do by default): over HTTP/1.1 every open tab's stream takes
+  one of the six connections a browser opens to a site.
 
 Plain HTTP between proxy and app is fine on the same host. A proxy in a Docker container can't reach the host's
 `127.0.0.1`. Either set `APP_BIND` to the Docker bridge's address (often `172.17.0.1`; `ip -4 addr show docker0`) and
@@ -141,7 +160,7 @@ lost device, make an invite link, status). A password can't be reset from the se
 `DEMO_ACCOUNTS` is only for a server whose login you publish on purpose, such as a demo that is reset from a seed. Never
 list an account with real photos or an administrator: anyone with the password can see everything in it.
 
-Built-in limits: 20 GB per invited user (changeable; thumbnails and previews count too), 50 unfinished uploads per user, 8 GB per file, sessions end 30 days after their last use or a year after signing in, trash empties after 30 days, 10 failed sign-ins per account and source address and 30 per source address overall, per 15 minutes. There is no ceiling across all sources, on purpose: it would let a stranger lock you out. Browsers that signed in before have their own limit of 20 per account.
+Built-in limits: 20 GB per invited user (changeable; thumbnails and previews count too), 50 unfinished uploads per user, 8 GB per file, sessions end 30 days after their last use or a year after signing in, trash empties after 30 days, 10 failed sign-ins per account and source address and 30 per source address overall, per 15 minutes. There is no ceiling across all sources, on purpose: it would let a stranger lock you out. Browsers that signed in before have their own limit of 20 per account. Live-update streams: 8 per session (browser tabs share one), 32 per account, 2000 in all.
 
 ## Troubleshooting
 
@@ -151,6 +170,7 @@ Built-in limits: 20 GB per invited user (changeable; thumbnails and previews cou
   then falls back to preparing files in memory, up to 512 MB.
 - **Uploads fail behind a proxy**: raise its body-size limit (≥ 5 MB) and timeouts.
 - **Everyone gets "too many attempts"**: `TRUST_PROXY` is wrong, so all visitors share one address.
+- **Changes from another device show only after a while**: the proxy buffers `/api/events` (see Deploy).
 - **iPhone videos don't play in some browsers**: they are often HEVC. Use "Download original" or Safari.
 
 ## Deleting your account

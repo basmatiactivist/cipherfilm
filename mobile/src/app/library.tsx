@@ -88,7 +88,7 @@ function Empty() {
       <Text variant="bodyMedium" style={{ textAlign: "center", color: t.colors.onSurfaceVariant, maxWidth: 320 }}>
         Tap Upload, or share photos to Cipherfilm from your gallery. They are encrypted on this phone before upload.
       </Text>
-      <Button mode="text" onPress={refreshLibrary} style={{ marginTop: 16 }}>Check again</Button>
+      <Button mode="text" onPress={() => refreshLibrary()} style={{ marginTop: 16 }}>Check again</Button>
     </View>
   );
 }

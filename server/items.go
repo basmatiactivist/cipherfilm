@@ -483,6 +483,7 @@ func (a *App) finalizeItem(w http.ResponseWriter, r *http.Request, u *user, s *s
 		fail(w, 409, "this upload is already finished")
 		return
 	}
+	a.changed(u.ID, tItems)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
@@ -708,6 +709,8 @@ func (a *App) trashItems(toTrash bool) func(http.ResponseWriter, *http.Request, 
 			fail(w, 500, "server error")
 			return
 		}
+		// albums list only what is not in the trash
+		a.changed(u.ID, tItems|tTrash|tAlbums)
 		writeJSON(w, 200, map[string]bool{"ok": true})
 	}
 }
@@ -767,28 +770,32 @@ func (a *App) purgeTrash(w http.ResponseWriter, r *http.Request, u *user, s *ses
 			removed++
 		}
 	}
+	if removed > 0 {
+		a.changed(u.ID, tTrash)
+	}
 	writeJSON(w, 200, map[string]int{"removed": removed})
 }
 
 func (a *App) purgeExpiredTrash() {
 	cutoff := a.now().Add(-trashRetention).Unix()
-	rows, err := a.db.Query(`SELECT id FROM items WHERE trashed_at IS NOT NULL AND trashed_at < ?`, cutoff)
+	rows, err := a.db.Query(`SELECT id,user_id FROM items WHERE trashed_at IS NOT NULL AND trashed_at < ?`, cutoff)
 	if err != nil {
 		return
 	}
-	var ids []string
+	var ids, users []string
 	for rows.Next() {
-		var id string
-		if rows.Scan(&id) == nil {
-			ids = append(ids, id)
+		var id, user string
+		if rows.Scan(&id, &user) == nil {
+			ids, users = append(ids, id), append(users, user)
 		}
 	}
 	rows.Close()
-	for _, id := range ids {
+	for i, id := range ids {
 		// the condition again: the item may have been restored from the trash since the select
 		res, err := a.db.Exec(`DELETE FROM items WHERE id=? AND trashed_at IS NOT NULL AND trashed_at < ?`, id, cutoff)
 		if rowsAffected(res, err) == 1 {
 			a.removeBlobs(id)
+			a.changed(users[i], tTrash)
 		}
 	}
 	if len(ids) > 0 {

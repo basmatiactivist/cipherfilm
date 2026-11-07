@@ -62,6 +62,12 @@ final class AppModel {
   let agent = Agent()
 
   private var refreshTimer: Timer?
+  @ObservationIgnored private var liveTask: Task<Void, Never>?
+  @ObservationIgnored private var liveFlush: Task<Void, Never>?
+  @ObservationIgnored private var liveBatch = LiveBatch()
+  @ObservationIgnored private var liveV: Int?
+  @ObservationIgnored private var liveLast = Date.distantPast
+  @ObservationIgnored private var liveTook: TimeInterval = 0
 
   private init() {}
 
@@ -175,8 +181,8 @@ final class AppModel {
       if let cached = vault!.loadCachedLibrary() { setItems(cached); images.prefetch(Array(cached.prefix(400)), vault!) }
       Task { await refresh() }
       restoreUploads()
-      refreshTimer?.invalidate()
-      refreshTimer = Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { _ in Task { @MainActor in await AppModel.shared.refresh(quiet: true) } }
+      every(120)
+      startLive(api, vault!)
       agent.unlocked()
     } else {
       phase = .locked
@@ -279,6 +285,7 @@ final class AppModel {
   /** Everything derived from the master key goes; "ended" also drops the encrypted cache's owner state. */
   private func wipe(ended: Bool) {
     refreshTimer?.invalidate(); refreshTimer = nil
+    liveTask?.cancel(); liveTask = nil; liveFlush?.cancel(); liveFlush = nil; _ = liveBatch.take(); liveV = nil
     search.stop(clear: true)
     exporter.stop()
     // after a lock the queue stays (saved in the account's folder) and goes on after the next unlock; once the session
@@ -349,13 +356,103 @@ final class AppModel {
     }
   }
 
-  func loadTrash() async {
+  /** The lists load again every so often: every two minutes besides the live updates, more often while those don't
+   *  get through. */
+  private func every(_ seconds: TimeInterval) {
+    if let t = refreshTimer, t.isValid, t.timeInterval == seconds { return }
+    refreshTimer?.invalidate()
+    refreshTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: true) { _ in Task { @MainActor in await AppModel.shared.refresh(quiet: true) } }
+  }
+
+  // ---- live updates (CipherfilmCore/Live.swift): what another device changed shows here within a second or two ----
+
+  /** A flag the watchdog and the stream share (both on the main actor). */
+  @MainActor private final class Attempt { var ready = false; var heldBack = false }
+
+  private func startLive(_ api: API, _ vault: Vault) {
+    liveTask?.cancel()
+    liveTask = Task { await self.runLive(api, vault) }
+  }
+
+  /** Keeps the stream open while this vault is unlocked: reconnects with backoff, after a probe that also notices a
+   *  session that ended; while something on the way holds the stream back (a proxy that buffers), the lists load every
+   *  15 seconds instead. */
+  private func runLive(_ api: API, _ vault: Vault) async {
+    var tries = 0, heldBack = 0
+    while !Task.isCancelled, self.vault === vault {
+      let at = Attempt()
+      let stream = Task { try await api.events { s in await self.live(s, at) } }
+      let watchdog = Task {
+        try? await Task.sleep(for: .seconds(10))
+        if !Task.isCancelled, !at.ready { at.heldBack = true; stream.cancel() }
+      }
+      _ = await withTaskCancellationHandler { await stream.result } onCancel: { stream.cancel() }
+      watchdog.cancel()
+      if Task.isCancelled || self.vault !== vault { return }
+      if at.ready { tries = 0; heldBack = 0 } else if at.heldBack { heldBack += 1 }
+      if heldBack >= 3 { every(15) }
+      while true {
+        try? await Task.sleep(for: .seconds(liveBackoff(tries)))
+        tries += 1
+        if Task.isCancelled || self.vault !== vault { return }
+        do { _ = try await api.json("GET", "/api/me/usage"); break } catch { continue }
+      }
+    }
+  }
+
+  private func live(_ s: LiveSignal, _ at: Attempt) -> Bool {
+    guard vault != nil else { return false }
+    switch s {
+    case .ready(let v):
+      at.ready = true
+      every(120)
+      // a stream that was gone a while may have missed pings (or the server restarted, with new counters)
+      if let old = liveV, old != v { liveSchedule(Set(LiveTopic.allCases)) }
+      liveV = v
+    case .changed(let v, let what):
+      liveV = v
+      liveSchedule(what)
+    case .bye: return false
+    case .heartbeat: break
+    }
+    return true
+  }
+
+  /** Loads what was pinged 0.3 s after the first ping (a burst arrives as one), never two at once, and at least 1.5 s
+   *  apart or twice as long as the last load took. */
+  private func liveSchedule(_ what: Set<LiveTopic>) {
+    liveBatch.add(what)
+    guard liveFlush == nil, !liveBatch.pending.isEmpty else { return }
+    let wait = max(0.3, liveLast.addingTimeInterval(max(1.5, 2 * liveTook)).timeIntervalSinceNow)
+    liveFlush = Task {
+      try? await Task.sleep(for: .seconds(wait))
+      if Task.isCancelled { return }
+      await self.liveApply()
+    }
+  }
+
+  private func liveApply() async {
+    let what = liveBatch.take()
+    let began = Date()
+    // this Mac's own uploads ping it too: the list loads once they are done (finish)
+    if !what.isDisjoint(with: [.items, .albums]) && uploading == 0 { await refresh(quiet: true) }
+    if what.contains(.trash) { await loadTrash(quiet: true) }
+    if what.contains(.people) { search.peopleChangedElsewhere() }
+    liveTook = Date().timeIntervalSince(began)
+    liveLast = Date()
+    liveFlush = nil
+    liveSchedule([])
+  }
+
+  func loadTrash() async { await loadTrash(quiet: false) }
+
+  private func loadTrash(quiet: Bool) async {
     guard let vault else { return }
     do {
       let t = try await vault.loadTrash()
       trash = t.items; retentionDays = t.retentionDays
     } catch {
-      loadError = error.localizedDescription
+      if !quiet { loadError = error.localizedDescription }
     }
   }
 

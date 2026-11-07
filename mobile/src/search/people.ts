@@ -134,6 +134,13 @@ let ver = 0;
 const subs = new Set<() => void>();
 const bump = () => { ver++; groupsAt = -1; subs.forEach((f) => f()); };
 
+/** Another device changed the people document (live.ts): it is read again when the groups are next needed. */
+export function peopleChanged() {
+  if (!loaded) return;
+  loaded = false;
+  bump();
+}
+
 /** The groups for the people list, worked out again when the index or the people document changed. */
 export async function peopleGroups(): Promise<Group[]> {
   const st = await loadSettings();

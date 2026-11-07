@@ -586,6 +586,12 @@ final class SearchEngine {
   private var allGroups: [Group] = []
   private var groupsAt = -1
 
+  /** Another device changed the people document (live updates): it is read again when the groups are next needed. */
+  func peopleChangedElsewhere() {
+    guard peopleLoaded else { return }
+    peopleLoaded = false; groupsAt = -1; version += 1
+  }
+
   func loadPeople() async throws {
     guard let v = runVault else { return }
     let r = try await People.load(v)

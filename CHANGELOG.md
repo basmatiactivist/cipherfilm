@@ -37,6 +37,14 @@ version into the GitHub release notes, so a release cannot be published without 
 
 - Web: albums no longer say "No albums yet" (and an album "no longer exists") while they are still loading, and
   favorites no longer say "No favorites yet" while the library loads.
+- Live updates: a photo uploaded on the phone shows in the web app and the Mac app within a second or two, without a
+  reload, and so do deletes, the trash, restores, favorites, albums and names of people. The server keeps a change
+  counter per account and pings that account's other devices over `GET /api/events` (Server-Sent Events) with only
+  the counter and which lists changed; they load those lists through the usual API. The Android app listens while it
+  is on screen and unlocked, never in the background. Streams end with their session (sign-out, signed out from
+  another device, password change, disabled or deleted account) and are limited per session, account and server.
+  Behind nginx, turn off buffering for `/api/events` (docs/SELF-HOSTING.md); a proxy that buffers it anyway makes the
+  apps load the lists every 15 seconds instead.
 
 ## [2.1.8] - 2026-11-07
 

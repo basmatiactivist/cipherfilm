@@ -158,6 +158,7 @@ func (a *App) adminPatchUser(w http.ResponseWriter, r *http.Request, u *user, s 
 		if *req.Status == "disabled" {
 			a.db.Exec(`DELETE FROM sessions WHERE user_id=?`, id)
 			a.revokeTickets(id)
+			a.live.recheck(id)
 		}
 	}
 	if req.QuotaBytes != nil {
@@ -208,6 +209,7 @@ func (a *App) adminDeleteUser(w http.ResponseWriter, r *http.Request, u *user, s
 	for _, it := range ids {
 		a.removeBlobs(it)
 	}
+	a.live.recheck(id)
 	a.audit(u.Email, "deleted", victim.Email, "")
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }

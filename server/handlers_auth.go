@@ -35,6 +35,7 @@ func (a *App) routes() http.Handler {
 	a.indexRoutes(m)
 	a.sessionRoutes(m)
 	a.thumbRoutes(m)
+	a.eventRoutes(m)
 	m.HandleFunc("GET /api/admin/users", a.auth(true, a.adminListUsers))
 	m.HandleFunc("DELETE /api/admin/invites/{id}", a.auth(true, a.adminRevokeInvite))
 	m.HandleFunc("PATCH /api/admin/settings", a.auth(true, a.adminPatchSettings))
@@ -232,6 +233,7 @@ func failBusy(w http.ResponseWriter) {
 
 func (a *App) logout(w http.ResponseWriter, r *http.Request, u *user, s *session) {
 	a.db.Exec(`DELETE FROM sessions WHERE id_hash=?`, s.IDHash)
+	a.live.recheck(u.ID) // its live-update streams end too
 	clearCookie(w)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
@@ -300,6 +302,7 @@ func (a *App) changePassword(w http.ResponseWriter, r *http.Request, u *user, s 
 	}
 	at.success()
 	a.revokeTickets(u.ID)
+	a.live.recheck(u.ID) // the other devices' live-update streams end with their sessions
 	if nu, err := a.userByID(u.ID); err == nil {
 		a.setDevice(w, nu) // the old device cookie is bound to the old password hash
 	}
@@ -381,6 +384,7 @@ func (a *App) deleteMe(w http.ResponseWriter, r *http.Request, u *user, s *sessi
 		a.removeBlobs(id)
 	}
 	a.revokeTickets(u.ID)
+	a.live.recheck(u.ID)
 	a.audit(u.Email, "deleted own account", u.Email, strconv.Itoa(len(ids))+" items")
 	clearCookie(w)
 	writeJSON(w, 200, map[string]bool{"ok": true})
@@ -569,6 +573,7 @@ func (a *App) recoverFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.revokeTickets(t.userID)
+	a.live.recheck(t.userID)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 

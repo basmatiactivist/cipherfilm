@@ -81,6 +81,7 @@ func (a *App) setFavorite(w http.ResponseWriter, r *http.Request, u *user, s *se
 		fail(w, 500, "server error")
 		return
 	}
+	a.changed(u.ID, tItems)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
@@ -148,6 +149,7 @@ func (a *App) putIndex(w http.ResponseWriter, r *http.Request, u *user, s *sessi
 		fail(w, 500, "server error")
 		return
 	}
+	a.changed(u.ID, tIndex)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
@@ -243,11 +245,13 @@ func (a *App) clearIndex(w http.ResponseWriter, r *http.Request, u *user, s *ses
 			return
 		}
 		a.db.Exec(`DELETE FROM item_index WHERE user_id=? AND model=?`, u.ID, fam)
+		a.changed(u.ID, tIndex)
 		writeJSON(w, 200, map[string]bool{"ok": true})
 		return
 	}
 	a.db.Exec(`DELETE FROM item_index WHERE user_id=?`, u.ID)
 	a.db.Exec(`DELETE FROM user_blobs WHERE user_id=? AND name='people'`, u.ID)
+	a.changed(u.ID, tIndex|tPeople)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
@@ -309,6 +313,7 @@ func (a *App) putUserBlob(w http.ResponseWriter, r *http.Request, u *user, s *se
 		fail(w, 409, "changed on another device")
 		return
 	}
+	a.changed(u.ID, tPeople)
 	writeJSON(w, 200, map[string]any{"version": req.Version + 1})
 }
 
@@ -319,6 +324,7 @@ func (a *App) deleteUserBlob(w http.ResponseWriter, r *http.Request, u *user, s 
 		return
 	}
 	a.db.Exec(`DELETE FROM user_blobs WHERE user_id=? AND name=?`, u.ID, name)
+	a.changed(u.ID, tPeople)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 

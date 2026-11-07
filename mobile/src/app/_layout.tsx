@@ -11,6 +11,8 @@ import { clearOutbox, tidyOutbox } from "../outbox";
 import { runBackup, scheduleBackground } from "../backup";
 import { startShake } from "../shake";
 import { startAutoLock } from "../autolock";
+import { liveUnlocked } from "../live";
+import { startLiveSync } from "../liveSync";
 
 const themes = { light: paperTheme(light, false), dark: paperTheme(dark, true) };
 // screens that show the library: none stays on screen while it is locked
@@ -19,13 +21,15 @@ const PRIVATE = new Set(["library", "albums", "album", "photo", "account", "tras
 export default function Root() {
   const theme = useColorScheme() === "dark" ? themes.dark : themes.light;
   useEffect(() => { SystemUI.setBackgroundColorAsync(theme.colors.background); }, [theme]);
-  useEffect(() => { clearOutbox(); start(); startShake(); startAutoLock(); scheduleBackground().catch(() => {}); runBackup("app").catch(() => {}); }, []);
+  useEffect(() => { clearOutbox(); start(); startShake(); startAutoLock(); startLiveSync(); scheduleBackground().catch(() => {}); runBackup("app").catch(() => {}); }, []);
   useEffect(() => {
     const sub = AppState.addEventListener("change", (s) => { if (s === "active") { tidyOutbox(); runBackup("app").catch(() => {}); } });
     return () => sub.remove();
   }, []);
   // nothing that shows the library stays on screen once it is locked or signed out
   const { phase } = useSession();
+  // what other devices change shows here while the app is on screen and unlocked (live.ts)
+  useEffect(() => { liveUnlocked(phase === "unlocked"); }, [phase]);
   const segments = useSegments();
   useEffect(() => {
     const top = segments[0] as string | undefined;

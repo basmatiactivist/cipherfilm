@@ -5,6 +5,27 @@ All notable changes to Cipherfilm are listed here. The format follows
 [Semantic Versioning](https://semver.org/). The release workflow copies the section of the tagged
 version into the GitHub release notes, so a release cannot be published without an entry here.
 
+## [Unreleased]
+
+### Changed
+- Deployment simplified: Cipherfilm only needs HTTPS in front. `compose.yaml` is the one production file; the app
+  listens on `127.0.0.1:8080` for any reverse proxy (Caddy, nginx, Traefik, a Cloudflare Tunnel, Tailscale Serve, …),
+  and `PUBLIC_HOSTS` is required. The one-file quickstart is the app only, too, with `PUBLIC_HOSTS` instead of
+  `DOMAIN`.
+- Backups: back up the data folder with your own tool after `/app backup`; `scripts/backup.sh` and
+  `scripts/restore.sh` stay. Any tool can report its result to Admin › Server with `/app backup-report`.
+
+### Removed
+- The bundled overlays `compose.tailscale.yaml`, `compose.proxy.yaml`, `compose.caddy.yaml`, `compose.domain.yaml` and
+  `compose.kopia.yaml`, their `deploy/` folders, `scripts/kopia-snapshot.sh`, `docs/BACKUP-KOPIA.md` and
+  `docs/OWN-DOMAIN.md`.
+
+**Existing installs:** the server works as before and your compose files keep working, but `git pull` deletes the
+removed ones, and the new `compose.yaml` doesn't combine with them. Either put your own proxy in front of
+`127.0.0.1:8080`, or keep running from a copy of the 2.1.7 files (`mkdir ../cf-2.1.7 && git archive v2.1.7 | tar -x -C ../cf-2.1.7`,
+with your `.env`; the volumes keep their names) and set `CIPHERFILM_IMAGE` to the new release. Quickstart installs:
+keep your file; the new one has no Caddy.
+
 ## [2.1.7] - 2026-11-07
 
 ### Fixed

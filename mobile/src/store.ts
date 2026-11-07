@@ -20,3 +20,6 @@ export function buildStore(): Store {
 export const isPlayBuild = () => buildStore() === "play";
 /** Whether this build may offer explicit search where an admin allowed it. */
 export const explicitSearchOffered = () => !isPlayBuild();
+
+/** The app's privacy policy (Google Play wants it reachable inside the app, before and after sign-in). */
+export const PRIVACY_URL = "https://cipherfilm.app/privacy";

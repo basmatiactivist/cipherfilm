@@ -2,7 +2,7 @@
 
 Researched 2026-11-05 against the official Play Console Help, Play policy and Android Developers pages linked in each section. Play rules change often, so check every date-bound item again in Play Console before submitting.
 
-**Status (2.1.3, 2026-11-06):** the app is in Play Console and in a **closed test** (track `alpha`, testers join
+**Status (2.1.8, 2026-11-07):** the app is in Play Console and in a **closed test** (track `alpha`, testers join
 through the Google Group `cipherfilm-testers`, then https://play.google.com/apps/testing/app.cipherfilm). Every
 release uploads the Play bundle to internal testing and the closed test by itself; production is the hand-started
 "Google Play promote" workflow (docs/RELEASING.md, "Google Play from CI"). Done in the code since this checklist was
@@ -10,7 +10,8 @@ written: the AAB build (`CF_STORE=play`, signed with the key Play takes for uplo
 and no explicit search in the Play build (checked by `mobile/scripts/check-play-manifest.sh`), `READ_EXTERNAL_STORAGE`
 up to Android 12, search indexing out of the foreground service, the prominent disclosure before the photo
 permission, limited photo access, account deletion (`DELETE /api/me`, Account › Delete account in every app), and
-the 16 KB page check of every build. Still open: the privacy-policy link inside the app, the production-access
+the 16 KB page check of every build, and the privacy-policy link inside the app (connect screen and Account, since
+2.1.8). The closed test runs with two Google Groups (`cipherfilm-testers`, `testers-community`). Still open: the production-access
 application after the closed test, and the items in §7 not marked done. The tables below keep the state they were
 researched in, with corrections where the code changed.
 
@@ -309,7 +310,7 @@ Sources: [App access](https://support.google.com/googleplay/android-developer/an
 7. **Done.** Move search indexing out of the dataSync FGS (plain WorkManager / foreground-only), or plan to declare it as *Local processing*.
 8. **Done.** An in-app **prominent disclosure** screen before the media permission and before enabling auto-backup. Request notifications at backup opt-in.
 9. **Done.** Make sure partial ("limited") photo access works and is explained.
-10. **Account deletion (done):** server `DELETE /api/me` with re-authentication, plus "Delete account" in the mobile Account screen and the web app. Still open: a privacy-policy link in the app (sign-in and Account screens).
+10. **Account deletion (done):** server `DELETE /api/me` with re-authentication, plus "Delete account" in the mobile Account screen and the web app. The privacy-policy link is in the app since 2.1.8 (connect screen and Account).
 11. Verify 16 KB alignment of every `.so` (script plus 16 KB emulator; **done** in CI: `mobile/scripts/check-page-size.sh`). Fix the NDK/linker flags if any library is unaligned. Fix the pre-release versionCode mapping.
 12. Test the tablet/landscape layout (Android 16 ignores portrait lock on large screens), or add the temporary opt-out property.
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AppState, ScrollView, StyleSheet, View } from "react-native";
+import { AppState, Linking, ScrollView, StyleSheet, View } from "react-native";
 import { router } from "expo-router";
 import { Appbar, Button, Dialog, Divider, List, Portal, ProgressBar, RadioButton, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -11,7 +11,8 @@ import { clearImages } from "../library";
 import { Icon } from "../icons";
 import { Field, Problem, SwitchItem, useAppTheme } from "../ui";
 import { setShake, useShake } from "../shake";
-import { CHOICES, away, setAutoLock, useAutoLock } from "../autolock";
+import { CHOICES, away, expectAway, setAutoLock, useAutoLock } from "../autolock";
+import { PRIVACY_URL } from "../store";
 import { text } from "../tokens";
 
 const gb = (n: number) => (n < 1e9 ? `${Math.max(n > 0 ? 0.1 : 0, n / 1e6).toFixed(1)} MB` : `${(n / 1e9).toFixed(n < 1e10 ? 2 : 1)} GB`);
@@ -128,6 +129,8 @@ export default function Account() {
         <List.Subheader>About</List.Subheader>
         <List.Item title="App version" description={app ?? "Unknown"} style={st.item} />
         <List.Item title="Server version" description={serverVersion ?? "Unknown"} style={st.item} />
+        <List.Item title="Privacy policy" description="cipherfilm.app/privacy"
+          onPress={() => { expectAway(); Linking.openURL(PRIVACY_URL); }} style={st.item} />
       </ScrollView>
       <Portal>
         <Dialog visible={pickLock} onDismiss={() => setPickLock(false)}>

@@ -62,6 +62,8 @@ It deletes everything it made in `CF_TEST_DIR` (an export there is a copy of the
 the end of a run, keeping only `upload/`; `CF_KEEP=1` keeps the last run's files. Keep `upload/` to a few small files.
 With `CF_TEST_EXPLICIT=1` it also allows the test account explicit search (it is the test server's admin), turns it
 on, waits for the LAION index, searches, and turns it off again.
+With `CF_LIVE_EXPECT=N` it prints `CFTEST LIVE READY` after the library loads and waits for N photos that another
+device (for example `cipherfilm-upload`) uploads then to appear without a refresh.
 
 LAION ViT-B/32 vectors against the Python reference (`pip install onnxruntime==1.31.1 numpy pillow`):
 

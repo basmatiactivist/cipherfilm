@@ -78,6 +78,16 @@ enum DebugDriver {
     snapshot("02-library")
     if env["CF_SHOTS"] == "1" { await shots(); return }
 
+    // ---- live updates: CF_LIVE_EXPECT photos uploaded by another device (a script that waits for LIVE READY) show
+    // up without this Mac refreshing ----
+    if let n = env["CF_LIVE_EXPECT"].flatMap(Int.init) {
+      let before = m.items.count
+      log("LIVE READY \(before)")
+      let t0 = Date()
+      let ok = await wait("live update", timeout: 120) { m.items.count >= before + n }
+      check(ok, "\(n) photos uploaded elsewhere appear by themselves (\(m.items.count - before) after \(String(format: "%.1f", Date().timeIntervalSince(t0))) s)")
+    }
+
     // ---- upload (drag and drop and the file picker both end in model.upload) ----
     let stamp = Int(Date().timeIntervalSince1970)
     if let dir = env["CF_TEST_DIR"] {

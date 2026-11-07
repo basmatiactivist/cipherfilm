@@ -1,11 +1,12 @@
 import { useSyncExternalStore } from "react";
-import { loadCachedLibrary, loadLibrary, prefetchThumbs, pruneCache, type Item } from "./library";
+import { forgetLists, loadCachedLibrary, loadLibrary, prefetchThumbs, pruneCache, type Item } from "./library";
 import { onWipe, session } from "./session";
 import { rememberLibrary } from "./backup";
 import { startSearch, warmSearch } from "./search/engine";
 import { api } from "./api";
 
-// One copy of the decrypted list for the library and the viewer; reloaded after uploads.
+// One copy of the decrypted list for the library and the viewer; brought up to date after uploads and live updates
+// (only what changed: library.ts).
 let items: Item[] | null = null;
 let error: string | undefined;
 let loading = false; // shown: the pull-to-refresh spinner
@@ -26,6 +27,20 @@ let gen = 0;
 
 /** Loads the server's list; quiet: for live updates (live.ts), without the spinner and without an error banner (the
  *  list on screen stays as it is if the load fails). */
+/** The follow-ups of a new list (thumbnails ahead, cache pruning, backup bookkeeping, search) each go over the whole
+ *  library. After a load the person asked for they run at once; after live updates once the changes have been quiet
+ *  for 5 seconds, and at least every 30 (a backup elsewhere sends a change per photo). */
+let followTimer: ReturnType<typeof setTimeout> | null = null;
+let followSince = 0;
+function afterChange(quiet: boolean, run: () => void) {
+  if (followTimer) clearTimeout(followTimer);
+  followTimer = null;
+  if (!quiet) { followSince = 0; run(); return; }
+  if (!followSince) followSince = Date.now();
+  const wait = Math.max(0, Math.min(5000, followSince + 30_000 - Date.now()));
+  followTimer = setTimeout(() => { followTimer = null; followSince = 0; run(); }, wait);
+}
+
 export async function refreshLibrary(opts?: { quiet?: boolean }) {
   const quiet = opts?.quiet === true;
   if (busy) { again = true; if (!quiet && !loading) { loading = true; emit(); } return; }
@@ -43,20 +58,27 @@ export async function refreshLibrary(opts?: { quiet?: boolean }) {
       // (not shown: its item keys are shared with the decrypted list, library.ts, and go with it at the next lock)
     }
     const list = await loadLibrary();
-    // the session may have locked or changed while the list was loading: then it is not shown, and its keys go
-    if (!current()) { list.forEach((i) => i.itemKey?.fill(0)); return; }
+    // the session may have locked or changed while the list was loading: then it is not shown, and its keys go (with
+    // the lists that share them)
+    if (!current()) { list.forEach((i) => i.itemKey?.fill(0)); forgetLists(); return; }
+    const same = list === items; // a live update that found nothing new: nothing to redo
     items = list;
     owner = forUser;
     error = undefined;
     loadedAt = Date.now();
-    prefetchThumbs(list);
-    setTimeout(() => pruneCache(new Set(list.map((i) => i.id))), 2000);
-    // the rest waits until the grid is on screen and scrolling: both read the whole list on the JS thread
-    setTimeout(() => {
+    if (same) return;
+    afterChange(quiet, () => {
       if (!current()) return;
-      rememberLibrary(forUser, list).catch(() => {}); // the backup skips what is already here
-      startSearch(list).catch(() => {}); // search: the index for what is new
-    }, 1500);
+      const now = items ?? list; // the newest list when a later change replaced it meanwhile
+      prefetchThumbs(now);
+      setTimeout(() => current() && pruneCache(new Set(now.map((i) => i.id))), 2000);
+      // the rest waits until the grid is on screen and scrolling: both read the whole list on the JS thread
+      setTimeout(() => {
+        if (!current()) return;
+        rememberLibrary(forUser, now).catch(() => {}); // the backup skips what is already here
+        startSearch(now).catch(() => {}); // search: the index for what is new
+      }, 1500);
+    });
   } catch (e) {
     if (current() && !quiet) error = e instanceof Error ? e.message : "Couldn't load your photos.";
   } finally {
@@ -72,6 +94,9 @@ export const libraryLoaded = () => busy || (items !== null && owner === session(
 
 export function forgetLibrary() {
   items?.forEach((i) => i.itemKey?.fill(0)); // the unwrapped item keys leave memory with the list
+  forgetLists(); // which shares them with the lists kept current by live updates (library.ts)
+  if (followTimer) clearTimeout(followTimer);
+  followTimer = null; followSince = 0;
   items = null; owner = ""; error = undefined; loadedAt = 0; loading = false; busy = false; again = false; gen++; emit();
 }
 

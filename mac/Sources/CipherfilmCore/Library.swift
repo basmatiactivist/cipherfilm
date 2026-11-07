@@ -72,8 +72,6 @@ struct RawItem: Codable, Sendable {
   let purge_at: Double?
 }
 
-private struct Page: Decodable { let items: [RawItem]; let next: String?; let retention_days: Int? }
-
 public struct Album: Identifiable, Sendable, Hashable {
   public let id: String
   public var name: String
@@ -126,6 +124,7 @@ public final class Vault: @unchecked Sendable {
       if master != nil { Sodium.memzero(&master!) }
       if pairCache != nil { Sodium.memzero(&pairCache!.sk) }
       master = nil; pairCache = nil
+      listWrite?.cancel(); listWrite = nil
     }
   }
 
@@ -203,41 +202,67 @@ public final class Vault: @unchecked Sendable {
     return v
   }
 
-  private func pages(_ path: String) async throws -> ([RawItem], Int?) {
-    var raw: [RawItem] = []
-    var next = ""
-    var days: Int?
-    var pages = 0
-    repeat {
-      let q = next.isEmpty ? "" : "?after=" + (next.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? next)
-      let p = try JSONDecoder().decode(Page.self, from: try await api.json("GET", path + q))
-      raw += p.items
-      days = p.retention_days ?? days
-      pages += 1
-      guard pages <= Self.maxListPages, raw.count <= Self.maxListItems, p.next != next || next.isEmpty else { throw APIError(status: -1, message: "The server's list doesn't end.") }
-      next = p.next ?? ""
-    } while !next.isEmpty
-    return (raw, days)
+  // ---- the lists, kept current with ?since (ListSync.swift) ----
+
+  public let librarySync = ListSync(path: "/api/items", order: { $0.when > $1.when })
+  public let trashSync = ListSync(path: "/api/trash", order: { ($0.trashedAt ?? 0) > ($1.trashedAt ?? 0) })
+  /** the cached list read at unlock, handed to librarySync by the first load */
+  private var pendingSeed: (items: [Item], records: [RawItem], cursor: String?, wholeAt: TimeInterval)?
+  /** the list.json write waiting for changes to settle (a burst of uploads would otherwise rewrite it each time) */
+  private var listWrite: Task<Void, Never>?
+
+  /** What list.json holds: the server's records and the cursor they are current to (before incremental lists, the
+   *  records alone). */
+  private struct KeptList: Codable { let cursor: String?; var wholeAt: TimeInterval?; let items: [RawItem] }
+
+  private func load(_ sync: ListSync) async throws -> ListSync.Loaded {
+    _ = try masterKey()
+    if sync === librarySync, let s = lock.withLock({ defer { pendingSeed = nil }; return pendingSeed }) {
+      await sync.seed(s.items, records: s.records, cursor: s.cursor, wholeAt: s.wholeAt)
+    }
+    return try await sync.load(get: { [api] in try await api.json("GET", $0) }, decrypt: { [self] in try self.decrypt($0) })
+  }
+
+  /** The library, newest capture first: after the first load only what changed is fetched and decrypted. The cache
+   *  keeps the records with their cursor, written when something changed. */
+  public func syncLibrary() async throws -> ListSync.Loaded {
+    let r = try await load(librarySync)
+    if r.changed { keepList(now: r.full) }
+    return r
+  }
+
+  /** Writes list.json: at once after a whole load, otherwise once changes have been quiet for 5 seconds (the list can be
+   *  a few MB; a ping per upload would rewrite it each time). Records and cursor are taken together when it writes, so
+   *  the file always holds a matching pair. A lock cancels a waiting write: the older file still matches its cursor. */
+  private func keepList(now: Bool) {
+    let sync = librarySync
+    let t = Task { [weak self] in
+      if !now { try? await Task.sleep(nanoseconds: 5_000_000_000) }
+      guard !Task.isCancelled, let self else { return }
+      let (records, cursor, wholeAt) = await sync.kept()
+      guard let d = try? JSONEncoder().encode(KeptList(cursor: cursor, wholeAt: wholeAt, items: records)) else { return }
+      self.lock.withLock { if !Task.isCancelled, self.master != nil { self.keep("list.json", d) } }
+    }
+    lock.withLock { listWrite?.cancel(); listWrite = t }
   }
 
   /** The whole library, newest capture first. */
-  public func loadLibrary() async throws -> [Item] {
-    _ = try masterKey()
-    let (raw, _) = try await pages("/api/items")
-    if let d = try? JSONEncoder().encode(raw) { keep("list.json", d) }
-    return try decrypt(raw)
-  }
+  public func loadLibrary() async throws -> [Item] { try await syncLibrary().items }
 
-  /** The list as it was last loaded, shown at once while the current one loads. */
+  /** The list as it was last loaded, shown at once while the current one loads; with its cursor, the load after it
+   *  asks only for what changed since. */
   public func loadCachedLibrary() -> [Item]? {
-    guard let d = cached("list.json"), let raw = try? JSONDecoder().decode([RawItem].self, from: d) else { return nil }
-    return try? decrypt(raw)
+    guard let d = cached("list.json") else { return nil }
+    let kept = (try? JSONDecoder().decode(KeptList.self, from: d)) ?? (try? JSONDecoder().decode([RawItem].self, from: d)).map { KeptList(cursor: nil, wholeAt: nil, items: $0) }
+    guard let kept, let items = try? decrypt(kept.items) else { return nil }
+    lock.withLock { pendingSeed = (items, kept.items, kept.cursor, kept.wholeAt ?? 0) }
+    return items
   }
 
   /** The trash, most recently trashed first, and how long the server keeps it. */
   public func loadTrash() async throws -> (items: [Item], retentionDays: Int) {
-    let (raw, days) = try await pages("/api/trash")
-    return (try decrypt(raw).sorted { ($0.trashedAt ?? 0) > ($1.trashedAt ?? 0) }, days ?? 30)
+    let r = try await load(trashSync)
+    return (r.items, r.retentionDays ?? 30)
   }
 
   /** Drops cached images of items that are gone, and all but the newest 600 previews. */

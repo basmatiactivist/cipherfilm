@@ -13,6 +13,7 @@ import N from "../modules/cf-native/src/CfNativeModule";
 import { api, csrfToken, getBytes, postForBytes, server } from "./api";
 import { onWipe, session } from "./session";
 import { ThumbBatcher } from "./thumbbatch";
+import { ListSync, type Page } from "./sync";
 
 export interface ItemMeta {
   name: string; mime: string; size: number; lastModified: number; capture_ts: number;
@@ -76,18 +77,28 @@ async function keep(f: File, bytes: Uint8Array | string) {
   } catch { /* only a cache */ }
 }
 
-async function decryptAll(raw: any[]): Promise<Item[]> {
-  const s = await getSodium();
+let sodium: Sodium | undefined;
+
+/** Decrypts records (only what is new or changed: known); the sodium instance is loaded before (loadLibrary). */
+function decryptSome(raw: any[]): Item[] {
+  const s = sodium!;
   const { masterKey: master, me } = session();
   if (!master || !me) throw new Error("Unlock your library first.");
   // photos from the background backup carry keys sealed to the account's key pair; it is opened only if needed
   let kp: KeyPair | undefined;
   const pair = () => (kp ??= accountKeyPair(s, unb64(s, me.wrapped_privkey), master, normEmail(me.user.email)));
-  const out = raw.map((x) => decrypt(s, master, pair, x)).sort((a, b) => when(b) - when(a));
+  const out = raw.map((x) => decrypt(s, master, pair, x)).sort(newest);
   if (kp) s.memzero(kp.sk);
   giveThumbKeys(out);
   return out;
 }
+
+async function decryptAll(raw: any[]): Promise<Item[]> {
+  sodium = await getSodium();
+  return decryptSome(raw);
+}
+
+const newest = (a: Item, b: Item) => when(b) - when(a);
 
 /** The native thumbnails get the keys of what has one (it keeps only their thumbnail subkeys, until the next lock). */
 function giveThumbKeys(items: Item[]) {
@@ -100,41 +111,90 @@ function giveThumbKeys(items: Item[]) {
   keys.fill(0);
 }
 
+// ---- the lists, kept current with ?since (sync.ts): after the first whole list, a live update fetches and decrypts
+// only what changed ----
+
+// the server's records of the library as last loaded, by id: what list.json keeps, with the cursor they are current to
+let records = new Map<string, any>();
+let dirty = false;
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+const library = new ListSync<Item>({
+  path: "/api/items", get: (p) => api<Page>("GET", p), decrypt: decryptSome, order: newest,
+  onPage: (raw, removed, full) => {
+    if (full) records = new Map();
+    for (const id of removed) records.delete(id);
+    for (const x of raw) records.set(x.id, x);
+    dirty ||= full || raw.length > 0 || removed.length > 0;
+  },
+});
+const trash = new ListSync<Item>({
+  path: "/api/trash", get: (p) => api<Page>("GET", p), decrypt: decryptSome,
+  order: (a, b) => (b.trashed_at ?? 0) - (a.trashed_at ?? 0),
+});
+
+/** Drops both lists and their cursors (every lock and sign-out, and with the list on screen): the item keys they share
+ *  with it are zeroed then. */
+export function forgetLists() {
+  library.forget(); trash.forget();
+  records = new Map(); dirty = false;
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = null;
+}
+
+/** list.json: the records and the cursor they belong to, written together so the next start asks only for what
+ *  changed after them. After a whole list at once; after changes at most every few seconds (a backup of hundreds of
+ *  photos pings every second or two, and the file holds the whole library). */
+function saveList(now: boolean) {
+  if (!dirty) return;
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = null;
+  const write = () => {
+    saveTimer = null;
+    const dir = userDir();
+    if (!dir || !dirty) return;
+    dirty = false;
+    keep(new File(dir, "list.json"), JSON.stringify({ cursor: library.at, wholeAt: library.wholeAt, items: [...records.values()] })).catch(() => {});
+  };
+  if (now) write(); else saveTimer = setTimeout(write, 5000);
+}
+
 /** The trash, newest first; the server deletes each item permanently at its purge_at. */
 export async function loadTrash(): Promise<{ items: Item[]; retentionDays: number }> {
-  const raw: any[] = [];
-  let next = "", days = 30;
-  do {
-    const page = await api<{ items: any[]; next?: string; retention_days: number }>("GET", "/api/trash" + (next ? `?after=${encodeURIComponent(next)}` : ""));
-    raw.push(...page.items);
-    days = page.retention_days ?? days;
-    next = page.next ?? "";
-  } while (next);
-  const items = await decryptAll(raw);
-  return { items: items.sort((a, b) => (b.trashed_at ?? 0) - (a.trashed_at ?? 0)), retentionDays: days };
+  sodium = await getSodium();
+  const r = await trash.load();
+  return { items: r.items, retentionDays: (r.extra.retention_days as number) ?? 30 };
 }
 
-/** The whole library, newest capture first, following the server's pages. */
+/** The whole library, newest capture first; after the first load only what changed. The same array comes back when
+ *  nothing changed. */
 export async function loadLibrary(): Promise<Item[]> {
   if (!session().masterKey) throw new Error("Unlock your library first.");
-  const raw: any[] = [];
-  let next = "";
-  do {
-    const page = await api<{ items: any[]; next?: string }>("GET", "/api/items" + (next ? `?after=${encodeURIComponent(next)}` : ""));
-    raw.push(...page.items);
-    next = page.next ?? "";
-  } while (next);
-  const dir = userDir();
-  if (dir) await keep(new File(dir, "list.json"), JSON.stringify(raw));
-  return decryptAll(raw);
+  sodium = await getSodium();
+  const r = await library.load();
+  saveList(r.full);
+  return r.items;
 }
 
-/** The list as it was last loaded, shown at once while the current one loads. */
+/** The list as it was last loaded, shown at once while the current one loads; with its cursor, the load after it
+ *  fetches only what changed since. */
 export async function loadCachedLibrary(): Promise<Item[] | null> {
   const dir = userDir();
   const f = dir && new File(dir, "list.json");
   if (!f?.exists) return null;
-  try { return await decryptAll(JSON.parse(await f.text())); } catch { return null; }
+  try {
+    const kept = JSON.parse(await f.text());
+    // before incremental lists the file held only the records
+    const raw: any[] = Array.isArray(kept) ? kept : kept.items;
+    const cursor = !Array.isArray(kept) && typeof kept.cursor === "string" ? kept.cursor : undefined;
+    const wholeAt = !Array.isArray(kept) && typeof kept.wholeAt === "number" ? kept.wholeAt : 0;
+    const items = await decryptAll(raw);
+    if (!library.current) {
+      records = new Map(raw.map((x) => [x.id, x]));
+      library.seed(items, cursor, wholeAt);
+    }
+    return items;
+  } catch { return null; }
 }
 
 /** Drops cached images of items that are gone, and all but the newest previews. */
@@ -238,7 +298,7 @@ export function prefetchThumbs(items: Item[]) {
 }
 export function clearImages() { previews.clear(); inflight.clear(); N.thumbsClearImages(); }
 
-onWipe(() => { known = new Map(); });
+onWipe(() => { known = new Map(); forgetLists(); });
 
 onWipe((how) => {
   clearImages();

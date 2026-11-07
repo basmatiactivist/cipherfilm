@@ -25,7 +25,7 @@ async function slow<T>(v: T): Promise<T> {
 vi.mock("./library", () => ({
   loadCachedLibrary: async () => null,
   loadLibrary: () => slow([{ id: "a" }]),
-  prefetchThumbs: () => {}, pruneCache: () => {},
+  prefetchThumbs: () => {}, pruneCache: () => {}, forgetLists: () => {},
 }));
 vi.mock("./albums", () => ({ loadAlbums: () => slow([{ id: "x", name: "Trip", itemIds: [] }]) }));
 vi.mock("./backup", () => ({ rememberLibrary: async () => {} }));

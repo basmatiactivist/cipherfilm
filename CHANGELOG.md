@@ -47,6 +47,19 @@ version into the GitHub release notes, so a release cannot be published without 
   another device, password change, disabled or deleted account) and are limited per session, account and server.
   Behind nginx, turn off buffering for `/api/events` (docs/SELF-HOSTING.md); a proxy that buffers it anyway makes the
   apps load the lists every 15 seconds instead.
+- Live updates load only what changed. Before, every ping made each device fetch the whole library again (and the
+  Mac decrypt all of it); during a 200-photo backup from the phone that was the whole list every second or two. Now
+  `GET /api/items?since=<cursor>` (and `/api/trash?since=`) answers with the records created or changed after the
+  cursor, the ids of those that left the list, and the next cursor, page by page; the apps fetch and decrypt only
+  those and merge them by id. The whole lists hand out the cursor with their first page; `?after` paging and the whole
+  list work as before for older apps, and newer apps fall back to them against an older server. Measured with 3,000
+  synthetic items: the whole list is about 2.1 MB in two requests; one favorite on another device is 0.8 kB with one
+  record; 200 new photos are 81 kB with 200 records. Android also keeps the cursor with its cached list, so the next
+  start asks only for what changed; the Mac does the same after unlocking.
+  The server numbers every change per account (`items.rev`, `users.items_rev`, set by database triggers in the
+  change's own transaction) and keeps a tombstone for each deleted item for 30 days. A cursor older than the kept
+  tombstones, from before a restore (`restore.sh` starts a new epoch), or otherwise unknown, gets `"reset": true` and
+  the app loads the whole list once. The migration runs at the first start; nothing to do.
 
 ## [2.1.8] - 2026-11-07
 

@@ -5,6 +5,7 @@ import { accountKeyPair, decryptMeta, encryptMeta, encryptPreview, encryptThumb,
 import { normEmail } from "./crypto/account";
 import { decodeImage, decodeVideoFrame, ItemMeta, kindOf, PREVIEW_PX, readMeta, THUMB_PX, thumbsInWorker, toJpeg } from "./media";
 import { mem } from "./state";
+import { ListSync, type Page } from "./sync";
 
 export interface Item {
   id: string;
@@ -34,6 +35,8 @@ let known = new Map<string, { wrapped: string; meta: string; master: Uint8Array;
 export function forgetDecrypted() {
   for (const k of known.values()) k.item.itemKey?.fill(0);
   known = new Map();
+  // the lists hold the same items (and keys): the next load is a whole one
+  library.forget(); trash.forget();
 }
 
 /** Decrypted metadata comes from whichever client uploaded the item: fields the app relies on get the expected type
@@ -73,31 +76,27 @@ function decryptRecords(s: Sodium, raw: any[]): Item[] {
     return it;
   });
   if (pair) s.memzero(pair.sk);
-  items.sort((a, b) => (b.meta?.capture_ts ?? b.created_at * 1000) - (a.meta?.capture_ts ?? a.created_at * 1000));
-  return items;
+  return items.sort(byCapture);
 }
 
-/** The server sends a list page by page; this follows its `next` cursor to the end. */
-async function allPages<T extends { items: any[]; next?: string }>(path: string): Promise<T> {
-  const first = await api<T>("GET", path);
-  for (let next = first.next; next; ) {
-    const page = await api<T>("GET", `${path}?after=${encodeURIComponent(next)}`);
-    first.items.push(...page.items);
-    next = page.next;
-  }
-  return first;
-}
+const byCapture = (a: Item, b: Item) => (b.meta?.capture_ts ?? b.created_at * 1000) - (a.meta?.capture_ts ?? a.created_at * 1000);
 
+// the library and the trash, each kept current with ?since (sync.ts); the sodium instance is loaded before the first
+let sodium: Sodium | undefined;
+const listSync = (path: string) => new ListSync<Item>({ path, get: (p) => api<Page>("GET", p), decrypt: (raw) => decryptRecords(sodium!, raw), order: byCapture });
+const library = listSync("/api/items"), trash = listSync("/api/trash");
+
+/** The library, newest capture first: after the first load only what changed is fetched and decrypted. */
 export async function loadItems(): Promise<{ items: Item[]; quotaLeft: number; unlimited: boolean }> {
-  const s = await getSodium();
-  const r = await allPages<{ items: any[]; next?: string; quota_left: number; unlimited: boolean }>("/api/items");
-  return { items: decryptRecords(s, r.items), quotaLeft: r.quota_left, unlimited: r.unlimited };
+  sodium = await getSodium();
+  const r = await library.load();
+  return { items: r.items, quotaLeft: r.extra.quota_left as number, unlimited: r.extra.unlimited as boolean };
 }
 
 export async function loadTrash(): Promise<{ items: Item[]; retentionDays: number }> {
-  const s = await getSodium();
-  const r = await allPages<{ items: any[]; next?: string; retention_days: number }>("/api/trash");
-  return { items: decryptRecords(s, r.items), retentionDays: r.retention_days };
+  sodium = await getSodium();
+  const r = await trash.load();
+  return { items: r.items, retentionDays: (r.extra.retention_days as number) ?? 30 };
 }
 
 /** The server takes at most 500 ids per request: a bigger selection (Select all on a large library) goes in batches. */

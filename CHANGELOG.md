@@ -5,6 +5,14 @@ All notable changes to Cipherfilm are listed here. The format follows
 [Semantic Versioning](https://semver.org/). The release workflow copies the section of the tagged
 version into the GitHub release notes, so a release cannot be published without an entry here.
 
+## [Unreleased]
+
+### Changed
+- Android: automatic backup uploads three files at once, and checks which account the session belongs to every few
+  files instead of before and after each one, so many small photos wait far less on a slow link. A folder's place
+  still moves only past files that are done, and nothing counts as backed up before a check confirms it went to the
+  right account.
+
 ## [2.1.8] - 2026-11-07
 
 Simpler self-hosting, and the privacy policy inside the Android app.

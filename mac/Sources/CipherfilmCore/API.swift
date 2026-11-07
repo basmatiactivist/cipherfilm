@@ -93,6 +93,22 @@ public final class API: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     c.httpMaximumConnectionsPerHost = 8
     return URLSession(configuration: c, delegate: self, delegateQueue: nil)
   }()
+  /** The live-update stream's own: no overall time limit (it stays open while the app runs, which the other session's
+   *  ten minutes would end), and a connection that sends nothing for 70 s (the server's heartbeat comes every 25)
+   *  counts as dropped. Same cookies and device name. */
+  private lazy var eventSession: URLSession = {
+    let c = URLSessionConfiguration.default
+    c.httpAdditionalHeaders = ["X-CF-Device": Self.device]
+    c.httpCookieStorage = cookies
+    c.httpShouldSetCookies = true
+    c.httpCookieAcceptPolicy = .always
+    c.urlCache = nil
+    c.requestCachePolicy = .reloadIgnoringLocalCacheData
+    c.timeoutIntervalForRequest = 70
+    c.timeoutIntervalForResource = 7 * 24 * 3600
+    return URLSession(configuration: c, delegate: self, delegateQueue: nil)
+  }()
+  private var eventsUsed = false
 
   /** cookies: another store than the app's makes a separate signed-in device (the debug driver's second device). */
   public init(base: URL, cookies: HTTPCookieStorage = .shared) { self.base = base; self.cookies = cookies }
@@ -344,7 +360,34 @@ public final class API: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     for c in store.cookies(for: base) ?? [] { store.deleteCookie(c) }
   }
 
-  public func invalidate() { session.invalidateAndCancel() }
+  public func invalidate() {
+    session.invalidateAndCancel()
+    if lock.withLock({ eventsUsed }) { eventSession.invalidateAndCancel() }
+  }
+
+  /** Reads the live-update stream (Live.swift) until the server ends it, the task is cancelled or `handle` returns
+   *  false. Throws when it can't be opened or drops; a 401 ends the session as with any other request. */
+  public func events(_ handle: @Sendable (LiveSignal) async -> Bool) async throws {
+    var r = URLRequest(url: url("/api/events"), timeoutInterval: 70)
+    r.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+    lock.withLock { eventsUsed = true }
+    let bytes: URLSession.AsyncBytes, resp: URLResponse
+    do {
+      (bytes, resp) = try await eventSession.bytes(for: r)
+    } catch {
+      if error is CancellationError || Task.isCancelled { throw CancellationError() }
+      throw APIError(status: 0, message: APIError.offline)
+    }
+    guard let h = resp as? HTTPURLResponse else { throw APIError(status: 0, message: APIError.offline) }
+    guard h.statusCode == 200 else {
+      ended(h, "/api/events")
+      throw APIError(status: h.statusCode, message: "The server didn't open the live updates (\(h.statusCode)).")
+    }
+    var parser = SSEParser()
+    for try await b in bytes {
+      if let e = parser.feed(b), let s = LiveSignal(e), !(await handle(s)) { return }
+    }
+  }
 
   // ---- TLS: the system's trust, plus (debug builds only) a test CA for the local test server ----
 

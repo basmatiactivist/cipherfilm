@@ -125,7 +125,7 @@ func main() {
 				log.Fatal(err)
 			}
 			return
-		case "backup-report": // the nightly off-site backup reports its outcome for Admin > Server
+		case "backup-report": // the operator's backup tool reports its outcome for Admin > Server
 			if err := runBackupReport(dataDir, os.Args[2:]); err != nil {
 				log.Fatal(err)
 			}

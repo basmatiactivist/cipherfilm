@@ -12,7 +12,7 @@ as "server console".
 
 | Command | What it does |
 |---|---|
-| `status` | Version, accounts, photos and videos, storage used, signed-in devices, last database snapshot and off-site backup. |
+| `status` | Version, accounts, photos and videos, storage used, signed-in devices, last database snapshot and what your backup tool last reported. |
 | `list-users` | Every account: role, status, photos, storage used and limit, explicit search, last sign-in. |
 | `make-admin EMAIL` | Makes the account an administrator (administrators have no storage limit). |
 | `revoke-admin EMAIL` | Makes an administrator an ordinary user again, with the default storage limit. One active administrator must remain. |
@@ -26,6 +26,7 @@ as "server console".
 | `invite EMAIL [--quota GB] [--url URL]` | Makes an invite link, valid for 7 days. `--url` is your Cipherfilm address; without it the server uses `PUBLIC_HOSTS`, or prints the path to put after your address. |
 | `reset-password EMAIL` | Explains why this isn't possible, and what to do instead (below). |
 | `backup` | Writes a consistent snapshot of the database to `/data/backup` (before an update). |
+| `backup-report ok` / `backup-report failed snapshot\|upload` | Records your backup tool's result, shown under Admin › Server: a warning when the last run failed or none succeeded for 36 hours. Only these fixed words are stored. |
 | `check` | Checks the database and that every stored file is there. |
 | `revoke-sessions` | Signs out every device of every account (after restoring an older backup). |
 | `version` | Prints the version. |

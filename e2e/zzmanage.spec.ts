@@ -172,7 +172,7 @@ test.describe.serial("manage", () => {
     await page.getByRole("button", { name: "Server" }).click();
     await expect(page.getByRole("heading", { name: "Server", level: 2 })).toBeVisible();
     await expect(page.getByText("Disk free")).toBeVisible();
-    await expect(page.getByText(/Not set up\. Nightly off-site backups/)).toBeVisible(); // nothing reported on this stack
+    await expect(page.getByText(/Nothing reported\. Your backup tool can report/)).toBeVisible(); // nothing reported on this stack
     await page.getByRole("button", { name: "Defaults" }).click();
     await expect(page.getByRole("heading", { name: "Default storage limit" })).toBeVisible();
     await page.getByRole("button", { name: "Users" }).click();
@@ -197,7 +197,7 @@ test.describe.serial("manage", () => {
   test("a failed off-site backup is a warning on every admin page", async ({ browser }) => {
     const { ctx, page } = await newPage(browser);
     await signIn(page, ADMIN, ADMIN_PW);
-    // what the server reports after the nightly run wrote "backup-report failed upload"
+    // what the server reports after a backup tool ran "backup-report failed upload"
     const now = Math.floor(Date.now() / 1000);
     await page.route("**/api/admin/status", async (r) => {
       const res = await r.fetch();
@@ -205,7 +205,7 @@ test.describe.serial("manage", () => {
     });
     await openMenuItem(page, "Admin");
     await expect(page.getByRole("alert")).toContainText("The last off-site backup failed");
-    await expect(page.getByRole("alert")).toContainText("Kopia couldn't save to the backup target");
+    await expect(page.getByRole("alert")).toContainText("the backup tool couldn't save to the backup target");
     await page.getByRole("button", { name: "Server" }).click();
     await expect(page.locator(".facts dd.bad")).toContainText("Last successful one");
     await expect(page.getByRole("alert")).toHaveCount(0); // on Server itself the line says it, no second banner

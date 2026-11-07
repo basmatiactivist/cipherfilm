@@ -74,6 +74,7 @@ func printHelp(out io.Writer) {
 	}
 	for _, c := range [][2]string{
 		{"backup", "write a database snapshot to /data/backup"},
+		{"backup-report ok | failed snapshot|upload", "record a backup tool's result, shown under Admin > Server"},
 		{"check", "check the database and that every stored file exists"},
 		{"revoke-sessions", "sign out every device of every account (after restoring a backup)"},
 		{"version", "print the version"},

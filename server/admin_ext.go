@@ -15,7 +15,7 @@ const (
 	settingDefaultQuota = "default_quota_bytes"
 	auditKeep           = 500
 
-	// what the nightly off-site backup (scripts/kopia-snapshot.sh) last reported, shown under Admin > Server
+	// what the operator's own backup tool last reported with /app backup-report, shown under Admin > Server
 	settingBackupOKAt     = "backup_ok_at"
 	settingBackupFailedAt = "backup_failed_at"
 	settingBackupFailedIn = "backup_failed_in" // which step: "snapshot" or "upload"

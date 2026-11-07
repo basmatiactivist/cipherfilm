@@ -122,4 +122,6 @@ export const text = {
 export const space = { s1: 4, s2: 8, s3: 12, s4: 16, s5: 20, s6: 24, s8: 32, s10: 40, s12: 48, s16: 64 } as const;
 export const radius = { tile: 3, pill: 4, control: 6, card: 8, round: 9999 } as const;
 export const touch = 48;
-export const motion = { fast: 150, medium: 250 } as const;
+export const motion = { fast: 150, medium: 250, turn: 1100, seal: 2400, breathe: 2000 } as const;
+/** The loading badge (Loader.tsx): inline and on its own, in dp. */
+export const loader = { small: 20, large: 88 } as const;

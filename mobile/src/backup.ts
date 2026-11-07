@@ -43,8 +43,9 @@ export interface Status {
   problem?: string;
   problemAt?: number;
   current?: string;
-  /** the media id a run was working on; still set at the next run means that run died on it (the app was killed or hung) */
-  attempt?: string;
+  /** the media ids a run was working on; still set at the next run means that run died on them (the app was killed or
+   *  hung). One id (a string) from versions that went one file at a time. */
+  attempt?: string[] | string;
   /** the file the last run stopped on that way, shown on the Backup screen until a run gets through */
   stalled?: string;
   skipped: { name: string; reason: string }[];
@@ -149,8 +150,15 @@ export async function rememberLibrary(userId: string, items: { meta?: { name: st
 let running = false;
 let generation = 0; // bumped at sign-out and whenever the session changes hands: a run still going stops and keeps nothing
 const OTHER_ACCOUNT = "another account";
+const HALTED = "halted";
+const ANOTHER = "Signed in with another account. Backup continues when this account signs in again.";
 const BACKGROUND_BUDGET = 8 * 60_000; // WorkManager stops work after 10 minutes, if the service couldn't start
 const MAX_TRIES = 3;
+// files at once, like the web app; at most 3 × 2 parts of 4 MiB in memory (upload.ts SEGMENTS_IN_FLIGHT)
+const FILES_IN_FLIGHT = 3;
+// the account check that counts finished files: after this many, or this long after the last one, and at the end
+const CHECK_FILES = 6;
+const CHECK_EVERY = 30_000;
 const EMPTY = "The file is empty (0 bytes).";
 
 /** Whether a run may start now, and if not, why (in plain words). Manual runs ignore Wi-Fi and charging. */
@@ -184,19 +192,21 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
   if (!c?.enabled) { running = false; return; }
   const status = await loadStatus();
   const save = async () => { if (current()) { await writeJson(STATUS(), status); changed(); } };
+  /** "stop" when backup was turned off or now belongs to another account; "gone" when the folder is no longer chosen. */
+  const still = (now: Config | null, bucket: string): "ok" | "gone" | "stop" =>
+    !current() || !now?.enabled || now.userId !== c.userId || now.server !== c.server ? "stop" : now.folders[bucket] ? "ok" : "gone";
   /** Moves a folder's place past a finished file in the saved settings, read fresh: what the person changed while this
-   *  run went on (backup turned off, folders, "also the ones already there") stays. "stop" when backup was turned off
-   *  or now belongs to another account; "gone" when the folder is no longer chosen. */
+   *  run went on (backup turned off, folders, "also the ones already there") stays. */
   const advance = async (bucket: string, from: number, to: number): Promise<"ok" | "gone" | "stop"> => {
     if (!current()) return "stop";
     const now = await loadConfig();
-    if (!now?.enabled || now.userId !== c.userId || now.server !== c.server) return "stop";
-    const f = now.folders[bucket];
-    if (!f) return "gone";
+    const r = still(now, bucket);
+    if (r !== "ok") return r;
+    const f = now!.folders[bucket];
     if (f.after !== from) return "ok"; // the person moved it meanwhile (e.g. to the folder's beginning): theirs counts
     f.after = to;
     // not saved (storage trouble): the next run looks at the file again, and skips it as known
-    await saveConfig(now).catch(() => {});
+    await saveConfig(now!).catch(() => {});
     return "ok";
   };
   let deadline = trigger === "background" ? Date.now() + BACKGROUND_BUDGET : Infinity;
@@ -258,128 +268,208 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
     const outOfTime = () => Date.now() > deadline || (held && N.keepRunningLost()) || !current();
     // the one progress notification (the foreground service's), updated in place: which file, n of m, how far
     let shownAt = 0;
-    const show = (name: string, progress: number, force = false) => {
+    const show = (n: number, name: string, progress: number, force = false) => {
       const now = Date.now();
       if (!force && now - shownAt < 1000) return; // Android drops updates that come faster
       shownAt = now;
-      const n = Math.max(1, total - waiting + 1);
       N.backupNotify(`Backing up ${n} of ${Math.max(total, n)}`, name, progress, true);
     };
 
-    outer: for (const [bucket, folder] of Object.entries(c.folders)) {
-      // moves past a file that is done with (uploaded, already in the library, or given up on)
-      const past = async (id: number) => {
-        const r = await advance(bucket, folder.after, id);
-        folder.after = id;
-        waiting--;
-        return r;
+    // Several files at once: a small photo mostly waits on round trips, not on the connection. A run stops taking new
+    // files once it halts (out of time, a problem, backup turned off); the ones under way finish.
+    let halt = false;
+    let abandon = false; // the session changed hands: the files under way stop too
+    const stop = (problem?: string) => { halt = true; if (problem) status.problem ??= problem; };
+    const serverProblem = (e: ApiError) => (e.status === 413 ? "Your storage on the server is full." : e.status === 401 ? "You were signed out. Sign in to continue the backup." : "Can't connect to the server. Trying again in a few minutes.");
+    // the files under way, oldest first: status.attempt (a run that dies counts a try for each) and status.current
+    const going = new Map<string, string>();
+    const sync = () => {
+      status.attempt = going.size ? [...going.keys()] : undefined;
+      status.current = going.values().next().value;
+    };
+    const attempts = () => (typeof status.attempt === "string" ? [status.attempt] : status.attempt ?? []); // one id from versions that went one file at a time
+    const died = new Set(attempts());
+
+    // Each folder's place moves past a file only once it and every file before it are done with, so a run that stops or
+    // dies never skips one. One move at a time: each reads and writes the saved settings.
+    let moving = Promise.resolve();
+    const mover = (bucket: string, folder: Folder) => {
+      const order: { id: number; done: boolean }[] = []; // the folder's files this run took, in order
+      let gone = false; // the folder is no longer chosen
+      return {
+        gone: () => gone,
+        take: (id: number) => { order.push({ id, done: false }); },
+        /** Done with a file (uploaded, already in the library, or given up on). True once the folder's place is past it. */
+        past: (id: number): Promise<boolean> => {
+          order.find((o) => o.id === id)!.done = true;
+          waiting--;
+          return (moving = moving.then(async () => {
+            let to = folder.after;
+            while (order[0]?.done) to = order.shift()!.id;
+            if (to !== folder.after) {
+              const r = await advance(bucket, folder.after, to);
+              folder.after = to;
+              if (r === "stop") stop();
+              if (r === "gone") gone = true;
+            }
+          })).then(() => folder.after >= id);
+        },
       };
-      for (;;) {
-        const batch = await N.folderMedia(bucket, folder.after, 25);
-        if (!batch.length) break;
-        for (const m of batch) {
-          if (outOfTime()) break outer;
-          const print = await fingerprint(m.name, m.size);
-          if (known.has(print)) {
-            const r = await past(m.id);
-            if (r === "stop") break outer;
-            if (r === "gone") continue outer;
-            continue;
-          }
-          if (!m.size) { // nothing to back up (an app left an empty file): named under Backup, not an empty photo in the library
-            status.skipped = [{ name: m.name, reason: EMPTY }, ...status.skipped].slice(0, 50);
-            gaveUp++;
-            const r = await past(m.id);
-            await save();
-            if (r === "stop") break outer;
-            if (r === "gone") continue outer;
-            continue;
-          }
-          if (status.attempt === String(m.id)) { // the last run never got past this file: count that as a failed try
-            const tries = (status.failures[String(m.id)] ?? 0) + 1;
-            status.failures[String(m.id)] = tries;
-            status.attempt = undefined;
-            if (tries >= MAX_TRIES) {
-              status.skipped = [{ name: m.name, reason: "Cipherfilm stopped while reading this file" }, ...status.skipped].slice(0, 50);
-              delete status.failures[String(m.id)];
-              gaveUp++;
-              const r = await past(m.id);
-              await save();
-              if (r === "stop") break outer;
-              if (r === "gone") continue outer;
-              continue;
-            }
-          }
-          status.current = m.name;
-          status.attempt = String(m.id);
-          show(m.name, -1, true);
-          await save();
-          const file: Shared = { uri: m.uri, name: m.name, size: m.size, mime: m.mime || "application/octet-stream", deletable: false };
+    };
+
+    // Finished files are counted at the next account check, not each after its own: one /api/me for several files,
+    // sent after they were finalized. What a check finds in another account's hands is never counted.
+    const unconfirmed: { m: { id: number; uri: string; mime: string }; print: string; id: string; past: (id: number) => Promise<boolean> }[] = [];
+    let checkedAt = Date.now();
+    let checking = Promise.resolve();
+    let pausing = 0; // files waiting for the server: what is done meanwhile counts at once, a run may end in the wait
+    /** "due": every CHECK_FILES files or CHECK_EVERY, or while a file waits for the server; "now": at the end. While a
+     *  file waits for the server, a check that gets no answer is no problem yet. */
+    const settle = (when: "due" | "now") => (checking = checking.then(async () => {
+      if (!unconfirmed.length || (when === "due" && !pausing && unconfirmed.length < CHECK_FILES && Date.now() - checkedAt < CHECK_EVERY)) return;
+      const soft = when === "due" && pausing > 0;
+      const ready = unconfirmed.splice(0);
+      try {
+        await stillMine();
+      } catch (e) {
+        if (e instanceof Error && e.message === OTHER_ACCOUNT) { abandon = true; stop(ANOTHER); return; }
+        unconfirmed.unshift(...ready); // counted at a later check, or uploaded again by the next run
+        if (!soft) stop(e instanceof ApiError ? serverProblem(e) : e instanceof Error ? e.message : String(e));
+        return;
+      }
+      checkedAt = Date.now();
+      let behind = false;
+      for (const u of ready) {
+        // for search: at once while the file is at hand, but never inside the upload service (a data transfer,
+        // Google Play's foreground service rules): then the next background run indexes it
+        if (held) await rememberUploaded(c.userId, u.print, u.id);
+        else await indexUploaded(s, u.id, u.m.uri, (u.m.mime ?? "").startsWith("video/"), pk, to);
+        known.add(u.print);
+        delete status.failures[String(u.m.id)];
+        status.uploaded++; done++;
+        if (!(await u.past(u.m.id))) behind = true;
+      }
+      // counted but behind a file still under way: a run that dies now skips it next time as known, not uploads it again
+      if (behind && current()) await writeJson(KNOWN(), { userId: c.userId, prints: [...known] });
+      await save();
+    }).catch((e) => { stop(e instanceof Error ? e.message : String(e)); }));
+
+    const upload = async (m: { id: number; uri: string; name: string; size: number; mime: string }, n: number, print: string, bucket: string, past: (id: number) => Promise<boolean>) => {
+      const key = String(m.id);
+      going.set(key, m.name); sync();
+      show(n, m.name, -1, true);
+      await save();
+      const file: Shared = { uri: m.uri, name: m.name, size: m.size, mime: m.mime || "application/octet-stream", deletable: false };
+      try {
+        let id = "";
+        // the server out of reach mid-file: wait and try the file again twice before the run gives up
+        for (let attempt = 0; ; attempt++) {
           try {
-            let id = "";
-            // the server out of reach mid-file: wait and try the file again twice before the run gives up
-            for (let attempt = 0; ; attempt++) {
-              try {
-                await stillMine(); // before each file, and again after each wait
-                id = await uploadFile(file, s, (itemKey, id) => sealItemKey(s, itemKey, pk, id), () => {
-                  if (Date.now() > deadline + 90_000 || (held && N.keepRunningLost()) || !current()) throw new Error("out of time"); // finish next time
-                }, (d, t) => show(m.name, t ? d / t : -1), to);
-                break;
-              } catch (e) {
-                if (attempt >= 2 || !(e instanceof ApiError) || !(e.status === 0 || e.status >= 500) || outOfTime()) throw e;
-                console.log(`backup: upload failed (${e.status}) ${e.detail}; trying again`); // ids only, no names
-                show(`${m.name} · waiting for the server…`, -1, true);
-                await new Promise((r) => setTimeout(r, attempt ? 90_000 : 30_000));
-              }
-            }
-            // counted as backed up only once it is certain the file went to c.userId
-            await stillMine();
-            // for search: at once while the file is at hand, but never inside the upload service (a data transfer,
-            // Google Play's foreground service rules): then the next background run indexes it
-            if (held) await rememberUploaded(c.userId, print, id);
-            else await indexUploaded(s, id, m.uri, (m.mime ?? "").startsWith("video/"), pk, to);
-            known.add(print);
-            delete status.failures[String(m.id)];
-            status.uploaded++; done++;
-            status.attempt = undefined;
-            const r = await past(m.id);
-            if (r === "stop") { await save(); break outer; }
-            if (r === "gone") { await save(); continue outer; }
+            if (attempt) await stillMine(); // after each wait
+            id = await uploadFile(file, s, (itemKey, id) => sealItemKey(s, itemKey, pk, id), () => {
+              if (abandon) throw new Error(OTHER_ACCOUNT);
+              if (Date.now() > deadline + 90_000 || (held && N.keepRunningLost()) || !current()) throw new Error("out of time"); // finish next time
+            }, (d, t) => show(n, m.name, t ? d / t : -1), to);
+            break;
           } catch (e) {
-            status.attempt = undefined; // a failure seen here is counted below
-            const msg = e instanceof Error ? e.message : String(e);
-            if (e instanceof ApiError) console.log(`backup: upload failed (${e.status}) ${e.detail}`); // ids only, no names
-            if (msg === "out of time" && !held && trigger !== "manual" && isPlayBuild()) {
-              // too big to finish here, and it would start over every run: it waits for "Back up now", the photos
-              // after it go on in the next run
-              status.needsYou = [...(status.needsYou ?? []).filter((w) => w.id !== m.id), { id: m.id, bucket, name: m.name }];
-              await past(m.id);
-              break outer;
-            }
-            if (msg === "out of time") break outer;
-            if (msg === OTHER_ACCOUNT) { status.problem = "Signed in with another account. Backup continues when this account signs in again."; break outer; }
-            const tries = (status.failures[String(m.id)] ?? 0) + 1;
-            status.failures[String(m.id)] = tries;
-            if (e instanceof ApiError && (e.status === 0 || e.status >= 500 || e.status === 401 || e.status === 413)) {
-              status.problem = e.status === 413 ? "Your storage on the server is full." : e.status === 401 ? "You were signed out. Sign in to continue the backup." : "Can't connect to the server. Trying again in a few minutes.";
-              break outer;
-            }
-            if (tries >= MAX_TRIES) { // this file can't be read or uploaded: leave it and go on
-              status.skipped = [{ name: m.name, reason: msg }, ...status.skipped].slice(0, 50);
-              delete status.failures[String(m.id)];
-              gaveUp++;
-              const r = await past(m.id);
-              if (r === "stop") { await save(); break outer; }
-              if (r === "gone") { await save(); continue outer; }
-            } else {
-              status.problem = `${m.name}: ${msg}`;
-              break outer;
-            }
+            if (attempt >= 2 || !(e instanceof ApiError) || !(e.status === 0 || e.status >= 500) || outOfTime()) throw e;
+            if (halt) throw new Error(HALTED); // the run stops for another reason: no wait, and not this file's failure
+            console.log(`backup: upload failed (${e.status}) ${e.detail}; trying again`); // ids only, no names
+            show(n, `${m.name} · waiting for the server…`, -1, true);
+            pausing++;
+            settle("due"); // what is done so far counts before the wait
+            await new Promise((r) => setTimeout(r, attempt ? 90_000 : 30_000)).finally(() => { pausing--; });
           }
-          await save();
+        }
+        going.delete(key); sync();
+        // counted as backed up only once it is certain the file went to c.userId
+        unconfirmed.push({ m, print, id, past });
+        settle("due");
+      } catch (e) {
+        going.delete(key); sync(); // a failure seen here is counted below
+        const msg = e instanceof Error ? e.message : String(e);
+        if (e instanceof ApiError) console.log(`backup: upload failed (${e.status}) ${e.detail}`); // ids only, no names
+        if (msg === "out of time" && !held && trigger !== "manual" && isPlayBuild()) {
+          // too big to finish here, and it would start over every run: it waits for "Back up now", the photos
+          // after it go on in the next run
+          status.needsYou = [...(status.needsYou ?? []).filter((w) => w.id !== m.id), { id: m.id, bucket, name: m.name }];
+          await past(m.id);
+          stop();
+        } else if (msg === "out of time" || msg === HALTED) stop();
+        else if (msg === OTHER_ACCOUNT) { abandon = true; stop(ANOTHER); }
+        else {
+          const tries = (status.failures[key] ?? 0) + 1;
+          status.failures[key] = tries;
+          if (e instanceof ApiError && (e.status === 0 || e.status >= 500 || e.status === 401 || e.status === 413)) stop(serverProblem(e));
+          else if (tries >= MAX_TRIES) { // this file can't be read or uploaded: leave it and go on
+            status.skipped = [{ name: m.name, reason: msg }, ...status.skipped].slice(0, 50);
+            delete status.failures[key];
+            gaveUp++;
+            await past(m.id);
+          } else stop(`${m.name}: ${msg}`);
         }
       }
+      await save();
+    };
+
+    const inflight = new Set<Promise<void>>();
+    let taken = 0; // for "n of m"
+    try {
+      outer: for (const [bucket, folder] of Object.entries(c.folders)) {
+        const { gone, take, past } = mover(bucket, folder);
+        let next = folder.after;
+        for (;;) {
+          const batch = await N.folderMedia(bucket, next, 25);
+          if (!batch.length) break;
+          for (const m of batch) {
+            if (halt || outOfTime()) break outer;
+            // turned off, or the folder no longer chosen, while files were under way: no more from here
+            const r = still(await loadConfig(), bucket);
+            if (r === "stop") break outer;
+            if (gone() || r === "gone") continue outer;
+            take(m.id); next = m.id;
+            const n = ++taken;
+            const print = await fingerprint(m.name, m.size);
+            if (known.has(print)) { await past(m.id); continue; }
+            if (!m.size) { // nothing to back up (an app left an empty file): named under Backup, not an empty photo in the library
+              status.skipped = [{ name: m.name, reason: EMPTY }, ...status.skipped].slice(0, 50);
+              gaveUp++;
+              await past(m.id);
+              await save();
+              continue;
+            }
+            const key = String(m.id);
+            const suspect = died.delete(key);
+            if (suspect) { // the last run never got past this file: count that as a failed try
+              const tries = (status.failures[key] ?? 0) + 1;
+              status.failures[key] = tries;
+              const left = attempts().filter((a) => a !== key);
+              status.attempt = left.length ? left : undefined;
+              if (tries >= MAX_TRIES) {
+                status.skipped = [{ name: m.name, reason: "Cipherfilm stopped while reading this file" }, ...status.skipped].slice(0, 50);
+                delete status.failures[key];
+                gaveUp++;
+                await past(m.id);
+                await save();
+                continue;
+              }
+              // alone: should the run die on it again, the files beside it don't get a try counted for it
+              await Promise.all(inflight);
+              if (halt) break outer;
+            }
+            const work: Promise<void> = upload(m, n, print, bucket, past).finally(() => { inflight.delete(work); });
+            inflight.add(work);
+            if (suspect) await work;
+            else if (inflight.size >= FILES_IN_FLIGHT) await Promise.race(inflight);
+          }
+        }
+      }
+    } finally {
+      await Promise.all(inflight);
     }
+    if (!abandon) settle("now");
+    await checking;
+    await moving;
     if (current()) await writeJson(KNOWN(), { userId: c.userId, prints: [...known] });
     if (!status.problem && waiting <= 0) status.lastDone = Date.now();
   } catch (e) {

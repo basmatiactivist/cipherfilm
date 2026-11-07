@@ -49,6 +49,9 @@ export interface Status {
   stalled?: string;
   skipped: { name: string; reason: string }[];
   failures: Record<string, number>;
+  /** files too big for a run without the foreground service (the Google Play build's automatic runs): skipped there,
+   *  uploaded by the next "Back up now" */
+  needsYou?: { id: number; bucket: string; name: string }[];
 }
 
 const DIR = () => new Directory(Paths.document, "backup");
@@ -205,6 +208,14 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
   try {
     const why = blocker(c, trigger === "manual");
     if (why) { status.problem = why; return; }
+    // "Back up now" (it may run until done): the big files the automatic runs left go first, by moving each folder's
+    // place back to before them; what is already in the library on the way is skipped as known
+    if (trigger === "manual" && status.needsYou?.length) {
+      for (const w of status.needsYou) { const f = c.folders[w.bucket]; if (f && f.after >= w.id) f.after = w.id - 1; }
+      await saveConfig(c).catch(() => {});
+      status.needsYou = undefined;
+      await save();
+    }
 
     // nothing new on the phone: no request at all (a run every 15 minutes), and a server that is down then is no problem
     let waiting = 0;
@@ -338,6 +349,13 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
             status.attempt = undefined; // a failure seen here is counted below
             const msg = e instanceof Error ? e.message : String(e);
             if (e instanceof ApiError) console.log(`backup: upload failed (${e.status}) ${e.detail}`); // ids only, no names
+            if (msg === "out of time" && !held && trigger !== "manual" && isPlayBuild()) {
+              // too big to finish here, and it would start over every run: it waits for "Back up now", the photos
+              // after it go on in the next run
+              status.needsYou = [...(status.needsYou ?? []).filter((w) => w.id !== m.id), { id: m.id, bucket, name: m.name }];
+              await past(m.id);
+              break outer;
+            }
             if (msg === "out of time") break outer;
             if (msg === OTHER_ACCOUNT) { status.problem = "Signed in with another account. Backup continues when this account signs in again."; break outer; }
             const tries = (status.failures[String(m.id)] ?? 0) + 1;
@@ -379,6 +397,10 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
     N.backupNotifyCancel();
     const summary = backupSummary(done, gaveUp, status.problem);
     if (summary && current()) N.backupNotify(summary.title, summary.text, 0, false);
+    const big = status.needsYou?.length ?? 0;
+    if (big && current() && trigger !== "manual") {
+      N.backupNotify(big === 1 ? "A large video is waiting" : `${big} large videos are waiting`, "Open Cipherfilm › Backup and tap Back up now to upload it.", 0, false);
+    }
   }
 }
 
@@ -420,11 +442,11 @@ export async function notBackedUp(): Promise<number> {
   return n;
 }
 
-/** How many photos and videos wait in the chosen folders. */
+/** How many photos and videos wait in the chosen folders, the big ones left for "Back up now" included. */
 export async function waitingCount(): Promise<number> {
   const c = await loadConfig();
   if (!c?.enabled) return 0;
-  let n = 0;
+  let n = (await loadStatus()).needsYou?.length ?? 0;
   for (const [bucket, f] of Object.entries(c.folders)) n += await N.countFolderAfter(bucket, f.after).catch(() => 0);
   return n;
 }

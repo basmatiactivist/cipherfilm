@@ -273,7 +273,8 @@ If the upload is deferred, the user's new photos and videos are not backed up an
 ```
 
 > Since 2.1.8 the Play build starts this service only for transfers the user starts ("Back up now", a share): automatic
-> backups of new photos run in plain WorkManager runs and continue in the next run, as Google's "backup and restore"
+> backups of new photos run in plain WorkManager runs and continue in the next run (a file too large for one waits for
+> "Back up now"), as Google's "backup and restore"
 > example asks (a daily auto backup is not the user-initiated case).
 
 > Resolved in 2.1.0 (REQUIREMENTS §4.3): search indexing no longer runs in this service. Besides backup and

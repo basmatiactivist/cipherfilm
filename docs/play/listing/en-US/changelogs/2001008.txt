@@ -1,3 +1,3 @@
 • Privacy policy link in the app (connect screen and Account).
-• Automatic backup runs in short background steps; "Back up now" keeps going until it is done.
+• Automatic backup runs in short background steps; a large video waits for "Back up now", which runs until it is done.
 Needs your own Cipherfilm server: https://cipherfilm.app

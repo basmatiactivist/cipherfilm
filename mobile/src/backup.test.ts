@@ -256,6 +256,33 @@ describe("automatic backup", () => {
     }
   });
 
+  it("on Google Play, a file too big for an automatic run waits for Back up now; the rest goes on", async () => {
+    const { session, backup, pubkey } = await load();
+    await session.start();
+    await backup.saveConfig(config(pubkey));
+    held.play = true;
+    // file 2 takes longer than an automatic run may last (no foreground service there)
+    let slow = true;
+    srv.hook = (method, path) => { if (slow && method === "PUT" && /\/items\/0+2\/segments\/0$/.test(path)) vi.setSystemTime(Date.now() + 20 * 60_000); };
+    await backup.runBackup("background");
+    let st = await backup.loadStatus();
+    expect(st.needsYou?.map((w) => w.name)).toEqual(["IMG_2.jpg"]);
+    expect(st.failures).toEqual({}); // not counted as a failure: it isn't one
+    expect(notes.some(([title]) => title === "A large video is waiting")).toBe(true);
+    expect(await backup.waitingCount()).toBe(2); // file 3 and the big one
+    // the next automatic run goes past it
+    await backup.runBackup("background");
+    expect(srv.log.filter((l) => l.startsWith("finalize")).map((l) => l.split(" ")[1])).toEqual(["01", "03"]); // 02 was the aborted try
+    // Back up now uploads it, and skips what is already there
+    slow = false;
+    await backup.runBackup("manual");
+    st = await backup.loadStatus();
+    expect(st.needsYou).toBeUndefined();
+    expect(srv.log.filter((l) => l.startsWith("finalize")).map((l) => l.split(" ")[1])).toEqual(["01", "03", "04"]);
+    expect(await backup.waitingCount()).toBe(0);
+    held.play = false;
+  });
+
   it("skips a photo the account's library already has", async () => {
     const { session, backup, pubkey } = await load();
     await session.start();

@@ -156,6 +156,11 @@ export default function Backup() {
                   <Button mode="outlined" style={{ marginTop: 8, alignSelf: "flex-start" }} onPress={() => apply(chosen, { ...prefs, includeExisting: true })}>Back up these too</Button>
                 </>
               ) : null}
+              {status?.needsYou?.length && !status.running ? (
+                <Text variant="bodyMedium" style={{ marginTop: 12 }}>
+                  {status.needsYou.length === 1 ? `${status.needsYou[0].name} is too large` : `${status.needsYou.length} large videos are too large`} to upload in the background. Tap Back up now to upload {status.needsYou.length === 1 ? "it" : "them"}.
+                </Text>
+              ) : null}
               {status?.stalled && !status.running ? <Text variant="bodyMedium" style={{ marginTop: 12 }}>The last backup stopped at {status.stalled}. It is tried up to three more times, then skipped.</Text> : null}
               <Text variant="bodySmall" style={{ marginTop: 8, color: t.colors.onSurfaceVariant }}>
                 {status?.lastDone ? `Last complete: ${fmtTime.format(status.lastDone)}` : status?.lastRun ? `Last checked: ${fmtTime.format(status.lastRun)}` : "Not run yet"}

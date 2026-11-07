@@ -8,6 +8,7 @@ import { loadTrash, type Item } from "../library";
 import { refreshLibrary } from "../libraryStore";
 import { refreshAlbums } from "../albumsStore";
 import { api } from "../api";
+import { onTrashChanged } from "../liveSync";
 import { useAppTheme } from "../ui";
 import { text } from "../tokens";
 
@@ -34,6 +35,10 @@ export default function Trash() {
     }
   }, []);
   useEffect(() => { load(); }, [load]);
+  // moved to the trash, restored or deleted on another device: shown here too (quietly, as the library does)
+  useEffect(() => onTrashChanged(() => {
+    loadTrash().then((r) => { setItems(r.items); setDays(r.retentionDays); }, () => {});
+  }), []);
 
   const inBatches = async (path: string, ids: string[]) => {
     for (let i = 0; i < ids.length; i += 500) await api("POST", path, { item_ids: ids.slice(i, i + 500) });

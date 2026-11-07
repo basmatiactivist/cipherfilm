@@ -5,7 +5,9 @@ import { onWipe, session } from "./session";
 // The decrypted album list, shared by the album overview and the album screens; forgotten at every lock or sign-out.
 let albums: Album[] | null = null;
 let error: string | undefined;
-let loading = false;
+let loading = false; // shown: the pull-to-refresh spinner
+let busy = false; // a load runs (also a quiet one); one asked for meanwhile runs after it, as in libraryStore.ts
+let again = false;
 let owner = "";
 // bumped whenever the list is forgotten (every lock): a load still running then ends quietly, as in libraryStore.ts
 let gen = 0;
@@ -15,10 +17,13 @@ const emit = () => { snap = { albums: owner === session().me?.user.id ? albums :
 
 export const useAlbums = () => useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => snap);
 
-export async function refreshAlbums() {
-  if (loading) return;
+/** quiet: for live updates, without the spinner or an error banner (as refreshLibrary). */
+export async function refreshAlbums(opts?: { quiet?: boolean }) {
+  const quiet = opts?.quiet === true;
+  if (busy) { again = true; if (!quiet && !loading) { loading = true; emit(); } return; }
   const mine = gen;
-  loading = true; error = undefined; emit();
+  busy = true;
+  if (!quiet) { loading = true; error = undefined; emit(); }
   const forUser = session().me?.user.id ?? "";
   const current = () => mine === gen && session().me?.user.id === forUser && !!session().masterKey;
   try {
@@ -26,12 +31,19 @@ export async function refreshAlbums() {
     if (!current()) return;
     albums = list;
     owner = forUser;
+    error = undefined;
   } catch (e) {
-    if (current()) error = e instanceof Error ? e.message : "Couldn't load your albums.";
+    if (current() && !quiet) error = e instanceof Error ? e.message : "Couldn't load your albums.";
   } finally {
-    if (mine === gen) { loading = false; emit(); }
+    if (mine === gen) {
+      busy = false; loading = false; emit();
+      if (again) { again = false; refreshAlbums({ quiet: true }); }
+    }
   }
 }
 
-export function forgetAlbums() { albums = null; owner = ""; error = undefined; loading = false; gen++; emit(); }
+/** Whether the albums were loaded for the account: only then does a live update load them again. */
+export const albumsLoaded = () => busy || (albums !== null && owner === session().me?.user.id);
+
+export function forgetAlbums() { albums = null; owner = ""; error = undefined; loading = false; busy = false; again = false; gen++; emit(); }
 onWipe(() => forgetAlbums());

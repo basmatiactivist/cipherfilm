@@ -89,3 +89,51 @@ describe("a lock while loading", () => {
     expect(m.useAlbums()).toMatchObject({ albums: [{ id: "x", name: "Trip", itemIds: [] }], error: undefined, loading: false });
   });
 });
+
+// Live updates (live.ts) load the lists quietly, and a change that comes in while a load runs is not lost.
+describe("quiet loads and loads asked for meanwhile", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    Object.assign(st, { master: new Uint8Array(32).fill(1), wipes: [], gate: null, loads: 0 });
+  });
+
+  it("the library: a quiet load shows no spinner, and one asked for while it runs runs once after it", async () => {
+    const m = await import("./libraryStore");
+    expect(m.libraryLoaded()).toBe(false);
+    const open = gated();
+    const first = m.refreshLibrary({ quiet: true });
+    expect(m.useLibrary().loading).toBe(false);
+    expect(m.libraryLoaded()).toBe(true);
+    m.refreshLibrary({ quiet: true });
+    m.refreshLibrary({ quiet: true });
+    st.gate = null;
+    open();
+    await first;
+    await new Promise((r) => setTimeout(r, 0));
+    expect(st.loads).toBe(2);
+    expect(m.useLibrary()).toMatchObject({ items: [{ id: "a" }], loading: false });
+  });
+
+  it("the library: a quiet load that fails leaves no error banner", async () => {
+    const m = await import("./libraryStore");
+    st.master = null; // fails as a load does without the key
+    await m.refreshLibrary({ quiet: true });
+    expect(m.useLibrary().error).toBeUndefined();
+  });
+
+  it("the albums: the same", async () => {
+    const m = await import("./albumsStore");
+    expect(m.albumsLoaded()).toBe(false);
+    const open = gated();
+    const first = m.refreshAlbums({ quiet: true });
+    expect(m.useAlbums().loading).toBe(false);
+    m.refreshAlbums();
+    expect(m.useAlbums().loading).toBe(true); // asked for by hand: the spinner shows
+    st.gate = null;
+    open();
+    await first;
+    await new Promise((r) => setTimeout(r, 0));
+    expect(st.loads).toBe(2);
+    expect(m.albumsLoaded()).toBe(true);
+  });
+});

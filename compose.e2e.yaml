@@ -23,7 +23,7 @@ services:
       default:
         aliases: [cipherfilm.test]
   playwright:
-    image: mcr.microsoft.com/playwright:v1.64.1-noble
+    image: mcr.microsoft.com/playwright:v1.65.0-noble
     profiles: [test]
     depends_on: [proxy]
     working_dir: /e2e

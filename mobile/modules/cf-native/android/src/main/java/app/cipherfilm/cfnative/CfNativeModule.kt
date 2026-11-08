@@ -386,6 +386,8 @@ class CfNativeModule : Module() {
     }.runOnQueue(expo.modules.kotlin.functions.Queues.MAIN)
     // when the outbox is emptied: the apps shared with can no longer read those files, whatever they were called
     Function("revokeShared") { revokeShared() }
+    // the outbox has new copies: they are removed after the grace period even if the app isn't running then (Outbox.kt)
+    Function("outboxSweepLater") { appContext.reactContext?.let { Outbox.sweepLater(it.applicationContext) }; null }
 
     // Puts a decrypted copy into the phone's photo library (Pictures/Cipherfilm or Movies/Cipherfilm).
     AsyncFunction("saveToLibrary") { path: String, name: String, mime: String ->

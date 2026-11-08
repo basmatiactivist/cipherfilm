@@ -1,0 +1,23 @@
+# A question form instead of a link to Discussions: Discussions aren't turned on for this repository.
+name: Ask a question
+description: Not sure how something works, or how to set it up?
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The [README](https://github.com/basmatiactivist/cipherfilm#readme) and the [docs](https://github.com/basmatiactivist/cipherfilm/tree/master/docs)
+        may already have the answer. This page is public: leave out your server address, e-mails and names.
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: What have you tried?
+      description: Which app, and how you run the server if it's about self-hosting.
+    validations:
+      required: false

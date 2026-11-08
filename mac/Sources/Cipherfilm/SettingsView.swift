@@ -85,6 +85,10 @@ struct GeneralSettings: View {
         }
       }
       Divider()
+      Section_(title: "Problems", subtitle: "Opens the issue form on GitHub. You see what it fills in first.") {
+        Button("Report a Problem…") { ReportProblem.ask(model) }
+      }
+      Divider()
       Text("Cipherfilm \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")\(model.me?.server_version.map { " · server \($0)" } ?? "") · libsodium \(Sodium.version) · ONNX Runtime \(Vision.runtimeVersion)")
         .font(Typo.small).foregroundStyle(.tertiary)
     }

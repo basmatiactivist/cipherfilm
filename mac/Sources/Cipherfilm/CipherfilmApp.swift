@@ -71,6 +71,9 @@ struct Commands: SwiftUI.Commands {
       Button("Move to Trash") { model.moveToTrash(ids); model.selection?.clear(); if model.nav?.viewer != nil { model.nav?.viewer = nil } }
         .keyboardShortcut(.delete, modifiers: .command).disabled(ids.isEmpty)
     }
+    CommandGroup(after: .help) {
+      Button("Report a Problem…") { ReportProblem.ask(model) }
+    }
     CommandGroup(replacing: .windowList) {
       Button("Cipherfilm") { model.agent.showWindow(openWindow) }.keyboardShortcut("0", modifiers: [.command])
     }

@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { loadAlbums, type Album } from "./albums";
 import { onWipe, session } from "./session";
+import { t } from "./i18n";
 
 // The decrypted album list, shared by the album overview and the album screens; forgotten at every lock or sign-out.
 let albums: Album[] | null = null;
@@ -33,7 +34,7 @@ export async function refreshAlbums(opts?: { quiet?: boolean }) {
     owner = forUser;
     error = undefined;
   } catch (e) {
-    if (current() && !quiet) error = e instanceof Error ? e.message : "Couldn't load your albums.";
+    if (current() && !quiet) error = e instanceof Error ? e.message : t("Couldn't load your albums.");
   } finally {
     if (mine === gen) {
       busy = false; loading = false; emit();

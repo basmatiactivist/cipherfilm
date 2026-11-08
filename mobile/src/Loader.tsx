@@ -9,6 +9,7 @@ import { Text } from "react-native-paper";
 import Svg, { Circle, G, Path } from "react-native-svg";
 import { useAppTheme } from "./ui";
 import { loader, motion, stage as stageColors } from "./tokens";
+import { t } from "./i18n";
 
 const SHACKLE = "M6.6 10V7A5.4 5.4 0 0 1 17.4 7V10H14.4V7A2.4 2.4 0 0 0 9.6 7V10Z";
 const BODY = "M5.8 9.4H18.2A2.2 2.2 0 0 1 20.4 11.6V19.8A2.2 2.2 0 0 1 18.2 22H5.8A2.2 2.2 0 0 1 3.6 19.8V11.6A2.2 2.2 0 0 1 5.8 9.4ZM6.2 19.8L6.2 18L10.2 13.6L13.6 17.2L17.8 14.4L17.8 19.8ZM13.7 12.6A1.7 1.7 0 1 0 17.1 12.6A1.7 1.7 0 1 0 13.7 12.6Z";
@@ -39,7 +40,7 @@ const loop = (v: Animated.Value, ms: number) =>
 /** The badge alone, as decoration next to words that say what is happening (a busy button, a status row).
  *  On its own use `Loading`, which labels it for screen readers. */
 export function Loader({ size: kind = "small", style }: { size?: LoaderSize; style?: ViewStyle }) {
-  const t = useAppTheme();
+  const th = useAppTheme();
   const reduced = useReducedMotion();
   const large = kind === "large";
   const size = loader[kind];
@@ -62,10 +63,10 @@ export function Loader({ size: kind = "small", style }: { size?: LoaderSize; sty
     return () => runs.forEach((a) => a.stop());
   }, [reduced, large]);
 
-  const track = t.dark ? t.cf.ruleStrong : t.cf.rule;
+  const track = th.dark ? th.cf.ruleStrong : th.cf.rule;
   const ring = (dash: boolean) => (
     <Svg width={size} height={size} viewBox="0 0 48 48">
-      <Circle cx={24} cy={24} r={r} stroke={t.cf.teal} strokeWidth={w} fill="none" strokeLinecap="round"
+      <Circle cx={24} cy={24} r={r} stroke={th.cf.teal} strokeWidth={w} fill="none" strokeLinecap="round"
         {...(dash ? { strokeDasharray: [0.26 * 2 * Math.PI * r, 2 * Math.PI * r] } : {})} />
     </Svg>
   );
@@ -75,20 +76,20 @@ export function Loader({ size: kind = "small", style }: { size?: LoaderSize; sty
   return (
     <View style={[{ width: size, height: size }, style]} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
       <Svg width={size} height={size} viewBox="0 0 48 48" style={StyleSheet.absoluteFill}>
-        <Circle cx={24} cy={24} r={24} fill={t.cf.card} />
+        <Circle cx={24} cy={24} r={24} fill={th.cf.card} />
         <Circle cx={24} cy={24} r={r} stroke={track} strokeWidth={w} fill="none" />
-        <G transform={`translate(${m.x} ${m.y}) scale(${m.k})`}><Path d={BODY} fill={t.cf.teal} fillRule="evenodd" /></G>
+        <G transform={`translate(${m.x} ${m.y}) scale(${m.k})`}><Path d={BODY} fill={th.cf.teal} fillRule="evenodd" /></G>
       </Svg>
       {large && !reduced ? CELLS.map(({ c, r: row }) => {
         // each tile glints in the badge's own color, later the further it is from the top left corner
         const d = ((c + row) * 100) / motion.seal;
         const opacity = seal.interpolate({ inputRange: [0, d + 0.0001, d + 0.08, d + 0.26, 1.3], outputRange: [0, 0, 0.5, 0, 0], extrapolate: "clamp" });
         const at = (v: number) => v * m.k * u;
-        return <Animated.View key={c + row * 4} style={{ position: "absolute", left: at(3.6 + c * 4.2) + m.x * u, top: at(9.4 + row * 4.2) + m.y * u, width: at(4.2), height: at(4.2), backgroundColor: t.cf.card, opacity }} />;
+        return <Animated.View key={c + row * 4} style={{ position: "absolute", left: at(3.6 + c * 4.2) + m.x * u, top: at(9.4 + row * 4.2) + m.y * u, width: at(4.2), height: at(4.2), backgroundColor: th.cf.card, opacity }} />;
       }) : null}
       <Animated.View style={[StyleSheet.absoluteFill, large && !reduced ? { transform: [{ translateY: lift }] } : null]}>
         <Svg width={size} height={size} viewBox="0 0 48 48">
-          <G transform={`translate(${m.x} ${m.y}) scale(${m.k})`}><Path d={SHACKLE} fill={t.cf.teal} /></G>
+          <G transform={`translate(${m.x} ${m.y}) scale(${m.k})`}><Path d={SHACKLE} fill={th.cf.teal} /></G>
         </Svg>
       </Animated.View>
       {reduced ? (
@@ -107,8 +108,8 @@ export const busyIcon = () => <Loader />;
  *  small badge in a row; `corner` the medium badge alone, placed by `style` (the viewer puts it at the bottom left, so
  *  it doesn't cover the photo); `stage` is for the black photo viewer. Fades in after a moment, so a quick load doesn't
  *  flash. */
-export function Loading({ label = "Loading…", inline, corner, stage, style }: { label?: string; inline?: boolean; corner?: boolean; stage?: boolean; style?: ViewStyle }) {
-  const t = useAppTheme();
+export function Loading({ label = t("Loading…"), inline, corner, stage, style }: { label?: string; inline?: boolean; corner?: boolean; stage?: boolean; style?: ViewStyle }) {
+  const th = useAppTheme();
   const reduced = useReducedMotion();
   const fade = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -116,7 +117,7 @@ export function Loading({ label = "Loading…", inline, corner, stage, style }: 
     a.start();
     return () => a.stop();
   }, []);
-  const color = stage ? stageColors.onStage : t.colors.onSurfaceVariant;
+  const color = stage ? stageColors.onStage : th.colors.onSurfaceVariant;
   return (
     <Animated.View accessible accessibilityRole="progressbar" accessibilityLabel={label} accessibilityLiveRegion="polite"
       style={[inline ? s.inline : corner ? null : s.block, { opacity: fade }, style]}>

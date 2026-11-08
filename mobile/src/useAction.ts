@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { t } from "./i18n";
 
 /** Runs one async action at a time and keeps its error message for the screen. */
 export function useAction() {
@@ -13,7 +14,7 @@ export function useAction() {
     try {
       await f();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong.");
+      setError(e instanceof Error ? e.message : t("Something went wrong."));
     } finally {
       running.current = false;
       setBusy(false);

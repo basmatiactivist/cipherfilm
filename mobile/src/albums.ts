@@ -3,12 +3,13 @@ import { getSodium, b64, unb64 } from "@crypto/sodium";
 import { decryptAlbumName, encryptAlbumName } from "@crypto/item";
 import { api } from "./api";
 import { session } from "./session";
+import { t } from "./i18n";
 
 export interface Album { id: string; name: string; itemIds: string[]; broken?: boolean }
 
 const need = () => {
   const k = session().masterKey;
-  if (!k) throw new Error("Unlock your library first.");
+  if (!k) throw new Error(t("Unlock your library first."));
   return k;
 };
 
@@ -20,7 +21,7 @@ export async function loadAlbums(): Promise<Album[]> {
     try {
       return { id: a.id, name: decryptAlbumName(s, unb64(s, a.name_enc), master, a.id), itemIds: a.item_ids };
     } catch {
-      return { id: a.id, name: "Unreadable album", itemIds: a.item_ids, broken: true };
+      return { id: a.id, name: t("Unreadable album"), itemIds: a.item_ids, broken: true };
     }
   });
 }

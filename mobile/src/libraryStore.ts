@@ -4,6 +4,7 @@ import { onWipe, session } from "./session";
 import { rememberLibrary } from "./backup";
 import { libraryChanged, warmSearch } from "./search/engine";
 import { api } from "./api";
+import { t } from "./i18n";
 
 // One copy of the decrypted list for the library and the viewer; brought up to date after uploads and live updates
 // (only what changed: library.ts).
@@ -80,7 +81,7 @@ export async function refreshLibrary(opts?: { quiet?: boolean }) {
       }, 1500);
     });
   } catch (e) {
-    if (current() && !quiet) error = e instanceof Error ? e.message : "Couldn't load your photos.";
+    if (current() && !quiet) error = e instanceof Error ? e.message : t("Couldn't load your photos.");
   } finally {
     if (mine === gen) {
       busy = false; loading = false; emit();

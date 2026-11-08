@@ -2,6 +2,7 @@
 // keeps; the CSRF token comes with /api/me and lives in memory. expo/fetch sends the ciphertext bytes natively.
 import { fetch } from "expo/fetch";
 import { Platform } from "react-native";
+import { t } from "./i18n";
 
 let base = "";
 let csrf = "";
@@ -46,13 +47,14 @@ function limit(ms: number) {
   return { signal: c.signal, move(to: number) { clearTimeout(t); t = setTimeout(() => c.abort(), to); }, end() { clearTimeout(t); } };
 }
 
-const OFFLINE = "Can't connect to the server. Check your connection and try again.";
-const FRIENDLY: Record<string, string> = {
-  "invalid request": "That didn't work. Check what you entered and try again.",
-  "server error": "The server had a problem. Wait a moment and try again.",
-  "not found": "That couldn't be found. It may have been removed.",
-};
-const sentence = (s: string): string => FRIENDLY[s] ?? (s ? s[0].toUpperCase() + s.slice(1) + (/[.!?]$/.test(s) ? "" : ".") : s);
+// in the phone's language when they are made (the language can change while the app runs)
+const offline = () => t("Can't connect to the server. Check your connection and try again.");
+const friendly = (s: string): string | undefined => ({
+  "invalid request": t("That didn't work. Check what you entered and try again."),
+  "server error": t("The server had a problem. Wait a moment and try again."),
+  "not found": t("That couldn't be found. It may have been removed."),
+} as Record<string, string>)[s];
+const sentence = (s: string): string => friendly(s) ?? (s ? s[0].toUpperCase() + s.slice(1) + (/[.!?]$/.test(s) ? "" : ".") : s);
 
 function ended(res: Response, path: string, to: Remote) {
   // only an answer from the app's own server ends its session
@@ -71,19 +73,19 @@ export async function api<T = any>(method: string, path: string, body?: unknown,
     res = await fetch(to.base + path, { method, credentials: "include", headers, body: body !== undefined ? JSON.stringify(body) : undefined, signal: time.signal });
   } catch (e) {
     time.end();
-    throw new ApiError(0, OFFLINE, `${method} ${path.replace(/[0-9a-f]{32}/g, ":id")}: ${why(e)}`);
+    throw new ApiError(0, offline(), `${method} ${path.replace(/[0-9a-f]{32}/g, ":id")}: ${why(e)}`);
   }
   time.move(BYTES_TIMEOUT);
   // a body cut off (the time limit, a dropped connection) or that isn't JSON (a proxy's or captive portal's page) is a
   // failed request, never an answer of null that the caller would read from
   let text = "";
-  try { text = await res.text(); } catch (e) { if (res.ok) throw new ApiError(0, OFFLINE, `${method} ${path.replace(/[0-9a-f]{32}/g, ":id")}: body ${why(e)}`); } finally { time.end(); }
+  try { text = await res.text(); } catch (e) { if (res.ok) throw new ApiError(0, offline(), `${method} ${path.replace(/[0-9a-f]{32}/g, ":id")}: body ${why(e)}`); } finally { time.end(); }
   let data: any = null;
   try { data = text ? JSON.parse(text) : null; } catch { /* not JSON */ }
-  if (!res.ok) { ended(res, path, to); throw new ApiError(res.status, sentence(data?.error ?? "Something went wrong."), "", data?.code ?? ""); }
+  if (!res.ok) { ended(res, path, to); throw new ApiError(res.status, sentence(data?.error ?? t("Something went wrong.")), "", data?.code ?? ""); }
   // a GET always answers with an object or a list; other methods may answer with nothing
   if ((text && data === null) || (method === "GET" && (data === null || typeof data !== "object"))) {
-    throw new ApiError(0, OFFLINE, `${method} ${path.replace(/[0-9a-f]{32}/g, ":id")}: ${res.status}, not a JSON answer`);
+    throw new ApiError(0, offline(), `${method} ${path.replace(/[0-9a-f]{32}/g, ":id")}: ${res.status}, not a JSON answer`);
   }
   return data as T;
 }
@@ -100,12 +102,12 @@ export async function putBytes(path: string, bytes: Uint8Array, to: Remote = her
     try {
       res = await fetch(to.base + path, { method: "PUT", credentials: "include", headers: { "Content-Type": "application/octet-stream", "X-CSRF-Token": to.csrf }, body: bytes as unknown as ArrayBuffer, signal: within(BYTES_TIMEOUT) });
     } catch (e) {
-      last = new ApiError(0, OFFLINE, `PUT ${path.replace(/[0-9a-f]{32}/g, ":id")}: ${why(e)}`);
+      last = new ApiError(0, offline(), `PUT ${path.replace(/[0-9a-f]{32}/g, ":id")}: ${why(e)}`);
       continue;
     }
     if (res.ok) return;
     ended(res, path, to);
-    let msg = "Something went wrong.";
+    let msg = t("Something went wrong.");
     try { msg = sentence((await res.json()).error ?? msg); } catch { /* no body */ }
     last = new ApiError(res.status, msg);
     if (!RETRYABLE.has(res.status)) break;
@@ -118,9 +120,9 @@ export async function getBytes(path: string): Promise<Uint8Array> {
   try {
     res = await fetch(base + path, { credentials: "include", signal: within(BYTES_TIMEOUT) });
   } catch (e) {
-    throw new ApiError(0, OFFLINE, `GET ${path.replace(/[0-9a-f]{32}/g, ":id")}: ${why(e)}`);
+    throw new ApiError(0, offline(), `GET ${path.replace(/[0-9a-f]{32}/g, ":id")}: ${why(e)}`);
   }
-  if (!res.ok) { ended(res, path, here()); throw new ApiError(res.status, "Couldn't load this item."); }
+  if (!res.ok) { ended(res, path, here()); throw new ApiError(res.status, t("Couldn't load this item.")); }
   return new Uint8Array(await res.arrayBuffer());
 }
 
@@ -130,8 +132,8 @@ export async function postForBytes(path: string, body: unknown): Promise<Uint8Ar
   try {
     res = await fetch(base + path, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf }, body: JSON.stringify(body), signal: within(BYTES_TIMEOUT) });
   } catch (e) {
-    throw new ApiError(0, OFFLINE, `POST ${path.replace(/[0-9a-f]{32}/g, ":id")}: ${why(e)}`);
+    throw new ApiError(0, offline(), `POST ${path.replace(/[0-9a-f]{32}/g, ":id")}: ${why(e)}`);
   }
-  if (!res.ok) { ended(res, path, here()); throw new ApiError(res.status, "Couldn't load these items."); }
+  if (!res.ok) { ended(res, path, here()); throw new ApiError(res.status, t("Couldn't load these items.")); }
   return new Uint8Array(await res.arrayBuffer());
 }

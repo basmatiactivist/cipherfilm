@@ -7,7 +7,16 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-11-08
+
+The Android app in German, a full-screen photo view, and fixes for backup and search found on a real phone.
+
 ### Added
+- Android: the app in German when the phone (or Android's per-app language) is set to German; everything else stays
+  English. Dates and numbers follow the language. Search words for what is in a photo stay English (the on-device
+  models understand English); names, dates and file names work in German too.
+- Android: a tap on a photo or video hides the app's bars and Android's status and navigation bars, as in other
+  gallery apps; another tap brings them back. Swiping keeps the state; leaving the viewer always restores the bars.
 - Android: the Backup screen shows the upload speed (over the last few seconds, across the files under way), how many
   are left and a progress bar while a backup runs.
 
@@ -21,7 +30,19 @@ version into the GitHub release notes, so a release cannot be published without 
   for search after the uploads instead of between them, and the open Backup screen no longer reloads the whole photo
   library at every step of a run.
 
+- Android: the loading badge in the photo viewer sits small in the bottom-left corner instead of large over the photo,
+  and shows while a video buffers.
+- Android: search jobs (model downloads, checking them, opening the models, looking at photos, the index) run on
+  threads of their own. They held the one thread every request goes through, so the app stalled while the phone
+  indexed. Indexing starts right after the models are downloaded, new photos join a running index instead of
+  restarting it, and the search settings open at once while indexing runs.
+
 ### Fixed
+- Android: the Albums tab showed an empty page while albums loaded; it shows the loading badge now, and so do an album,
+  a person and search results while they load (an album or person that no longer exists says so instead of loading
+  forever).
+- Android: decrypted copies made for sharing are deleted 15 minutes later even when Android ended the app meanwhile,
+  and decoded pictures leave the image memory cache when the app locks.
 - Android: the backup notification's "Backing up n of m" no longer jumps back (23, 20, 23, ...) while several files
   upload at once; it counts what the run is done with and shows the speed.
 - Android: "Run in the background" shows "Allowed" when Android's battery setting for Cipherfilm is "Optimized" (on

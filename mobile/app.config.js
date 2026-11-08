@@ -21,7 +21,7 @@ module.exports = ({ config }) => {
       blockedPermissions: [...new Set([...(config.android?.blockedPermissions ?? []), BATTERY])], // also if a library adds it
     };
   }
-  config.plugins = [...(config.plugins ?? []), "./plugins/withReleaseSigning", "./plugins/withConfigChanges", "./plugins/withGradleSources", "./plugins/withStoragePermission"];
+  config.plugins = [...(config.plugins ?? []), "./plugins/withReleaseSigning", "./plugins/withConfigChanges", "./plugins/withGradleSources", "./plugins/withStoragePermission", "./plugins/withLocales"];
   // a test build for the emulator may trust the local test instance (mobile/dev); a signed release never does
   if (process.env.CF_TEST_CA && !process.env.CF_KEYSTORE) {
     config.plugins.push(["./plugins/withTestCA", { ca: process.env.CF_TEST_CA }]);

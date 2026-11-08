@@ -1,0 +1,6 @@
+• The app is now available in German.
+• Tap a photo to hide the bars and see it full screen.
+• Backup: live upload speed, a steady progress count, clearer setup and faster on real phones.
+• Search starts indexing right after the download, and its settings open instantly.
+• Loading badge fixes (albums, small in the viewer).
+Needs your own Cipherfilm server: https://cipherfilm.app

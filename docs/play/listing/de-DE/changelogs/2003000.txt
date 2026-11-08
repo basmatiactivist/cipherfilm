@@ -1,0 +1,6 @@
+• Die App gibt es jetzt auf Deutsch.
+• Tippen Sie auf ein Foto, um es im Vollbild ohne Leisten zu sehen.
+• Backup: aktuelle Upload-Geschwindigkeit, gleichmäßiger Fortschritt, klarere Einrichtung und schneller auf echten Handys.
+• Die Suche beginnt direkt nach dem Download mit der Indexierung, ihre Einstellungen öffnen sofort.
+• Ladesymbol: jetzt auch bei Alben, im Foto klein in der Ecke.
+Benötigt Ihren eigenen Cipherfilm-Server: https://cipherfilm.app/de

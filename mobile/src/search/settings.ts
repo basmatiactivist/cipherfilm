@@ -5,6 +5,7 @@ import { Directory, File, Paths } from "expo-file-system";
 import { getSodium, b64, unb64 } from "@crypto/sodium";
 import { accountKeyPair } from "@crypto/item";
 import { normEmail } from "@crypto/account";
+import { t } from "../i18n";
 
 export interface SearchSettings {
   enabled: boolean;
@@ -96,7 +97,7 @@ export async function pinAccount(me: { user: { id: string; email: string }; pubk
   const s = await getSodium();
   const pair = accountKeyPair(s, unb64(s, me.wrapped_privkey), master, normEmail(me.user.email));
   s.memzero(pair.sk);
-  if (!s.memcmp(pair.pk, unb64(s, me.pubkey))) throw new Error("Your account's keys don't match. Search was not turned on.");
+  if (!s.memcmp(pair.pk, unb64(s, me.pubkey))) throw new Error(t("Your account's keys don't match. Search was not turned on."));
   return { server, userId: me.user.id, pubkey: b64(s, pair.pk) };
 }
 

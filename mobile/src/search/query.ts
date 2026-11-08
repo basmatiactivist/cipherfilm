@@ -4,6 +4,7 @@
 import { when, type Item } from "../library";
 import { textSearch } from "./engine";
 import { peopleGroups, type Group } from "./people";
+import { locale, t } from "../i18n";
 
 export interface Result { items: Item[]; people: Group[]; how: string[] }
 
@@ -50,21 +51,21 @@ export async function search(qRaw: string, library: Item[]): Promise<Result> {
   }
 
   // kinds
-  if (words.some(isVideoWord)) { pool = pool.filter((i) => i.kind === "video"); words = words.filter((w) => !isVideoWord(w)); how.push("videos"); }
-  if (words.some(isFavWord)) { pool = pool.filter((i) => i.favorite); words = words.filter((w) => !isFavWord(w)); how.push("favorites"); }
-  if (words.some(isShotWord)) { pool = pool.filter((i) => /screenshot|bildschirm/i.test(i.meta?.name ?? "")); words = words.filter((w) => !isShotWord(w)); how.push("screenshots"); }
+  if (words.some(isVideoWord)) { pool = pool.filter((i) => i.kind === "video"); words = words.filter((w) => !isVideoWord(w)); how.push(t("videos")); }
+  if (words.some(isFavWord)) { pool = pool.filter((i) => i.favorite); words = words.filter((w) => !isFavWord(w)); how.push(t("favorites")); }
+  if (words.some(isShotWord)) { pool = pool.filter((i) => /screenshot|bildschirm/i.test(i.meta?.name ?? "")); words = words.filter((w) => !isShotWord(w)); how.push(t("screenshots")); }
 
   // dates
   const d = parseDate(words.join(" "));
   if (d.year !== undefined || d.month !== undefined) {
     pool = pool.filter((i) => {
-      const t = new Date(when(i));
-      if (d.year !== undefined && t.getFullYear() !== d.year) return false;
-      if (d.month !== undefined && t.getMonth() !== d.month) return false;
-      if (d.day === -1 && (t.getDate() < 20 || t.getDate() > 27)) return false;
+      const at = new Date(when(i));
+      if (d.year !== undefined && at.getFullYear() !== d.year) return false;
+      if (d.month !== undefined && at.getMonth() !== d.month) return false;
+      if (d.day === -1 && (at.getDate() < 20 || at.getDate() > 27)) return false;
       return true;
     });
-    how.push([d.month !== undefined ? new Intl.DateTimeFormat(undefined, { month: "long" }).format(new Date(2000, d.month, 1)) : "", d.year ?? ""].join(" ").trim());
+    how.push([d.month !== undefined ? new Intl.DateTimeFormat(locale(), { month: "long" }).format(new Date(2000, d.month, 1)) : "", d.year ?? ""].join(" ").trim());
   }
   const rest = d.rest;
   if (!rest) return { items: sortByDate(pool), people, how };
@@ -79,8 +80,8 @@ export async function search(qRaw: string, library: Item[]): Promise<Result> {
   const out: Item[] = [];
   for (const i of named) if (!seen.has(i.id)) { seen.add(i.id); out.push(i); }
   for (const h of hits) { const it = inPool.get(h.id); if (it && !seen.has(it.id)) { seen.add(it.id); out.push(it); } }
-  if (hits.length) how.push(`"${rest}"`);
-  else if (named.length) how.push(`named "${rest}"`);
+  if (hits.length) how.push(t('"{q}"', { q: rest }));
+  else if (named.length) how.push(t('named "{q}"', { q: rest }));
   return { items: out, people, how };
 }
 

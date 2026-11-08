@@ -24,6 +24,7 @@ import { loadSettings, saveSettings, settingsDir, type SearchSettings } from "./
 import { keepRunning, letGo, onlyHolder } from "../keepAlive";
 import { Tokenizer } from "./tokenizer";
 import { explicitSearchOffered } from "../store";
+import { t } from "../i18n";
 
 export type Phase = "off" | "waitWifi" | "download" | "loading" | "indexing" | "ready" | "error";
 export interface Progress { phase: Phase; done: number; total: number; message?: string }
@@ -297,11 +298,11 @@ export async function startSearch(library: Item[]) {
     if (!(await haveModels(st.faces, clip, indexes))) {
       if (st.wifiOnly && !N.backupState().unmetered) { set({ phase: "waitWifi", done: 0, total: downloadSize(st.faces, clip, indexes), message: undefined }); return; }
       set({ phase: "download", done: 0, total: 1, message: undefined });
-      hold("Downloading the search model", "");
+      hold(t("Downloading the search model"), "");
       downloading = true;
       try {
         await downloadModels(st.faces, clip, (done, total) => {
-          show("Downloading the search model", `${mbs(done)} of ${mbs(total)}`, done, total);
+          show(t("Downloading the search model"), t("{done} of {total}", { done: mbs(done), total: mbs(total) }), done, total);
           if (live()) set({ phase: "download", done, total });
         }, indexes);
       } finally {
@@ -310,7 +311,7 @@ export async function startSearch(library: Item[]) {
       }
       if (!live()) return;
     }
-    if (!ready) set({ phase: "loading", done: 0, total: 0, message: "Opening the search models" });
+    if (!ready) set({ phase: "loading", done: 0, total: 0, message: t("Opening the search models") });
     // The image models only when there is something to index: the phone that indexes opens them now, next to fetching
     // the server's entries (they open on their own thread, Lanes.kt), when the library has photos without an entry
     // here, as every one has on a new account right after the download. Otherwise only the text model, and the image
@@ -320,7 +321,7 @@ export async function startSearch(library: Item[]) {
     opening.catch(() => {}); // (awaited below)
     pair ??= accountKeyPair(s, unb64(s, me.wrapped_privkey), master, normEmail(me.user.email));
     if (!live()) return;
-    if (!ready) set({ phase: "loading", done: 0, total: 0, message: "Getting the index from the server" });
+    if (!ready) set({ phase: "loading", done: 0, total: 0, message: t("Getting the index from the server") });
 
     // what the server has: everything new since the last visit, added to the encrypted copy here
     const cache = await readCache();
@@ -372,7 +373,7 @@ export async function startSearch(library: Item[]) {
       set({ total, done });
     };
     const pk = unb64(s, me.pubkey);
-    if (!s.memcmp(pk, pair!.pk)) throw new Error("Your account's keys don't match.");
+    if (!s.memcmp(pk, pair!.pk)) throw new Error(t("Your account's keys don't match."));
     const work = async () => {
       while (todo.length && live()) {
         await pause(); // between photos: the app stays responsive (see pause)

@@ -5,6 +5,7 @@ import { Directory, File, Paths } from "expo-file-system";
 import N from "../../modules/cf-native/src/CfNativeModule";
 import { explicitSearchOffered } from "../store";
 import LIST from "../../../server/models.json";
+import { t } from "../i18n";
 
 /** The image/text model: MobileCLIP S2, or LAION's uncensored CLIP ViT-B/32 for explicit search (docs/SEARCH.md). */
 export type Clip = "mobileclip-s2" | "laion-b32";
@@ -96,7 +97,7 @@ export function dropOtherModels(clip: Clip, indexes = true): string[] {
 
 async function fetchAll(faces: boolean, clip: Clip, indexes: boolean, onProgress: (done: number, total: number) => void) {
   // the Play build never offers explicit search, so it never fetches that model, whatever asked for it (store.ts)
-  if (clip !== "mobileclip-s2" && !explicitSearchOffered()) throw new Error("Explicit search isn't available in this version.");
+  if (clip !== "mobileclip-s2" && !explicitSearchOffered()) throw new Error(t("Explicit search isn't available in this version."));
   modelDir().create({ intermediates: true, idempotent: true });
   const list = needed(faces, clip, indexes).filter((m) => !checked.has(m.name));
   const total = list.reduce((n, m) => n + m.size, 0);

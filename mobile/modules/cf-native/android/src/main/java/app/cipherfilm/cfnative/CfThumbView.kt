@@ -15,6 +15,8 @@ class CfThumbView(context: Context, appContext: AppContext) : ExpoView(context, 
   override val shouldUseAndroidLayout = true
 
   private val onFailed by EventDispatcher()
+  /** the picture is on screen (the library waits for its first screen before it shows the grid) */
+  private val onShown by EventDispatcher()
   private val image = ImageView(context).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
   private var item: String? = null
   private var ask: Thumbs.Ask? = null
@@ -64,8 +66,10 @@ class CfThumbView(context: Context, appContext: AppContext) : ExpoView(context, 
   }
 
   private fun show(id: String, bmp: Bitmap, fade: Boolean) {
+    val first = shown != id
     shown = id
     image.setImageBitmap(bmp)
+    if (first) onShown(mapOf())
     if (fade) { image.alpha = 0f; image.animate().alpha(1f).setDuration(120).start() } else image.alpha = 1f
   }
 

@@ -56,10 +56,10 @@ interface Props {
 /** The timeline: day headings, square tiles, and selection as in Google Photos (long press, then tap; Back ends it)
  *  with the actions Share, Add to album, Save to phone, Trash and an optional extra one. */
 /** One row of tiles; renders again only when its items, the tile size or their selection change. */
-const Row = memo(function Row(p: { row: Item[]; size: number; selecting: boolean; sel: string; onPress: (it: Item) => void; onLongPress: (it: Item) => void }) {
+const Row = memo(function Row(p: { row: Item[]; size: number; selecting: boolean; sel: string; onPress: (it: Item) => void; onLongPress: (it: Item) => void; onShown: (id: string) => void }) {
   return (
     <View style={st.row}>
-      {p.row.map((it, i) => <Tile key={it.id} item={it} size={p.size} selecting={p.selecting} selected={p.sel[i] === "1"} onPress={p.onPress} onLongPress={p.onLongPress} />)}
+      {p.row.map((it, i) => <Tile key={it.id} item={it} size={p.size} selecting={p.selecting} selected={p.sel[i] === "1"} onPress={p.onPress} onLongPress={p.onLongPress} onShown={p.onShown} />)}
     </View>
   );
 });
@@ -70,7 +70,7 @@ const opening = (within: string): string | undefined => ({ search: t("Searching�
 export function Gallery({ items, error, loading, onRefresh, header, empty, bottom = 0, fab, nav, extraAction, actions, album, flat, within }: Props) {
   const th = useAppTheme();
   const inset = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<{ label: string; progress: number } | null>(null);
   const [note, setNote] = useState<{ text: string; undo?: () => void } | null>(null);
@@ -118,6 +118,24 @@ export function Gallery({ items, error, loading, onRefresh, header, empty, botto
       return { title: dayFmt.format(new Date(day)), data: rows };
     });
   }, [items, cols, flat]);
+
+  // The first screen appears only once its pictures are decoded: the list arrives before the thumbnails, and a grid
+  // of empty tiles in the meantime looks broken. Until then the list is laid out and loads, invisible, under the
+  // loading badge; at most VEIL_MAX, so one slow or missing thumbnail can't hold the library back.
+  const [veiled, setVeiled] = useState(true);
+  const seen = useRef(new Set<string>());
+  const waiting = useRef<Set<string> | null>(null);
+  const shown = useCallback((id: string) => { seen.current.add(id); const w = waiting.current; if (w && w.delete(id) && !w.size) setVeiled(false); }, []);
+  useEffect(() => {
+    if (!veiled || !items || waiting.current) return;
+    const rowsOnScreen = Math.ceil(height / Math.max(1, size)) + 1;
+    const first = sections.flatMap((sec) => sec.data).slice(0, rowsOnScreen).flat();
+    waiting.current = new Set(first.filter((it) => it.has_thumb && !it.broken && !seen.current.has(it.id)).map((it) => it.id));
+    if (!waiting.current.size) { setVeiled(false); return; }
+    const tm = setTimeout(() => setVeiled(false), VEIL_MAX);
+    return () => clearTimeout(tm);
+  }, [items, sections, veiled]);
+  const veil = veiled && !!items && items.length > 0;
 
   // a long press starts (or extends) the selection, with the system's own long-press vibration
   const hold = useCallback((it: Item) => { N.haptic(); toggle(it); }, []);
@@ -234,7 +252,7 @@ export function Gallery({ items, error, loading, onRefresh, header, empty, botto
         refreshControl={<RefreshControl refreshing={loading && !!items} onRefresh={onRefresh} enabled={!selecting} colors={[th.colors.primary]} progressBackgroundColor={th.colors.elevation.level1} />}
         renderSectionHeader={({ section }) => (section.title ? <Text style={[st.day, text.heading]}>{section.title}</Text> : <View style={{ height: 8 }} />)}
         renderItem={({ item: row }) => (
-          <Row row={row} size={size} selecting={selecting} sel={row.map((it) => (selected.has(it.id) ? "1" : "0")).join("")} onPress={press} onLongPress={hold} />
+          <Row row={row} size={size} selecting={selecting} sel={row.map((it) => (selected.has(it.id) ? "1" : "0")).join("")} onPress={press} onLongPress={hold} onShown={shown} />
         )}
         ListHeaderComponent={error ? <View style={{ paddingTop: 8 }}><Problem>{error}</Problem></View> : undefined}
         ListEmptyComponent={items && !error ? <>{empty}</> : !items && !error ? <Loading label={opening(within ?? "") ?? (album ? t("Opening the album…") : t("Opening your library…"))} /> : undefined}
@@ -243,7 +261,10 @@ export function Gallery({ items, error, loading, onRefresh, header, empty, botto
         updateCellsBatchingPeriod={30}
         windowSize={9}
         removeClippedSubviews
+        style={veil ? { opacity: 0 } : undefined}
+        importantForAccessibility={veil ? "no-hide-descendants" : "auto"}
       />
+      {veil ? <View style={[StyleSheet.absoluteFill, st.veil]} pointerEvents="none"><Loading label={t("Decrypting your photos…")} /></View> : null}
       {selecting ? (
         <View style={[st.sheet, { backgroundColor: th.colors.surfaceVariant, paddingBottom: inset.bottom + 12 }]}>
           <View style={[st.grabber, { backgroundColor: th.colors.outline }]} />
@@ -339,7 +360,11 @@ export function AlbumPicker({ visible, onDismiss, onPick }: { visible: boolean; 
   );
 }
 
+/** The longest the first screen waits for its pictures before it shows what is there. */
+const VEIL_MAX = 12_000;
+
 const st = StyleSheet.create({
+  veil: { justifyContent: "center", alignItems: "center" },
   day: { paddingTop: 20, paddingBottom: 8, paddingHorizontal: 4 },
   row: { flexDirection: "row", gap: GAP, marginBottom: GAP },
   selhead: { paddingBottom: 12, flexDirection: "row", alignItems: "center" },

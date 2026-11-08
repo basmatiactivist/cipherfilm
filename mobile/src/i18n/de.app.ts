@@ -218,4 +218,5 @@ export const deApp: Record<string, string> = {
   "Saved {n} videos to Movies › Cipherfilm.": "{n} Videos unter Filme › Cipherfilm gespeichert.",
   "Saved {n} item to Pictures and Movies › Cipherfilm.": "{n} Element unter Bilder und Filme › Cipherfilm gespeichert.",
   "Saved {n} items to Pictures and Movies › Cipherfilm.": "{n} Elemente unter Bilder und Filme › Cipherfilm gespeichert.",
+  "Decrypting your photos…": "Ihre Fotos werden entschlüsselt…",
 };

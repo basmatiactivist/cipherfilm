@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.ClipData
 import android.content.ContentValues
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Environment
 import androidx.core.content.FileProvider
 import java.io.File
@@ -202,7 +203,7 @@ class CfNativeModule : Module() {
     Function("forgetThumbs") { Thumbs.clear() }
     View(CfThumbView::class) {
       Name("CfThumbView")
-      Events("onFailed")
+      Events("onFailed", "onShown")
       Prop("item") { view: CfThumbView, id: String? -> view.setItem(id) }
       Prop("fit") { view: CfThumbView, fit: String? -> view.setFit(fit) }
       OnViewDidUpdateProps { view: CfThumbView -> view.load() }
@@ -369,6 +370,23 @@ class CfNativeModule : Module() {
 
     // ---- choosing from the phone ----
     // Android's own photo picker: no storage permission, the person sees only what they choose to give.
+    // A web page in the browser, never an app that claims the address: GitHub's app takes github.com links and opens
+    // its own start page instead of the prefilled issue form ("Report a problem"). The default browser, else the first
+    // one installed; with none at all, Android decides as for any link. False only when nothing could open it.
+    Function("openInBrowser") { url: String ->
+      val ctx = appContext.reactContext ?: return@Function false
+      val u = Uri.parse(url)
+      if (u.scheme != "https") return@Function false
+      val pm = ctx.packageManager
+      val probe = Intent(Intent.ACTION_VIEW, Uri.parse("https://example.com/")).addCategory(Intent.CATEGORY_BROWSABLE)
+      @Suppress("DEPRECATION") val default = pm.resolveActivity(probe, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName
+      // "android" is the chooser: no default browser set
+      @Suppress("DEPRECATION") val pkg = default?.takeIf { it != "android" } ?: pm.queryIntentActivities(probe, 0).firstOrNull()?.activityInfo?.packageName
+      val intent = Intent(Intent.ACTION_VIEW, u).addCategory(Intent.CATEGORY_BROWSABLE).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      if (pkg != null) intent.setPackage(pkg)
+      try { ctx.startActivity(intent); true } catch (_: Exception) { false }
+    }
+
     AsyncFunction("pickMedia") { promise: Promise ->
       val activity = appContext.currentActivity ?: run { promise.resolve(emptyList<String>()); return@AsyncFunction }
       pendingPick?.resolve(emptyList<String>())

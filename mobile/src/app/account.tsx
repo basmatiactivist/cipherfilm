@@ -18,6 +18,9 @@ import { text } from "../tokens";
 import { busyIcon } from "../Loader";
 import { locale, t } from "../i18n";
 
+/** GitHub's issue form in the browser: the GitHub app would open its start page and drop the prefilled details. */
+const inBrowser = (url: string) => { let ok = false; try { ok = N.openInBrowser(url); } catch { /* older native build */ } if (!ok) Linking.openURL(url); };
+
 const fixed = (n: number, d: number) => n.toLocaleString(locale(), { minimumFractionDigits: d, maximumFractionDigits: d });
 const gb = (n: number) => (n < 1e9 ? `${fixed(Math.max(n > 0 ? 0.1 : 0, n / 1e6), 1)} MB` : `${fixed(n / 1e9, n < 1e10 ? 2 : 1)} GB`);
 
@@ -160,8 +163,8 @@ export default function Account() {
             <Text variant="bodySmall" style={{ color: th.colors.onSurfaceVariant }}>{t("Nothing else is sent: no server address, e-mail, photos or names.")}</Text>
           </Dialog.Content>
           <Dialog.Actions style={st.stacked}>
-            <Button mode="contained" onPress={() => { setReport(false); expectAway(); Linking.openURL(reportUrl(phone)); }}>{t("Include details")}</Button>
-            <Button onPress={() => { setReport(false); expectAway(); Linking.openURL(reportUrl()); }}>{t("Without details")}</Button>
+            <Button mode="contained" onPress={() => { setReport(false); expectAway(); inBrowser(reportUrl(phone)); }}>{t("Include details")}</Button>
+            <Button onPress={() => { setReport(false); expectAway(); inBrowser(reportUrl()); }}>{t("Without details")}</Button>
             <Button onPress={() => setReport(false)}>{t("Cancel")}</Button>
           </Dialog.Actions>
         </Dialog>

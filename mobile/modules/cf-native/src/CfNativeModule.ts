@@ -120,6 +120,8 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   thumbsPrefetch(ids: string[]): void;
   thumbsClearImages(): void;
   forgetThumbs(): void;
+  /** an https page in the browser, never an app that claims the address; false when nothing could open it */
+  openInBrowser(url: string): boolean;
   pickMedia(): Promise<string[]>;
   /** only files in the outbox (cache/cf-out, outbox.ts) */
   shareFiles(paths: string[], mimes: string[]): Promise<boolean>;
@@ -143,4 +145,4 @@ export const VideoView = requireNativeView<ViewProps & {
 }>("CfNative");
 
 /** One item's thumbnail, decrypted natively (Thumbs.kt); `onFailed` when there is none or it can't be verified. */
-export const ThumbView = requireNativeView<ViewProps & { item: string; fit?: "cover" | "contain"; onFailed?: () => void }>("CfNative", "CfThumbView");
+export const ThumbView = requireNativeView<ViewProps & { item: string; fit?: "cover" | "contain"; onFailed?: () => void; onShown?: () => void }>("CfNative", "CfThumbView");

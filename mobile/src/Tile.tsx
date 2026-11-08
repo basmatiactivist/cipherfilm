@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Text } from "react-native-paper";
 import { when, type Item } from "./library";
@@ -22,13 +22,16 @@ interface Props {
   selected: boolean;
   onPress: (it: Item) => void;
   onLongPress: (it: Item) => void;
+  /** its picture is on screen, or there is none to wait for (the gallery's first screen waits for these) */
+  onShown?: (id: string) => void;
 }
 
 /** One square in the library grid: the decrypted thumbnail (native, by id: Thumbs.kt), or a plain-words tile if it can't be verified. In selection
  *  mode every tile shows a circle; a selected one shrinks into its cell with a filled check, as in Google Photos. */
-export const Tile = memo(function Tile({ item, size, selecting, selected, onPress, onLongPress }: Props) {
+export const Tile = memo(function Tile({ item, size, selecting, selected, onPress, onLongPress, onShown }: Props) {
   const th = useAppTheme();
   const [failed, setFailed] = useState(false);
+  useEffect(() => { if (!item.has_thumb || item.broken || failed) onShown?.(item.id); }, [item.id, failed]);
   // what a screen reader says: the kind and when it was taken, like the gallery app (file names are often just numbers)
   const label = item.broken ? t("Couldn't be verified") : item.kind === "video" ? t("Video, {date}", { date: taken(when(item)) }) : t("Photo, {date}", { date: taken(when(item)) });
   const inset = selected ? Math.round(size * 0.09) : 0;
@@ -40,7 +43,7 @@ export const Tile = memo(function Tile({ item, size, selecting, selected, onPres
       {({ pressed }) => (
         <>
           <View style={[st.tile, { margin: inset, borderRadius: selected ? radius.card : radius.tile, backgroundColor: item.broken ? th.colors.errorContainer : th.colors.surfaceVariant, opacity: pressed && !selecting ? 0.85 : 1 }]}>
-            {item.has_thumb && !item.broken ? <ThumbView item={item.id} style={StyleSheet.absoluteFill} onFailed={() => setFailed(true)} /> : null}
+            {item.has_thumb && !item.broken ? <ThumbView item={item.id} style={StyleSheet.absoluteFill} onFailed={() => setFailed(true)} onShown={() => onShown?.(item.id)} /> : null}
             {item.broken || failed ? (
               <View style={st.center}><Text variant="labelSmall" style={{ color: item.broken ? th.colors.onErrorContainer : th.colors.onSurfaceVariant, textAlign: "center" }}>{item.broken ? t("Couldn't be verified") : t("No preview")}</Text></View>
             ) : null}

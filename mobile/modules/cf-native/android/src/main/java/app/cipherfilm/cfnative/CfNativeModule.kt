@@ -30,6 +30,11 @@ import java.nio.ByteBuffer
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
+import java.util.concurrent.Executors
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.cancel
 
 private class SodiumFailed(what: String) : CodedException("ERR_SODIUM", "$what failed", null)
 
@@ -46,6 +51,14 @@ class CfNativeModule : Module() {
   private var pendingPick: Promise? = null
   private var pendingShare: Promise? = null
   private var shared: List<Uri> = emptyList() // what the last share gave other apps access to
+  /**
+   * Reading the phone's photos (parts, thumbnails, EXIF, MediaStore queries) on threads of their own. Expo runs every
+   * other AsyncFunction of every module on one thread, expo/fetch's request starts and response bodies included: there
+   * two thumbnail decodes per file (a few hundred ms each for a phone camera's photo) held up the requests of all the
+   * files under way, so three files at once went little faster than one. Four threads: at most four decodes in memory.
+   */
+  private val filePool = Executors.newFixedThreadPool(4)
+  private val files = CoroutineScope(filePool.asCoroutineDispatcher() + SupervisorJob())
 
   private fun check(rc: Int, what: String) { if (rc != 0) throw SodiumFailed(what) }
   private fun n(v: Int) = NativeLong(v.toLong())
@@ -76,6 +89,7 @@ class CfNativeModule : Module() {
     }
     OnActivityEntersForeground { protect(appContext.currentActivity); appContext.reactContext?.let { Shake.resume(it) } }
     OnActivityEntersBackground { CfVideoView.pauseAll(); Shake.pause() }
+    OnDestroy { files.cancel(); filePool.shutdown() }
 
     // ---- shake to lock and close (Shake.kt) ----
     Function("shakeWatch") { on: Boolean -> appContext.reactContext?.let { Shake.want(it, on) }; Unit }
@@ -92,9 +106,9 @@ class CfNativeModule : Module() {
 
     // ---- automatic backup (BackupNative.kt) ----
     Function("backupState") { BackupNative.state(appContext.reactContext!!) }
-    AsyncFunction("mediaFolders") { BackupNative.folders(appContext.reactContext!!) }
-    AsyncFunction("folderMedia") { bucket: String, afterId: Double, limit: Int -> BackupNative.media(appContext.reactContext!!, bucket, afterId.toLong(), limit) }
-    AsyncFunction("countFolderAfter") { bucket: String, afterId: Double -> BackupNative.countAfter(appContext.reactContext!!, bucket, afterId.toLong()) }
+    AsyncFunction("mediaFolders") { BackupNative.folders(appContext.reactContext!!) }.runOnQueue(files)
+    AsyncFunction("folderMedia") { bucket: String, afterId: Double, limit: Int -> BackupNative.media(appContext.reactContext!!, bucket, afterId.toLong(), limit) }.runOnQueue(files)
+    AsyncFunction("countFolderAfter") { bucket: String, afterId: Double -> BackupNative.countAfter(appContext.reactContext!!, bucket, afterId.toLong()) }.runOnQueue(files)
     Function("askBatteryExemption") { BackupNative.askBatteryExemption(appContext.reactContext!!) }
     Function("openAppSettings") { BackupNative.openAppSettings(appContext.reactContext!!) }
     Function("backupNotify") { title: String, text: String, progress: Double, ongoing: Boolean -> BackupNative.notify(appContext.reactContext!!, title, text, progress, ongoing) }
@@ -145,7 +159,7 @@ class CfNativeModule : Module() {
       SearchIndex.cluster(threshold, anchors, rejects, minFaces)
     }
     // every photo and video on the phone, for "Free up space" (BackupNative.kt)
-    AsyncFunction("phoneMedia") { BackupNative.allMedia(appContext.reactContext!!) }
+    AsyncFunction("phoneMedia") { BackupNative.allMedia(appContext.reactContext!!) }.runOnQueue(files)
 
     // ---- videos (VideoVault.kt) ----
     Function("videoSource") { server: String, id: String, key: ByteArray, size: Double, count: Int ->
@@ -270,7 +284,7 @@ class CfNativeModule : Module() {
       }
       if (size < 0) resolver.openAssetFileDescriptor(u, "r")?.use { size = it.length }
       mapOf("name" to (name ?: u.lastPathSegment ?: "file"), "size" to size, "mime" to resolver.getType(u), "deletable" to (mediaUri(u) != null))
-    }
+    }.runOnQueue(files)
     AsyncFunction("readRange") { uri: String, offset: Long, length: Int ->
       resolver.openFileDescriptor(Uri.parse(uri), "r")!!.use { pfd ->
         FileInputStream(pfd.fileDescriptor).channel.use { ch ->
@@ -281,7 +295,7 @@ class CfNativeModule : Module() {
           buf.array()
         }
       }
-    }
+    }.runOnQueue(files)
     AsyncFunction("mediaInfo") { uri: String, isVideo: Boolean ->
       val u = Uri.parse(uri)
       val out = mutableMapOf<String, Any?>()
@@ -310,7 +324,7 @@ class CfNativeModule : Module() {
         } catch (_: Exception) { }
       }
       out
-    }
+    }.runOnQueue(files)
     // A JPEG no larger than maxPx on its long side, upright; images and video frames. Null if Android can't decode it.
     AsyncFunction("jpeg") { uri: String, isVideo: Boolean, maxPx: Int, quality: Int ->
       val u = Uri.parse(uri)
@@ -332,7 +346,7 @@ class CfNativeModule : Module() {
       val out = ByteArrayOutputStream()
       scaled.compress(Bitmap.CompressFormat.JPEG, quality, out)
       mapOf("bytes" to out.toByteArray(), "width" to bmp.width, "height" to bmp.height)
-    }
+    }.runOnQueue(files)
 
     // ---- choosing from the phone ----
     // Android's own photo picker: no storage permission, the person sees only what they choose to give.

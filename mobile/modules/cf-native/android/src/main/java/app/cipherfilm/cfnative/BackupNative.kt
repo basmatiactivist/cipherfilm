@@ -1,6 +1,7 @@
 package app.cipherfilm.cfnative
 
 import android.Manifest
+import android.app.ActivityManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.ContentUris
@@ -50,16 +51,23 @@ internal object BackupNative {
     val unmetered = online && caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) == true
     val bm = ctx.getSystemService(BatteryManager::class.java)
     val pm = ctx.getSystemService(PowerManager::class.java)
+    // the person's "Restricted" (Android 9+; "Allow background usage" off from Android 14): Android stops the app's
+    // background work. Without it and without the exemption it is Android's default, "Optimized": the app runs in the
+    // background, Android may only delay it while the phone is idle.
+    val restricted = Build.VERSION.SDK_INT >= 28 && ctx.getSystemService(ActivityManager::class.java)?.isBackgroundRestricted == true
+    // allowed, and the backup's own channel not switched off in Android's settings (the app-wide switch can be on then)
+    val channelOn = ctx.getSystemService(NotificationManager::class.java)?.getNotificationChannel(CHANNEL)?.importance != NotificationManager.IMPORTANCE_NONE
     return mapOf(
       "online" to online,
       "unmetered" to unmetered,
       "charging" to charging(ctx, bm),
       "battery" to (bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1),
       "batteryExempt" to (pm?.isIgnoringBatteryOptimizations(ctx.packageName) == true),
+      "backgroundRestricted" to restricted,
       "powerSave" to (pm?.isPowerSaveMode == true),
       "media" to mediaAccess(ctx),
       "location" to location(ctx),
-      "notifications" to NotificationManagerCompat.from(ctx).areNotificationsEnabled(),
+      "notifications" to (NotificationManagerCompat.from(ctx).areNotificationsEnabled() && channelOn),
       "sdk" to Build.VERSION.SDK_INT,
     )
   }

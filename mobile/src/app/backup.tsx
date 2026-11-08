@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AppState, PermissionsAndroid, ScrollView, StyleSheet, View } from "react-native";
 import { router } from "expo-router";
-import { Appbar, Button, Divider, List, RadioButton, Switch, Text } from "react-native-paper";
+import { Appbar, Button, Divider, List, ProgressBar, RadioButton, Switch, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import N, { type BackupState } from "../../modules/cf-native/src/CfNativeModule";
-import { DEMO_BACKUP, blocker, chooseFolders, disableBackup, enableBackup, loadConfig, loadStatus, notBackedUp, onBackupChange, rememberLibrary, runBackup, saveConfig, startAfter, waitingCount, type Config, type Status } from "../backup";
+import { DEMO_BACKUP, backupProgress, blocker, chooseFolders, disableBackup, enableBackup, loadConfig, loadStatus, notBackedUp, onBackupChange, onBackupProgress, rememberLibrary, runBackup, saveConfig, startAfter, waitingCount, type Config, type Status } from "../backup";
+import { existingChoice, folderLine, headline, lastLine, liveLine, tooLarge } from "../backupText";
+import { coalesce } from "../coalesce";
 import { server } from "../api";
 import { libraryItems, refreshLibrary } from "../libraryStore";
 import { session } from "../session";
@@ -12,9 +14,8 @@ import { Icon, type IconName } from "../icons";
 import { Problem, SwitchItem, useAppTheme } from "../ui";
 import { radius, text } from "../tokens";
 import { useMediaDisclosure } from "../disclosure";
-import { isPlayBuild } from "../store";
 import { away, expectAway } from "../autolock";
-import { ownBatteryRules, useOnReturn } from "../deviceState";
+import { backgroundUse, ownBatteryRules, useOnReturn } from "../deviceState";
 import { Loader, Loading } from "../Loader";
 
 type MediaFolder = Awaited<ReturnType<typeof N.mediaFolders>>[number];
@@ -36,12 +37,15 @@ export default function Backup() {
   const [older, setOlder] = useState(0); // from before the backup's start in these folders, and not in the library
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const [live, setLive] = useState(backupProgress); // n of m, what is left and how fast, while a run uploads
   const disclosure = useMediaDisclosure();
   // what Android allows, again on coming back from its settings (and a moment later, when Android catches up)
   useOnReturn(() => setDevice(N.backupState()));
   const xiaomi = ownBatteryRules();
 
-  const refresh = useCallback(async () => {
+  // The whole screen: folders and counts query the phone's photo library. One at a time (coalesce): a running backup
+  // changes its status several times per file.
+  const refresh = useMemo(() => coalesce(async () => {
     const st = N.backupState();
     setDevice(st);
     const c = await loadConfig();
@@ -57,18 +61,26 @@ export default function Backup() {
     }
     setWaiting(c?.enabled ? await waitingCount() : null);
     setOlder(c?.enabled && !c.includeExisting ? await notBackedUp().catch(() => 0) : 0);
-  }, []);
+  }), []);
+  // While a run goes on only its status, which is cheap: the counts again once it is over. Before, every change
+  // reloaded the whole screen and its library queries held up the run they were showing.
+  const follow = useMemo(() => coalesce(async () => {
+    const st = await loadStatus();
+    setStatus(st);
+    if (!st.running) await refresh();
+  }), [refresh]);
 
   useEffect(() => {
     refresh();
     const a = AppState.addEventListener("change", (s) => { if (s === "active") refresh(); }); // the backup may have run meanwhile
-    const b = onBackupChange(() => { refresh(); });
-    return () => { a.remove(); b(); };
-  }, [refresh]);
+    const b = onBackupChange(() => { follow(); });
+    const c = onBackupProgress(() => setLive(backupProgress()));
+    return () => { a.remove(); b(); c(); };
+  }, [refresh, follow]);
 
   const on = !!config?.enabled;
 
-  /** Saves a change of folders or conditions. "Photos already on the phone" applies to every chosen folder. */
+  /** Saves a change of folders or conditions. "Photos and videos already on this phone" applies to every chosen folder. */
   const apply = async (next: Set<string>, p = prefs) => {
     setChosen(next); setPrefs(p);
     // read fresh, not from the screen: a run moves the folders' places on meanwhile
@@ -88,12 +100,12 @@ export default function Backup() {
     await refresh();
   };
   const appSettings = () => { expectAway(); N.openAppSettings(); };
-  const askBattery = () => { expectAway(); N.askBatteryExemption(); };
   const askNotifications = async () => {
     // before Android 13 there is no prompt: notifications are switched off in the app settings
     if (device.sdk < 33) { appSettings(); return; }
     const r = await away(() => PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS));
-    if (r === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) appSettings();
+    // refused for good, or allowed with the backup's own notifications switched off: both only in the app settings
+    if (r === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN || (r === PermissionsAndroid.RESULTS.GRANTED && !N.backupState().notifications)) appSettings();
     await refresh();
   };
 
@@ -127,6 +139,10 @@ export default function Backup() {
 
   const now = config ? blocker(config, false) : undefined;
   const problem = status?.problem ?? (on ? now : undefined);
+  const running = !!status?.running;
+  const inFolders = (folders ?? []).filter((f) => chosen.has(f.id)).reduce((n, f) => n + f.count, 0);
+  const choice = existingChoice({ on, includeExisting: prefs.includeExisting, inFolders, older });
+  const background = backgroundUse(device);
 
   return (
     <View style={{ flex: 1, backgroundColor: t.colors.background }}>
@@ -140,32 +156,26 @@ export default function Backup() {
             <View style={{ flex: 1 }}>
               <Text variant="titleMedium">Back up automatically</Text>
               <Text variant="bodySmall" style={{ color: t.colors.onSurfaceVariant, marginTop: 2 }}>
-                {on ? (status?.running ? `Backing up${status.current ? ` ${status.current}` : ""}…` : waiting ? `${waiting} waiting`
-                  : older ? "New photos and videos are backed up" : device.media === "partial" ? "Everything Cipherfilm can see is backed up" : "Everything is backed up") : "Off"}
+                {headline({ on, running, live, waiting, includeExisting: !!config?.includeExisting, older, partial: device.media === "partial" })}
               </Text>
             </View>
             {busy ? <Loader /> : <Switch value={on} onValueChange={toggle} accessibilityLabel="Back up automatically" />}
           </View>
           {on ? (
             <>
-              {problem ? <Text variant="bodyMedium" style={{ marginTop: 12 }}>{problem}{status?.problem && status.problemAt ? ` (${fmtTime.format(status.problemAt)})` : ""}</Text> : null}
-              {older > 0 && !status?.running ? (
+              {running && live ? (
                 <>
-                  <Text variant="bodyMedium" style={{ marginTop: 12 }}>
-                    {older === 1 ? "1 older photo or video" : `${older} older photos and videos`} in these folders {older === 1 ? "isn't" : "aren't"} in Cipherfilm. Only new ones are backed up.
-                  </Text>
-                  <Button mode="outlined" style={{ marginTop: 8, alignSelf: "flex-start" }} onPress={() => apply(chosen, { ...prefs, includeExisting: true })}>Back up these too</Button>
+                  <ProgressBar progress={live.fraction} color={t.colors.primary} style={{ height: 5, borderRadius: 3, marginTop: 12, backgroundColor: t.colors.outlineVariant }} />
+                  <Text variant="bodySmall" style={{ marginTop: 6, color: t.colors.onSurfaceVariant }}>{liveLine(live)}</Text>
                 </>
               ) : null}
+              {problem ? <Text variant="bodyMedium" style={{ marginTop: 12 }}>{problem}{status?.problem && status.problemAt ? ` (${fmtTime.format(status.problemAt)})` : ""}</Text> : null}
               {status?.needsYou?.length && !status.running ? (
-                <Text variant="bodyMedium" style={{ marginTop: 12 }}>
-                  {status.needsYou.length === 1 ? `${status.needsYou[0].name} is too large` : `${status.needsYou.length} large videos are too large`} to upload in the background. Tap Back up now to upload {status.needsYou.length === 1 ? "it" : "them"}.
-                </Text>
+                <Text variant="bodyMedium" style={{ marginTop: 12 }}>{tooLarge(status.needsYou)}</Text>
               ) : null}
               {status?.stalled && !status.running ? <Text variant="bodyMedium" style={{ marginTop: 12 }}>The last backup stopped at {status.stalled}. It is tried up to three more times, then skipped.</Text> : null}
               <Text variant="bodySmall" style={{ marginTop: 8, color: t.colors.onSurfaceVariant }}>
-                {status?.lastDone ? `Last complete: ${fmtTime.format(status.lastDone)}` : status?.lastRun ? `Last checked: ${fmtTime.format(status.lastRun)}` : "Not run yet"}
-                {status?.uploaded ? ` · ${status.uploaded} backed up so far` : ""}
+                {lastLine(status ?? { uploaded: 0 }, (d) => fmtTime.format(d))}
               </Text>
               <Button mode="contained" icon="upload" style={{ marginTop: 12, alignSelf: "flex-start" }} disabled={status?.running}
                 onPress={() => runBackup("manual").catch(() => {})}>Back up now</Button>
@@ -182,17 +192,15 @@ export default function Backup() {
         {device.sdk >= 29 ? <Check ok={device.location} icon="info" title="Where photos were taken"
           text={device.location ? "Kept in the backup (encrypted)" : "Without this, Android strips the location from photos"}
           action={device.location ? undefined : ["Allow", askMedia]} /> : null}
-        {/* recommended, not required: a running backup keeps itself going (TransferService), so not shown as an error */}
-        <Check ok={device.batteryExempt} warn icon="lock" title="Run in the background"
-          text={device.batteryExempt ? "Android lets the backup run when the app is closed"
+        {/* Android's default ("Optimized", "Allow background usage" on) counts as allowed: the backup runs then, and
+            that is what the person sees switched on in Android's settings. Only "Restricted" stops it. Xiaomi's own
+            battery saver can't be seen by the app, so there it says where it is until the exemption is on. */}
+        <Check ok={background === "unrestricted" || (background === "allowed" && !xiaomi)} warn={background !== "restricted"} icon="lock" title="Run in the background"
+          text={background === "unrestricted" ? "Allowed, without battery limits"
+            : background === "restricted" ? "Android stops the backup when the app is closed. In the app settings, open Battery and allow background usage."
             : xiaomi ? "On Xiaomi: app settings › Battery saver › No restrictions. This box stays unticked, because Android can't see that setting."
-            : "Android may pause the backup when the app is closed"}
-          action={device.batteryExempt ? undefined : xiaomi ? ["Open", appSettings] : ["Allow", askBattery]} />
-        {!device.batteryExempt && !xiaomi && isPlayBuild() ? (
-          <Text variant="bodySmall" style={[st.hint, { color: t.colors.onSurfaceVariant }]}>
-            In the list that opens, choose "All apps", then Cipherfilm, then "Don't optimise".
-          </Text>
-        ) : null}
+            : "Allowed. Android may wait a little with a backup while the phone is idle."}
+          action={background === "restricted" || (background === "allowed" && xiaomi) ? ["Open", appSettings] : undefined} />
         <Check ok={device.notifications} icon="upload" title="Notifications"
           text={device.notifications ? "Shows backup progress" : "Shows progress and tells you when to sign in again"}
           action={device.notifications ? undefined : ["Allow", askNotifications]} />
@@ -207,7 +215,7 @@ export default function Backup() {
         {device.media === "none" ? (
           <Text variant="bodyMedium" style={st.hint}>Allow access to photos and videos to see your folders.</Text>
         ) : !folders ? <Loading inline label="Looking for photo folders…" style={{ margin: 16 }} /> : folders.map((f) => (
-          <List.Item key={f.id} title={f.name} description={`${f.path.replace(/\/$/, "")} · ${f.count === 1 ? "1 item" : `${f.count} items`}`}
+          <List.Item key={f.id} title={f.name} description={folderLine(f.path, f.count)}
             onPress={() => { const n = new Set(chosen); n.has(f.id) ? n.delete(f.id) : n.add(f.id); apply(n); }}
             accessibilityRole="checkbox" accessibilityState={{ checked: chosen.has(f.id) }}
             left={() => <View style={{ justifyContent: "center", paddingLeft: 16, paddingRight: 4 }}><Icon name={chosen.has(f.id) ? "boxOn" : "boxOff"} size={24} color={chosen.has(f.id) ? t.colors.primary : t.colors.onSurfaceVariant} /></View>}
@@ -215,14 +223,12 @@ export default function Backup() {
         ))}
 
         <Divider style={{ marginTop: 8 }} />
-        <List.Subheader>Photos already on the phone</List.Subheader>
+        <List.Subheader>Photos and videos already on this phone</List.Subheader>
         <RadioButton.Group value={prefs.includeExisting ? "all" : "new"} onValueChange={(v) => apply(chosen, { ...prefs, includeExisting: v === "all" })}>
           <RadioButton.Item label="Only new photos and videos from now on" value="new" labelVariant="bodyLarge" />
-          <RadioButton.Item label="Also the ones already in these folders" value="all" labelVariant="bodyLarge" />
+          <RadioButton.Item label={choice.all} value="all" labelVariant="bodyLarge" />
         </RadioButton.Group>
-        <Text variant="bodySmall" style={[st.hint, { color: t.colors.onSurfaceVariant }]}>
-          Applies to all chosen folders. Photos already in your library (same name and size) are skipped.
-        </Text>
+        <Text variant="bodySmall" style={[st.hint, { color: t.colors.onSurfaceVariant }]}>{choice.hint}</Text>
 
         <Divider style={{ marginTop: 8 }} />
         <List.Subheader>When</List.Subheader>

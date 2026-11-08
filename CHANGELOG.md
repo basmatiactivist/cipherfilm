@@ -7,6 +7,11 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+### Changed
+- Android: the app turns with the phone and fills tablets and foldables (it was locked to portrait; from Android 16
+  large screens ignore that lock). The photo viewer stays on the same photo when the phone turns and measures the
+  system bars again.
+
 ## [2.4.0] - 2026-11-08
 
 "Report a problem" in every app, and fixes for naming people, the German privacy policy and reloads on the web.

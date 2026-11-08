@@ -38,6 +38,9 @@ export default function Viewer() {
   // the room the system bars take even while they are hidden, so nothing moves when they come and go
   const safe = useSafeAreaInsets();
   const kept = useRef<Insets>(safe);
+  // turned: the bars are on other sides now, so the largest-seen insets start again from the current ones
+  const turned = useRef(width > height);
+  if (turned.current !== width > height) { turned.current = width > height; kept.current = safe; }
   kept.current = largestInsets(kept.current, safe);
   const inset = kept.current;
   // opened from an album: swiping stays inside it
@@ -55,6 +58,15 @@ export default function Viewer() {
   });
   const [start] = useState(() => Math.max(0, list.findIndex((i) => i.id === id)));
   const [index, setIndex] = useState(start);
+  // the page width changes when the phone turns (or a window is resized): the pager is put back on the same photo,
+  // instead of staying at the old offset between two photos
+  const indexRef = useRef(index); indexRef.current = index;
+  const lastWidth = useRef(width);
+  useEffect(() => {
+    if (lastWidth.current === width) return;
+    lastWidth.current = width;
+    requestAnimationFrame(() => pager.current?.scrollToIndex({ index: indexRef.current, animated: false }));
+  }, [width]);
   const [info, setInfo] = useState(false);
   const [picker, setPicker] = useState(false);
   const [busy, setBusy] = useState<{ label: string; progress: number } | null>(null);

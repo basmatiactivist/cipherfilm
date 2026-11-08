@@ -13,7 +13,7 @@ export interface Insets { top: number; bottom: number; left: number; right: numb
 
 /** The safe-area insets with the system bars shown, also while they are hidden: hidden bars take no room, so the insets
  *  drop to 0 and would move the viewer's bars and the loading badge each time. The largest seen per side is the room
- *  the system bars take (the app is portrait only, so it doesn't change while the viewer is open). */
+ *  the system bars take; the viewer starts again from the current insets when the phone turns (the bars move sides). */
 export const largestInsets = (kept: Insets, now: Insets): Insets =>
   now.top <= kept.top && now.bottom <= kept.bottom && now.left <= kept.left && now.right <= kept.right ? kept : {
     top: Math.max(kept.top, now.top), bottom: Math.max(kept.bottom, now.bottom),

@@ -47,6 +47,9 @@ const forgetTags = () => { tags.clear(); seen.clear(); stdTags.clear(); stdSeen.
 let wipes = 0; // counts locks: a copy still loading when the library locks is dropped
 let pair: KeyPair | null = null;
 let run: { cancelled: boolean } | null = null;
+/** The run still going (run stays set after it ended), and a newer library that came while it went (see libraryChanged). */
+let active: { cancelled: boolean } | null = null;
+let queued: Item[] | null = null;
 let ready = false;
 let changed = 0; // counts index changes, for screens that show people
 export const indexVersion = () => changed;
@@ -187,8 +190,16 @@ async function loadCopy(master: Uint8Array, faces: boolean): Promise<boolean> {
   }
 }
 
-/** Opens the text model (searching) or everything (indexing too), unless it is open already. */
-async function openVision(st: SearchSettings, all: boolean) {
+/** Opens the text model (searching) or everything (indexing too), unless it is open already. One after the other: what
+ *  is open is read once the one before is done, so a search asking for the text model while the image models are
+ *  still opening (they open next to fetching the entries, startSearch) doesn't close them again. */
+let visionQueue: Promise<unknown> = Promise.resolve();
+function openVision(st: SearchSettings, all: boolean): Promise<void> {
+  const next = visionQueue.catch(() => {}).then(() => openNow(st, all));
+  visionQueue = next;
+  return next;
+}
+async function openNow(st: SearchSettings, all: boolean) {
   const v = N.visionState();
   const same = v.clip === clip && v.dir === modelPath().replace(/\/+$/, "");
   // the phone that indexes with LAION runs MobileCLIP's image model on every photo too
@@ -224,7 +235,10 @@ export function warmSearch(): Promise<void> {
   return warming;
 }
 
+/** Back to the event loop (a timer, not a microtask): touches, rendering and other screens' requests go first. The
+ *  indexer does this between photos and every few dozen entries, so it never holds the JS thread for long. */
 const pause = () => new Promise((r) => setTimeout(r, 0));
+const BATCH = 50;
 
 // While it downloads the models, the app keeps running when it leaves the screen: the foreground service (a data
 // transfer, as for uploads, keepAlive.ts) and its notification. Indexing is not a transfer and never runs in that
@@ -256,12 +270,15 @@ const mbs = (n: number) => `${Math.round(n / 1e6)} MB`;
 export async function startSearch(library: Item[]) {
   const st = await loadSettings();
   run && (run.cancelled = true);
+  queued = null; // this run has the newest list
   if (!st.enabled) { set({ phase: "off", done: 0, total: 0, message: undefined }); return; }
   const me = session().me, master = session().masterKey;
   if (!me || !master) return;
   const mine = { cancelled: false };
   run = mine;
+  active = mine;
   const live = () => !mine.cancelled && session().masterKey === master;
+  let failed = false;
   try {
     await warmSearch(); // the copy on the phone first: search works while the rest catches up
     if (!live()) return;
@@ -293,10 +310,17 @@ export async function startSearch(library: Item[]) {
       }
       if (!live()) return;
     }
-    if (!ready) set({ phase: "loading", done: 0, total: 0 });
-    await openVision(st, false); // the image models only once there is something to index (below)
+    if (!ready) set({ phase: "loading", done: 0, total: 0, message: "Opening the search models" });
+    // The image models only when there is something to index: the phone that indexes opens them now, next to fetching
+    // the server's entries (they open on their own thread, Lanes.kt), when the library has photos without an entry
+    // here, as every one has on a new account right after the download. Otherwise only the text model, and the image
+    // models below if the server's entries leave something to do.
+    const eligible = (i: Item) => !i.broken && !!i.itemKey && i.kind !== "other" && (i.has_preview || i.has_thumb);
+    const opening = openVision(st, indexes && library.some((i) => eligible(i) && missing(i.id, st.faces).length > 0));
+    opening.catch(() => {}); // (awaited below)
     pair ??= accountKeyPair(s, unb64(s, me.wrapped_privkey), master, normEmail(me.user.email));
     if (!live()) return;
+    if (!ready) set({ phase: "loading", done: 0, total: 0, message: "Getting the index from the server" });
 
     // what the server has: everything new since the last visit, added to the encrypted copy here
     const cache = await readCache();
@@ -311,7 +335,7 @@ export async function startSearch(library: Item[]) {
     for (const [id, enc] of open) {
       if (!live()) return;
       try { await put(s, id, openIndexEntry(s, unb64(s, enc), pair!, id), st.faces, enc); touched = true; } catch { delete cache.entries[id]; /* damaged or not for this item: made again */ }
-      if (++n % 200 === 0) { await pause(); if (!ready) set({ phase: "loading", done: n, total: open.length }); }
+      if (++n % BATCH === 0) { await pause(); if (!ready) set({ phase: "loading", done: n, total: open.length, message: undefined }); }
     }
     for (const id of [...tags.keys()]) if (!ids.has(id)) { tags.delete(id); seen.delete(id); N.indexRemove(id); touched = true; }
     ready = true; changed++;
@@ -319,20 +343,41 @@ export async function startSearch(library: Item[]) {
     const std = keepsStandard(clip, indexes) ? await pullStandard(s, ids, live) : null;
     if (!live()) return;
     if (touched || std?.touched) await saveCopy(master);
-    await rememberForBackground(library, st);
+    await opening;
+    if (!live()) return;
+    // for the background; not waited for: indexing starts at once (one write at a time, the newest list last)
+    let lib = library;
+    let remembering = Promise.resolve();
+    const remember = () => (remembering = remembering.then(() => rememberForBackground(lib, st, live)).catch(() => {}));
+    remember();
 
     // what has no entry yet: newest first; only on the phone that indexes (the others take what it stores)
-    if (!indexes) { set({ phase: "ready", done: tags.size, total: ids.size, message: undefined }); return; }
-    const todo = library.filter((i) => !i.broken && i.itemKey && i.kind !== "other" && (i.has_preview || i.has_thumb) && missing(i.id, st.faces).length);
-    const total = ids.size;
+    if (!indexes) { await remembering; set({ phase: "ready", done: tags.size, total: ids.size, message: undefined }); return; }
+    const todo = library.filter((i) => eligible(i) && missing(i.id, st.faces).length);
+    let total = ids.size;
     let done = total - todo.length;
     set({ phase: todo.length ? "indexing" : "ready", done, total, message: undefined });
     if (todo.length) await openVision(st, true);
+    let since = 0, notIndexer = false, again = false;
+    /** A newer library that came while indexing (libraryChanged): its new photos go first, the rest at the next run. */
+    const absorb = () => {
+      const next = queued;
+      if (!next) return;
+      queued = null; again = true; lib = next;
+      const fresh = next.filter((i) => !ids.has(i.id));
+      for (const i of fresh) ids.add(i.id);
+      const add = fresh.filter((i) => eligible(i) && missing(i.id, st.faces).length);
+      todo.unshift(...add);
+      total += fresh.length; done += fresh.length - add.length;
+      set({ total, done });
+    };
     const pk = unb64(s, me.pubkey);
     if (!s.memcmp(pk, pair!.pk)) throw new Error("Your account's keys don't match.");
-    let since = 0, notIndexer = false;
     const work = async () => {
       while (todo.length && live()) {
+        await pause(); // between photos: the app stays responsive (see pause)
+        absorb();
+        if (!todo.length || !live()) return;
         const it = todo.shift()!;
         try {
           const want = missing(it.id, st.faces);
@@ -354,7 +399,7 @@ export async function startSearch(library: Item[]) {
         }
         done++;
         if (++since % 10 === 0) set({ done });
-        if (since % 50 === 0) { await writeCache(cache); if (std) await writeCache(std.cache, family(STANDARD)); await rememberForBackground(library, st); }
+        if (since % 50 === 0) { await writeCache(cache); if (std) await writeCache(std.cache, family(STANDARD)); remember(); }
         if (since % 200 === 0) await saveCopy(master);
       }
     };
@@ -362,7 +407,9 @@ export async function startSearch(library: Item[]) {
     await writeCache(cache);
     if (std) await writeCache(std.cache, family(STANDARD));
     if (since) await saveCopy(master);
-    await rememberForBackground(library, st);
+    remember();
+    await remembering;
+    if (again && !queued) queued = lib; // the photos that went away meanwhile, and entries made elsewhere: once more
     if (notIndexer) { // another device became the indexer meanwhile: this phone only searches from now on
       indexes = false; await saveSettings({ indexes: false }); dropOtherModels(clip, false); N.visionOpen(modelPath(), st.faces, clip, false, null).catch(() => {});
       if (live()) set({ phase: "ready", done: tags.size, total });
@@ -370,13 +417,32 @@ export async function startSearch(library: Item[]) {
     }
     if (live()) set({ phase: "ready", done, total });
   } catch (e) {
+    failed = true;
     if (live()) set({ phase: "error", message: e instanceof Error ? e.message : String(e) });
   } finally {
     if (run === mine) { release(); syncing = false; } // a newer run took over: it holds (or lets go) itself
+    if (active === mine) {
+      active = null;
+      // a library that came while this ran: once more with it (not after a failure, which waits for the next change)
+      const next = queued;
+      queued = null;
+      if (next && live() && !failed) setTimeout(() => { if (!active) startSearch(next).catch(() => {}); }, 0);
+    }
   }
 }
 
-export const stopSearch = () => { if (run) run.cancelled = true; release(); };
+/**
+ * The library changed (a refresh, live updates): search follows. A run still going isn't thrown away, as startSearch
+ * would (it starts again from asking the server, which on a new account with a backup running meant starting over
+ * every few seconds, never getting far into indexing): it takes the new photos into what it indexes, and runs once
+ * more when it is done. With nothing running, it is startSearch.
+ */
+export function libraryChanged(library: Item[]): Promise<void> {
+  if (active && !active.cancelled) { queued = library; return Promise.resolve(); }
+  return startSearch(library);
+}
+
+export const stopSearch = () => { if (run) run.cancelled = true; queued = null; release(); };
 
 /** "Index on this phone instead": this phone becomes the account's indexing device and loads the image models. */
 export async function indexHere(library: Item[]) {
@@ -401,7 +467,7 @@ async function pullStandard(s: Sodium, ids: Set<string>, live: () => boolean) {
     if (!ids.has(id) || stdSeen.get(id) === stamp(enc)) continue;
     try { stdTags.set(id, openIndexEntry(s, unb64(s, enc), pair!, id).m); stdSeen.set(id, stamp(enc)); } catch { delete cache.entries[id]; stdTags.delete(id); stdSeen.delete(id); }
     touched = true;
-    if (++n % 200 === 0) await pause();
+    if (++n % BATCH === 0) await pause();
   }
   return { cache, touched };
 }
@@ -441,11 +507,21 @@ export function toEntry(s: Sodium, clipVec: Uint8Array, faces: IndexEntry["faces
 // ---- for the background (search/background.ts): which phone photos are in the library, and which are done ----
 
 export const localFile = () => new File(settingsDir(), "local.json");
-async function rememberForBackground(library: Item[], st: SearchSettings) {
+/** Each item's fingerprint, worked out once: this runs every 50 photos indexed, over the whole library. */
+const printOf = new Map<string, string>();
+async function rememberForBackground(library: Item[], st: SearchSettings, live: () => boolean = () => true) {
   if (!st.background) return;
   const prints: Record<string, string> = {};
-  for (const it of library) if (it.meta && !it.broken) prints[await fingerprint(it.meta.name, it.meta.size)] = it.id;
+  let n = 0;
+  for (const it of library) {
+    if (!it.meta || it.broken) continue;
+    const k = `${it.id}\0${it.meta.name}\0${it.meta.size}`;
+    let p = printOf.get(k);
+    if (p === undefined) { p = await fingerprint(it.meta.name, it.meta.size); printOf.set(k, p); if (++n % 500 === 0) { await pause(); if (!live()) return; } }
+    prints[p] = it.id;
+  }
   const done = library.filter((i) => good(tags.get(i.id), st.faces) && !missing(i.id, st.faces).length).map((i) => i.id);
+  if (!live()) return; // (it isn't waited for: the library may have locked meanwhile)
   try { settingsDir().create({ intermediates: true, idempotent: true }); await localFile().write(JSON.stringify({ userId: session().me?.user.id, prints, done })); } catch { /* next time */ }
 }
 
@@ -478,6 +554,7 @@ export async function forgetSearch(clear: boolean) {
 
 onWipe((how) => {
   if (run) run.cancelled = true;
+  queued = null; printOf.clear();
   if (how !== "locked" || !downloading) release(); // a download goes on while locked (above)
   wipes++;
   N.indexClear?.();

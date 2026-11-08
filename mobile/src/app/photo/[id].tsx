@@ -125,7 +125,7 @@ export default function Viewer() {
   };
   const save = () => run(t("Saving to this phone"), async (p) => {
     await saveItems([current], p);
-    return t("Saved to Pictures › Cipherfilm.");
+    return current.kind === "video" ? t("Saved to Movies › Cipherfilm.") : t("Saved to Pictures › Cipherfilm.");
   });
   const intoAlbum = (a: Album) => run(t("Adding to the album"), async () => {
     setPicker(false);

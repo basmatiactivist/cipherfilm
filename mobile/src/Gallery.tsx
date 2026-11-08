@@ -159,7 +159,11 @@ export function Gallery({ items, error, loading, onRefresh, header, empty, botto
     const list = picked();
     await saveItems(list, p);
     setSelected(new Set());
-    return tn(list.length, "Saved {n} item to Pictures › Cipherfilm.", "Saved {n} items to Pictures › Cipherfilm.");
+    // photos go to Pictures, videos to Movies (outbox.ts): the note names where they are
+    const videos = list.filter((i) => i.kind === "video").length;
+    if (!videos) return tn(list.length, "Saved {n} item to Pictures › Cipherfilm.", "Saved {n} items to Pictures › Cipherfilm.");
+    if (videos === list.length) return tn(list.length, "Saved {n} video to Movies › Cipherfilm.", "Saved {n} videos to Movies › Cipherfilm.");
+    return tn(list.length, "Saved {n} item to Pictures and Movies › Cipherfilm.", "Saved {n} items to Pictures and Movies › Cipherfilm.");
   });
   const trash = () => run(t("Moving to the trash"), async () => {
     const ids = [...selected];

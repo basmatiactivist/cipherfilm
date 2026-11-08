@@ -7,6 +7,15 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+### Security
+- Android: libraries other modules bring along are raised past known security fixes: Gson 2.11.0 (from 2.8.6, in
+  Expo's core), commons-io 2.18.0 (from 1.4, in Expo's file system) and Guava 33.7.2 (from 33.3.1, in Media3 and
+  Glide). The app's Gradle libraries are now reported to GitHub's dependency graph, so Dependabot raises alerts for
+  them too (only what goes into the app, not the build tools).
+
+### Fixed
+- Android: saving a video says it went to Movies › Cipherfilm (it said Pictures).
+
 ## [2.4.1] - 2026-11-08
 
 The Android app turns with the phone and fills tablets.

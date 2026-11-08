@@ -213,4 +213,9 @@ export const deApp: Record<string, string> = {
   "action|Trash": "Löschen",
   // the server's messages (server/*.go), shown through serverSays() in api.ts
   "This is the public demo: changes are turned off.": "Dies ist die öffentliche Demo: Änderungen sind ausgeschaltet.",
+  "Saved to Movies › Cipherfilm.": "Unter Filme › Cipherfilm gespeichert.",
+  "Saved {n} video to Movies › Cipherfilm.": "{n} Video unter Filme › Cipherfilm gespeichert.",
+  "Saved {n} videos to Movies › Cipherfilm.": "{n} Videos unter Filme › Cipherfilm gespeichert.",
+  "Saved {n} item to Pictures and Movies › Cipherfilm.": "{n} Element unter Bilder und Filme › Cipherfilm gespeichert.",
+  "Saved {n} items to Pictures and Movies › Cipherfilm.": "{n} Elemente unter Bilder und Filme › Cipherfilm gespeichert.",
 };

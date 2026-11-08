@@ -35,6 +35,14 @@ dependencies {
   compileOnly "host.exp.exponent:expo.modules.backgroundtask:${new groovy.json.JsonSlurper().parse(file("../../../node_modules/expo-background-task/package.json")).version}"
   // the app's own React Native and its OkHttp (CfNativePackage), not a second copy
   compileOnly "com.facebook.react:react-android"
+
+  // Lowest versions for libraries other modules bring along, past known security fixes (Dependabot alerts from
+  // .github/workflows/android-deps.yml); constraints only raise a version when it is in the app anyway, they add nothing
+  constraints {
+    implementation("com.google.code.gson:gson:2.11.0") { because "Gson < 2.8.9 (expo-modules-core): deserialization DoS" }
+    implementation("commons-io:commons-io:2.18.0") { because "commons-io < 2.7 (expo-file-system): path traversal in FilenameUtils" }
+    implementation("com.google.guava:guava:33.7.2-android") { because "Guava <= 33.7.1 (Media3, Glide): deserialization" }
+  }
 }
 
 // a build without the library would crash at the first key derivation: stop early instead

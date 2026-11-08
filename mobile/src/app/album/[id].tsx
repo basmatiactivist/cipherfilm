@@ -16,7 +16,7 @@ import { busyIcon } from "../../Loader";
 export default function AlbumScreen() {
   const t = useAppTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { albums } = useAlbums();
+  const { albums, error: albumsError, loading: albumsLoading } = useAlbums();
   const { items, error, loading } = useLibrary();
   const [menu, setMenu] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -38,17 +38,20 @@ export default function AlbumScreen() {
   };
   useEffect(() => { if (!albums) refreshAlbums(); if (!items) refreshLibrary(); }, []);
   const album = albums?.find((a) => a.id === id);
+  // deleted meanwhile (on another device): said so, instead of the loading badge for ever
+  const gone = !!albums && !album;
   const shown = useMemo(() => {
+    if (gone && items) return [];
     if (!album || !items) return null;
     const ids = new Set(album.itemIds);
     return items.filter((i) => ids.has(i.id));
-  }, [album, items]);
+  }, [album, items, gone]);
   const count = (n: number) => (n === 1 ? "1 item" : `${n} items`);
 
   return (
     <View style={{ flex: 1 }}>
       <Gallery
-        items={shown} error={error} loading={loading} album={id}
+        items={shown} error={error ?? albumsError} loading={loading || albumsLoading} album={id}
         onRefresh={() => { refreshAlbums(); refreshLibrary(); }}
         header={
           <Appbar.Header style={{ backgroundColor: t.colors.background }}>
@@ -64,7 +67,7 @@ export default function AlbumScreen() {
           <View style={st.empty}>
             <Icon name="albums" size={32} color={t.colors.onSurfaceVariant} />
             <Text variant="bodyMedium" style={{ textAlign: "center", color: t.colors.onSurfaceVariant, marginTop: 12, maxWidth: 300 }}>
-              This album is empty. In Photos, long-press photos and tap Add to album.
+              {gone ? "This album isn't there anymore. It may have been deleted on another device." : "This album is empty. In Photos, long-press photos and tap Add to album."}
             </Text>
           </View>
         }

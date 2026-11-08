@@ -24,7 +24,7 @@ export default function Search() {
   const t = useAppTheme();
   const inset = useSafeAreaInsets();
   const params = useLocalSearchParams<{ similar?: string; q?: string }>();
-  const { items } = useLibrary();
+  const { items, error } = useLibrary();
   const [q, setQ] = useState(params.q ?? "");
   const [res, setRes] = useState<Result | null>(null);
   const [similar, setSimilar] = useState<Item[] | null>(null);
@@ -35,12 +35,14 @@ export default function Search() {
   const seq = useRef(0);
   useEffect(() => { if (!items) refreshLibrary(); }, []);
 
-  // photos like one from the viewer
+  // photos like one from the viewer; an answer that comes after Close or typing is dropped
   useEffect(() => {
     if (!params.similar || !items) return;
+    let live = true;
     const byId = new Map(items.map((i) => [i.id, i]));
     const self = byId.get(params.similar);
-    similarTo(params.similar).then((hits) => setSimilar([...(self ? [self] : []), ...hits.map((h) => byId.get(h.id)).filter((i): i is Item => !!i)]), () => setSimilar([]));
+    similarTo(params.similar).then((hits) => live && setSimilar([...(self ? [self] : []), ...hits.map((h) => byId.get(h.id)).filter((i): i is Item => !!i)]), () => live && setSimilar([]));
+    return () => { live = false; };
   }, [params.similar, items, progress.phase]);
 
   useEffect(() => {
@@ -48,7 +50,9 @@ export default function Search() {
     if (!q.trim()) { setRes(null); setBusy(false); return; }
     setBusy(true);
     const h = setTimeout(() => {
-      search(q, (items ?? []).filter((i) => !i.broken)).then((r) => { if (seq.current === mine) setRes(r); }, () => {}).finally(() => { if (seq.current === mine) setBusy(false); });
+      // one that fails finds nothing, rather than leaving the badge on
+      search(q, (items ?? []).filter((i) => !i.broken)).then((r) => { if (seq.current === mine) setRes(r); }, () => { if (seq.current === mine) setRes({ items: [], people: [], how: [] }); })
+        .finally(() => { if (seq.current === mine) setBusy(false); });
     }, 250);
     return () => clearTimeout(h);
   }, [q, items, progress.phase === "ready"]);
@@ -57,7 +61,7 @@ export default function Search() {
 
   const bar = (
     <View style={{ paddingTop: inset.top + 8, paddingHorizontal: 16 + inset.left, paddingBottom: 8 }}>
-      <Searchbar placeholder="Search your photos" value={q} onChangeText={(v) => { setQ(v); setSimilar(null); }}
+      <Searchbar placeholder="Search your photos" value={q} onChangeText={(v) => { setQ(v); setSimilar(null); if (params.similar) router.setParams({ similar: "" }); }}
         right={busy ? ({ style }) => <View style={[style, { marginRight: 16 }]}><Loader /></View> : undefined}
         icon="search" clearIcon="x" style={{ backgroundColor: t.colors.surfaceVariant }} inputStyle={{ minHeight: 0 }}
         autoCorrect={false} returnKeyType="search" accessibilityLabel="Search your photos"
@@ -73,17 +77,22 @@ export default function Search() {
   );
 
   // the search box stays mounted while results replace the ideas below it, so typing keeps its focus
-  if (q.trim() || similar) {
-    const shown = similar ?? res?.items ?? null;
+  const findingSimilar = !!params.similar && !q.trim();
+  if (q.trim() || similar || findingSimilar) {
+    const found = similar ?? (findingSimilar ? null : res?.items ?? null);
+    // the badge (null) until there is an answer for this search: the library first (without it nothing would be found),
+    // then the search; while the next answer runs the last results stay (the box shows the small badge), but an empty
+    // one isn't shown as "Nothing found" before the search is done
+    const shown = !items ? null : busy && !similar && !found?.length ? null : found;
     return (
       <View style={{ flex: 1, backgroundColor: t.colors.background }}>
         {bar}
-        <Gallery items={shown} loading={false} onRefresh={() => {}} flat within="search" bottom={NAV_HEIGHT}
+        <Gallery items={shown} error={items ? undefined : error} loading={false} onRefresh={() => {}} flat within="search" bottom={NAV_HEIGHT}
           header={res?.people.length && !similar ? (
             <FlatList horizontal data={res.people} keyExtractor={(g) => g.key} contentContainerStyle={{ paddingHorizontal: 12, gap: 4 }} style={{ flexGrow: 0, marginBottom: 4 }}
               renderItem={({ item: g }) => <FaceAvatar group={g} size={56} onPress={() => router.push({ pathname: "/person/[key]", params: { key: g.key } })} />} />
           ) : null}
-          empty={busy ? null : <NoResults ready={progress.phase === "ready" || progress.phase === "indexing"} on={!!settings?.enabled} />}
+          empty={<NoResults ready={progress.phase === "ready" || progress.phase === "indexing"} on={!!settings?.enabled} />}
           nav={<NavBar current="search" />} />
       </View>
     );

@@ -1,6 +1,7 @@
 // The loading badge, the same as the web's (web/src/loader.tsx) and the Mac's: the mark ("Photo lock") on a round seal
 // whose outer edge is the loading ring, a teal arc turning around it. The large one also seals the mark: tiles pass
-// over the photo, then the shackle closes. With reduced motion the ring only fades in and out.
+// over the photo, then the shackle closes. With reduced motion the ring only fades in and out. The medium one sits in a
+// corner over a photo (the viewer), where it shouldn't cover the photo, so it only turns, like the small one.
 // Geometry on the 48 grid; the moving parts are views over a still drawing, so the native driver animates them.
 import { useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, Easing, StyleSheet, View, type ViewStyle } from "react-native";
@@ -11,8 +12,12 @@ import { loader, motion, stage as stageColors } from "./tokens";
 
 const SHACKLE = "M6.6 10V7A5.4 5.4 0 0 1 17.4 7V10H14.4V7A2.4 2.4 0 0 0 9.6 7V10Z";
 const BODY = "M5.8 9.4H18.2A2.2 2.2 0 0 1 20.4 11.6V19.8A2.2 2.2 0 0 1 18.2 22H5.8A2.2 2.2 0 0 1 3.6 19.8V11.6A2.2 2.2 0 0 1 5.8 9.4ZM6.2 19.8L6.2 18L10.2 13.6L13.6 17.2L17.8 14.4L17.8 19.8ZM13.7 12.6A1.7 1.7 0 1 0 17.1 12.6A1.7 1.7 0 1 0 13.7 12.6Z";
-/** The mark on the 48 grid: half the badge tall on the large one, a little more on the small one. */
-const MARK = { large: { x: 9.6, y: 9.84, k: 1.2 }, small: { x: 8.4, y: 8.66, k: 1.3 } };
+/** The mark on the 48 grid: half the badge tall on the large one, a little more on the smaller ones. */
+const MARK = { large: { x: 9.6, y: 9.84, k: 1.2 }, medium: { x: 8.4, y: 8.66, k: 1.3 }, small: { x: 8.4, y: 8.66, k: 1.3 } };
+/** The ring's width on the 48 grid: thicker the smaller the badge, so it still reads at 20 dp (about 2 to 4 dp). */
+const RING = { large: 2.5, medium: 4, small: 5 };
+
+export type LoaderSize = keyof typeof loader;
 /** Tiles over the photo body (x 3.6 to 20.4, y 9.4 to 22 on the 24 grid): 4 by 3, swept corner to corner. */
 const CELLS = Array.from({ length: 12 }, (_, i) => ({ c: i % 4, r: Math.floor(i / 4) }));
 
@@ -33,14 +38,15 @@ const loop = (v: Animated.Value, ms: number) =>
 
 /** The badge alone, as decoration next to words that say what is happening (a busy button, a status row).
  *  On its own use `Loading`, which labels it for screen readers. */
-export function Loader({ large, style }: { large?: boolean; style?: ViewStyle }) {
+export function Loader({ size: kind = "small", style }: { size?: LoaderSize; style?: ViewStyle }) {
   const t = useAppTheme();
   const reduced = useReducedMotion();
-  const size = large ? loader.large : loader.small;
+  const large = kind === "large";
+  const size = loader[kind];
   const u = size / 48; // one grid unit in dp
-  const w = large ? 2.5 : 5; // the ring is thicker on the small badge, so it still reads at 20 dp
+  const w = RING[kind];
   const r = 24 - w / 2;
-  const m = large ? MARK.large : MARK.small;
+  const m = MARK[kind];
   const turn = useRef(new Animated.Value(0)).current;
   const seal = useRef(new Animated.Value(0)).current;
   const breathe = useRef(new Animated.Value(0)).current;
@@ -98,8 +104,10 @@ export function Loader({ large, style }: { large?: boolean; style?: ViewStyle })
 export const busyIcon = () => <Loader />;
 
 /** Something is loading: the large badge with what is happening, centred where the content will be. `inline` is the
- *  small badge in a row; `stage` is for the black photo viewer. Fades in after a moment, so a quick load doesn't flash. */
-export function Loading({ label = "Loading…", inline, stage, style }: { label?: string; inline?: boolean; stage?: boolean; style?: ViewStyle }) {
+ *  small badge in a row; `corner` the medium badge alone, placed by `style` (the viewer puts it at the bottom left, so
+ *  it doesn't cover the photo); `stage` is for the black photo viewer. Fades in after a moment, so a quick load doesn't
+ *  flash. */
+export function Loading({ label = "Loading…", inline, corner, stage, style }: { label?: string; inline?: boolean; corner?: boolean; stage?: boolean; style?: ViewStyle }) {
   const t = useAppTheme();
   const reduced = useReducedMotion();
   const fade = useRef(new Animated.Value(0)).current;
@@ -111,8 +119,8 @@ export function Loading({ label = "Loading…", inline, stage, style }: { label?
   const color = stage ? stageColors.onStage : t.colors.onSurfaceVariant;
   return (
     <Animated.View accessible accessibilityRole="progressbar" accessibilityLabel={label} accessibilityLiveRegion="polite"
-      style={[inline ? s.inline : s.block, { opacity: fade }, style]}>
-      <Loader large={!inline} />
+      style={[inline ? s.inline : corner ? null : s.block, { opacity: fade }, style]}>
+      <Loader size={inline ? "small" : corner ? "medium" : "large"} />
       {/* the large badge alone says enough; what is happening is its accessibility label */}
       {inline ? <Text variant="bodyMedium" style={[s.inlineText, { color }]}>{label}</Text> : null}
     </Animated.View>

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, FlatList, PanResponder, Pressable, StatusBar, StyleSheet, useWindowDimensions, View, type GestureResponderEvent } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Animated, AppState, Easing, FlatList, PanResponder, Pressable, StatusBar, StyleSheet, useWindowDimensions, View, type GestureResponderEvent } from "react-native";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Image } from "expo-image";
 import { Dialog, IconButton, Modal, Portal, ProgressBar, Snackbar, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -18,19 +18,26 @@ import { AlbumPicker } from "../../Gallery";
 import { Icon, type IconName } from "../../icons";
 import { prepareShare, saveItems } from "../../outbox";
 import { useAppTheme } from "../../ui";
-import { stage } from "../../tokens";
-import { Loader } from "../../Loader";
+import { motion, stage } from "../../tokens";
+import { Loading, useReducedMotion } from "../../Loader";
+import { hideSystemBars, largestInsets, type Insets } from "../../immersive";
+import { taps } from "../../taps";
 
 const fmtWhen = new Intl.DateTimeFormat(undefined, { dateStyle: "full", timeStyle: "short" });
 const fmtSize = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`);
 
 /** Full-screen viewer on black, swipe between photos; the info sheet shows what the encrypted metadata says. At the
- *  bottom the same actions as for a selection: Share, Add to album, Save to phone, Trash. */
+ *  bottom the same actions as for a selection: Share, Add to album, Save to phone, Trash. A tap on the photo hides the
+ *  bars, Android's too, for only the photo (as in the gallery app); another brings them back. */
 export default function Viewer() {
   const { id, album, within } = useLocalSearchParams<{ id: string; album?: string; within?: string }>();
   const { albums } = useAlbums();
   const { width, height } = useWindowDimensions();
-  const inset = useSafeAreaInsets();
+  // the room the system bars take even while they are hidden, so nothing moves when they come and go
+  const safe = useSafeAreaInsets();
+  const kept = useRef<Insets>(safe);
+  kept.current = largestInsets(kept.current, safe);
+  const inset = kept.current;
   // opened from an album: swiping stays inside it
   const [list, setList] = useState(() => {
     const all = libraryItems().filter((i) => !i.broken);
@@ -53,6 +60,38 @@ export default function Viewer() {
   const pager = useRef<FlatList<Item>>(null);
   const [zoomed, setZoomed] = useState(false);
   const current = list[Math.min(index, list.length - 1)];
+  // the pages still loading (decrypting a photo, preparing a video): the badge in the corner is for the one on screen
+  const [loads, setLoads] = useState<Record<string, boolean>>({});
+  const onLoading = useCallback((item: string, on: boolean) => setLoads((m) => (!!m[item] === on ? m : { ...m, [item]: on })), []);
+  const [barHeight, setBarHeight] = useState(0);
+
+  // the bars: shown, or hidden for only the photo; swiping to the next photo keeps it so
+  const [chrome, setChrome] = useState(true);
+  const toggleChrome = useCallback(() => setChrome((c) => !c), []);
+  const reduced = useReducedMotion();
+  const shown = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (reduced) { shown.setValue(chrome ? 1 : 0); return; }
+    const a = Animated.timing(shown, { toValue: chrome ? 1 : 0, duration: motion.fast, easing: Easing.out(Easing.cubic), useNativeDriver: true });
+    a.start();
+    return () => a.stop();
+  }, [chrome, reduced]);
+  // Android's bars go with them, only while the viewer is on top: a screen opened from it (a person, similar photos),
+  // leaving it and locking (which replaces it) all bring them back
+  const focused = useRef(false);
+  const chromeNow = useRef(chrome);
+  chromeNow.current = chrome;
+  useFocusEffect(useCallback(() => {
+    focused.current = true;
+    if (!chromeNow.current) hideSystemBars(true);
+    return () => { focused.current = false; hideSystemBars(false); };
+  }, []));
+  useEffect(() => { if (focused.current) hideSystemBars(!chrome); }, [chrome]);
+  // back from the share sheet or another app: Android may have shown them again
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (s) => { if (s === "active" && focused.current && !chromeNow.current) hideSystemBars(true); });
+    return () => sub.remove();
+  }, []);
 
   const run = async (label: string, f: (p: (done: number, total: number) => void) => Promise<string | void>) => {
     setBusy({ label, progress: 0 });
@@ -125,25 +164,37 @@ export default function Viewer() {
         keyExtractor={(i) => i.id}
         showsHorizontalScrollIndicator={false}
         onMomentumScrollEnd={(e) => setIndex(Math.round(e.nativeEvent.contentOffset.x / width))}
-        extraData={current?.id}
-        renderItem={({ item }) => <Page item={item} width={width} height={height} active={item.id === current?.id} onZoom={setZoomed} />}
+        extraData={`${current?.id} ${chrome} ${inset.top} ${inset.bottom}`}
+        renderItem={({ item }) => (
+          <Page item={item} width={width} height={height} inset={inset} active={item.id === current?.id} onZoom={setZoomed}
+            chrome={chrome} onTap={toggleChrome} onChrome={setChrome} onLoading={onLoading} />
+        )}
         windowSize={3}
         initialNumToRender={1}
       />
-      <View style={[st.bar, { paddingTop: inset.top + 4, paddingLeft: inset.left + 4, paddingRight: inset.right + 4 }]}>
+      {current && loads[current.id] ? (
+        // in the corner above the bottom bar, not over the photo; it stays there while the bars are hidden
+        <View pointerEvents="none" style={[st.loading, { left: inset.left + 16, bottom: (barHeight || inset.bottom + 88) + 12 }]}>
+          <Loading corner stage label={current.kind === "video" ? "Loading the video…" : "Loading the photo…"} />
+        </View>
+      ) : null}
+      <Animated.View pointerEvents={chrome ? "auto" : "none"} importantForAccessibility={chrome ? "auto" : "no-hide-descendants"}
+        style={[st.bar, { opacity: shown, paddingTop: inset.top + 4, paddingLeft: inset.left + 4, paddingRight: inset.right + 4 }]}>
         <IconButton icon="back" iconColor={stage.onStage} size={24} accessibilityLabel="Back" onPress={() => router.back()} />
         <Text variant="titleSmall" numberOfLines={1} style={st.name}>{current?.meta?.name}</Text>
         <Text variant="labelMedium" style={st.count}>{Math.min(index, list.length - 1) + 1} of {list.length}</Text>
         <IconButton icon="info" iconColor={stage.onStage} size={24} accessibilityLabel="Details" onPress={() => setInfo(true)} />
-      </View>
+      </Animated.View>
       {current ? (
-        <View style={[st.actions, { paddingBottom: inset.bottom + 8, paddingLeft: inset.left, paddingRight: inset.right }]}>
+        <Animated.View pointerEvents={chrome ? "auto" : "none"} importantForAccessibility={chrome ? "auto" : "no-hide-descendants"}
+          onLayout={(e) => setBarHeight(e.nativeEvent.layout.height)}
+          style={[st.actions, { opacity: shown, paddingBottom: inset.bottom + 8, paddingLeft: inset.left, paddingRight: inset.right }]}>
           <Action icon="share" label="Share" onPress={share} />
           <Action icon={isFav ? "heartOn" : "heart"} label="Favorite" onPress={toggleFav} on={isFav} />
           <Action icon="folderPlus" label="Add to album" onPress={() => setPicker(true)} />
           <Action icon="download" label="Save" onPress={save} />
           <Action icon="trash" label="Trash" onPress={trash} />
-        </View>
+        </Animated.View>
       ) : null}
       {current ? <Info item={current} visible={info} onClose={() => setInfo(false)} /> : null}
       <Portal>
@@ -174,35 +225,56 @@ function Action({ icon, label, onPress, on }: { icon: IconName; label: string; o
   );
 }
 
-function Page({ item, width, height, active, onZoom }: { item: Item; width: number; height: number; active: boolean; onZoom: (zoomed: boolean) => void }) {
-  const inset = useSafeAreaInsets();
+interface PageProps {
+  item: Item; width: number; height: number; inset: Insets; active: boolean; onZoom: (zoomed: boolean) => void;
+  /** the bars shown; a tap on the photo toggles them (onTap), the video's controls set them (onChrome) */
+  chrome: boolean; onTap: () => void; onChrome: (shown: boolean) => void;
+  onLoading: (item: string, loading: boolean) => void;
+}
+
+function Page({ item, width, height, inset, active, onZoom, chrome, onTap, onChrome, onLoading }: PageProps) {
   const [uri, setUri] = useState<string>();
   // a video plays when its page is the one on screen; the player gets the item's key only for that
   const play = active && item.kind === "video" && !!item.itemKey && item.segment_count > 0;
   const [ready, setReady] = useState(false);
+  // until the player says it has the first part of the video
+  const [buffering, setBuffering] = useState(true);
   useEffect(() => {
     if (!play) { setReady(false); return; }
     N.videoSource(server(), item.id, item.itemKey!, item.size, item.segment_count);
+    setBuffering(true);
     setReady(true);
   }, [play, item.id]);
   const [sharp, setSharp] = useState(false);
+  const [failed, setFailed] = useState(false); // the thumbnail stays; the badge doesn't turn on for ever
   useEffect(() => {
     let live = true;
-    if (item.has_preview) previewUri(item).then((u) => { if (live) { setUri(u); setSharp(true); } }, () => {});
+    if (item.has_preview) previewUri(item).then((u) => { if (live) { setUri(u); setSharp(true); } }, () => { if (live) setFailed(true); });
     return () => { live = false; };
   }, [item.id]);
+  const loading = ready ? buffering : !sharp && !failed && !!item.has_preview;
+  useEffect(() => { onLoading(item.id, loading); }, [loading]);
+  useEffect(() => () => onLoading(item.id, false), [item.id]);
   return (
     <View style={{ width, height, alignItems: "center", justifyContent: "center" }}>
-      {!uri && item.has_thumb ? <ThumbView item={item.id} fit="contain" style={{ width, height }} accessibilityLabel={item.meta?.name} /> : null}
+      {/* a tap before the sharp photo is there shows or hides the bars too; on the photo Zoomable takes it, as one tap
+          may still become two. Neither holds the video: a tap on it is the player's (it would count twice) */}
+      {!uri ? (
+        <Pressable onPress={onTap} accessible={false} style={{ width, height }}>
+          {item.has_thumb ? <ThumbView item={item.id} fit="contain" style={{ width, height }} accessibilityLabel={item.meta?.name} /> : null}
+        </Pressable>
+      ) : null}
       {uri ? (
-        <Zoomable width={width} height={height} active={active && !ready} onZoom={onZoom}>
+        <Zoomable width={width} height={height} active={active && !ready} onZoom={onZoom} onTap={onTap}>
           <Image source={{ uri }} style={{ width, height }} contentFit="contain" cachePolicy="memory" accessibilityLabel={item.meta?.name} />
         </Zoomable>
       ) : null}
-      {!sharp && item.has_preview && !ready ? <Loader large style={st.spinner} /> : null}
       {ready ? (
-        // the whole page, like the still under it (same fit, so it lines up); the controls keep clear of the bars
-        <VideoView item={item.id} controlsInset={[inset.top + 56, inset.bottom + 80]} style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0 }} />
+        // the whole page, like the still under it (same fit, so it lines up); the controls keep clear of the bars and
+        // come and go with them: a tap on the video shows or hides both
+        <VideoView item={item.id} controlsInset={[inset.top + 56, inset.bottom + 80]} controls={chrome}
+          onControls={(e) => onChrome(e.nativeEvent.visible)} onBuffering={(e) => setBuffering(e.nativeEvent.buffering)}
+          style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0 }} />
       ) : null}
     </View>
   );
@@ -212,12 +284,12 @@ const MAX_ZOOM = 5;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 /** A photo that zooms like in the gallery app: double-tap for 2.5× there (again for all of it), or pinch up to 5×.
- *  While zoomed one finger moves it and the pager holds still; another page resets it. */
-function Zoomable({ width, height, active, onZoom, children }: { width: number; height: number; active: boolean; onZoom: (zoomed: boolean) => void; children: React.ReactNode }) {
+ *  While zoomed one finger moves it and the pager holds still; another page resets it. One tap is onTap (the bars). */
+function Zoomable({ width, height, active, onZoom, onTap, children }: { width: number; height: number; active: boolean; onZoom: (zoomed: boolean) => void; onTap: () => void; children: React.ReactNode }) {
   const scale = useRef(new Animated.Value(1)).current;
   const tx = useRef(new Animated.Value(0)).current;
   const ty = useRef(new Animated.Value(0)).current;
-  const z = useRef({ scale: 1, x: 0, y: 0, mode: "", from: 0, dist: 0, startX: 0, startY: 0, lastTap: 0 }).current;
+  const z = useRef({ scale: 1, x: 0, y: 0, mode: "", from: 0, dist: 0, startX: 0, startY: 0 }).current;
   const apply = (next: number, x: number, y: number, animate = false) => {
     const k = clamp(next, 1, MAX_ZOOM);
     const mx = (width * (k - 1)) / 2, my = (height * (k - 1)) / 2;
@@ -227,7 +299,17 @@ function Zoomable({ width, height, active, onZoom, children }: { width: number; 
     } else { scale.setValue(z.scale); tx.setValue(z.x); ty.setValue(z.y); }
     onZoom(z.scale > 1.01);
   };
-  useEffect(() => { if (!active && z.scale !== 1) apply(1, 0, 0); }, [active]);
+  // the taps outlive renders; what they do is the current render's (its size, its onTap)
+  const now = useRef({ single: onTap, double: (_: { x: number; y: number }) => {} });
+  now.current.single = onTap;
+  now.current.double = ({ x, y }) => {
+    if (z.scale > 1.01) return apply(1, 0, 0, true);
+    const k = 2.5;
+    apply(k, (width / 2 - x) * (k - 1), (height / 2 - y) * (k - 1), true);
+  };
+  const [tapper] = useState(() => taps<{ x: number; y: number }>(() => now.current.single(), (at) => now.current.double(at)));
+  useEffect(() => () => tapper.cancel(), []);
+  useEffect(() => { tapper.cancel(); if (!active && z.scale !== 1) apply(1, 0, 0); }, [active]);
   const spread = (e: GestureResponderEvent) => {
     const [a, b] = e.nativeEvent.touches;
     return Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY);
@@ -250,14 +332,7 @@ function Zoomable({ width, height, active, onZoom, children }: { width: number; 
     onPanResponderRelease: () => { if (z.scale < 1.05) apply(1, 0, 0, true); },
     onPanResponderTerminationRequest: () => false,
   }), [width, height, active]);
-  const tap = (e: GestureResponderEvent) => {
-    const now = Date.now();
-    if (now - z.lastTap > 300) { z.lastTap = now; return; }
-    z.lastTap = 0;
-    if (z.scale > 1.01) return apply(1, 0, 0, true);
-    const k = 2.5, { locationX, locationY } = e.nativeEvent;
-    apply(k, (width / 2 - locationX) * (k - 1), (height / 2 - locationY) * (k - 1), true);
-  };
+  const tap = (e: GestureResponderEvent) => tapper.tap({ x: e.nativeEvent.locationX, y: e.nativeEvent.locationY });
   return (
     <Animated.View {...pan.panHandlers} style={{ width, height, transform: [{ translateX: tx }, { translateY: ty }, { scale }] }}>
       <Pressable onPress={tap} accessible={false} style={{ width, height }}>{children}</Pressable>
@@ -353,7 +428,7 @@ const st = StyleSheet.create({
   bar: { position: "absolute", left: 0, right: 0, top: 0, flexDirection: "row", alignItems: "center", backgroundColor: stage.stageBar },
   name: { flex: 1, color: stage.onStage },
   count: { color: stage.stageMuted, marginRight: 4, fontVariant: ["tabular-nums"] },
-  spinner: { position: "absolute" },
+  loading: { position: "absolute" },
   actions: { position: "absolute", left: 0, right: 0, bottom: 0, flexDirection: "row", justifyContent: "space-around", paddingTop: 8, backgroundColor: stage.stageBar },
   action: { flex: 1, maxWidth: 110, alignItems: "center", paddingVertical: 8, borderRadius: 12 },
   sheet: { marginTop: "auto", borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 24 },

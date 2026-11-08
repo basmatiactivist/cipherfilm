@@ -49,6 +49,8 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   mediaInfo(uri: string, isVideo: boolean): Promise<{ captureTs?: number; width?: number; height?: number; duration?: number; make?: string; model?: string; lat?: number; lon?: number }>;
   jpeg(uri: string, isVideo: boolean, maxPx: number, quality: number): Promise<{ bytes: Bytes; width: number; height: number } | null>;
   haptic(): void;
+  /** The status and navigation bars hidden (a swipe from the edge shows them for a moment) or shown again. */
+  systemBars(hidden: boolean): void;
   elapsedRealtime(): number;
   base64(b: Bytes): string;
 
@@ -127,8 +129,14 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
 
 export default requireNativeModule<CfNativeModule>("CfNative");
 
-/** Android's video player, reading the item registered with videoSource(); `controlsInset` is [top, bottom] in dp. */
-export const VideoView = requireNativeView<ViewProps & { item: string | null; controlsInset?: [number, number] }>("CfNative");
+/** Android's video player, reading the item registered with videoSource(); `controlsInset` is [top, bottom] in dp.
+ *  `controls`: the viewer's bars are shown, so the player's controls are too; `onControls` when a tap shows or hides
+ *  them (or they hide on their own while it plays); `onBuffering` while it waits for the video. */
+export const VideoView = requireNativeView<ViewProps & {
+  item: string | null; controlsInset?: [number, number]; controls?: boolean;
+  onControls?: (e: { nativeEvent: { visible: boolean } }) => void;
+  onBuffering?: (e: { nativeEvent: { buffering: boolean } }) => void;
+}>("CfNative");
 
 /** One item's thumbnail, decrypted natively (Thumbs.kt); `onFailed` when there is none or it can't be verified. */
 export const ThumbView = requireNativeView<ViewProps & { item: string; fit?: "cover" | "contain"; onFailed?: () => void }>("CfNative", "CfThumbView");

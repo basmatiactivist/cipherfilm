@@ -2,7 +2,7 @@
 // Search words for what is in a photo stay English (the CLIP models understand English only); the texts say so.
 export const deSearch: Record<string, string> = {
   // shared
-  "That didn't work.": "Das hat nicht funktioniert.",
+  "That didn't work.": "Das hat nicht geklappt.",
   "Unlock your library first.": "Entsperren Sie zuerst Ihre Bibliothek.",
   "Back": "Zurück",
   "Cancel": "Abbrechen",
@@ -137,7 +137,7 @@ export const deSearch: Record<string, string> = {
   "Removed from this person.": "Von dieser Person entfernt.",
   "{n} photos removed from this person.": "{n} Fotos von dieser Person entfernt.",
   "Someone not named yet": "Noch nicht benannte Person",
-  "Add name": "Benennen",
+  "Add name": "Namen hinzufügen",
   "{name}, {n} photo": "{name}, {n} Foto",
   "{name}, {n} photos": "{name}, {n} Fotos",
 

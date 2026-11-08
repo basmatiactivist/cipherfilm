@@ -24,8 +24,11 @@ export const currentLang = () => lang;
 /** The locale for dates and numbers that match the words around them. */
 export const locale = () => (lang === "de" ? "de-DE" : "en-US");
 
-export function t(en: string, vars?: Record<string, string | number>): string {
-  const s = lang === "de" ? (de[en] ?? en) : en;
+/** A key may carry a context before "|" when one English word needs two German ones: t("action|Trash") shows
+ *  "Trash" in English and "Löschen" in German, while t("Trash") (the screen) stays „Papierkorb“. */
+export function t(key: string, vars?: Record<string, string | number>): string {
+  const en = key.includes("|") ? key.slice(key.indexOf("|") + 1) : key;
+  const s = lang === "de" ? (de[key] ?? en) : en;
   return vars ? s.replace(/\{(\w+)\}/g, (m: string, k: string) => (k in vars ? String(vars[k]) : m)) : s;
 }
 

@@ -195,7 +195,7 @@ export default function Viewer() {
           <Action icon={isFav ? "heartOn" : "heart"} label={t("Favorite")} onPress={toggleFav} on={isFav} />
           <Action icon="folderPlus" label={t("Add to album")} onPress={() => setPicker(true)} />
           <Action icon="download" label={t("Save")} onPress={save} />
-          <Action icon="trash" label={t("Trash")} onPress={trash} />
+          <Action icon="trash" label={t("action|Trash")} onPress={trash} />
         </Animated.View>
       ) : null}
       {current ? <Info item={current} visible={info} onClose={() => setInfo(false)} /> : null}

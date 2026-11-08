@@ -35,9 +35,12 @@ describe("i18n", () => {
     expect(detectLang("fr-FR")).toBe("en");
     setLang("en");
     expect(t("x {n} y", { n: 3 })).toBe("x 3 y");
+    expect(t("action|Trash")).toBe("Trash");
     expect(tn(1, "{n} photo", "{n} photos")).toBe("1 photo");
     setLang("de");
     expect(t("not translated")).toBe("not translated");
+    expect(t("action|Trash")).toBe("Löschen");
+    expect(t("Trash")).toBe("Papierkorb");
     setLang("en");
   });
 });

@@ -253,7 +253,7 @@ export function Gallery({ items, error, loading, onRefresh, header, empty, botto
                 {extraAction && extra ? <Action icon={extraAction.icon} label={extraAction.label} onPress={extra} /> : null}
                 <Action icon="folderPlus" label={t("Add to album")} onPress={() => setAlbumPicker(true)} />
                 <Action icon="download" label={t("Save to phone")} onPress={save} />
-                <Action icon="trash" label={t("Trash")} onPress={trash} />
+                <Action icon="trash" label={t("action|Trash")} onPress={trash} />
               </>
             )}
           </View>

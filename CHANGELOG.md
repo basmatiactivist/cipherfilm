@@ -12,6 +12,8 @@ version into the GitHub release notes, so a release cannot be published without 
   Expo's core), commons-io 2.18.0 (from 1.4, in Expo's file system) and Guava 33.7.2 (from 33.3.1, in Media3 and
   Glide). The app's Gradle libraries are now reported to GitHub's dependency graph, so Dependabot raises alerts for
   them too (only what goes into the app, not the build tools).
+- The published server image is scanned with Trivy weekly and after each release; findings appear under the
+  repository's Security › Code scanning.
 
 ### Fixed
 - Android: saving a video says it went to Movies › Cipherfilm (it said Pictures).

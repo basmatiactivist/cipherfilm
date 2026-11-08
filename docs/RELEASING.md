@@ -147,8 +147,9 @@ has its auto-merge turned off again). GitHub shows whether it accepted `.github/
 Insights › Dependency graph › Dependabot: a rejected file stops every update without any other sign. What it doesn't do:
 
 - **Security alerts for the Android app's Gradle libraries** come from `.github/workflows/android-deps.yml`, which
-  reports them to the dependency graph (GitHub doesn't read Gradle builds itself). Docker base images get no alerts
-  from GitHub; Dependabot only keeps them current.
+  reports them to the dependency graph (GitHub doesn't read Gradle builds itself). Docker images get no Dependabot
+  alerts; `.github/workflows/image-scan.yml` scans the published server image with Trivy (weekly, after each
+  release) and lists what it finds under Security › Code scanning.
 - **The Mac app's Swift packages** (`swift-sodium`, pinned exactly in `mac/Package.swift`): the package needs the
   ONNX Runtime framework that `scripts/fetch-onnxruntime.sh` downloads, so Dependabot can't resolve it. Check
   swift-sodium's releases by hand before each release, like ONNX Runtime's version in that script.

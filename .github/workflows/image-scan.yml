@@ -1,0 +1,41 @@
+name: Image scan
+# Scans the published server image (ghcr.io/<owner>/cipherfilm:2, what self-hosters run) for known vulnerabilities
+# with Trivy: the base image's system packages and the Go modules compiled into the binary. Dependabot alerts don't
+# cover container images; this puts the findings next to them, under Security > Code scanning. Weekly (new advisories
+# appear for an unchanged image), after every release, and by hand. Trivy runs from its image pinned by digest (no
+# third-party action code), with read access to nothing but this repository.
+on:
+  schedule: [{ cron: "23 6 * * 1" }]
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: image-scan
+  cancel-in-progress: false
+jobs:
+  scan:
+    # after a release only when it went through (a failed one published no new image)
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write  # upload the findings to code scanning
+    steps:
+      - name: Scan the image
+        uses: docker://ghcr.io/aquasecurity/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
+        with:
+          # fixable findings of medium severity and up: an unfixed one can't be acted on, and low ones bury the rest.
+          # The vulnerability database comes from GitHub's registry, with AWS's mirror when that is rate limited.
+          args: >-
+            image --format sarif --output trivy.sarif
+            --severity MEDIUM,HIGH,CRITICAL --ignore-unfixed --scanners vuln
+            --db-repository ghcr.io/aquasecurity/trivy-db:2,public.ecr.aws/aquasecurity/trivy-db:2
+            ghcr.io/${{ github.repository_owner }}/cipherfilm:2
+      - uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: trivy.sarif
+          category: server-image

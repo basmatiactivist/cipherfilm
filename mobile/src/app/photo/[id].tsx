@@ -22,9 +22,11 @@ import { motion, stage } from "../../tokens";
 import { Loading, useReducedMotion } from "../../Loader";
 import { hideSystemBars, largestInsets, type Insets } from "../../immersive";
 import { taps } from "../../taps";
+import { locale, t } from "../../i18n";
 
-const fmtWhen = new Intl.DateTimeFormat(undefined, { dateStyle: "full", timeStyle: "short" });
-const fmtSize = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`);
+const fmtWhen = (ms: number) => new Intl.DateTimeFormat(locale(), { dateStyle: "full", timeStyle: "short" }).format(new Date(ms));
+const one = (n: number) => n.toLocaleString(locale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const fmtSize = (n: number) => (n >= 1e9 ? `${one(n / 1e9)} GB` : n >= 1e6 ? `${one(n / 1e6)} MB` : `${Math.max(1, Math.round(n / 1e3)).toLocaleString(locale())} KB`);
 
 /** Full-screen viewer on black, swipe between photos; the info sheet shows what the encrypted metadata says. At the
  *  bottom the same actions as for a selection: Share, Add to album, Save to phone, Trash. A tap on the photo hides the
@@ -99,25 +101,25 @@ export default function Viewer() {
       const msg = await f((d, tot) => setBusy({ label, progress: tot ? d / tot : 0 }));
       if (msg) setNote({ text: msg });
     } catch (e) {
-      setNote({ text: e instanceof Error ? e.message : "That didn't work." });
+      setNote({ text: e instanceof Error ? e.message : t("That didn't work.") });
     } finally {
       setBusy(null);
     }
   };
   const share = async () => {
     let ready: { send: () => Promise<boolean> } | undefined;
-    await run("Preparing to share", async (p) => { ready = await prepareShare([current], p); });
+    await run(t("Preparing to share"), async (p) => { ready = await prepareShare([current], p); });
     if (ready) await ready.send();
   };
-  const save = () => run("Saving to this phone", async (p) => {
+  const save = () => run(t("Saving to this phone"), async (p) => {
     await saveItems([current], p);
-    return "Saved to Pictures › Cipherfilm.";
+    return t("Saved to Pictures › Cipherfilm.");
   });
-  const intoAlbum = (a: Album) => run("Adding to the album", async () => {
+  const intoAlbum = (a: Album) => run(t("Adding to the album"), async () => {
     setPicker(false);
     await addToAlbum(a.id, [current.id]);
     refreshAlbums();
-    return `Added to ${a.name}.`;
+    return t("Added to {album}.", { album: a.name });
   });
   const [fav, setFav] = useState<Record<string, boolean>>({});
   const isFav = current ? fav[current.id] ?? !!current.favorite : false;
@@ -127,10 +129,10 @@ export default function Viewer() {
     N.haptic();
     try { await setFavorite([it.id], next); } catch (e) {
       setFav((f) => ({ ...f, [it.id]: !next }));
-      setNote({ text: e instanceof Error ? e.message : "That didn't work." });
+      setNote({ text: e instanceof Error ? e.message : t("That didn't work.") });
     }
   };
-  const trash = () => run("Moving to the trash", async () => {
+  const trash = () => run(t("Moving to the trash"), async () => {
     const it = current, at = list.indexOf(it);
     await api("POST", "/api/items/trash", { item_ids: [it.id] });
     const rest = list.filter((i) => i !== it);
@@ -139,8 +141,8 @@ export default function Viewer() {
     setIndex(Math.min(at, rest.length - 1));
     refreshLibrary(); refreshAlbums();
     setNote({
-      text: "Moved to the trash.",
-      undo: () => run("Restoring", async () => {
+      text: t("Moved to the trash."),
+      undo: () => run(t("Restoring"), async () => {
         await api("POST", "/api/items/restore", { item_ids: [it.id] });
         setList((l) => [...l.slice(0, at), it, ...l.slice(at)]);
         setIndex(at);
@@ -175,25 +177,25 @@ export default function Viewer() {
       {current && loads[current.id] ? (
         // in the corner above the bottom bar, not over the photo; it stays there while the bars are hidden
         <View pointerEvents="none" style={[st.loading, { left: inset.left + 16, bottom: (barHeight || inset.bottom + 88) + 12 }]}>
-          <Loading corner stage label={current.kind === "video" ? "Loading the video…" : "Loading the photo…"} />
+          <Loading corner stage label={current.kind === "video" ? t("Loading the video…") : t("Loading the photo…")} />
         </View>
       ) : null}
       <Animated.View pointerEvents={chrome ? "auto" : "none"} importantForAccessibility={chrome ? "auto" : "no-hide-descendants"}
         style={[st.bar, { opacity: shown, paddingTop: inset.top + 4, paddingLeft: inset.left + 4, paddingRight: inset.right + 4 }]}>
-        <IconButton icon="back" iconColor={stage.onStage} size={24} accessibilityLabel="Back" onPress={() => router.back()} />
+        <IconButton icon="back" iconColor={stage.onStage} size={24} accessibilityLabel={t("Back")} onPress={() => router.back()} />
         <Text variant="titleSmall" numberOfLines={1} style={st.name}>{current?.meta?.name}</Text>
-        <Text variant="labelMedium" style={st.count}>{Math.min(index, list.length - 1) + 1} of {list.length}</Text>
-        <IconButton icon="info" iconColor={stage.onStage} size={24} accessibilityLabel="Details" onPress={() => setInfo(true)} />
+        <Text variant="labelMedium" style={st.count}>{t("{n} of {total}", { n: (Math.min(index, list.length - 1) + 1).toLocaleString(locale()), total: list.length.toLocaleString(locale()) })}</Text>
+        <IconButton icon="info" iconColor={stage.onStage} size={24} accessibilityLabel={t("Details")} onPress={() => setInfo(true)} />
       </Animated.View>
       {current ? (
         <Animated.View pointerEvents={chrome ? "auto" : "none"} importantForAccessibility={chrome ? "auto" : "no-hide-descendants"}
           onLayout={(e) => setBarHeight(e.nativeEvent.layout.height)}
           style={[st.actions, { opacity: shown, paddingBottom: inset.bottom + 8, paddingLeft: inset.left, paddingRight: inset.right }]}>
-          <Action icon="share" label="Share" onPress={share} />
-          <Action icon={isFav ? "heartOn" : "heart"} label="Favorite" onPress={toggleFav} on={isFav} />
-          <Action icon="folderPlus" label="Add to album" onPress={() => setPicker(true)} />
-          <Action icon="download" label="Save" onPress={save} />
-          <Action icon="trash" label="Trash" onPress={trash} />
+          <Action icon="share" label={t("Share")} onPress={share} />
+          <Action icon={isFav ? "heartOn" : "heart"} label={t("Favorite")} onPress={toggleFav} on={isFav} />
+          <Action icon="folderPlus" label={t("Add to album")} onPress={() => setPicker(true)} />
+          <Action icon="download" label={t("Save")} onPress={save} />
+          <Action icon="trash" label={t("Trash")} onPress={trash} />
         </Animated.View>
       ) : null}
       {current ? <Info item={current} visible={info} onClose={() => setInfo(false)} /> : null}
@@ -202,13 +204,13 @@ export default function Viewer() {
           <Dialog.Content>
             <Text variant="bodyLarge" style={{ marginBottom: 12 }}>{busy?.label}…</Text>
             <ProgressBar progress={busy?.progress ?? 0} indeterminate={!busy?.progress} style={{ height: 5, borderRadius: 3 }} />
-            <Text variant="bodySmall" style={{ marginTop: 12, opacity: 0.75 }}>Photos are decrypted on this phone. Shared and saved copies are not encrypted.</Text>
+            <Text variant="bodySmall" style={{ marginTop: 12, opacity: 0.75 }}>{t("Photos are decrypted on this phone. Shared and saved copies are not encrypted.")}</Text>
           </Dialog.Content>
         </Dialog>
         <AlbumPicker visible={picker} onDismiss={() => setPicker(false)} onPick={intoAlbum} />
       </Portal>
       <Snackbar visible={!!note} onDismiss={() => setNote(null)} duration={5000} style={{ marginBottom: inset.bottom + 88 }}
-        action={note?.undo ? { label: "Undo", onPress: () => { const u = note.undo!; setNote(null); u(); } } : undefined}>
+        action={note?.undo ? { label: t("Undo"), onPress: () => { const u = note.undo!; setNote(null); u(); } } : undefined}>
         {note?.text}
       </Snackbar>
     </View>
@@ -341,28 +343,28 @@ function Zoomable({ width, height, active, onZoom, onTap, children }: { width: n
 }
 
 function Info({ item, visible, onClose }: { item: Item; visible: boolean; onClose: () => void }) {
-  const t = useAppTheme();
+  const th = useAppTheme();
   const inset = useSafeAreaInsets();
   const m = item.meta;
   const rows: [string, string | undefined][] = [
-    ["Taken", fmtWhen.format(new Date(when(item)))],
-    ["File", m?.name],
-    ["Size", fmtSize(item.size) + (m?.width && m?.height ? ` · ${m.width} × ${m.height}` : "")],
-    ["Camera", [m?.make, m?.model].filter(Boolean).join(" ") || undefined],
-    ["Place", m?.gps ? `${m.gps.lat.toFixed(4)}, ${m.gps.lon.toFixed(4)}` : undefined],
+    [t("Taken"), fmtWhen(when(item))],
+    [t("File"), m?.name],
+    [t("Size"), fmtSize(item.size) + (m?.width && m?.height ? ` · ${m.width} × ${m.height}` : "")],
+    [t("Camera"), [m?.make, m?.model].filter(Boolean).join(" ") || undefined],
+    [t("Place"), m?.gps ? `${m.gps.lat.toFixed(4)}, ${m.gps.lon.toFixed(4)}` : undefined],
   ];
   return (
     <Portal>
-      <Modal visible={visible} onDismiss={onClose} contentContainerStyle={[st.sheet, { backgroundColor: t.colors.background, paddingBottom: inset.bottom + 24 }]} style={{ justifyContent: "flex-end" }}>
-        <Text variant="headlineSmall" style={{ marginBottom: 16 }}>Details</Text>
+      <Modal visible={visible} onDismiss={onClose} contentContainerStyle={[st.sheet, { backgroundColor: th.colors.background, paddingBottom: inset.bottom + 24 }]} style={{ justifyContent: "flex-end" }}>
+        <Text variant="headlineSmall" style={{ marginBottom: 16 }}>{t("Details")}</Text>
         {rows.filter(([, v]) => v).map(([k, v]) => (
           <View key={k} style={st.row}>
-            <Text variant="labelMedium" style={{ color: t.colors.onSurfaceVariant, width: 72 }}>{k}</Text>
+            <Text variant="labelMedium" style={{ color: th.colors.onSurfaceVariant, width: 72 }}>{k}</Text>
             <Text variant="bodyMedium" style={{ flex: 1 }} selectable>{v}</Text>
           </View>
         ))}
         {visible ? <InPhoto item={item} onClose={onClose} /> : null}
-        <Text variant="bodySmall" style={{ color: t.colors.onSurfaceVariant, marginTop: 12 }}>Only you can read these details. The server stores them encrypted.</Text>
+        <Text variant="bodySmall" style={{ color: th.colors.onSurfaceVariant, marginTop: 12 }}>{t("Only you can read these details. The server stores them encrypted.")}</Text>
       </Modal>
     </Portal>
   );
@@ -370,7 +372,7 @@ function Info({ item, visible, onClose }: { item: Item; visible: boolean; onClos
 
 /** Who is in the photo: every face found in it, named or not (name one right here), and photos like it. */
 function InPhoto({ item, onClose }: { item: Item; onClose: () => void }) {
-  const t = useAppTheme();
+  const th = useAppTheme();
   const [faces, setFaces] = useState<FaceInPhoto[]>([]);
   const [naming, setNaming] = useState<FaceInPhoto | null>(null);
   const [error, setError] = useState<string>();
@@ -381,7 +383,7 @@ function InPhoto({ item, onClose }: { item: Item; onClose: () => void }) {
     <View style={{ marginTop: 8 }}>
       {faces.length ? (
         <View style={st.row}>
-          <Text variant="labelMedium" style={{ color: t.colors.onSurfaceVariant, width: 72, paddingTop: 10 }}>People</Text>
+          <Text variant="labelMedium" style={{ color: th.colors.onSurfaceVariant, width: 72, paddingTop: 10 }}>{t("People")}</Text>
           <View style={{ flex: 1, flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
             {faces.map((f) => <Face key={f.key} face={f} onPress={() => {
               const name = f.group?.person?.name;
@@ -391,34 +393,34 @@ function InPhoto({ item, onClose }: { item: Item; onClose: () => void }) {
           </View>
         </View>
       ) : null}
-      {error ? <Text variant="bodySmall" style={{ color: t.colors.error }}>{error}</Text> : null}
+      {error ? <Text variant="bodySmall" style={{ color: th.colors.error }}>{error}</Text> : null}
       <Pressable onPress={() => { onClose(); router.push({ pathname: "/search", params: { similar: item.id } }); }} accessibilityRole="button" style={[st.row, { alignItems: "center" }]}>
-        <Text variant="labelMedium" style={{ color: t.colors.onSurfaceVariant, width: 72 }}>Search</Text>
-        <Icon name="similar" size={20} color={t.colors.primary} />
-        <Text variant="bodyMedium" style={{ color: t.colors.primary }}>Photos like this one</Text>
+        <Text variant="labelMedium" style={{ color: th.colors.onSurfaceVariant, width: 72 }}>{t("Search")}</Text>
+        <Icon name="similar" size={20} color={th.colors.primary} />
+        <Text variant="bodyMedium" style={{ color: th.colors.primary }}>{t("Photos like this one")}</Text>
       </Pressable>
-      <NameDialog visible={!!naming} title="Who is this?" action="Save" initial="" onDismiss={() => setNaming(null)}
+      <NameDialog visible={!!naming} title={t("Who is this?")} action={t("Save")} initial="" onDismiss={() => setNaming(null)}
         onSubmit={async (n) => {
           const f = naming!;
           setNaming(null);
           try { await nameFace(f, n); setError(undefined); await load(); }
-          catch (e) { setError(e instanceof Error ? `Couldn't save the name: ${e.message}` : "Couldn't save the name."); }
+          catch (e) { setError(e instanceof Error ? t("Couldn't save the name: {why}", { why: e.message }) : t("Couldn't save the name.")); }
         }} />
     </View>
   );
 }
 
 function Face({ face, onPress }: { face: FaceInPhoto; onPress: () => void }) {
-  const t = useAppTheme();
+  const th = useAppTheme();
   const [uri, setUri] = useState<string | null>(null);
   useEffect(() => { let live = true; faceUri(face.cover).then((u) => live && setUri(u), () => {}); return () => { live = false; }; }, [face.key]);
   const name = face.group?.person?.name ?? "";
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={name || "Someone not named yet: add a name"} style={{ alignItems: "center", width: 64 }}>
-      <View style={{ width: 48, height: 48, borderRadius: 24, overflow: "hidden", backgroundColor: t.colors.surfaceVariant }}>
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={name || t("Someone not named yet: add a name")} style={{ alignItems: "center", width: 64 }}>
+      <View style={{ width: 48, height: 48, borderRadius: 24, overflow: "hidden", backgroundColor: th.colors.surfaceVariant }}>
         {uri ? <Image source={{ uri }} style={{ width: 48, height: 48 }} cachePolicy="memory" /> : null}
       </View>
-      <Text variant="labelSmall" numberOfLines={1} style={{ marginTop: 4, color: name ? t.colors.onSurface : t.colors.primary }}>{name || "Add name"}</Text>
+      <Text variant="labelSmall" numberOfLines={1} style={{ marginTop: 4, color: name ? th.colors.onSurface : th.colors.primary }}>{name || t("Add name")}</Text>
     </Pressable>
   );
 }

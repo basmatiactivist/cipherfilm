@@ -2,6 +2,7 @@
 // changed since (GET /api/items?since=<cursor>): new and changed records, the ids of those that left the list, and the
 // next cursor. Only the changed records are decrypted. The whole list loads again when the server says "reset" (its
 // cursor is too old, or the database was restored), and always against a server that hands out no cursor.
+import { t } from "./i18n";
 
 export interface Page { items: any[]; next?: string; cursor?: string; removed?: string[]; more?: boolean; reset?: boolean; [k: string]: unknown }
 
@@ -90,7 +91,7 @@ export class ListSync<T extends { id: string }> {
     const raw = [...first.items];
     let next = first.next, pages = 1;
     while (next) {
-      if (++pages > max) throw new Error("The server's list doesn't end.");
+      if (++pages > max) throw new Error(t("The server's list doesn't end."));
       const page = await this.o.get(`${this.o.path}?after=${encodeURIComponent(next)}`);
       raw.push(...page.items);
       next = page.next;
@@ -108,13 +109,13 @@ export class ListSync<T extends { id: string }> {
     let list = this.list!, cur = cursor, pages = 0;
     let last: Page;
     do {
-      if (++pages > max) throw new Error("The server's list doesn't end.");
+      if (++pages > max) throw new Error(t("The server's list doesn't end."));
       last = await this.o.get(`${this.o.path}?since=${encodeURIComponent(cur)}`);
       if (last.reset) return null;
       if (typeof last.cursor !== "string" || !Array.isArray(last.removed)) return null; // not an answer to ?since
       list = applyChanges(list, last.items.length ? this.o.decrypt(last.items) : [], last.removed, this.o.order);
       if (gen === this.gen) this.o.onPage?.(last.items, last.removed, false);
-      if (last.more && last.cursor === cur) throw new Error("The server's list doesn't end.");
+      if (last.more && last.cursor === cur) throw new Error(t("The server's list doesn't end."));
       cur = last.cursor;
     } while (last.more);
     if (gen === this.gen) { this.list = list; this.cursor = cur; }

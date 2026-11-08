@@ -12,6 +12,7 @@ import { normEmail } from "@crypto/account";
 import N from "../modules/cf-native/src/CfNativeModule";
 import { api, csrfToken, getBytes, postForBytes, server } from "./api";
 import { onWipe, session } from "./session";
+import { t } from "./i18n";
 import { ThumbBatcher } from "./thumbbatch";
 import { ListSync, type Page } from "./sync";
 
@@ -83,7 +84,7 @@ let sodium: Sodium | undefined;
 function decryptSome(raw: any[]): Item[] {
   const s = sodium!;
   const { masterKey: master, me } = session();
-  if (!master || !me) throw new Error("Unlock your library first.");
+  if (!master || !me) throw new Error(t("Unlock your library first."));
   // photos from the background backup carry keys sealed to the account's key pair; it is opened only if needed
   let kp: KeyPair | undefined;
   const pair = () => (kp ??= accountKeyPair(s, unb64(s, me.wrapped_privkey), master, normEmail(me.user.email)));
@@ -169,7 +170,7 @@ export async function loadTrash(): Promise<{ items: Item[]; retentionDays: numbe
 /** The whole library, newest capture first; after the first load only what changed. The same array comes back when
  *  nothing changed. */
 export async function loadLibrary(): Promise<Item[]> {
-  if (!session().masterKey) throw new Error("Unlock your library first.");
+  if (!session().masterKey) throw new Error(t("Unlock your library first."));
   sodium = await getSodium();
   const r = await library.load();
   saveList(r.full);
@@ -250,7 +251,7 @@ const batcher = new ThumbBatcher((ids) => postForBytes("/api/items/thumbs", { it
 async function plainBytes(kind: "thumb" | "preview", it: Item, wanted: () => boolean): Promise<Uint8Array> {
   const s = await getSodium();
   const open = (ct: Uint8Array) => {
-    if (!session().masterKey) throw new Error("Unlock your library first.");
+    if (!session().masterKey) throw new Error(t("Unlock your library first."));
     return (kind === "thumb" ? decryptThumb : decryptPreview)(s, ct, it.itemKey!, it.id);
   };
   const dir = userDir();
@@ -282,7 +283,7 @@ export function previewUri(it: Item): Promise<string> {
       const plain = await plainBytes("preview", it, () => true);
       const uri = "data:image/jpeg;base64," + N.base64(plain);
       plain.fill(0);
-      if (!session().masterKey) throw new Error("Unlock your library first."); // locked while this was loading
+      if (!session().masterKey) throw new Error(t("Unlock your library first.")); // locked while this was loading
       previews.set(it.id, uri);
       return uri;
     })().finally(() => inflight.delete(key));

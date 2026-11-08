@@ -7,10 +7,11 @@ import { Icon } from "../icons";
 import { refreshLibrary, useLibrary } from "../libraryStore";
 import { useAppTheme } from "../ui";
 import { text } from "../tokens";
+import { t } from "../i18n";
 
 /** The photos marked with the heart, newest first. */
 export default function Favorites() {
-  const t = useAppTheme();
+  const th = useAppTheme();
   const { items, error, loading } = useLibrary();
   useEffect(() => { if (!items) refreshLibrary(); }, []);
   const favs = useMemo(() => (items ? items.filter((i) => i.favorite && !i.broken) : null), [items]);
@@ -18,17 +19,17 @@ export default function Favorites() {
     <Gallery
       items={favs} error={error} loading={loading} onRefresh={refreshLibrary} within="favorites"
       header={
-        <Appbar.Header style={{ backgroundColor: t.colors.background }}>
-          <Appbar.Action icon="back" accessibilityLabel="Back" onPress={() => router.back()} />
-          <Appbar.Content title="Favorites" titleStyle={text.page} />
+        <Appbar.Header style={{ backgroundColor: th.colors.background }}>
+          <Appbar.Action icon="back" accessibilityLabel={t("Back")} onPress={() => router.back()} />
+          <Appbar.Content title={t("Favorites")} titleStyle={text.page} />
         </Appbar.Header>
       }
       empty={
         <View style={st.empty}>
-          <View style={[st.disc, { backgroundColor: t.colors.primaryContainer }]}><Icon name="heart" size={30} color={t.colors.primary} /></View>
-          <Text variant="headlineSmall" style={{ textAlign: "center", marginBottom: 8 }}>No favorites yet</Text>
-          <Text variant="bodyMedium" style={{ textAlign: "center", color: t.colors.onSurfaceVariant, maxWidth: 320 }}>
-            Tap the heart on a photo to add it here. Favorites sync across your devices.
+          <View style={[st.disc, { backgroundColor: th.colors.primaryContainer }]}><Icon name="heart" size={30} color={th.colors.primary} /></View>
+          <Text variant="headlineSmall" style={{ textAlign: "center", marginBottom: 8 }}>{t("No favorites yet")}</Text>
+          <Text variant="bodyMedium" style={{ textAlign: "center", color: th.colors.onSurfaceVariant, maxWidth: 320 }}>
+            {t("Tap the heart on a photo to add it here. Favorites sync across your devices.")}
           </Text>
         </View>
       }

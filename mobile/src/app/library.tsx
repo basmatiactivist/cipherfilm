@@ -11,9 +11,10 @@ import { NAV_HEIGHT, NavBar } from "../NavBar";
 import { Icon } from "../icons";
 import { refreshLibrary, useLibrary } from "../libraryStore";
 import { setPicked } from "../pending";
-import { DEMO_NOTE, useSession } from "../session";
+import { demoNote, useSession } from "../session";
 import { useAppTheme } from "../ui";
 import { text } from "../tokens";
+import { t } from "../i18n";
 
 /** Android's photo picker, then the same upload screen as sharing. */
 async function pick() {
@@ -24,7 +25,7 @@ async function pick() {
 }
 
 export default function Library() {
-  const t = useAppTheme();
+  const th = useAppTheme();
   const inset = useSafeAreaInsets();
   const { items, error, loading } = useLibrary();
   const demo = !!useSession().me?.demo;
@@ -47,15 +48,15 @@ export default function Library() {
     <View style={{ flex: 1 }}>
       <Portal>
         <Dialog visible={offer} onDismiss={() => answer(false)}>
-          <Dialog.Title>Search your photos?</Dialog.Title>
+          <Dialog.Title>{t("Search your photos?")}</Dialog.Title>
           <Dialog.Content>
             <Text variant="bodyMedium">
-              Find photos by what's in them ("beach", "birthday cake") and by the people in them. Runs on this phone; the server never sees what your photos show. The models download once from Hugging Face; you see the size first. Change this any time in Account.
+              {t("Find photos by what's in them (\"beach\", \"birthday cake\") and by the people in them. Runs on this phone; the server never sees what your photos show. The models download once from Hugging Face; you see the size first. Change this any time in Account.")}
             </Text>
           </Dialog.Content>
           <Dialog.Actions>
-            <Button onPress={() => answer(false)}>Not now</Button>
-            <Button onPress={() => answer(true)}>Set up</Button>
+            <Button onPress={() => answer(false)}>{t("Not now")}</Button>
+            <Button onPress={() => answer(true)}>{t("Set up")}</Button>
           </Dialog.Actions>
         </Dialog>
       </Portal>
@@ -63,16 +64,16 @@ export default function Library() {
         items={items} error={error} loading={loading} onRefresh={refreshLibrary} bottom={NAV_HEIGHT}
         header={
           <View>
-            <Appbar.Header style={{ backgroundColor: t.colors.background }}>
-              <Appbar.Content title="Photos" titleStyle={text.page} />
-              <Appbar.Action icon="user" accessibilityLabel="Account" onPress={() => router.push("/account")} />
+            <Appbar.Header style={{ backgroundColor: th.colors.background }}>
+              <Appbar.Content title={t("Photos")} titleStyle={text.page} />
+              <Appbar.Action icon="user" accessibilityLabel={t("Account")} onPress={() => router.push("/account")} />
             </Appbar.Header>
-            {demo ? <Text variant="labelLarge" style={[st.demo, { backgroundColor: t.colors.primaryContainer, color: t.colors.onPrimaryContainer }]}>{DEMO_NOTE}</Text> : null}
+            {demo ? <Text variant="labelLarge" style={[st.demo, { backgroundColor: th.colors.primaryContainer, color: th.colors.onPrimaryContainer }]}>{demoNote()}</Text> : null}
           </View>
         }
         empty={<Empty />}
-        fab={demo ? undefined : <FAB icon="upload" label="Upload" onPress={pick} accessibilityLabel="Upload photos and videos from this phone"
-          style={[st.fab, { right: 16 + inset.right, bottom: 16 + inset.bottom + NAV_HEIGHT, backgroundColor: t.colors.primary }]} color={t.colors.onPrimary} />}
+        fab={demo ? undefined : <FAB icon="upload" label={t("Upload")} onPress={pick} accessibilityLabel={t("Upload photos and videos from this phone")}
+          style={[st.fab, { right: 16 + inset.right, bottom: 16 + inset.bottom + NAV_HEIGHT, backgroundColor: th.colors.primary }]} color={th.colors.onPrimary} />}
         nav={<NavBar current="library" />}
       />
     </View>
@@ -80,15 +81,15 @@ export default function Library() {
 }
 
 function Empty() {
-  const t = useAppTheme();
+  const th = useAppTheme();
   return (
     <View style={st.empty}>
-      <View style={[st.disc, { backgroundColor: t.colors.primaryContainer }]}><Icon name="photos" size={30} color={t.colors.primary} /></View>
-      <Text variant="headlineSmall" style={{ textAlign: "center", marginBottom: 8 }}>Nothing here yet</Text>
-      <Text variant="bodyMedium" style={{ textAlign: "center", color: t.colors.onSurfaceVariant, maxWidth: 320 }}>
-        Tap Upload, or share photos to Cipherfilm from your gallery. They are encrypted on this phone before upload.
+      <View style={[st.disc, { backgroundColor: th.colors.primaryContainer }]}><Icon name="photos" size={30} color={th.colors.primary} /></View>
+      <Text variant="headlineSmall" style={{ textAlign: "center", marginBottom: 8 }}>{t("Nothing here yet")}</Text>
+      <Text variant="bodyMedium" style={{ textAlign: "center", color: th.colors.onSurfaceVariant, maxWidth: 320 }}>
+        {t("Tap Upload, or share photos to Cipherfilm from your gallery. They are encrypted on this phone before upload.")}
       </Text>
-      <Button mode="text" onPress={() => refreshLibrary()} style={{ marginTop: 16 }}>Check again</Button>
+      <Button mode="text" onPress={() => refreshLibrary()} style={{ marginTop: 16 }}>{t("Check again")}</Button>
     </View>
   );
 }

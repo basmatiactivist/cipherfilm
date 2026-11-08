@@ -7,6 +7,7 @@ import { loginProof, normEmail, unlockMasterKey } from "@crypto/account";
 import { open, LABEL } from "@crypto/wrap";
 import type { KdfParams } from "@crypto/kdf";
 import { api, ApiError, remote, setCsrf, setServer, whenRevoked, whenSessionEnds } from "./api";
+import { t } from "./i18n";
 
 export interface Me {
   user: { id: string; email: string; role: "admin" | "user"; nsfw?: boolean };
@@ -70,7 +71,7 @@ export const savedServer = async () => (await SecureStore.getItemAsync(SERVER)) 
 const keyName = (userId: string) => `cf.mk.${userId}`; // only letters, digits, ".", "-", "_" are allowed
 const bioName = (userId: string) => `cf.bio.${userId}`;
 const bioNoName = (userId: string) => `cf.bioNo.${userId}`; // "Not now" to fingerprint unlock: not offered again
-const PROMPT = "Unlock Cipherfilm";
+const prompt = () => t("Unlock Cipherfilm");
 
 /** Same bounds as the server and the web client: a server can't talk the app into weak or absurd Argon2 settings. */
 export function assertSaneKdf(k: KdfParams) {
@@ -78,7 +79,7 @@ export function assertSaneKdf(k: KdfParams) {
     && k.ops >= 2 && k.ops <= 10 && k.mem >= 32 * 1024 * 1024 && k.mem <= 1024 * 1024 * 1024
     && typeof k.salt === "string" && /^[A-Za-z0-9_-]{22}$/.test(k.salt); // 16 bytes, base64url
   if (!ok) {
-    throw new Error("The server sent unexpected password settings. Sign-in stopped for your safety.");
+    throw new Error(t("The server sent unexpected password settings. Sign-in stopped for your safety."));
   }
 }
 
@@ -105,7 +106,7 @@ whenSessionEnds(() => {
     wipe("ended");
     handedOver();
     if (state.masterKey) state.masterKey.fill(0);
-    set({ phase: "signedOut", me: null, masterKey: null, notice: "Your session ended. Sign in again." });
+    set({ phase: "signedOut", me: null, masterKey: null, notice: t("Your session ended. Sign in again.") });
   }
 });
 
@@ -121,7 +122,7 @@ async function revoked() {
   await forgetAccount();
   if (state.masterKey) state.masterKey.fill(0);
   setCsrf("");
-  set({ phase: "signedOut", me: null, masterKey: null, biometric: false, notice: "This phone was signed out from another device. Its copy of your library was deleted." });
+  set({ phase: "signedOut", me: null, masterKey: null, biometric: false, notice: t("This phone was signed out from another device. Its copy of your library was deleted.") });
 }
 let revoking = false;
 whenRevoked(() => { if (!revoking) { revoking = true; revoked().finally(() => { revoking = false; }); } });
@@ -156,12 +157,12 @@ export async function chooseServer(input: string) {
   let origin = input.trim();
   if (!/^https?:\/\//i.test(origin)) origin = "https://" + origin;
   let url: URL;
-  try { url = new URL(origin); } catch { throw new Error("That isn't a web address."); }
-  if (url.protocol !== "https:") throw new Error("Cipherfilm needs an https address.");
+  try { url = new URL(origin); } catch { throw new Error(t("That isn't a web address.")); }
+  if (url.protocol !== "https:") throw new Error(t("Cipherfilm needs an https address."));
   try {
     await api("GET", "/api/setup/status", undefined, remote(url.origin)); // the app's server stays until this one answers
   } catch (e) {
-    throw e instanceof ApiError && e.status === 0 ? e : new Error("That address isn't a Cipherfilm server.");
+    throw e instanceof ApiError && e.status === 0 ? e : new Error(t("That address isn't a Cipherfilm server."));
   }
   // another server: what the phone keeps for the account on the old one (backup, background search) ends too
   if (url.origin !== (await savedServer())) await forgetAccount();
@@ -207,7 +208,7 @@ export async function unlockWithPassword(password: string) {
   try {
     key = unlockMasterKey(s, me.user.email, kek, me.wrapped_master_pw);
   } catch {
-    throw new Error("That password isn't right.");
+    throw new Error(t("That password isn't right."));
   } finally {
     s.memzero(kek);
   }
@@ -230,8 +231,8 @@ export async function declineBiometric() {
 export async function enableBiometric() {
   const s = await getSodium();
   const { me, masterKey } = state;
-  if (!me || !masterKey) throw new Error("Unlock your library first.");
-  await SecureStore.setItemAsync(keyName(me.user.id), b64(s, masterKey), { requireAuthentication: true, authenticationPrompt: PROMPT });
+  if (!me || !masterKey) throw new Error(t("Unlock your library first."));
+  await SecureStore.setItemAsync(keyName(me.user.id), b64(s, masterKey), { requireAuthentication: true, authenticationPrompt: prompt() });
   await SecureStore.setItemAsync(bioName(me.user.id), "1");
   set({ biometric: true });
 }
@@ -250,18 +251,18 @@ export async function unlockWithBiometric(): Promise<boolean> {
   const me = state.me!;
   let stored: string | null;
   try {
-    stored = await SecureStore.getItemAsync(keyName(me.user.id), { requireAuthentication: true, authenticationPrompt: PROMPT });
+    stored = await SecureStore.getItemAsync(keyName(me.user.id), { requireAuthentication: true, authenticationPrompt: prompt() });
   } catch (e) {
     if (/cancel/i.test(String((e as Error).message))) return false;
     await disableBiometric(); // the system invalidated the key, e.g. after a new fingerprint was added
-    throw new Error("The phone reset fingerprint unlock. Unlock with your password, then turn it on again.");
+    throw new Error(t("The phone reset fingerprint unlock. Unlock with your password, then turn it on again."));
   }
-  if (!stored) { await disableBiometric(); throw new Error("Unlock with your password."); }
+  if (!stored) { await disableBiometric(); throw new Error(t("Unlock with your password.")); }
   const key = unb64(s, stored);
   if (!(await checkKey(me, key))) {
     s.memzero(key);
     await disableBiometric();
-    throw new Error("The saved key no longer fits this account. Unlock with your password.");
+    throw new Error(t("The saved key no longer fits this account. Unlock with your password."));
   }
   adopt(me, key);
   return true;
@@ -294,13 +295,13 @@ export async function signOut() {
 export async function deleteAccount(password: string) {
   const s = await getSodium();
   const me = state.me;
-  if (!me) throw new Error("Sign in first.");
+  if (!me) throw new Error(t("Sign in first."));
   assertSaneKdf(me.kdf);
   const { auth, kek } = await loginProof(s, password, me.kdf);
   try {
     s.memzero(unlockMasterKey(s, me.user.email, kek, me.wrapped_master_pw));
   } catch {
-    throw new Error("That password isn't right.");
+    throw new Error(t("That password isn't right."));
   } finally {
     s.memzero(kek);
   }
@@ -313,8 +314,8 @@ export async function deleteAccount(password: string) {
   handedOver();
   if (state.masterKey) state.masterKey.fill(0);
   setCsrf("");
-  set({ phase: "signedOut", me: null, masterKey: null, biometric: false, notice: "Your account and everything in it were deleted from the server." });
+  set({ phase: "signedOut", me: null, masterKey: null, biometric: false, notice: t("Your account and everything in it were deleted from the server.") });
 }
 
 /** Shown wherever a demo login looks at its photos, so nobody takes it for their own library. */
-export const DEMO_NOTE = "Public demo · read-only · resets every hour";
+export const demoNote = () => t("Public demo · read-only · resets every hour");

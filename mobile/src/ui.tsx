@@ -10,17 +10,17 @@ export const useAppTheme = () => useTheme<AppTheme>();
 
 /** A full screen on paper, inside the system bars. `form` scrolls and keeps fields above the keyboard. */
 export function Screen({ children, center, form, style }: { children: ReactNode; center?: boolean; form?: boolean; style?: ViewStyle }) {
-  const t = useAppTheme();
+  const th = useAppTheme();
   const inset = useSafeAreaInsets();
   const pad = { paddingTop: inset.top, paddingBottom: inset.bottom, paddingLeft: inset.left, paddingRight: inset.right };
   if (form) {
     return (
-      <KeyboardAvoidingView behavior="padding" style={[s.fill, { backgroundColor: t.colors.background }]}>
+      <KeyboardAvoidingView behavior="padding" style={[s.fill, { backgroundColor: th.colors.background }]}>
         <ScrollView contentContainerStyle={[s.form, pad, { paddingLeft: inset.left + 24, paddingRight: inset.right + 24 }]} keyboardShouldPersistTaps="handled">{children}</ScrollView>
       </KeyboardAvoidingView>
     );
   }
-  return <View style={[s.fill, pad, { backgroundColor: t.colors.background }, center && s.center, style]}>{children}</View>;
+  return <View style={[s.fill, pad, { backgroundColor: th.colors.background }, center && s.center, style]}>{children}</View>;
 }
 
 /** Serif heading for page and card titles: the web app's "time and place" voice. */
@@ -29,8 +29,8 @@ export const Title = ({ children }: { children: ReactNode }) => (
 );
 
 export const Lead = ({ children }: { children: ReactNode }) => {
-  const t = useAppTheme();
-  return <Text variant="bodyLarge" style={[s.lead, { color: t.colors.onSurfaceVariant }]}>{children}</Text>;
+  const th = useAppTheme();
+  return <Text variant="bodyLarge" style={[s.lead, { color: th.colors.onSurfaceVariant }]}>{children}</Text>;
 };
 
 /** What a screen may do with a field, e.g. move the focus to it from the one before. */
@@ -68,11 +68,11 @@ export function SwitchItem({ title, description, value, onValueChange, disabled,
 
 /** A problem in plain words, in the brick tint, read out by screen readers when it appears. */
 export function Problem({ children }: { children?: ReactNode }) {
-  const t = useAppTheme();
+  const th = useAppTheme();
   if (!children) return null;
   return (
-    <View accessibilityLiveRegion="polite" style={[s.problem, { backgroundColor: t.colors.errorContainer, borderColor: t.colors.error }]}>
-      <Text variant="bodyMedium" style={{ color: t.colors.onErrorContainer, fontWeight: "600" }}>{children}</Text>
+    <View accessibilityLiveRegion="polite" style={[s.problem, { backgroundColor: th.colors.errorContainer, borderColor: th.colors.error }]}>
+      <Text variant="bodyMedium" style={{ color: th.colors.onErrorContainer, fontWeight: "600" }}>{children}</Text>
     </View>
   );
 }

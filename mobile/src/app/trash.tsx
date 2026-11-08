@@ -11,13 +11,12 @@ import { api } from "../api";
 import { onTrashChanged } from "../liveSync";
 import { useAppTheme } from "../ui";
 import { text } from "../tokens";
-
-const count = (n: number) => (n === 1 ? "1 item" : `${n} items`);
+import { t, tn } from "../i18n";
 
 /** The trash: tap photos to select them, then restore them or delete them permanently. The server deletes them on its
  *  own after the retention time. */
 export default function Trash() {
-  const t = useAppTheme();
+  const th = useAppTheme();
   const [items, setItems] = useState<Item[] | null>(null);
   const [days, setDays] = useState(30);
   const [error, setError] = useState<string>();
@@ -29,7 +28,7 @@ export default function Trash() {
       const r = await loadTrash();
       setItems(r.items); setDays(r.retentionDays);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't load the trash.");
+      setError(e instanceof Error ? e.message : t("Couldn't load the trash."));
     } finally {
       setLoading(false);
     }
@@ -45,20 +44,20 @@ export default function Trash() {
   };
   const actions: ExtraAction[] = [
     {
-      icon: "restore", label: "Restore",
+      icon: "restore", label: t("Restore"),
       run: async (ids) => {
         await inBatches("/api/items/restore", ids);
         await load(); refreshLibrary(); refreshAlbums();
-        return `Restored ${count(ids.length)} to Photos.`;
+        return tn(ids.length, "Restored {n} item to Photos.", "Restored {n} items to Photos.");
       },
     },
     {
-      icon: "trash", label: "Delete forever",
-      confirm: (n) => [`Delete ${count(n)} forever?`, "They are deleted from the server and can't be restored, not even from a backup made after today.", "Delete forever"],
+      icon: "trash", label: t("Delete forever"),
+      confirm: (n) => [tn(n, "Delete {n} item forever?", "Delete {n} items forever?"), tn(n, "It is deleted from the server and can't be restored, not even from a backup made after today.", "They are deleted from the server and can't be restored, not even from a backup made after today."), t("Delete forever")],
       run: async (ids) => {
         await inBatches("/api/trash/purge", ids);
         await load(); refreshAlbums();
-        return `Deleted ${count(ids.length)} permanently.`;
+        return tn(ids.length, "Deleted {n} item permanently.", "Deleted {n} items permanently.");
       },
     },
   ];
@@ -68,23 +67,23 @@ export default function Trash() {
       items={items} error={error} loading={loading} onRefresh={load} actions={actions} within="trash"
       header={
         <View>
-          <Appbar.Header style={{ backgroundColor: t.colors.background }}>
-            <Appbar.Action icon="back" accessibilityLabel="Back" onPress={() => router.back()} />
-            <Appbar.Content title="Trash" titleStyle={text.page} />
+          <Appbar.Header style={{ backgroundColor: th.colors.background }}>
+            <Appbar.Action icon="back" accessibilityLabel={t("Back")} onPress={() => router.back()} />
+            <Appbar.Content title={t("Trash")} titleStyle={text.page} />
           </Appbar.Header>
           {items?.length ? (
-            <Text variant="bodyMedium" style={[st.note, { color: t.colors.onSurfaceVariant }]}>
-              Tap photos to restore or delete them. Items are permanently deleted after {days} days.
+            <Text variant="bodyMedium" style={[st.note, { color: th.colors.onSurfaceVariant }]}>
+              {tn(days, "Tap photos to restore or delete them. Items are permanently deleted after {n} day.", "Tap photos to restore or delete them. Items are permanently deleted after {n} days.")}
             </Text>
           ) : null}
         </View>
       }
       empty={
         <View style={st.empty}>
-          <View style={[st.disc, { backgroundColor: t.colors.primaryContainer }]}><Icon name="trash" size={30} color={t.colors.primary} /></View>
-          <Text variant="headlineSmall" style={{ textAlign: "center", marginBottom: 8 }}>The trash is empty</Text>
-          <Text variant="bodyMedium" style={{ textAlign: "center", color: t.colors.onSurfaceVariant, maxWidth: 320 }}>
-            Deleted photos and videos stay here for {days} days.
+          <View style={[st.disc, { backgroundColor: th.colors.primaryContainer }]}><Icon name="trash" size={30} color={th.colors.primary} /></View>
+          <Text variant="headlineSmall" style={{ textAlign: "center", marginBottom: 8 }}>{t("The trash is empty")}</Text>
+          <Text variant="bodyMedium" style={{ textAlign: "center", color: th.colors.onSurfaceVariant, maxWidth: 320 }}>
+            {tn(days, "Deleted photos and videos stay here for {n} day.", "Deleted photos and videos stay here for {n} days.")}
           </Text>
         </View>
       }

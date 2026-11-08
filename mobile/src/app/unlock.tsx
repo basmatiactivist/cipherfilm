@@ -7,6 +7,7 @@ import { declineBiometric, enableBiometric, offerBiometric, signOut, unlockWithB
 import { useAction } from "../useAction";
 import { away } from "../autolock";
 import { busyIcon } from "../Loader";
+import { t } from "../i18n";
 
 export default function Unlock() {
   const { me, biometric, byHand } = useSession();
@@ -37,35 +38,35 @@ export default function Unlock() {
   return (
     <Screen form>
       <Column>
-        <Title>Unlock your library</Title>
+        <Title>{t("Unlock your library")}</Title>
         <Lead>{me?.user.email}</Lead>
-        {then === "share" ? <Text variant="bodyMedium" style={{ marginBottom: 16 }}>Another app shared files with Cipherfilm. Unlock to see them. Nothing is uploaded until you choose.</Text> : null}
+        {then === "share" ? <Text variant="bodyMedium" style={{ marginBottom: 16 }}>{t("Another app shared files with Cipherfilm. Unlock to see them. Nothing is uploaded until you choose.")}</Text> : null}
         <Problem>{error}</Problem>
-        {biometric ? <Button mode="contained" icon="fingerprint" onPress={bio} disabled={busy} contentStyle={{ height: 48 }} style={{ marginBottom: 24 }}>Use fingerprint</Button> : null}
-        <Field label="Password" value={password} onChangeText={setPassword} secureTextEntry textContentType="password" autoComplete="current-password" returnKeyType="go" onSubmitEditing={go}
-          hint={busy && password ? "Unlocking…" : undefined} />
-        <Button mode={biometric ? "outlined" : "contained"} onPress={go} icon={busy && !!password ? busyIcon : undefined} disabled={busy || !password} contentStyle={{ height: 48 }}>Unlock</Button>
-        <Button mode="text" onPress={() => setConfirmOut(true)} style={{ marginTop: 8 }}>Sign out</Button>
+        {biometric ? <Button mode="contained" icon="fingerprint" onPress={bio} disabled={busy} contentStyle={{ height: 48 }} style={{ marginBottom: 24 }}>{t("Use fingerprint")}</Button> : null}
+        <Field label={t("Password")} value={password} onChangeText={setPassword} secureTextEntry textContentType="password" autoComplete="current-password" returnKeyType="go" onSubmitEditing={go}
+          hint={busy && password ? t("Unlocking…") : undefined} />
+        <Button mode={biometric ? "outlined" : "contained"} onPress={go} icon={busy && !!password ? busyIcon : undefined} disabled={busy || !password} contentStyle={{ height: 48 }}>{t("Unlock")}</Button>
+        <Button mode="text" onPress={() => setConfirmOut(true)} style={{ marginTop: 8 }}>{t("Sign out")}</Button>
       </Column>
       <Portal>
         <Dialog visible={offerBio} onDismiss={done}>
-          <Dialog.Title>Unlock with your fingerprint next time?</Dialog.Title>
+          <Dialog.Title>{t("Unlock with your fingerprint next time?")}</Dialog.Title>
           <Dialog.Content>
-            <Text variant="bodyMedium">Your key stays in this phone's secure hardware. You can turn this off in Account.</Text>
+            <Text variant="bodyMedium">{t("Your key stays in this phone's secure hardware. You can turn this off in Account.")}</Text>
           </Dialog.Content>
           <Dialog.Actions>
-            <Button onPress={async () => { await declineBiometric().catch(() => {}); done(); }}>Not now</Button>
-            <Button onPress={async () => { try { await away(enableBiometric); } catch { /* stays off; Account offers it again */ } done(); }}>Turn on</Button>
+            <Button onPress={async () => { await declineBiometric().catch(() => {}); done(); }}>{t("Not now")}</Button>
+            <Button onPress={async () => { try { await away(enableBiometric); } catch { /* stays off; Account offers it again */ } done(); }}>{t("Turn on")}</Button>
           </Dialog.Actions>
         </Dialog>
         <Dialog visible={confirmOut} onDismiss={() => setConfirmOut(false)}>
-          <Dialog.Title>Sign out of this phone?</Dialog.Title>
+          <Dialog.Title>{t("Sign out of this phone?")}</Dialog.Title>
           <Dialog.Content>
-            <Text variant="bodyMedium">Your photos stay in Cipherfilm. This phone deletes its copy of your library, its settings and its saved key, and backup stops.</Text>
+            <Text variant="bodyMedium">{t("Your photos stay in Cipherfilm. This phone deletes its copy of your library, its settings and its saved key, and backup stops.")}</Text>
           </Dialog.Content>
           <Dialog.Actions>
-            <Button onPress={() => setConfirmOut(false)}>Cancel</Button>
-            <Button onPress={async () => { setConfirmOut(false); await signOut(); router.replace("/signin"); }}>Sign out</Button>
+            <Button onPress={() => setConfirmOut(false)}>{t("Cancel")}</Button>
+            <Button onPress={async () => { setConfirmOut(false); await signOut(); router.replace("/signin"); }}>{t("Sign out")}</Button>
           </Dialog.Actions>
         </Dialog>
       </Portal>

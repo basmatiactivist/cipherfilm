@@ -11,10 +11,11 @@ import { NameDialog } from "../albums";
 import { Problem, useAppTheme } from "../../ui";
 import { text } from "../../tokens";
 import { busyIcon } from "../../Loader";
+import { t, tn } from "../../i18n";
 
 /** One album: the same timeline, only its photos; Remove from album, rename and delete (the photos stay). */
 export default function AlbumScreen() {
-  const t = useAppTheme();
+  const th = useAppTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { albums, error: albumsError, loading: albumsLoading } = useAlbums();
   const { items, error, loading } = useLibrary();
@@ -31,7 +32,7 @@ export default function AlbumScreen() {
       setDeleting(false);
       router.back();
     } catch (e) {
-      setDeleteError(e instanceof Error ? e.message : "Couldn't delete the album.");
+      setDeleteError(e instanceof Error ? e.message : t("Couldn't delete the album."));
     } finally {
       setDeleteBusy(false);
     }
@@ -46,7 +47,6 @@ export default function AlbumScreen() {
     const ids = new Set(album.itemIds);
     return items.filter((i) => ids.has(i.id));
   }, [album, items, gone]);
-  const count = (n: number) => (n === 1 ? "1 item" : `${n} items`);
 
   return (
     <View style={{ flex: 1 }}>
@@ -54,40 +54,40 @@ export default function AlbumScreen() {
         items={shown} error={error ?? albumsError} loading={loading || albumsLoading} album={id}
         onRefresh={() => { refreshAlbums(); refreshLibrary(); }}
         header={
-          <Appbar.Header style={{ backgroundColor: t.colors.background }}>
-            <Appbar.Action icon="back" accessibilityLabel="Back" onPress={() => router.back()} />
+          <Appbar.Header style={{ backgroundColor: th.colors.background }}>
+            <Appbar.Action icon="back" accessibilityLabel={t("Back")} onPress={() => router.back()} />
             <Appbar.Content title={album?.name ?? ""} titleStyle={text.page} />
-            <Menu visible={menu} onDismiss={() => setMenu(false)} anchor={<Appbar.Action icon="more" accessibilityLabel="Album options" onPress={() => setMenu(true)} />}>
-              <Menu.Item leadingIcon="edit" title="Rename" onPress={() => { setMenu(false); setRenaming(true); }} />
-              <Menu.Item leadingIcon="trash" title="Delete album" onPress={() => { setMenu(false); setDeleteError(undefined); setDeleting(true); }} />
+            <Menu visible={menu} onDismiss={() => setMenu(false)} anchor={<Appbar.Action icon="more" accessibilityLabel={t("Album options")} onPress={() => setMenu(true)} />}>
+              <Menu.Item leadingIcon="edit" title={t("Rename")} onPress={() => { setMenu(false); setRenaming(true); }} />
+              <Menu.Item leadingIcon="trash" title={t("Delete album")} onPress={() => { setMenu(false); setDeleteError(undefined); setDeleting(true); }} />
             </Menu>
           </Appbar.Header>
         }
         empty={
           <View style={st.empty}>
-            <Icon name="albums" size={32} color={t.colors.onSurfaceVariant} />
-            <Text variant="bodyMedium" style={{ textAlign: "center", color: t.colors.onSurfaceVariant, marginTop: 12, maxWidth: 300 }}>
-              {gone ? "This album isn't there anymore. It may have been deleted on another device." : "This album is empty. In Photos, long-press photos and tap Add to album."}
+            <Icon name="albums" size={32} color={th.colors.onSurfaceVariant} />
+            <Text variant="bodyMedium" style={{ textAlign: "center", color: th.colors.onSurfaceVariant, marginTop: 12, maxWidth: 300 }}>
+              {gone ? t("This album isn't there anymore. It may have been deleted on another device.") : t("This album is empty. In Photos, long-press photos and tap Add to album.")}
             </Text>
           </View>
         }
         extraAction={{
-          icon: "minus", label: "Remove",
-          run: async (ids) => { await removeFromAlbum(id, ids); await refreshAlbums(); return `Removed ${count(ids.length)} from ${album?.name ?? "the album"}. Still in Photos.`; },
+          icon: "minus", label: t("Remove"),
+          run: async (ids) => { await removeFromAlbum(id, ids); await refreshAlbums(); return album?.name ? tn(ids.length, "Removed {n} item from {album}. Still in Photos.", "Removed {n} items from {album}. Still in Photos.", { album: album.name }) : tn(ids.length, "Removed {n} item from the album. Still in Photos.", "Removed {n} items from the album. Still in Photos."); },
         }}
       />
       <Portal>
-        <NameDialog visible={renaming} title="Rename album" action="Rename" initial={album?.name ?? ""} onDismiss={() => setRenaming(false)}
+        <NameDialog visible={renaming} title={t("Rename album")} action={t("Rename")} initial={album?.name ?? ""} onDismiss={() => setRenaming(false)}
           onSubmit={async (name) => { await renameAlbum(id, name); await refreshAlbums(); setRenaming(false); }} />
         <Dialog visible={deleting} onDismiss={() => setDeleting(false)}>
-          <Dialog.Title>Delete this album?</Dialog.Title>
+          <Dialog.Title>{t("Delete this album?")}</Dialog.Title>
           <Dialog.Content>
             <Problem>{deleteError}</Problem>
-            <Text variant="bodyMedium">Its {count(shown?.length ?? 0)} stay in Photos.</Text>
+            <Text variant="bodyMedium">{tn(shown?.length ?? 0, "Its {n} item stays in Photos.", "Its {n} items stay in Photos.")}</Text>
           </Dialog.Content>
           <Dialog.Actions>
-            <Button onPress={() => setDeleting(false)}>Cancel</Button>
-            <Button onPress={remove} icon={deleteBusy ? busyIcon : undefined} disabled={deleteBusy}>Delete album</Button>
+            <Button onPress={() => setDeleting(false)}>{t("Cancel")}</Button>
+            <Button onPress={remove} icon={deleteBusy ? busyIcon : undefined} disabled={deleteBusy}>{t("Delete album")}</Button>
           </Dialog.Actions>
         </Dialog>
       </Portal>

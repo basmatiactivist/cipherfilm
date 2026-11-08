@@ -17,9 +17,9 @@ import { prepareShare, saveItems } from "./outbox";
 import { setViewerList } from "./viewerList";
 import { radius, text } from "./tokens";
 import { Loading } from "./Loader";
+import { locale, t, tn } from "./i18n";
 
 const GAP = 4;
-const dayFmt = new Intl.DateTimeFormat(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
 /** An extra action for the selection bar, e.g. "Remove from album". Returns the message to show. */
 export interface ExtraAction {
@@ -65,10 +65,10 @@ const Row = memo(function Row(p: { row: Item[]; size: number; selecting: boolean
 });
 
 /** What the first load of each place says. */
-const OPENING: Record<string, string> = { search: "Searching…", trash: "Opening the trash…", person: "Loading people…" };
+const opening = (within: string): string | undefined => ({ search: t("Searching…"), trash: t("Opening the trash…"), person: t("Loading people…") } as Record<string, string>)[within];
 
 export function Gallery({ items, error, loading, onRefresh, header, empty, bottom = 0, fab, nav, extraAction, actions, album, flat, within }: Props) {
-  const t = useAppTheme();
+  const th = useAppTheme();
   const inset = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -106,6 +106,7 @@ export function Gallery({ items, error, loading, onRefresh, header, empty, botto
       for (let i = 0; i < list.length; i += cols) rows.push(list.slice(i, i + cols));
       return rows.length ? [{ title: "", data: rows }] : [];
     }
+    const dayFmt = new Intl.DateTimeFormat(locale(), { weekday: "long", day: "numeric", month: "long", year: "numeric" });
     const days = new Map<string, Item[]>();
     for (const it of items ?? []) {
       const key = new Date(when(it)).toDateString();
@@ -143,33 +144,32 @@ export function Gallery({ items, error, loading, onRefresh, header, empty, botto
       const msg = await f((d, tot) => setBusy({ label, progress: tot ? d / tot : 0 }));
       if (msg) setNote({ text: msg });
     } catch (e) {
-      setNote({ text: e instanceof Error ? e.message : "That didn't work." });
+      setNote({ text: e instanceof Error ? e.message : t("That didn't work.") });
     } finally {
       setBusy(null);
     }
   };
-  const count = (n: number) => (n === 1 ? "1 item" : `${n} items`);
 
   const share = async () => {
     let ready: { send: () => Promise<boolean> } | undefined;
-    await run("Preparing to share", async (p) => { ready = await prepareShare(picked(), p); });
+    await run(t("Preparing to share"), async (p) => { ready = await prepareShare(picked(), p); });
     if (ready) { await ready.send(); setSelected(new Set()); }
   };
-  const save = () => run("Saving to this phone", async (p) => {
+  const save = () => run(t("Saving to this phone"), async (p) => {
     const list = picked();
     await saveItems(list, p);
     setSelected(new Set());
-    return `Saved ${count(list.length)} to Pictures › Cipherfilm.`;
+    return tn(list.length, "Saved {n} item to Pictures › Cipherfilm.", "Saved {n} items to Pictures › Cipherfilm.");
   });
-  const trash = () => run("Moving to the trash", async () => {
+  const trash = () => run(t("Moving to the trash"), async () => {
     const ids = [...selected];
     for (let i = 0; i < ids.length; i += 500) await api("POST", "/api/items/trash", { item_ids: ids.slice(i, i + 500) });
     setSelected(new Set());
     await refreshLibrary();
     refreshAlbums();
     setNote({
-      text: `Moved ${count(ids.length)} to the trash.`,
-      undo: () => run("Restoring", async () => {
+      text: tn(ids.length, "Moved {n} item to the trash.", "Moved {n} items to the trash."),
+      undo: () => run(t("Restoring"), async () => {
         for (let i = 0; i < ids.length; i += 500) await api("POST", "/api/items/restore", { item_ids: ids.slice(i, i + 500) });
         await refreshLibrary();
         refreshAlbums();
@@ -177,19 +177,19 @@ export function Gallery({ items, error, loading, onRefresh, header, empty, botto
     });
   });
   const allFav = picked().length > 0 && picked().every((i) => i.favorite);
-  const favorite = () => run(allFav ? "Removing from favorites" : "Adding to favorites", async () => {
+  const favorite = () => run(allFav ? t("Removing from favorites") : t("Adding to favorites"), async () => {
     const ids = picked().map((i) => i.id);
     await setFavorite(ids, !allFav);
     setSelected(new Set());
-    return allFav ? `Removed ${count(ids.length)} from favorites.` : `Added ${count(ids.length)} to favorites.`;
+    return allFav ? tn(ids.length, "Removed {n} item from favorites.", "Removed {n} items from favorites.") : tn(ids.length, "Added {n} item to favorites.", "Added {n} items to favorites.");
   });
-  const intoAlbum = (a: Album) => run("Adding to the album", async () => {
+  const intoAlbum = (a: Album) => run(t("Adding to the album"), async () => {
     setAlbumPicker(false);
     const ids = picked().map((i) => i.id);
     await addToAlbum(a.id, ids);
     setSelected(new Set());
     refreshAlbums();
-    return `Added ${count(ids.length)} to ${a.name}.`;
+    return tn(ids.length, "Added {n} item to {album}.", "Added {n} items to {album}.", { album: a.name });
   });
 
   const runAction = (a: ExtraAction) => run(a.label, async () => {
@@ -205,19 +205,19 @@ export function Gallery({ items, error, loading, onRefresh, header, empty, botto
   }));
 
   return (
-    <View style={{ flex: 1, backgroundColor: t.colors.background }}>
+    <View style={{ flex: 1, backgroundColor: th.colors.background }}>
       {selecting ? (
         <View style={[st.selhead, { paddingTop: inset.top + 8, paddingLeft: inset.left + 16 }]}>
-          <View style={[st.countpill, { backgroundColor: t.colors.surfaceVariant }]}>
-            <Pressable onPress={() => setSelected(new Set())} accessibilityRole="button" accessibilityLabel="End selection" hitSlop={8} style={st.pillx}>
-              <Icon name="x" size={22} color={t.colors.onSurface} />
+          <View style={[st.countpill, { backgroundColor: th.colors.surfaceVariant }]}>
+            <Pressable onPress={() => setSelected(new Set())} accessibilityRole="button" accessibilityLabel={t("End selection")} hitSlop={8} style={st.pillx}>
+              <Icon name="x" size={22} color={th.colors.onSurface} />
             </Pressable>
             <Text variant="titleMedium" style={{ fontVariant: ["tabular-nums"], marginRight: 16 }} accessibilityLiveRegion="polite">{selected.size}</Text>
           </View>
           {/* all of what is shown: a person's photos, an album, search results */}
           <Pressable onPress={() => { const all = (items ?? []).filter((i) => !i.broken); setSelected(selected.size >= all.length ? new Set() : new Set(all.map((i) => i.id))); }}
-            accessibilityRole="button" hitSlop={8} style={[st.countpill, { backgroundColor: t.colors.surfaceVariant, marginLeft: 8, paddingHorizontal: 16 }]}>
-            <Text variant="labelLarge">{selected.size >= (items ?? []).filter((i) => !i.broken).length ? "Select none" : "Select all"}</Text>
+            accessibilityRole="button" hitSlop={8} style={[st.countpill, { backgroundColor: th.colors.surfaceVariant, marginLeft: 8, paddingHorizontal: 16 }]}>
+            <Text variant="labelLarge">{selected.size >= (items ?? []).filter((i) => !i.broken).length ? t("Select none") : t("Select all")}</Text>
           </Pressable>
         </View>
       ) : header}
@@ -227,13 +227,13 @@ export function Gallery({ items, error, loading, onRefresh, header, empty, botto
         stickySectionHeadersEnabled={false}
         extraData={selected}
         contentContainerStyle={{ paddingHorizontal: GAP + inset.left, paddingBottom: inset.bottom + bottom + (selecting ? 160 : 96), flexGrow: 1 }}
-        refreshControl={<RefreshControl refreshing={loading && !!items} onRefresh={onRefresh} enabled={!selecting} colors={[t.colors.primary]} progressBackgroundColor={t.colors.elevation.level1} />}
+        refreshControl={<RefreshControl refreshing={loading && !!items} onRefresh={onRefresh} enabled={!selecting} colors={[th.colors.primary]} progressBackgroundColor={th.colors.elevation.level1} />}
         renderSectionHeader={({ section }) => (section.title ? <Text style={[st.day, text.heading]}>{section.title}</Text> : <View style={{ height: 8 }} />)}
         renderItem={({ item: row }) => (
           <Row row={row} size={size} selecting={selecting} sel={row.map((it) => (selected.has(it.id) ? "1" : "0")).join("")} onPress={press} onLongPress={hold} />
         )}
         ListHeaderComponent={error ? <View style={{ paddingTop: 8 }}><Problem>{error}</Problem></View> : undefined}
-        ListEmptyComponent={items && !error ? <>{empty}</> : !items && !error ? <Loading label={OPENING[within ?? ""] ?? (album ? "Opening the album…" : "Opening your library…")} /> : undefined}
+        ListEmptyComponent={items && !error ? <>{empty}</> : !items && !error ? <Loading label={opening(within ?? "") ?? (album ? t("Opening the album…") : t("Opening your library…"))} /> : undefined}
         initialNumToRender={12}
         maxToRenderPerBatch={6}
         updateCellsBatchingPeriod={30}
@@ -241,19 +241,19 @@ export function Gallery({ items, error, loading, onRefresh, header, empty, botto
         removeClippedSubviews
       />
       {selecting ? (
-        <View style={[st.sheet, { backgroundColor: t.colors.surfaceVariant, paddingBottom: inset.bottom + 12 }]}>
-          <View style={[st.grabber, { backgroundColor: t.colors.outline }]} />
+        <View style={[st.sheet, { backgroundColor: th.colors.surfaceVariant, paddingBottom: inset.bottom + 12 }]}>
+          <View style={[st.grabber, { backgroundColor: th.colors.outline }]} />
           <View style={st.actions}>
             {actions ? actions.map((a) => (
               <Action key={a.label} icon={a.icon} label={a.label} onPress={() => (a.confirm ? setAsking(a) : runAction(a))} />
             )) : (
               <>
-                <Action icon="share" label="Share" onPress={share} />
-                <Action icon={allFav ? "heartOn" : "heart"} label={allFav ? "Unfavorite" : "Favorite"} onPress={favorite} />
+                <Action icon="share" label={t("Share")} onPress={share} />
+                <Action icon={allFav ? "heartOn" : "heart"} label={allFav ? t("Unfavorite") : t("Favorite")} onPress={favorite} />
                 {extraAction && extra ? <Action icon={extraAction.icon} label={extraAction.label} onPress={extra} /> : null}
-                <Action icon="folderPlus" label="Add to album" onPress={() => setAlbumPicker(true)} />
-                <Action icon="download" label="Save to phone" onPress={save} />
-                <Action icon="trash" label="Trash" onPress={trash} />
+                <Action icon="folderPlus" label={t("Add to album")} onPress={() => setAlbumPicker(true)} />
+                <Action icon="download" label={t("Save to phone")} onPress={save} />
+                <Action icon="trash" label={t("Trash")} onPress={trash} />
               </>
             )}
           </View>
@@ -263,8 +263,8 @@ export function Gallery({ items, error, loading, onRefresh, header, empty, botto
         <Dialog visible={!!busy} dismissable={false}>
           <Dialog.Content>
             <Text variant="bodyLarge" style={{ marginBottom: 12 }}>{busy?.label}…</Text>
-            <ProgressBar progress={busy?.progress ?? 0} indeterminate={!busy?.progress} color={t.colors.primary} style={{ height: 5, borderRadius: 3, backgroundColor: t.colors.outlineVariant }} />
-            <Text variant="bodySmall" style={{ marginTop: 12, color: t.colors.onSurfaceVariant }}>Photos are decrypted on this phone. Shared and saved copies are not encrypted.</Text>
+            <ProgressBar progress={busy?.progress ?? 0} indeterminate={!busy?.progress} color={th.colors.primary} style={{ height: 5, borderRadius: 3, backgroundColor: th.colors.outlineVariant }} />
+            <Text variant="bodySmall" style={{ marginTop: 12, color: th.colors.onSurfaceVariant }}>{t("Photos are decrypted on this phone. Shared and saved copies are not encrypted.")}</Text>
           </Dialog.Content>
         </Dialog>
         <AlbumPicker visible={albumPicker} onDismiss={() => setAlbumPicker(false)} onPick={intoAlbum} />
@@ -275,15 +275,15 @@ export function Gallery({ items, error, loading, onRefresh, header, empty, botto
               <Dialog.Title>{title}</Dialog.Title>
               <Dialog.Content><Text variant="bodyMedium">{text}</Text></Dialog.Content>
               <Dialog.Actions>
-                <Button onPress={() => setAsking(null)}>Cancel</Button>
-                <Button textColor={t.colors.error} onPress={() => { const a = asking; setAsking(null); runAction(a); }}>{button}</Button>
+                <Button onPress={() => setAsking(null)}>{t("Cancel")}</Button>
+                <Button textColor={th.colors.error} onPress={() => { const a = asking; setAsking(null); runAction(a); }}>{button}</Button>
               </Dialog.Actions>
             </Dialog>
           );
         })() : null}
       </Portal>
       <Snackbar visible={!!note} onDismiss={() => setNote(null)} duration={5000} style={{ marginBottom: inset.bottom + bottom + (selecting ? 140 : 80) }}
-        action={note?.undo ? { label: "Undo", onPress: () => { const u = note.undo!; setNote(null); u(); } } : undefined}>
+        action={note?.undo ? { label: t("Undo"), onPress: () => { const u = note.undo!; setNote(null); u(); } } : undefined}>
         {note?.text}
       </Snackbar>
     </View>
@@ -291,17 +291,17 @@ export function Gallery({ items, error, loading, onRefresh, header, empty, botto
 }
 
 function Action({ icon, label, onPress }: { icon: IconName; label: string; onPress: () => void }) {
-  const t = useAppTheme();
+  const th = useAppTheme();
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label} android_ripple={{ color: t.colors.primaryContainer, borderless: true }} style={st.action}>
-      <Icon name={icon} size={26} color={t.colors.onSurface} />
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label} android_ripple={{ color: th.colors.primaryContainer, borderless: true }} style={st.action}>
+      <Icon name={icon} size={26} color={th.colors.onSurface} />
       <Text variant="labelMedium" style={{ textAlign: "center", marginTop: 8 }} numberOfLines={2}>{label}</Text>
     </Pressable>
   );
 }
 
 export function AlbumPicker({ visible, onDismiss, onPick }: { visible: boolean; onDismiss: () => void; onPick: (a: Album) => void }) {
-  const t = useAppTheme();
+  const th = useAppTheme();
   const [albums, setAlbums] = useState<Album[] | null>(null);
   const [name, setName] = useState("");
   const [error, setError] = useState<string>();
@@ -315,22 +315,22 @@ export function AlbumPicker({ visible, onDismiss, onPick }: { visible: boolean; 
   };
   return (
     <Dialog visible={visible} onDismiss={onDismiss} style={{ maxHeight: "80%" }}>
-      <Dialog.Title>Add to album</Dialog.Title>
+      <Dialog.Title>{t("Add to album")}</Dialog.Title>
       <Dialog.ScrollArea style={{ paddingHorizontal: 0 }}>
         <ScrollView>
           {error ? <View style={{ paddingHorizontal: 24 }}><Problem>{error}</Problem></View> : null}
-          {!albums && !error ? <Loading inline label="Loading albums…" style={{ margin: 24 }} /> : null}
+          {!albums && !error ? <Loading inline label={t("Loading albums…")} style={{ margin: 24 }} /> : null}
           {albums?.map((a) => (
-            <List.Item key={a.id} title={a.name} description={a.itemIds.length === 1 ? "1 item" : `${a.itemIds.length} items`} onPress={() => onPick(a)}
-              left={() => <View style={{ justifyContent: "center", marginLeft: 16 }}><Icon name="folderPlus" color={t.colors.primary} /></View>} style={{ minHeight: 56 }} />
+            <List.Item key={a.id} title={a.name} description={tn(a.itemIds.length, "{n} item", "{n} items")} onPress={() => onPick(a)}
+              left={() => <View style={{ justifyContent: "center", marginLeft: 16 }}><Icon name="folderPlus" color={th.colors.primary} /></View>} style={{ minHeight: 56 }} />
           ))}
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 24, paddingVertical: 12 }}>
-            <TextInput mode="outlined" outlineStyle={{ borderRadius: radius.control }} dense label="New album" value={name} onChangeText={setName} style={{ flex: 1 }} onSubmitEditing={() => name.trim() && create()} />
-            <Button mode="contained" onPress={create} disabled={!name.trim()}>Create</Button>
+            <TextInput mode="outlined" outlineStyle={{ borderRadius: radius.control }} dense label={t("New album")} value={name} onChangeText={setName} style={{ flex: 1 }} onSubmitEditing={() => name.trim() && create()} />
+            <Button mode="contained" onPress={create} disabled={!name.trim()}>{t("Create")}</Button>
           </View>
         </ScrollView>
       </Dialog.ScrollArea>
-      <Dialog.Actions><Button onPress={onDismiss}>Cancel</Button></Dialog.Actions>
+      <Dialog.Actions><Button onPress={onDismiss}>{t("Cancel")}</Button></Dialog.Actions>
     </Dialog>
   );
 }

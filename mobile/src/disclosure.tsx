@@ -6,6 +6,7 @@ import { ScrollView } from "react-native";
 import { Button, Dialog, Portal, Text } from "react-native-paper";
 import { session } from "./session";
 import { requestMediaAccess } from "./mediaAccess";
+import { t } from "./i18n";
 
 type Why = "backup" | "freeSpace";
 
@@ -19,35 +20,35 @@ export function useMediaDisclosure(): { ask: (why: Why) => Promise<"full" | "par
     if (!go) return "none" as const;
     return requestMediaAccess(w === "backup");
   }, []);
-  const server = session().server.replace(/^https:\/\//, "") || "your server";
+  const server = session().server.replace(/^https:\/\//, "") || t("your server");
   const dialog = (
     <Portal>
       <Dialog visible={why !== null} onDismiss={() => close(false)}>
-        <Dialog.Title>Access to your photos and videos</Dialog.Title>
+        <Dialog.Title>{t("Access to your photos and videos")}</Dialog.Title>
         <Dialog.ScrollArea style={{ paddingHorizontal: 24 }}>
           <ScrollView>
             {why === "freeSpace" ? (
               <Text variant="bodyMedium" style={{ marginTop: 8 }}>
-                Cipherfilm reads the names and sizes of photos and videos on this phone to find the ones already backed up to {server}. Nothing is uploaded or sent anywhere.
+                {t("Cipherfilm reads the names and sizes of photos and videos on this phone to find the ones already backed up to {server}. Nothing is uploaded or sent anywhere.", { server })}
               </Text>
             ) : (
               <>
                 <Text variant="bodyMedium" style={{ marginTop: 8 }}>
-                  Cipherfilm reads the photos and videos in the folders you choose, including where they were taken, to back them up. This also happens in the background when the app is closed.
+                  {t("Cipherfilm reads the photos and videos in the folders you choose, including where they were taken, to back them up. This also happens in the background when the app is closed.")}
                 </Text>
                 <Text variant="bodyMedium" style={{ marginTop: 12 }}>
-                  Each file is encrypted on this phone, then uploaded only to your server ({server}). The developer of Cipherfilm never receives your photos or anything about them.
+                  {t("Each file is encrypted on this phone, then uploaded only to your server ({server}). The developer of Cipherfilm never receives your photos or anything about them.", { server })}
                 </Text>
               </>
             )}
             <Text variant="bodyMedium" style={{ marginVertical: 12 }}>
-              Android asks next. If you allow only some photos, Cipherfilm backs up just those.
+              {t("Android asks next. If you allow only some photos, Cipherfilm backs up just those.")}
             </Text>
           </ScrollView>
         </Dialog.ScrollArea>
         <Dialog.Actions>
-          <Button onPress={() => close(false)}>Not now</Button>
-          <Button mode="contained" onPress={() => close(true)}>Continue</Button>
+          <Button onPress={() => close(false)}>{t("Not now")}</Button>
+          <Button mode="contained" onPress={() => close(true)}>{t("Continue")}</Button>
         </Dialog.Actions>
       </Dialog>
     </Portal>

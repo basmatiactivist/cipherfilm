@@ -235,3 +235,10 @@ export async function faceUri(cover: NonNullable<FaceGroup["cover"]>): Promise<s
 export const personName = (g: Group) => g.person?.name || "";
 
 onWipe(() => { crops.clear(); groups = []; allGroups = []; groupsAt = -1; doc = { v: 1, people: [] }; version = 0; loaded = false; });
+
+/** The group with the most of these faces (at least one), for following a person across a regrouping. */
+export function sameFaces<G extends { faces: string[] }>(groups: G[], faces: Set<string>): G | undefined {
+  let best: G | undefined, most = 0;
+  for (const g of groups) { const n = g.faces.reduce((k, f) => k + (faces.has(f) ? 1 : 0), 0); if (n > most) { most = n; best = g; } }
+  return best;
+}

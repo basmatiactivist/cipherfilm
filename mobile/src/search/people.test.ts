@@ -16,7 +16,7 @@ vi.mock("../library", () => ({ thumbBytes: async () => null }));
 vi.mock("./engine", () => ({ indexVersion: () => 0, searchReady: () => false }));
 vi.mock("./settings", () => ({ loadSettings: async () => ({}) }));
 
-const { setExplicit } = await import("./people");
+const { setExplicit, sameFaces } = await import("./people");
 const deletes = () => st.calls.filter((c) => c.startsWith("DELETE"));
 
 describe("explicit search on and off", () => {
@@ -39,5 +39,13 @@ describe("explicit search on and off", () => {
     st.doc = { v: 1, people: [], explicit: true };
     await setExplicit(true);
     expect(deletes()).toEqual([]);
+  });
+});
+
+describe("following a person across a regrouping", () => {
+  it("picks the group that shares the most faces, and nothing when none is shared", () => {
+    const gs = [{ key: "a", faces: ["x1", "y1"] }, { key: "b", faces: ["x2", "x3", "x4"] }, { key: "c", faces: ["z1"] }];
+    expect(sameFaces(gs, new Set(["x2", "x3", "y1"]))?.key).toBe("b");
+    expect(sameFaces(gs, new Set(["q"]))).toBeUndefined();
   });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { Appbar, Button, Dialog, List, Menu, Portal, Snackbar, Text } from "react-native-paper";
@@ -7,7 +7,7 @@ import { FaceAvatar } from "../../Faces";
 import { NameDialog } from "../albums";
 import { refreshLibrary, useLibrary } from "../../libraryStore";
 import { sortByDate } from "../../search/query";
-import { forgetPerson, mergeInto, nameGroup, removeFromPerson, setHidden, usePeople } from "../../search/people";
+import { forgetPerson, mergeInto, nameGroup, removeFromPerson, sameFaces, setHidden, usePeople } from "../../search/people";
 import { useAppTheme } from "../../ui";
 import { text } from "../../tokens";
 import { t, tn } from "../../i18n";
@@ -20,7 +20,21 @@ export default function PersonScreen() {
   const { groups, reload } = usePeople();
   useEffect(() => { if (!items) refreshLibrary(); }, []);
   const [current, setCurrent] = useState(key);
-  const group = groups?.find((g) => g.key === current || g.person?.id === current);
+  const byId = groups?.find((g) => g.key === current || g.person?.id === current);
+  // the faces of the group last shown: if the new grouping has nobody under the id (it moved on while naming, or the
+  // person's group got a new key), the screen stays with whoever shares the most of these faces
+  const lastFaces = useRef<Set<string>>(new Set());
+  const found = byId ?? (groups && lastFaces.current.size ? sameFaces(groups, lastFaces.current) : undefined);
+  if (found) lastFaces.current = new Set(found.faces);
+  // Naming (or joining someone) gives the group a new id, and the groups are worked out again from the index; with a
+  // big library that takes a while. Until the new groups are there, the screen keeps the photos it showed, with the
+  // new name, instead of finding nobody under the new id and saying there are no photos.
+  const last = useRef(found);
+  const [settling, setSettling] = useState<{ name: string } | null>(null);
+  if (found) last.current = found;
+  useEffect(() => { if (found && settling) setSettling(null); }, [found]);
+  useEffect(() => { if (!settling) return; const tm = setTimeout(() => setSettling(null), 20_000); return () => clearTimeout(tm); }, [settling]);
+  const group = found ?? (settling ? last.current : undefined);
   const [menu, setMenu] = useState(false);
   const [naming, setNaming] = useState(false);
   const [merging, setMerging] = useState(false);
@@ -35,7 +49,7 @@ export default function PersonScreen() {
     return sortByDate(items.filter((i) => ids.has(i.id) && !i.broken));
   }, [group, groups, items]);
 
-  const name = group?.person?.name;
+  const name = (found ? undefined : settling?.name) ?? group?.person?.name;
   const others = (groups ?? []).filter((g) => g.person?.name && g.key !== group?.key);
   const act = async (f: () => Promise<void>, msg?: string) => {
     try { await f(); reload(); if (msg) setNote(msg); } catch (e) { setNote(e instanceof Error ? e.message : t("That didn't work.")); }
@@ -73,8 +87,8 @@ export default function PersonScreen() {
           onSubmit={async (n) => {
             // the name is someone already there: then these are the same person
             const same = others.find((g) => g.person!.name.toLowerCase() === n.trim().toLowerCase());
-            if (same && group) { await mergeInto(group, same.person!); setCurrent(same.person!.id); }
-            else if (group) { const id = await nameGroup(group, n); if (id) setCurrent(id); }
+            if (same && group) { await mergeInto(group, same.person!); setSettling({ name: same.person!.name }); setCurrent(same.person!.id); }
+            else if (group) { const id = await nameGroup(group, n); if (id) { setSettling({ name: n.trim() }); setCurrent(id); } }
             setNaming(false); reload();
           }} />
         <Dialog visible={merging} onDismiss={() => setMerging(false)} style={{ maxHeight: "80%" }}>

@@ -36,7 +36,7 @@ jobs:
       - name: JavaScript dependencies and native project
         run: |
           cd mobile && npm ci
-          CF_VERSION=0.0.0 npx expo prebuild --platform android --clean --no-install
+          CF_VERSION=0.0.1 npx expo prebuild  # any version: only the dependencies count (0 would be versionCode 0, which Android refuses) --platform android --clean --no-install
       - name: Gradle only with the pinned hash
         run: |
           props=mobile/android/gradle/wrapper/gradle-wrapper.properties

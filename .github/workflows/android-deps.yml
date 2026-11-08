@@ -47,5 +47,8 @@ jobs:
       - uses: gradle/actions/dependency-submission@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
         with:
           build-root-directory: mobile/android
+          # only what goes into the app (every module's release runtime classpath): Gradle's own tools (netty,
+          # Bouncy Castle, AssertJ in the build classpath) run on the build machine and would bury real alerts
+          dependency-graph-include-configurations: ".*[Rr]eleaseRuntimeClasspath"
           cache-disabled: true
           validate-wrappers: true

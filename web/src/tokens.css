@@ -76,6 +76,7 @@
   --focus-ring: 3px;
   --measure: 65ch;
   --loader: 20px;
+  --loader-medium: 40px;
   --loader-large: 88px;
   --shadow-menu: 0 8px 24px var(--shade), 0 2px 6px var(--shade-2);
   --shadow-lift: 0 -6px 20px var(--shade-2);

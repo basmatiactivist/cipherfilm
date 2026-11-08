@@ -105,8 +105,8 @@ export const space = { ${entries(T.space).map(([k, v]) => `s${k}: ${v}`).join(",
 export const radius = { ${entries(T.radius).map(([k, v]) => `${k}: ${v}`).join(", ")} } as const;
 export const touch = ${T.size["touch-android"].value};
 export const motion = { fast: ${T.motion.fast.ms}, medium: ${T.motion.medium.ms}, turn: ${T.motion.turn.ms}, seal: ${T.motion.seal.ms}, breathe: ${T.motion.breathe.ms} } as const;
-/** The loading badge (Loader.tsx): inline and on its own, in dp. */
-export const loader = { small: ${T.size.loader.value}, large: ${T.size["loader-large"].value} } as const;
+/** The loading badge (Loader.tsx), in dp: inline, in a corner over a photo (the viewer), and on its own. */
+export const loader = { small: ${T.size.loader.value}, medium: ${T.size["loader-medium"].value}, large: ${T.size["loader-large"].value} } as const;
 `;
 }
 

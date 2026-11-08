@@ -49,6 +49,9 @@ jobs:
           build-root-directory: mobile/android
           # only what goes into the app (every module's release runtime classpath): Gradle's own tools (netty,
           # Bouncy Castle, AssertJ in the build classpath) run on the build machine and would bury real alerts
-          dependency-graph-include-configurations: ".*[Rr]eleaseRuntimeClasspath"
+          # and only the app module's: each library module also resolves its own classpath, with older versions the
+          # app overrides (constraints in cf-native), which would raise alerts for versions that never ship
+          dependency-graph-include-projects: "^:app$"
+          dependency-graph-include-configurations: "^releaseRuntimeClasspath$"
           cache-disabled: true
           validate-wrappers: true

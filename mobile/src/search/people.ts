@@ -10,6 +10,7 @@ import { libraryItems } from "../libraryStore";
 import { thumbBytes } from "../library";
 import { indexVersion, searchReady } from "./engine";
 import { loadSettings } from "./settings";
+import { t } from "../i18n";
 
 export interface Person { id: string; name: string; hidden?: boolean; anchors: string[]; rejects: string[] }
 interface Doc { v: 1; people: Person[]; /** explicit search chosen (docs/SEARCH.md): used only if an admin allows it */ explicit?: boolean }
@@ -27,7 +28,7 @@ let loaded = false;
 
 const need = () => {
   const { me, masterKey } = session();
-  if (!me || !masterKey) throw new Error("Unlock your library first.");
+  if (!me || !masterKey) throw new Error(t("Unlock your library first."));
   return { me, masterKey };
 };
 
@@ -62,7 +63,7 @@ async function change(f: (d: Doc) => void) {
       if (!(e instanceof ApiError && e.status === 409)) throw e;
     }
   }
-  throw new Error("Couldn't save. Try again.");
+  throw new Error(t("Couldn't save. Try again."));
 }
 
 const newId = async () => { const s = await getSodium(); return s.to_hex(s.randombytes_buf(8)); };

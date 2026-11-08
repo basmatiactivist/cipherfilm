@@ -12,7 +12,7 @@ import { refreshAlbums, useAlbums } from "../albumsStore";
 import { createAlbum, type Album } from "../albums";
 import { Problem, useAppTheme } from "../ui";
 import { radius, text } from "../tokens";
-import { busyIcon } from "../Loader";
+import { busyIcon, Loading } from "../Loader";
 
 const GAP = 12;
 // Favorites sits first in the grid, like an album
@@ -48,6 +48,9 @@ export default function Albums() {
         refreshControl={<RefreshControl refreshing={loading && !!albums} onRefresh={() => { refreshAlbums(); refreshLibrary(); }} colors={[t.colors.primary]} progressBackgroundColor={t.colors.elevation.level1} />}
         ListHeaderComponent={error ? <Problem>{error}</Problem> : undefined}
         ListFooterComponent={albums && !albums.length && !error ? <Empty onCreate={() => setCreating(true)} /> : undefined}
+        // the first load (names are decrypted on the phone): the badge, not a blank page; the pull-to-refresh spinner
+        // above is for the loads after it
+        ListEmptyComponent={!albums && !error ? <Loading label="Opening your albums…" /> : undefined}
         renderItem={({ item: a }) => {
           if (a === FAVORITES) return <Special title="Favorites" icon="heart" size={size} items={(items ?? []).filter((i) => i.favorite && !i.broken)} onPress={() => router.push("/favorites")} />;
           const shown = a.itemIds.map((id) => byId.get(id)).filter((i): i is Item => !!i && !i.broken);

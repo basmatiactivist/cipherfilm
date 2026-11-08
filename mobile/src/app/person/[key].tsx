@@ -5,7 +5,7 @@ import { Appbar, Button, Dialog, List, Menu, Portal, Snackbar, Text } from "reac
 import { Gallery } from "../../Gallery";
 import { FaceAvatar } from "../../Faces";
 import { NameDialog } from "../albums";
-import { useLibrary } from "../../libraryStore";
+import { refreshLibrary, useLibrary } from "../../libraryStore";
 import { sortByDate } from "../../search/query";
 import { forgetPerson, mergeInto, nameGroup, removeFromPerson, setHidden, usePeople } from "../../search/people";
 import { useAppTheme } from "../../ui";
@@ -15,8 +15,9 @@ import { text } from "../../tokens";
 export default function PersonScreen() {
   const t = useAppTheme();
   const { key } = useLocalSearchParams<{ key: string }>();
-  const { items } = useLibrary();
+  const { items, error } = useLibrary();
   const { groups, reload } = usePeople();
+  useEffect(() => { if (!items) refreshLibrary(); }, []);
   const [current, setCurrent] = useState(key);
   const group = groups?.find((g) => g.key === current || g.person?.id === current);
   const [menu, setMenu] = useState(false);
@@ -27,10 +28,11 @@ export default function PersonScreen() {
   useEffect(() => { if (group?.person && current !== group.person.id) setCurrent(group.person.id); }, [group?.person?.id]);
 
   const shown = useMemo(() => {
-    if (!group || !items) return null;
+    if (!groups || !items) return null;
+    if (!group) return []; // not found anymore (hidden, joined with someone): no badge for ever
     const ids = new Set(group.items);
     return sortByDate(items.filter((i) => ids.has(i.id) && !i.broken));
-  }, [group, items]);
+  }, [group, groups, items]);
 
   const name = group?.person?.name;
   const others = (groups ?? []).filter((g) => g.person?.name && g.key !== group?.key);
@@ -41,7 +43,7 @@ export default function PersonScreen() {
   return (
     <View style={{ flex: 1 }}>
       <Gallery
-        items={shown} loading={!groups} onRefresh={reload} within="person"
+        items={shown} error={error} loading={!groups} onRefresh={reload} within="person"
         header={
           <Appbar.Header style={{ backgroundColor: t.colors.background }}>
             <Appbar.Action icon="back" accessibilityLabel="Back" onPress={() => router.back()} />

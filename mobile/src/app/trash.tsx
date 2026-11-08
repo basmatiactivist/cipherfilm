@@ -65,7 +65,7 @@ export default function Trash() {
 
   return (
     <Gallery
-      items={items} error={error} loading={loading} onRefresh={load} actions={actions}
+      items={items} error={error} loading={loading} onRefresh={load} actions={actions} within="trash"
       header={
         <View>
           <Appbar.Header style={{ backgroundColor: t.colors.background }}>

@@ -12,6 +12,7 @@ import { getBytes } from "./api";
 import type { Item } from "./library";
 import { onWipe, session } from "./session";
 import { away } from "./autolock";
+import { t } from "./i18n";
 
 const OUT = () => new Directory(Paths.cache, "cf-out");
 const KEEP_FOR = 15 * 60 * 1000;
@@ -47,8 +48,8 @@ function safeName(name: string | undefined, id: string, used: Set<string>): stri
 
 /** Downloads and decrypts one original into the outbox, part by part (large videos never sit in memory whole). */
 async function decryptTo(dir: Directory, it: Item, used: Set<string>, onBytes: (n: number) => void): Promise<File> {
-  if (!session().masterKey) throw new Error("Unlock your library first.");
-  if (!it.itemKey || !it.meta) throw new Error("This item couldn't be verified.");
+  if (!session().masterKey) throw new Error(t("Unlock your library first."));
+  if (!it.itemKey || !it.meta) throw new Error(t("This item couldn't be verified."));
   const s = await getSodium();
   const f = new File(dir, safeName(it.meta.name, it.id, used));
   f.create();
@@ -68,7 +69,7 @@ async function decryptTo(dir: Directory, it: Item, used: Set<string>, onBytes: (
   }
   h.close();
   // never hand out a file that isn't complete: a short one would arrive as an empty or broken attachment
-  if (f.size !== it.size) { f.delete(); throw new Error(`“${it.meta.name}” couldn't be prepared. Try again.`); }
+  if (f.size !== it.size) { f.delete(); throw new Error(t("“{name}” couldn't be prepared. Try again.", { name: it.meta.name })); }
   return f;
 }
 

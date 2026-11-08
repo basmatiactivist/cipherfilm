@@ -9,6 +9,7 @@ import { api, putBytes, type Remote } from "./api";
 import { session } from "./session";
 import { keepRunning, letGo, onlyHolder } from "./keepAlive";
 import type { ItemMeta } from "./library";
+import { locale, t, tn } from "./i18n";
 
 export const THUMB_PX = 640;
 export const PREVIEW_PX = 2048;
@@ -24,13 +25,13 @@ export async function describe(uri: string, hint?: { name?: string | null; size?
   return { uri, name: st.name || hint?.name || "photo", size: st.size >= 0 ? st.size : hint?.size ?? -1, mime: st.mime || hint?.mime || "application/octet-stream", deletable: st.deletable };
 }
 
-export const fmtSize = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`);
+const one = (n: number) => n.toLocaleString(locale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+export const fmtSize = (n: number) => (n >= 1e9 ? `${one(n / 1e9)} GB` : n >= 1e6 ? `${one(n / 1e6)} MB` : `${Math.max(1, Math.round(n / 1e3)).toLocaleString(locale())} KB`);
 
 /** What a share from another app would upload, and into which account: shown before anything is sent. */
 export function shareSummary(files: Pick<Shared, "size">[], email: string): string {
   const total = files.reduce((a, f) => a + Math.max(0, f.size), 0);
-  const what = files.length === 1 ? "1 file" : `${files.length} files`;
-  return `${what} (${fmtSize(total)}) to encrypt and upload to ${email}.`;
+  return tn(files.length, "{n} file ({size}) to encrypt and upload to {email}.", "{n} files ({size}) to encrypt and upload to {email}.", { size: fmtSize(total), email });
 }
 
 export const kindOf = (f: Pick<Shared, "mime" | "name">): "image" | "video" | "other" =>
@@ -53,26 +54,27 @@ export function showUploads(n: number, total: number, name: string, progress: nu
   const now = Date.now();
   if (!onlyHolder("upload") || (!force && now - shownAt < 1000)) return; // Android drops updates that come faster
   shownAt = now;
-  N.backupNotify(total === 1 ? "Uploading to Cipherfilm" : `Uploading ${Math.min(n, total)} of ${total}`, name, progress, true);
+  N.backupNotify(total === 1 ? t("Uploading to Cipherfilm") : t("Uploading {n} of {total}", { n: Math.min(n, total), total }), name, progress, true);
 }
 
 /** The one notification after the uploads: how many went, how many didn't. */
 export function uploadsSummary(ok: number, failed: number): { title: string; text: string } | null {
   if (!ok && !failed) return null;
-  const went = ok === 1 ? "1 file uploaded." : `${ok} files uploaded.`;
-  if (!failed) return { title: "Upload done", text: went };
-  return { title: "Upload incomplete", text: `${ok ? `${went} ` : ""}${failed === 1 ? "1 file didn't upload." : `${failed} files didn't upload.`} Open Cipherfilm to try again.` };
+  const went = tn(ok, "{n} file uploaded.", "{n} files uploaded.");
+  if (!failed) return { title: t("Upload done"), text: went };
+  const lost = tn(failed, "{n} file didn't upload.", "{n} files didn't upload.");
+  return { title: t("Upload incomplete"), text: `${ok ? `${went} ` : ""}${lost} ${t("Open Cipherfilm to try again.")}` };
 }
 
 export class SignedOut extends Error {
-  constructor() { super("Stopped: you signed out or locked the app."); }
+  constructor() { super(t("Stopped: you signed out or locked the app.")); }
 }
 
 /** Uploads one file. onProgress gets plaintext bytes done. Resolves with the new item's id once the server has it. */
 export async function uploadShared(f: Shared, onProgress: (done: number, total: number) => void, signal: { cancelled: boolean }): Promise<string> {
-  if (f.size < 0) throw new Error("Can't upload: Android didn't report the file size.");
-  if (f.size > MAX_FILE) throw new Error("Files over 8 GB can't be uploaded.");
-  if (f.size === 0) throw new Error("The file is empty (0 bytes).");
+  if (f.size < 0) throw new Error(t("Can't upload: Android didn't report the file size."));
+  if (f.size > MAX_FILE) throw new Error(t("Files over 8 GB can't be uploaded."));
+  if (f.size === 0) throw new Error(t("The file is empty (0 bytes)."));
   const s = await getSodium();
   const { me, masterKey } = session();
   if (!me || !masterKey) throw new SignedOut();
@@ -83,7 +85,7 @@ export async function uploadShared(f: Shared, onProgress: (done: number, total: 
   mine();
   running++;
   // goes on when the person leaves the app (TransferService)
-  keepRunning("upload", "Uploading to Cipherfilm", f.name);
+  keepRunning("upload", t("Uploading to Cipherfilm"), f.name);
   try {
     return await uploadFile(f, s, (itemKey, id) => wrapItemKey(s, itemKey, masterKey, id), mine, onProgress);
   } finally {
@@ -96,14 +98,14 @@ export async function uploadShared(f: Shared, onProgress: (done: number, total: 
 /** The upload itself. wrap() locks the new item key: under the master key, or sealed to the account's public key by
  *  the background backup. mine() throws to stop between steps. The backup passes its own server in to. */
 export async function uploadFile(f: Shared, s: Sodium, wrap: (itemKey: Uint8Array, id: string) => Uint8Array, mine: () => void, onProgress: (done: number, total: number) => void, to?: Remote): Promise<string> {
-  if (f.size < 0) throw new Error("Can't upload: Android didn't report the file size.");
-  if (f.size > MAX_FILE) throw new Error("Files over 8 GB can't be uploaded.");
-  if (f.size === 0) throw new Error("The file is empty (0 bytes).");
+  if (f.size < 0) throw new Error(t("Can't upload: Android didn't report the file size."));
+  if (f.size > MAX_FILE) throw new Error(t("Files over 8 GB can't be uploaded."));
+  if (f.size === 0) throw new Error(t("The file is empty (0 bytes)."));
   const kind = kindOf(f);
   const count = segmentCount(f.size);
   const id = (await api<{ id: string }>("POST", "/api/items", { kind, size: f.size, segment_count: count }, to)).id;
   // the id is bound into the wrapped key and every part, and goes into the paths below: only one of the server's own form
-  if (typeof id !== "string" || !ITEM_ID.test(id)) throw new Error("The server sent an invalid item id.");
+  if (typeof id !== "string" || !ITEM_ID.test(id)) throw new Error(t("The server sent an invalid item id."));
   const itemKey = newItemKey(s);
   const wrapped = b64(s, wrap(itemKey, id));
   try {
@@ -112,11 +114,11 @@ export async function uploadFile(f: Shared, s: Sodium, wrap: (itemKey: Uint8Arra
     const thumbWork = (async () => {
       if (kind === "other") return;
       try {
-        const [t, p] = await Promise.all([N.jpeg(f.uri, kind === "video", THUMB_PX, 82), N.jpeg(f.uri, kind === "video", PREVIEW_PX, 85)]);
-        if (!t || !p) return;
+        const [th, p] = await Promise.all([N.jpeg(f.uri, kind === "video", THUMB_PX, 82), N.jpeg(f.uri, kind === "video", PREVIEW_PX, 85)]);
+        if (!th || !p) return;
         dims = { width: p.width, height: p.height };
         mine();
-        await Promise.all([putBytes(`/api/items/${id}/thumb`, encryptThumb(s, t.bytes, itemKey, id), to), putBytes(`/api/items/${id}/preview`, encryptPreview(s, p.bytes, itemKey, id), to)]);
+        await Promise.all([putBytes(`/api/items/${id}/thumb`, encryptThumb(s, th.bytes, itemKey, id), to), putBytes(`/api/items/${id}/preview`, encryptPreview(s, p.bytes, itemKey, id), to)]);
       } catch (e) {
         if (e instanceof SignedOut) throw e;
       }

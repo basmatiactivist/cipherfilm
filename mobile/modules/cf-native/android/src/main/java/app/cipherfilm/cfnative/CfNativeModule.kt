@@ -17,6 +17,9 @@ import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.view.HapticFeedbackConstants
 import android.view.WindowManager
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.exifinterface.media.ExifInterface
 import com.sun.jna.NativeLong
 import com.sun.jna.ptr.NativeLongByReference
@@ -158,7 +161,9 @@ class CfNativeModule : Module() {
     }
     View(CfVideoView::class) {
       Prop("item") { view: CfVideoView, id: String? -> view.setItem(id) }
+      Events("onControls", "onBuffering")
       Prop("controlsInset") { view: CfVideoView, v: List<Double>? -> view.setControlsInset(v?.getOrNull(0) ?: 0.0, v?.getOrNull(1) ?: 0.0) }
+      Prop("controls") { view: CfVideoView, on: Boolean? -> view.setControls(on ?: true) }
     }
 
     // ---- thumbnails (Thumbs.kt) ----
@@ -360,6 +365,19 @@ class CfNativeModule : Module() {
     Function("haptic") {
       val activity = appContext.currentActivity
       activity?.runOnUiThread { activity.window.decorView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS) }
+      null
+    }
+
+    // The viewer's full screen (src/immersive.ts): the status and navigation bars hidden, a swipe from the edge shows them
+    // for a moment over the photo (they hide again on their own). The viewer shows them again whenever it goes.
+    Function("systemBars") { hidden: Boolean ->
+      val activity = appContext.currentActivity
+      activity?.runOnUiThread {
+        if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
+        val bars = WindowCompat.getInsetsController(activity.window, activity.window.decorView)
+        bars.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        if (hidden) bars.hide(WindowInsetsCompat.Type.systemBars()) else bars.show(WindowInsetsCompat.Type.systemBars())
+      }
       null
     }
 

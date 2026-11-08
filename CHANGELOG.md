@@ -7,6 +7,27 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+### Added
+- Android: the Backup screen shows the upload speed (over the last few seconds, across the files under way), how many
+  are left and a progress bar while a backup runs.
+
+### Changed
+- Android: clearer wording when setting up backup on a phone that never backed up: "Only new photos and videos from
+  now on" or "Also the N photos and videos already in these folders" (ones already in the library are skipped). No
+  more "N aren't in Cipherfilm" and "Back up these too" right after setup.
+- Android: the backup is faster on real phones. Reading photos, thumbnails and EXIF ran on the one thread that also
+  starts every request and reads every response, so the three files under way waited on each other's thumbnails; it
+  has threads of its own now. A backup without the upload service (Google Play's automatic runs) indexes the new files
+  for search after the uploads instead of between them, and the open Backup screen no longer reloads the whole photo
+  library at every step of a run.
+
+### Fixed
+- Android: the backup notification's "Backing up n of m" no longer jumps back (23, 20, 23, ...) while several files
+  upload at once; it counts what the run is done with and shows the speed.
+- Android: "Run in the background" shows "Allowed" when Android's battery setting for Cipherfilm is "Optimized" (on
+  Android 14 and later: "Allow background usage" on), and offers to open the settings only when it is "Restricted".
+  Search settings use the same check. Notifications show as off when the backup's own notification channel is off.
+
 ## [2.2.0] - 2026-11-07
 
 Live updates across devices, faster Android backups, a loading badge everywhere, and search that stays complete with

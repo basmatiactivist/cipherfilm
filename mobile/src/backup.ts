@@ -16,6 +16,7 @@ import N from "../modules/cf-native/src/CfNativeModule";
 import { api, ApiError, remote, type Remote } from "./api";
 import { uploadFile, type Shared } from "./upload";
 import { keepRunning, letGo } from "./keepAlive";
+import { RunProgress, fmtSpeed, type LiveProgress } from "./backupProgress";
 import { isPlayBuild } from "./store";
 import { fingerprint } from "./prints";
 import { indexUploaded, rememberUploaded, runBackgroundIndex } from "./search/background";
@@ -88,6 +89,14 @@ const subs = new Set<() => void>();
 export const onBackupChange = (f: () => void) => { subs.add(f); return () => { subs.delete(f); }; };
 const changed = () => subs.forEach((f) => f());
 
+// ---- how far the run going on now is (for the Backup screen: only in memory, never written) ----
+let live: LiveProgress | null = null;
+const progressSubs = new Set<() => void>();
+/** While a run uploads: n of m, what is left and how fast; null otherwise. */
+export const backupProgress = () => live;
+export const onBackupProgress = (f: () => void) => { progressSubs.add(f); return () => { progressSubs.delete(f); }; };
+const setLive = (p: LiveProgress | null) => { live = p; progressSubs.forEach((f) => f()); };
+
 // ---- turning it on and off (only while the library is unlocked) ----
 
 /** Checks the account's public key against its private key and pins it, then schedules the background task. */
@@ -117,7 +126,7 @@ export async function disableBackup() {
 export const startAfter = (includeExisting: boolean, newest: number) => (includeExisting ? 0 : newest);
 
 /**
- * The folders after a change on the Backup screen. "Photos already on the phone" applies to every chosen folder, not
+ * The folders after a change on the Backup screen. "Photos and videos already on this phone" applies to every chosen folder, not
  * only to ones ticked later: switching to "also the ones already there" starts each folder from its beginning again
  * (what the library has is skipped by name and size), switching to "only new" moves each past its newest photo now.
  * Folders that stay and keep the setting keep their place.
@@ -233,7 +242,7 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
     // nothing new on the phone: no request at all (a run every 15 minutes), and a server that is down then is no problem
     let waiting = 0;
     for (const [bucket, f] of Object.entries(c.folders)) waiting += await N.countFolderAfter(bucket, f.after);
-    if (!waiting) return;
+    if (!waiting) { if (!status.needsYou?.length) status.lastDone = Date.now(); return; } // all done: say so, as of now
     if (c.server !== (await savedServer())) { status.problem = "Cipherfilm now uses another server. Turn backup on again."; await disableBackup(); return; }
     // the run's own server and token: the app's are left alone
     const to = remote(c.server);
@@ -278,13 +287,23 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
     }
     if (held) deadline = Infinity;
     const outOfTime = () => Date.now() > deadline || (held && N.keepRunningLost()) || !current();
-    // the one progress notification (the foreground service's), updated in place: which file, n of m, how far
-    let shownAt = 0;
-    const show = (n: number, name: string, progress: number, force = false) => {
+    // the one progress notification (the foreground service's), updated in place: n of m over the whole run (never
+    // going back while files finish out of order), the oldest file under way, how fast, how far overall
+    const progress = new RunProgress(total);
+    let shownAt = 0, shown = "";
+    const show = (force = false, note?: string) => {
       const now = Date.now();
       if (!force && now - shownAt < 1000) return; // Android drops updates that come faster
-      shownAt = now;
-      N.backupNotify(`Backing up ${n} of ${Math.max(total, n)}`, name, progress, true);
+      const p = progress.get();
+      if (current()) setLive(p);
+      const name = going.values().next().value;
+      if (!name) return; // between files: the next one shows itself
+      const title = `Backing up ${p.position} of ${p.total}`;
+      const text = note ?? (p.speed ? `${name} · ${fmtSpeed(p.speed)}` : name);
+      const same = `${title}\n${text}\n${Math.round(p.fraction * 100)}`;
+      if (same === shown) return; // nothing new: no update for Android to drop
+      shownAt = now; shown = same;
+      N.backupNotify(title, text, p.fraction, true);
     };
 
     // Several files at once: a small photo mostly waits on round trips, not on the connection. A run stops taking new
@@ -332,6 +351,7 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
     // Finished files are counted at the next account check, not each after its own: one /api/me for several files,
     // sent after they were finalized. What a check finds in another account's hands is never counted.
     const unconfirmed: { m: { id: number; uri: string; mime: string }; print: string; id: string; past: (id: number) => Promise<boolean> }[] = [];
+    const toIndex: { print: string; id: string; uri: string; video: boolean }[] = []; // for search, after the uploads
     let checkedAt = Date.now();
     let checking = Promise.resolve();
     let pausing = 0; // files waiting for the server: what is done meanwhile counts at once, a run may end in the wait
@@ -360,10 +380,11 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
       if (!status.unconfirmed?.length) status.unconfirmed = undefined;
       let behind = false;
       for (const u of ready) {
-        // for search: at once while the file is at hand, but never inside the upload service (a data transfer,
-        // Google Play's foreground service rules): then the next background run indexes it
+        // for search: never inside the upload service (a data transfer, Google Play's foreground service rules), then
+        // the next background run indexes it; otherwise once the uploads are done (below), not here: the model and
+        // a third decode of the photo would hold up the uploads under way
         if (held) await rememberUploaded(c.userId, u.print, u.id);
-        else await indexUploaded(s, u.id, u.m.uri, (u.m.mime ?? "").startsWith("video/"), pk, to);
+        else toIndex.push({ print: u.print, id: u.id, uri: u.m.uri, video: (u.m.mime ?? "").startsWith("video/") });
         known.add(u.print);
         delete status.failures[String(u.m.id)];
         status.uploaded++; done++;
@@ -374,11 +395,13 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
       await save();
     }).catch((e) => { stop(e instanceof Error ? e.message : String(e)); }));
 
-    const upload = async (m: { id: number; uri: string; name: string; size: number; mime: string }, n: number, print: string, bucket: string, past: (id: number) => Promise<boolean>) => {
+    const upload = async (m: { id: number; uri: string; name: string; size: number; mime: string }, print: string, bucket: string, past: (id: number) => Promise<boolean>) => {
       const key = String(m.id);
       going.set(key, m.name); sync();
-      show(n, m.name, -1, true);
+      progress.start(key);
+      show(true);
       await save();
+      let sent = 0; // of this file, for the speed
       const file: Shared = { uri: m.uri, name: m.name, size: m.size, mime: m.mime || "application/octet-stream", deletable: false };
       try {
         let id = "";
@@ -389,19 +412,20 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
             id = await uploadFile(file, s, (itemKey, id) => sealItemKey(s, itemKey, pk, id), () => {
               if (abandon) throw new Error(OTHER_ACCOUNT);
               if (Date.now() > deadline + 90_000 || (held && N.keepRunningLost()) || !current()) throw new Error("out of time"); // finish next time
-            }, (d, t) => show(n, m.name, t ? d / t : -1), to);
+            }, (d, t) => { progress.sent(key, t ? d / t : 0, d - sent); sent = d; show(); }, to);
             break;
           } catch (e) {
             if (attempt >= 2 || !(e instanceof ApiError) || !(e.status === 0 || e.status >= 500) || outOfTime()) throw e;
             if (halt) throw new Error(HALTED); // the run stops for another reason: no wait, and not this file's failure
             console.log(`backup: upload failed (${e.status}) ${e.detail}; trying again`); // ids only, no names
-            show(n, `${m.name} · waiting for the server…`, -1, true);
+            show(true, `${m.name} · waiting for the server…`);
             pausing++;
             settle("due"); // what is done so far counts before the wait
             await new Promise((r) => setTimeout(r, attempt ? 90_000 : 30_000)).finally(() => { pausing--; });
           }
         }
         going.delete(key); sync();
+        progress.finish(key); show(true); // done uploading (counted as backed up only after the check below)
         // counted as backed up only once it is certain the file went to c.userId; noted at once, so a run that dies
         // before that check doesn't upload it again
         unconfirmed.push({ m, print, id, past });
@@ -410,12 +434,14 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
         settle("due");
       } catch (e) {
         going.delete(key); sync(); // a failure seen here is counted below
+        progress.drop(key);
         const msg = e instanceof Error ? e.message : String(e);
         if (e instanceof ApiError) console.log(`backup: upload failed (${e.status}) ${e.detail}`); // ids only, no names
         if (msg === "out of time" && !held && trigger !== "manual" && isPlayBuild()) {
           // too big to finish here, and it would start over every run: it waits for "Back up now", the photos
           // after it go on in the next run
           status.needsYou = [...(status.needsYou ?? []).filter((w) => w.id !== m.id), { id: m.id, bucket, name: m.name }];
+          progress.finish();
           await past(m.id);
           stop();
         } else if (msg === "out of time" || msg === HALTED) stop();
@@ -428,6 +454,7 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
             status.skipped = [{ name: m.name, reason: msg }, ...status.skipped].slice(0, 50);
             delete status.failures[key];
             gaveUp++;
+            progress.finish();
             await past(m.id);
           } else stop(`${m.name}: ${msg}`);
         }
@@ -436,7 +463,8 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
     };
 
     const inflight = new Set<Promise<void>>();
-    let taken = 0; // for "n of m"
+    // the speed also when no part finishes for a while (a large file on a slow link, a stall): it goes down then
+    const ticker = setInterval(() => show(), 2_000);
     try {
       outer: for (const [bucket, folder] of Object.entries(c.folders)) {
         const { gone, take, past } = mover(bucket, folder);
@@ -451,12 +479,13 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
             if (r === "stop") break outer;
             if (gone() || r === "gone") continue outer;
             take(m.id); next = m.id;
-            const n = ++taken;
+            progress.take();
             const print = await fingerprint(m.name, m.size);
-            if (known.has(print)) { await past(m.id); continue; }
+            if (known.has(print)) { progress.finish(); await past(m.id); continue; }
             if (!m.size) { // nothing to back up (an app left an empty file): named under Backup, not an empty photo in the library
               status.skipped = [{ name: m.name, reason: EMPTY }, ...status.skipped].slice(0, 50);
               gaveUp++;
+              progress.finish();
               await past(m.id);
               await save();
               continue;
@@ -472,6 +501,7 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
                 status.skipped = [{ name: m.name, reason: "Cipherfilm stopped while reading this file" }, ...status.skipped].slice(0, 50);
                 delete status.failures[key];
                 gaveUp++;
+                progress.finish();
                 await past(m.id);
                 await save();
                 continue;
@@ -480,7 +510,7 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
               await Promise.all(inflight);
               if (halt) break outer;
             }
-            const work: Promise<void> = upload(m, n, print, bucket, past).finally(() => { inflight.delete(work); });
+            const work: Promise<void> = upload(m, print, bucket, past).finally(() => { inflight.delete(work); });
             inflight.add(work);
             if (suspect) await work;
             else if (inflight.size >= FILES_IN_FLIGHT) await Promise.race(inflight);
@@ -489,12 +519,22 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
       }
     } finally {
       await Promise.all(inflight);
+      clearInterval(ticker);
     }
     if (!abandon) settle("now");
     await checking;
     await moving;
     if (current()) await writeJson(KNOWN(), { userId: c.userId, prints: [...known] });
     if (!status.problem && waiting <= 0) status.lastDone = Date.now();
+    // for search, now that the uploads are done: while the run still has time, the rest by the next background run
+    // (the session checked once more if the last check is a while ago: it may have changed hands since)
+    setLive(null);
+    const sameAccount = toIndex.length && !abandon && (Date.now() - checkedAt < CHECK_EVERY || await stillMine().then(() => true, () => false));
+    for (const u of toIndex) {
+      if (!current() || abandon) break;
+      if (sameAccount && Date.now() < deadline) await indexUploaded(s, u.id, u.uri, u.video, pk, to);
+      else await rememberUploaded(c.userId, u.print, u.id);
+    }
   } catch (e) {
     status.problem = e instanceof Error ? e.message : String(e);
   } finally {
@@ -503,6 +543,7 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
     if (status.problem && /reach|connect/i.test(status.problem) && current()) N.retryBackupSoon(3);
     console.log(`backup (${trigger}): ${done} uploaded${status.problem ? `, stopped: ${status.problem}` : ""}`); // no names, no keys
     status.running = false; status.current = undefined;
+    setLive(null);
     if (!status.attempt) status.stalled = undefined; // got past it (a run that dies never gets here)
     await save();
     running = false;

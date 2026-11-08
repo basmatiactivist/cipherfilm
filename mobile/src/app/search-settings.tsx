@@ -12,7 +12,7 @@ import { forgetSearch, indexesHere, indexHere, startSearch, stopSearch, useSearc
 import { loadPeople, setExplicit } from "../search/people";
 import { explicitSearchOffered } from "../store";
 import { expectAway } from "../autolock";
-import { ownBatteryRules, useOnReturn } from "../deviceState";
+import { backgroundUse, ownBatteryRules, useOnReturn } from "../deviceState";
 import { deleteModels, downloadSize } from "../search/models";
 import { loadSettings, onSettingsChange, pinAccount, saveSettings, type SearchSettings } from "../search/settings";
 import { Problem, SwitchItem, useAppTheme } from "../ui";
@@ -179,11 +179,13 @@ export default function SearchSettingsScreen() {
           value={s.background} onValueChange={(v) => change({ background: v }, false)} />
         <SwitchItem title="Only while charging" description="Recommended. Indexing uses battery." disabled={!s.background}
           value={s.chargingOnly} onValueChange={(v) => change({ chargingOnly: v }, false)} />
-        {s.background && !device.batteryExempt ? (
+        {/* only where Android stops it ("Restricted"), or on Xiaomi, whose own battery saver the app can't see; Android's
+            default ("Optimized") lets it run, as the Backup screen says too (deviceState.ts backgroundUse) */}
+        {s.background && (backgroundUse(device) === "restricted" || (ownBatteryRules() && !device.batteryExempt)) ? (
           <List.Item title="Run in the background" descriptionNumberOfLines={4}
-            description={ownBatteryRules() ? "On Xiaomi phones: app settings › Battery saver › No restrictions." : "Android may pause indexing when the app is closed."}
+            description={backgroundUse(device) === "restricted" ? "Android stops indexing when the app is closed. In the app settings, open Battery and allow background usage." : "On Xiaomi phones: app settings › Battery saver › No restrictions."}
             right={() => <Button mode="outlined" compact style={{ alignSelf: "center" }}
-              onPress={() => { expectAway(); if (ownBatteryRules()) N.openAppSettings(); else N.askBatteryExemption(); }}>{ownBatteryRules() ? "Open" : "Allow"}</Button>} />
+              onPress={() => { expectAway(); N.openAppSettings(); }}>Open</Button>} />
         ) : null}
 
         <Divider style={{ marginTop: 8 }} />

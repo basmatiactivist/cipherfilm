@@ -5,6 +5,8 @@ type Bytes = Uint8Array;
 
 export interface BackupState {
   online: boolean; unmetered: boolean; charging: boolean; battery: number; batteryExempt: boolean; powerSave: boolean;
+  /** the person chose "Restricted" for the app's battery use (Android 9+): Android stops its background work */
+  backgroundRestricted: boolean;
   media: "full" | "partial" | "none"; location: boolean; notifications: boolean; sdk: number;
 }
 

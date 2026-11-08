@@ -36,7 +36,8 @@ vi.mock("react-native", () => ({ Platform: { constants: { Model: "Test" } }, App
 const held = vi.hoisted(() => ({ runs: [] as string[], play: false }));
 vi.mock("./keepAlive", () => ({ keepRunning: (h: string) => { held.runs.push(h); return false; }, letGo: () => {}, onlyHolder: () => false }));
 vi.mock("./store", () => ({ isPlayBuild: () => held.play }));
-vi.mock("./search/background", () => ({ indexUploaded: async () => {}, rememberUploaded: async () => {}, runBackgroundIndex: async () => 0 }));
+// search indexing of uploaded files: noted in the server's log, to see when it happens
+vi.mock("./search/background", () => ({ indexUploaded: async (_s: unknown, id: string) => { srv.log.push(`index ${id.slice(-2)}`); }, rememberUploaded: async () => {}, runBackgroundIndex: async () => 0 }));
 vi.mock("./search/settings", () => ({ loadSettings: async () => ({ enabled: false, background: false }), forgetSettings: () => {} }));
 // sign-in without Argon2: the proof and the master key are fixed stand-ins
 vi.mock("@crypto/account", () => ({
@@ -411,6 +412,53 @@ describe("automatic backup", () => {
     expect(ongoing.map((n) => n[0])).toEqual(["Backing up 1 of 3", "Backing up 2 of 3", "Backing up 3 of 3"]);
     expect(ongoing.map((n) => n[1])).toEqual(["IMG_1.jpg", "IMG_2.jpg", "IMG_3.jpg"]);
     expect(notes.filter((n) => !n[2])).toEqual([["Backup done", "3 photos and videos backed up.", false]]);
+  });
+
+  // The reported case: with three files under way the notification said 23, then 20, then 23 again, as each file's
+  // progress showed its own number. A file that finishes late must not pull the number back.
+  it("the notification's n of m never goes back while files finish out of order", async () => {
+    const { session, backup, pubkey } = await load();
+    await session.start();
+    await backup.saveConfig(config(pubkey));
+    media.splice(0, media.length, ...photos(10));
+    srv.hook = async (method, path) => {
+      // the first file's part is slow: the files after it start and finish first
+      if (method === "PUT" && /0*1\/segments\/0$/.test(path)) await new Promise((r) => setTimeout(r, 4_000));
+    };
+    const run = backup.runBackup("app");
+    await vi.advanceTimersByTimeAsync(20_000);
+    await run;
+    const titles = notes.filter((n) => n[2]).map((n) => Number(n[0].match(/^Backing up (\d+) of 10$/)![1]));
+    expect(titles.length).toBeGreaterThan(1);
+    for (let i = 1; i < titles.length; i++) expect(titles[i]).toBeGreaterThanOrEqual(titles[i - 1]);
+    expect(titles.at(-1)).toBe(10);
+    expect(srv.log.filter((l) => l.startsWith("finalize"))).toHaveLength(10);
+    expect(backup.backupProgress()).toBeNull(); // only while a run goes on
+  });
+
+  // On a real phone the search model ran between the uploads (a run without the upload service: Google Play's
+  // automatic runs) and held up the files under way. It runs once they are done.
+  it("indexes the uploaded files for search only after the uploads, each once", async () => {
+    const { session, backup, pubkey } = await load();
+    await session.start();
+    await backup.saveConfig(config(pubkey));
+    media.splice(0, media.length, ...photos(8));
+    await backup.runBackup("app");
+    const log = srv.log.filter((l) => l.startsWith("finalize") || l.startsWith("index"));
+    const lastFinalize = log.map((l) => l.startsWith("finalize")).lastIndexOf(true);
+    const firstIndex = log.findIndex((l) => l.startsWith("index"));
+    expect(firstIndex).toBeGreaterThan(lastFinalize);
+    expect(log.filter((l) => l.startsWith("index")).sort()).toEqual(log.filter((l) => l.startsWith("finalize")).map((l) => `index ${l.split(" ")[1]}`).sort());
+  });
+
+  it("a run with nothing new says when everything was last backed up", async () => {
+    const { session, backup, pubkey } = await load();
+    await session.start();
+    await backup.saveConfig({ ...config(pubkey), includeExisting: false, folders: { cam: { name: "Camera", after: 3 } } });
+    await backup.runBackup("app");
+    const st = await backup.loadStatus();
+    expect(st.lastDone).toBeDefined();
+    expect(st.problem).toBeUndefined();
   });
 
   it("the summary says what couldn't be backed up, and nothing when nothing happened", async () => {

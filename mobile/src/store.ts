@@ -24,4 +24,4 @@ export const explicitSearchOffered = () => !isPlayBuild();
 
 /** The app's privacy policy (Google Play wants it reachable inside the app, before and after sign-in), in the
  *  language the app speaks. */
-export const privacyUrl = () => (currentLang() === "de" ? "https://cipherfilm.app/de/privacy" : "https://cipherfilm.app/privacy");
+export const privacyUrl = () => (currentLang() === "de" ? "https://cipherfilm.app/de/datenschutz" : "https://cipherfilm.app/privacy");

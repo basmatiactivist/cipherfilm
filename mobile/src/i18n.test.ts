@@ -10,7 +10,13 @@ function literals(src: string): string[] {
   const str = String.raw`("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')`;
   for (const m of src.matchAll(new RegExp(String.raw`\bt\(\s*` + str, "g"))) out.push(m[1]);
   for (const m of src.matchAll(new RegExp(String.raw`\btn\(\s*[^,]+,\s*` + str + String.raw`\s*,\s*` + str, "g"))) out.push(m[1], m[2]);
-  return out.map((q) => JSON.parse(q[0] === "'" ? '"' + q.slice(1, -1).replace(/"/g, '\\"').replace(/\\'/g, "'") + '"' : q));
+  return out.map(unquote);
+}
+
+// a JS string literal's text, either quote: the escapes the app's texts use, read one by one (no re-quoting)
+const ESC: Record<string, string> = { n: "\n", t: "\t", "\\": "\\", '"': '"', "'": "'" };
+function unquote(q: string): string {
+  return q.slice(1, -1).replace(/\\(.)/g, (_m, c: string) => ESC[c] ?? c);
 }
 
 describe("i18n", () => {

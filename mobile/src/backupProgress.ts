@@ -1,6 +1,7 @@
 // How far a backup run is, for its progress notification and the Backup screen. Several files upload at once
 // (backup.ts FILES_IN_FLIGHT), so "n of m" can't be the number of whichever file reported last: that went 23, 21,
 // 22, 23 as the files under way took turns. Here it only counts what the run is done with, so it never goes back.
+import { locale } from "./i18n";
 
 /** The speed is what went out over the last few seconds: a smooth number, still quick to show a stall. */
 export const SPEED_WINDOW = 8_000;
@@ -69,5 +70,6 @@ export class RunProgress {
   }
 }
 
-/** "2.4 MB/s", "850 KB/s" (like upload.ts fmtSize; not imported, so this file needs nothing of the phone). */
-export const fmtSpeed = (b: number) => (b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB/s` : `${Math.max(1, Math.round(b / 1e3))} KB/s`);
+/** "2.4 MB/s", "850 KB/s" (German "2,4 MB/s"; like upload.ts fmtSize; not imported, so this file needs nothing of the phone). */
+export const fmtSpeed = (b: number) => (b >= 1e6 ? `${(b / 1e6).toLocaleString(locale(), ONE_DIGIT)} MB/s` : `${Math.max(1, Math.round(b / 1e3)).toLocaleString(locale())} KB/s`);
+const ONE_DIGIT = { minimumFractionDigits: 1, maximumFractionDigits: 1 };

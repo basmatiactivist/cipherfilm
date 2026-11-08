@@ -101,7 +101,7 @@ internal object BackupNative {
     ctx.contentResolver.query(FILES, cols, VISUAL, null, null)?.use { c ->
       while (c.moveToNext()) {
         val bucket = c.getString(0) ?: continue
-        val f = byId.getOrPut(bucket) { mutableMapOf("id" to bucket, "name" to (c.getString(1) ?: "Unnamed"), "path" to relativePath(c.getString(2)), "count" to 0, "newest" to 0.0) }
+        val f = byId.getOrPut(bucket) { mutableMapOf("id" to bucket, "name" to (c.getString(1) ?: de("Unnamed", "Ohne Namen")), "path" to relativePath(c.getString(2)), "count" to 0, "newest" to 0.0) }
         f["count"] = (f["count"] as Int) + 1
         f["newest"] = maxOf(f["newest"] as Double, c.getLong(3).toDouble())
       }
@@ -208,9 +208,12 @@ internal object BackupNative {
   /** The notification itself, also the one the upload service (TransferService) shows. */
   fun build(ctx: Context, title: String, text: String, progress: Double, ongoing: Boolean): android.app.Notification {
     val nm = ctx.getSystemService(NotificationManager::class.java)
-    if (nm != null && nm.getNotificationChannel(CHANNEL) == null) {
-      nm.createNotificationChannel(NotificationChannel(CHANNEL, "Backup", NotificationManager.IMPORTANCE_LOW).apply {
-        description = "Progress of backups, uploads and search"
+    // created once; created again (which renames it in place) when the phone's language changed since
+    val name = de("Backup", "Backup")
+    val about = de("Progress of backups, uploads and search", "Fortschritt von Backups, Uploads und Suche")
+    if (nm != null && nm.getNotificationChannel(CHANNEL)?.let { it.name == name && it.description == about } != true) {
+      nm.createNotificationChannel(NotificationChannel(CHANNEL, name, NotificationManager.IMPORTANCE_LOW).apply {
+        description = about
         setShowBadge(false)
       })
     }

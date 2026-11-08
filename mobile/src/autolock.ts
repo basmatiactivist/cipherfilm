@@ -12,14 +12,16 @@ import { File, Paths } from "expo-file-system";
 import N from "../modules/cf-native/src/CfNativeModule";
 import { lock, onSignOut, session } from "./session";
 import { onUploadsIdle, uploadsRunning } from "./upload";
+import { t } from "./i18n";
 
 export interface Settings { after: number; screenOff: boolean }
 const DEFAULT: Settings = { after: 5 * 60 * 1000, screenOff: false };
+// the labels in the phone's language, read when shown
 export const CHOICES = [
-  { after: 0, label: "Immediately" },
-  { after: 60 * 1000, label: "After 1 minute" },
-  { after: 5 * 60 * 1000, label: "After 5 minutes" },
-  { after: 15 * 60 * 1000, label: "After 15 minutes" },
+  { after: 0, get label() { return t("Immediately"); } },
+  { after: 60 * 1000, get label() { return t("After 1 minute"); } },
+  { after: 5 * 60 * 1000, get label() { return t("After 5 minutes"); } },
+  { after: 15 * 60 * 1000, get label() { return t("After 15 minutes"); } },
 ];
 // a trip to one of the app's own screens locks only after this long (or the chosen time, if longer)
 const OWN_MAX = 10 * 60 * 1000;

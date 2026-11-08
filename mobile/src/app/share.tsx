@@ -17,14 +17,15 @@ import { Problem, useAppTheme } from "../ui";
 import { Icon } from "../icons";
 import { radius, text } from "../tokens";
 import { Loader, Loading } from "../Loader";
+import { locale, t, tn } from "../i18n";
 
-interface Job { file: Shared; state: "queued" | "working" | "done" | "error"; done: number; error?: string }
+interface Job { file: Shared; state: "queued" | "working" | "done" | "error"; done: number; error?: string; stopped?: boolean }
 const FILES_AT_ONCE = 2;
 
 /** Photos shared from another app: shown with the account they would go to, and once the person says so encrypted and
  *  uploaded here, then (if they want) removed from the phone. Picked files (Upload in Photos) start at once. */
 export default function ShareScreen() {
-  const t = useAppTheme();
+  const theme = useAppTheme();
   const inset = useSafeAreaInsets();
   const { phase, me } = useSession();
   const { from } = useLocalSearchParams<{ from?: string }>();
@@ -70,7 +71,7 @@ export default function ShareScreen() {
       } catch (e) {
         // usually the other app didn't pass on the permission to read the file (or the file is gone)
         console.log("share: couldn't read", e);
-        setProblem("Couldn't read what was shared. Share it again, or use Upload in Photos.");
+        setProblem(t("Couldn't read what was shared. Share it again, or use Upload in Photos."));
         setFinished(true);
       }
     })();
@@ -87,7 +88,7 @@ export default function ShareScreen() {
     const doneBytes = new Map<string, number>();
     const overall = () => [...doneBytes.values()].reduce((a, b) => a + b, 0) / totalBytes;
     let started = 0;
-    keepRunning("upload", list.length === 1 ? "Uploading to Cipherfilm" : `Uploading ${list.length} files`, list[0]?.file.name ?? "");
+    keepRunning("upload", list.length === 1 ? t("Uploading to Cipherfilm") : tn(list.length, "Uploading {n} file", "Uploading {n} files"), list[0]?.file.name ?? "");
     const worker = async () => {
       for (let j = queue.shift(); j; j = queue.shift()) {
         const job = j;
@@ -103,7 +104,7 @@ export default function ShareScreen() {
           doneBytes.set(job.file.uri, Math.max(1, job.file.size));
           results.set(job.file.uri, true);
         } catch (e) {
-          patch(job.file.uri, { state: "error", error: e instanceof Error ? e.message : "Upload failed." });
+          patch(job.file.uri, { state: "error", error: e instanceof Error ? e.message : t("Upload failed."), stopped: e instanceof SignedOut });
           doneBytes.set(job.file.uri, Math.max(1, job.file.size));
           results.set(job.file.uri, false);
           if (e instanceof SignedOut) return;
@@ -135,7 +136,7 @@ export default function ShareScreen() {
   };
 
   const retry = async () => {
-    const failed = (jobs ?? []).filter((j) => j.state === "error").map((j) => ({ ...j, state: "queued" as const, done: 0, error: undefined }));
+    const failed = (jobs ?? []).filter((j) => j.state === "error").map((j) => ({ ...j, state: "queued" as const, done: 0, error: undefined, stopped: undefined }));
     setJobs((js) => js && js.map((j) => failed.find((f) => f.file.uri === j.file.uri) ?? j));
     setFinished(false);
     await run(failed);
@@ -153,7 +154,7 @@ export default function ShareScreen() {
     // into the phone's own trash, as Free up space does: restorable for 30 days
     const ok = await away(() => N.trashFromLibrary(uris));
     setRemoved(ok);
-    setNote(ok ? `Moved ${uris.length === 1 ? "1 item" : `${uris.length} items`} to the phone's trash.` : "Kept on this phone.");
+    setNote(ok ? tn(uris.length, "Moved {n} item to the phone's trash.", "Moved {n} items to the phone's trash.") : t("Kept on this phone."));
   }
 
   // only the share shown here: one that arrived since (another app shared again) stays for its own screen
@@ -172,10 +173,10 @@ export default function ShareScreen() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: t.colors.background }}>
-      <Appbar.Header style={{ backgroundColor: t.colors.background }}>
-        <Appbar.Action icon="x" accessibilityLabel={finished ? "Close" : asking ? "Cancel" : "Stop and close"} onPress={close} />
-        <Appbar.Content title={problem ? "Couldn't upload" : asking ? "Upload to Cipherfilm?" : finished ? (failed.length ? "Some didn't upload" : "Uploaded") : "Uploading"} titleStyle={text.page} />
+    <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+      <Appbar.Header style={{ backgroundColor: theme.colors.background }}>
+        <Appbar.Action icon="x" accessibilityLabel={finished ? t("Close") : asking ? t("Cancel") : t("Stop and close")} onPress={close} />
+        <Appbar.Content title={problem ? t("Couldn't upload") : asking ? t("Upload to Cipherfilm?") : finished ? (failed.length ? t("Some didn't upload") : t("Uploaded")) : t("Uploading")} titleStyle={text.page} />
       </Appbar.Header>
       <View style={st.summary}>
         <Problem>{problem}</Problem>
@@ -183,34 +184,34 @@ export default function ShareScreen() {
           <>
             <Text variant="bodyLarge" style={{ marginBottom: 8 }}>
               {asking
-                ? shareSummary(all.map((j) => j.file), me?.user.email ?? "this account")
+                ? shareSummary(all.map((j) => j.file), me?.user.email ?? t("this account"))
                 : finished
-                ? `${done.length} of ${all.length} uploaded${failed.length ? `, ${failed.length} failed` : ""}.`
-                : `Encrypting and uploading ${all.length === 1 ? "1 file" : `${all.length} files`}. Keep the app open.`}
+                ? (failed.length ? t("{done} of {n} uploaded, {failed} failed.", { done: done.length, n: all.length, failed: failed.length }) : t("{done} of {n} uploaded.", { done: done.length, n: all.length }))
+                : tn(all.length, "Encrypting and uploading {n} file. Keep the app open.", "Encrypting and uploading {n} files. Keep the app open.")}
             </Text>
-            {finished || asking ? null : <ProgressBar progress={progress} color={t.colors.primary} style={{ height: 5, borderRadius: 3, backgroundColor: t.colors.outlineVariant }} />}
+            {finished || asking ? null : <ProgressBar progress={progress} color={theme.colors.primary} style={{ height: 5, borderRadius: 3, backgroundColor: theme.colors.outlineVariant }} />}
           </>
         ) : !problem ? (
-          <Loading inline label="Reading shared files…" style={st.wait} />
+          <Loading inline label={t("Reading shared files…")} style={st.wait} />
         ) : null}
       </View>
       <FlatList
         data={all}
         keyExtractor={(j) => j.file.uri}
         contentContainerStyle={{ paddingBottom: inset.bottom + 96 }}
-        ItemSeparatorComponent={() => <View style={[st.rule, { backgroundColor: t.colors.outlineVariant }]} />}
+        ItemSeparatorComponent={() => <View style={[st.rule, { backgroundColor: theme.colors.outlineVariant }]} />}
         renderItem={({ item: j }) => <Row job={j} asking={asking} />}
       />
       {asking ? (
-        <View style={[st.actions, { paddingBottom: inset.bottom + 16, backgroundColor: t.colors.background, borderTopColor: t.colors.outlineVariant }]}>
-          <Button mode="outlined" onPress={close} style={{ flex: 1 }} contentStyle={{ height: 48 }}>Cancel</Button>
-          <Button mode="contained" onPress={upload} style={{ flex: 1 }} contentStyle={{ height: 48 }}>Upload</Button>
+        <View style={[st.actions, { paddingBottom: inset.bottom + 16, backgroundColor: theme.colors.background, borderTopColor: theme.colors.outlineVariant }]}>
+          <Button mode="outlined" onPress={close} style={{ flex: 1 }} contentStyle={{ height: 48 }}>{t("Cancel")}</Button>
+          <Button mode="contained" onPress={upload} style={{ flex: 1 }} contentStyle={{ height: 48 }}>{t("Upload")}</Button>
         </View>
       ) : finished ? (
-        <View style={[st.actions, { paddingBottom: inset.bottom + 16, backgroundColor: t.colors.background, borderTopColor: t.colors.outlineVariant }]}>
-          {failed.length && !failed.some((j) => j.error?.startsWith("Stopped")) ? <Button mode="outlined" onPress={retry} style={{ flex: 1 }} contentStyle={{ height: 48 }}>Try again</Button> : null}
-          {!removed && deletable.length ? <Button mode="outlined" onPress={() => removeFromPhone(deletable.map((j) => j.file.uri))} style={{ flex: 1 }} contentStyle={{ height: 48 }}>Remove from phone</Button> : null}
-          <Button mode="contained" onPress={close} style={{ flex: 1 }} contentStyle={{ height: 48 }}>Done</Button>
+        <View style={[st.actions, { paddingBottom: inset.bottom + 16, backgroundColor: theme.colors.background, borderTopColor: theme.colors.outlineVariant }]}>
+          {failed.length && !failed.some((j) => j.stopped) ? <Button mode="outlined" onPress={retry} style={{ flex: 1 }} contentStyle={{ height: 48 }}>{t("Try again")}</Button> : null}
+          {!removed && deletable.length ? <Button mode="outlined" onPress={() => removeFromPhone(deletable.map((j) => j.file.uri))} style={{ flex: 1 }} contentStyle={{ height: 48 }}>{t("Remove from phone")}</Button> : null}
+          <Button mode="contained" onPress={close} style={{ flex: 1 }} contentStyle={{ height: 48 }}>{t("Done")}</Button>
         </View>
       ) : null}
       <Snackbar visible={!!note} onDismiss={() => setNote(undefined)} duration={4000} style={{ marginBottom: inset.bottom + 80 }}>{note}</Snackbar>
@@ -219,22 +220,22 @@ export default function ShareScreen() {
 }
 
 function Row({ job, asking }: { job: Job; asking: boolean }) {
-  const t = useAppTheme();
+  const theme = useAppTheme();
   const { file, state } = job;
   const pct = file.size ? Math.round((job.done / file.size) * 100) : 0;
   return (
     <View style={st.row}>
-      <View style={[st.thumb, { backgroundColor: t.colors.surfaceVariant }]}>
+      <View style={[st.thumb, { backgroundColor: theme.colors.surfaceVariant }]}>
         <Image source={{ uri: file.uri }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="none" recyclingKey={file.uri} />
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text variant="bodyMedium" numberOfLines={1}>{file.name}</Text>
-        <Text variant="bodySmall" style={{ color: state === "error" ? t.colors.error : t.colors.onSurfaceVariant }} numberOfLines={2}>
-          {state === "error" ? job.error : state === "done" ? `${fmtSize(file.size)} · encrypted and uploaded` : state === "working" ? `${pct} % of ${fmtSize(file.size)}` : asking ? fmtSize(file.size) : `${fmtSize(file.size)} · waiting`}
+        <Text variant="bodySmall" style={{ color: state === "error" ? theme.colors.error : theme.colors.onSurfaceVariant }} numberOfLines={2}>
+          {state === "error" ? job.error : state === "done" ? t("{size} · encrypted and uploaded", { size: fmtSize(file.size) }) : state === "working" ? t("{pct} % of {size}", { pct: pct.toLocaleString(locale()), size: fmtSize(file.size) }) : asking ? fmtSize(file.size) : t("{size} · waiting", { size: fmtSize(file.size) })}
         </Text>
       </View>
       <View style={st.state}>
-        {state === "done" ? <Icon name="check" color={t.colors.primary} /> : state === "working" ? <Loader /> : state === "error" ? <Icon name="x" color={t.colors.error} /> : null}
+        {state === "done" ? <Icon name="check" color={theme.colors.primary} /> : state === "working" ? <Loader /> : state === "error" ? <Icon name="x" color={theme.colors.error} /> : null}
       </View>
     </View>
   );

@@ -17,15 +17,16 @@ import { useMediaDisclosure } from "../disclosure";
 import { away, expectAway } from "../autolock";
 import { backgroundUse, ownBatteryRules, useOnReturn } from "../deviceState";
 import { Loader, Loading } from "../Loader";
+import { locale, t } from "../i18n";
 
 type MediaFolder = Awaited<ReturnType<typeof N.mediaFolders>>[number];
-const fmtTime = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
+const fmtTime = { format: (d: number) => new Intl.DateTimeFormat(locale(), { dateStyle: "medium", timeStyle: "short" }).format(d) };
 
 const DEFAULTS = { wifiOnly: true, chargingOnly: false, includeExisting: false };
 
 /** Automatic backup: which folders, when, and the Android settings it needs, each with its state and a button. */
 export default function Backup() {
-  const t = useAppTheme();
+  const theme = useAppTheme();
   const inset = useSafeAreaInsets();
   const [config, setConfig] = useState<Config | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
@@ -113,16 +114,16 @@ export default function Backup() {
     setError(undefined); setBusy(true);
     try {
       if (on) { await disableBackup(); return; }
-      if (session().me?.demo) throw new Error(DEMO_BACKUP); // before Android asks for the photos
-      if (device.media === "none") { await askMedia(); if (N.backupState().media === "none") throw new Error("Allow access to photos and videos first."); }
+      if (session().me?.demo) throw new Error(DEMO_BACKUP()); // before Android asks for the photos
+      if (device.media === "none") { await askMedia(); if (N.backupState().media === "none") throw new Error(t("Allow access to photos and videos first.")); }
       const { me, masterKey } = session();
-      if (!me || !masterKey) throw new Error("Unlock your library first.");
+      if (!me || !masterKey) throw new Error(t("Unlock your library first."));
       const list = folders ?? (await N.mediaFolders()).filter((x) => !/^Pictures\/Cipherfilm\/?$/.test(x.path));
       let ids = chosen.size ? chosen : new Set(list.filter((x) => x.path.startsWith("DCIM/")).map((x) => x.id));
-      if (!ids.size) throw new Error("Choose at least one folder to back up.");
+      if (!ids.size) throw new Error(t("Choose at least one folder to back up."));
       const byId = new Map(list.map((f) => [f.id, f]));
       const fs: Config["folders"] = {};
-      for (const id of ids) fs[id] = { name: byId.get(id)?.name ?? "Folder", after: startAfter(prefs.includeExisting, byId.get(id)?.newest ?? 0) };
+      for (const id of ids) fs[id] = { name: byId.get(id)?.name ?? t("Folder"), after: startAfter(prefs.includeExisting, byId.get(id)?.newest ?? 0) };
       await enableBackup(me, server(), masterKey, { ...prefs, folders: fs });
       // what the library already has, before the first run: those photos aren't uploaded again
       await refreshLibrary();
@@ -130,7 +131,7 @@ export default function Backup() {
       if (!N.backupState().notifications) await askNotifications();
       runBackup("app").catch(() => {});
     } catch (e) {
-      setError(e instanceof Error ? e.message : "That didn't work.");
+      setError(e instanceof Error ? e.message : t("That didn't work."));
     } finally {
       setBusy(false);
       refresh();
@@ -145,107 +146,107 @@ export default function Backup() {
   const background = backgroundUse(device);
 
   return (
-    <View style={{ flex: 1, backgroundColor: t.colors.background }}>
-      <Appbar.Header style={{ backgroundColor: t.colors.background }}>
-        <Appbar.Action icon="back" accessibilityLabel="Back" onPress={() => router.back()} />
-        <Appbar.Content title="Backup" titleStyle={text.page} />
+    <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+      <Appbar.Header style={{ backgroundColor: theme.colors.background }}>
+        <Appbar.Action icon="back" accessibilityLabel={t("Back")} onPress={() => router.back()} />
+        <Appbar.Content title={t("Backup")} titleStyle={text.page} />
       </Appbar.Header>
       <ScrollView contentContainerStyle={{ paddingBottom: inset.bottom + 32 }}>
-        <View style={[st.card, { backgroundColor: on ? t.colors.primaryContainer : t.colors.surfaceVariant }]}>
+        <View style={[st.card, { backgroundColor: on ? theme.colors.primaryContainer : theme.colors.surfaceVariant }]}>
           <View style={st.row}>
             <View style={{ flex: 1 }}>
-              <Text variant="titleMedium">Back up automatically</Text>
-              <Text variant="bodySmall" style={{ color: t.colors.onSurfaceVariant, marginTop: 2 }}>
+              <Text variant="titleMedium">{t("Back up automatically")}</Text>
+              <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 2 }}>
                 {headline({ on, running, live, waiting, includeExisting: !!config?.includeExisting, older, partial: device.media === "partial" })}
               </Text>
             </View>
-            {busy ? <Loader /> : <Switch value={on} onValueChange={toggle} accessibilityLabel="Back up automatically" />}
+            {busy ? <Loader /> : <Switch value={on} onValueChange={toggle} accessibilityLabel={t("Back up automatically")} />}
           </View>
           {on ? (
             <>
               {running && live ? (
                 <>
-                  <ProgressBar progress={live.fraction} color={t.colors.primary} style={{ height: 5, borderRadius: 3, marginTop: 12, backgroundColor: t.colors.outlineVariant }} />
-                  <Text variant="bodySmall" style={{ marginTop: 6, color: t.colors.onSurfaceVariant }}>{liveLine(live)}</Text>
+                  <ProgressBar progress={live.fraction} color={theme.colors.primary} style={{ height: 5, borderRadius: 3, marginTop: 12, backgroundColor: theme.colors.outlineVariant }} />
+                  <Text variant="bodySmall" style={{ marginTop: 6, color: theme.colors.onSurfaceVariant }}>{liveLine(live)}</Text>
                 </>
               ) : null}
               {problem ? <Text variant="bodyMedium" style={{ marginTop: 12 }}>{problem}{status?.problem && status.problemAt ? ` (${fmtTime.format(status.problemAt)})` : ""}</Text> : null}
               {status?.needsYou?.length && !status.running ? (
                 <Text variant="bodyMedium" style={{ marginTop: 12 }}>{tooLarge(status.needsYou)}</Text>
               ) : null}
-              {status?.stalled && !status.running ? <Text variant="bodyMedium" style={{ marginTop: 12 }}>The last backup stopped at {status.stalled}. It is tried up to three more times, then skipped.</Text> : null}
-              <Text variant="bodySmall" style={{ marginTop: 8, color: t.colors.onSurfaceVariant }}>
+              {status?.stalled && !status.running ? <Text variant="bodyMedium" style={{ marginTop: 12 }}>{t("The last backup stopped at {name}. It is tried up to three more times, then skipped.", { name: status.stalled })}</Text> : null}
+              <Text variant="bodySmall" style={{ marginTop: 8, color: theme.colors.onSurfaceVariant }}>
                 {lastLine(status ?? { uploaded: 0 }, (d) => fmtTime.format(d))}
               </Text>
               <Button mode="contained" icon="upload" style={{ marginTop: 12, alignSelf: "flex-start" }} disabled={status?.running}
-                onPress={() => runBackup("manual").catch(() => {})}>Back up now</Button>
+                onPress={() => runBackup("manual").catch(() => {})}>{t("Back up now")}</Button>
             </>
           ) : null}
         </View>
         <View style={{ paddingHorizontal: 16 }}><Problem>{error}</Problem></View>
         {disclosure.dialog}
 
-        <List.Subheader>Android settings</List.Subheader>
-        <Check ok={device.media === "full"} warn={device.media === "partial"} icon="photos" title="Access to photos and videos"
-          text={device.media === "full" ? "Allowed" : device.media === "partial" ? "Only the photos you chose are backed up; new ones aren't found. Choose \"Allow all\"." : "Needed to find new photos"}
-          action={device.media === "full" ? undefined : [device.media === "partial" ? "Change" : "Allow", askMedia]} />
-        {device.sdk >= 29 ? <Check ok={device.location} icon="info" title="Where photos were taken"
-          text={device.location ? "Kept in the backup (encrypted)" : "Without this, Android strips the location from photos"}
-          action={device.location ? undefined : ["Allow", askMedia]} /> : null}
+        <List.Subheader>{t("Android settings")}</List.Subheader>
+        <Check ok={device.media === "full"} warn={device.media === "partial"} icon="photos" title={t("Access to photos and videos")}
+          text={device.media === "full" ? t("Allowed") : device.media === "partial" ? t("Only the photos you chose are backed up; new ones aren't found. Choose \"Allow all\".") : t("Needed to find new photos")}
+          action={device.media === "full" ? undefined : [device.media === "partial" ? t("Change") : t("Allow"), askMedia]} />
+        {device.sdk >= 29 ? <Check ok={device.location} icon="info" title={t("Where photos were taken")}
+          text={device.location ? t("Kept in the backup (encrypted)") : t("Without this, Android strips the location from photos")}
+          action={device.location ? undefined : [t("Allow"), askMedia]} /> : null}
         {/* Android's default ("Optimized", "Allow background usage" on) counts as allowed: the backup runs then, and
             that is what the person sees switched on in Android's settings. Only "Restricted" stops it. Xiaomi's own
             battery saver can't be seen by the app, so there it says where it is until the exemption is on. */}
-        <Check ok={background === "unrestricted" || (background === "allowed" && !xiaomi)} warn={background !== "restricted"} icon="lock" title="Run in the background"
-          text={background === "unrestricted" ? "Allowed, without battery limits"
-            : background === "restricted" ? "Android stops the backup when the app is closed. In the app settings, open Battery and allow background usage."
-            : xiaomi ? "On Xiaomi: app settings › Battery saver › No restrictions. This box stays unticked, because Android can't see that setting."
-            : "Allowed. Android may wait a little with a backup while the phone is idle."}
-          action={background === "restricted" || (background === "allowed" && xiaomi) ? ["Open", appSettings] : undefined} />
-        <Check ok={device.notifications} icon="upload" title="Notifications"
-          text={device.notifications ? "Shows backup progress" : "Shows progress and tells you when to sign in again"}
-          action={device.notifications ? undefined : ["Allow", askNotifications]} />
-        <Text variant="bodySmall" style={[st.hint, { color: t.colors.onSurfaceVariant }]}>
-          Samsung, Xiaomi, Huawei, OPPO, OnePlus and some others have their own battery rules: in the app settings, open Battery and choose "Unrestricted" or "Allow background activity".
+        <Check ok={background === "unrestricted" || (background === "allowed" && !xiaomi)} warn={background !== "restricted"} icon="lock" title={t("Run in the background")}
+          text={background === "unrestricted" ? t("Allowed, without battery limits")
+            : background === "restricted" ? t("Android stops the backup when the app is closed. In the app settings, open Battery and allow background usage.")
+            : xiaomi ? t("On Xiaomi: app settings › Battery saver › No restrictions. This box stays unticked, because Android can't see that setting.")
+            : t("Allowed. Android may wait a little with a backup while the phone is idle.")}
+          action={background === "restricted" || (background === "allowed" && xiaomi) ? [t("Open"), appSettings] : undefined} />
+        <Check ok={device.notifications} icon="upload" title={t("Notifications")}
+          text={device.notifications ? t("Shows backup progress") : t("Shows progress and tells you when to sign in again")}
+          action={device.notifications ? undefined : [t("Allow"), askNotifications]} />
+        <Text variant="bodySmall" style={[st.hint, { color: theme.colors.onSurfaceVariant }]}>
+          {t("Samsung, Xiaomi, Huawei, OPPO, OnePlus and some others have their own battery rules: in the app settings, open Battery and choose \"Unrestricted\" or \"Allow background activity\".")}
         </Text>
-        <Button mode="text" style={{ alignSelf: "flex-start", marginLeft: 8 }} onPress={appSettings}>Open app settings</Button>
-        {device.powerSave ? <Text variant="bodySmall" style={[st.hint, { color: t.colors.error }]}>Battery saver is on. Android delays the backup until it's off.</Text> : null}
+        <Button mode="text" style={{ alignSelf: "flex-start", marginLeft: 8 }} onPress={appSettings}>{t("Open app settings")}</Button>
+        {device.powerSave ? <Text variant="bodySmall" style={[st.hint, { color: theme.colors.error }]}>{t("Battery saver is on. Android delays the backup until it's off.")}</Text> : null}
 
         <Divider style={{ marginTop: 8 }} />
-        <List.Subheader>Folders to back up</List.Subheader>
+        <List.Subheader>{t("Folders to back up")}</List.Subheader>
         {device.media === "none" ? (
-          <Text variant="bodyMedium" style={st.hint}>Allow access to photos and videos to see your folders.</Text>
-        ) : !folders ? <Loading inline label="Looking for photo folders…" style={{ margin: 16 }} /> : folders.map((f) => (
+          <Text variant="bodyMedium" style={st.hint}>{t("Allow access to photos and videos to see your folders.")}</Text>
+        ) : !folders ? <Loading inline label={t("Looking for photo folders…")} style={{ margin: 16 }} /> : folders.map((f) => (
           <List.Item key={f.id} title={f.name} description={folderLine(f.path, f.count)}
             onPress={() => { const n = new Set(chosen); n.has(f.id) ? n.delete(f.id) : n.add(f.id); apply(n); }}
             accessibilityRole="checkbox" accessibilityState={{ checked: chosen.has(f.id) }}
-            left={() => <View style={{ justifyContent: "center", paddingLeft: 16, paddingRight: 4 }}><Icon name={chosen.has(f.id) ? "boxOn" : "boxOff"} size={24} color={chosen.has(f.id) ? t.colors.primary : t.colors.onSurfaceVariant} /></View>}
+            left={() => <View style={{ justifyContent: "center", paddingLeft: 16, paddingRight: 4 }}><Icon name={chosen.has(f.id) ? "boxOn" : "boxOff"} size={24} color={chosen.has(f.id) ? theme.colors.primary : theme.colors.onSurfaceVariant} /></View>}
             style={{ paddingVertical: 2 }} />
         ))}
 
         <Divider style={{ marginTop: 8 }} />
-        <List.Subheader>Photos and videos already on this phone</List.Subheader>
+        <List.Subheader>{t("Photos and videos already on this phone")}</List.Subheader>
         <RadioButton.Group value={prefs.includeExisting ? "all" : "new"} onValueChange={(v) => apply(chosen, { ...prefs, includeExisting: v === "all" })}>
-          <RadioButton.Item label="Only new photos and videos from now on" value="new" labelVariant="bodyLarge" />
+          <RadioButton.Item label={t("Only new photos and videos from now on")} value="new" labelVariant="bodyLarge" />
           <RadioButton.Item label={choice.all} value="all" labelVariant="bodyLarge" />
         </RadioButton.Group>
-        <Text variant="bodySmall" style={[st.hint, { color: t.colors.onSurfaceVariant }]}>{choice.hint}</Text>
+        <Text variant="bodySmall" style={[st.hint, { color: theme.colors.onSurfaceVariant }]}>{choice.hint}</Text>
 
         <Divider style={{ marginTop: 8 }} />
-        <List.Subheader>When</List.Subheader>
-        <SwitchItem title="Only on Wi-Fi" description="No mobile data is used" value={prefs.wifiOnly} onValueChange={(v) => apply(chosen, { ...prefs, wifiOnly: v })} />
-        <SwitchItem title="Only while charging" value={prefs.chargingOnly} onValueChange={(v) => apply(chosen, { ...prefs, chargingOnly: v })} />
+        <List.Subheader>{t("When")}</List.Subheader>
+        <SwitchItem title={t("Only on Wi-Fi")} description={t("No mobile data is used")} value={prefs.wifiOnly} onValueChange={(v) => apply(chosen, { ...prefs, wifiOnly: v })} />
+        <SwitchItem title={t("Only while charging")} value={prefs.chargingOnly} onValueChange={(v) => apply(chosen, { ...prefs, chargingOnly: v })} />
 
         {status?.skipped.length ? (
           <>
             <Divider style={{ marginTop: 8 }} />
-            <List.Subheader>Couldn't be backed up</List.Subheader>
+            <List.Subheader>{t("Couldn't be backed up")}</List.Subheader>
             {status.skipped.slice(0, 10).map((s, i) => <List.Item key={i} title={s.name} description={s.reason} descriptionNumberOfLines={2} />)}
           </>
         ) : null}
 
         <Divider style={{ marginTop: 8 }} />
-        <Text variant="bodySmall" style={[st.hint, { color: t.colors.onSurfaceVariant, marginTop: 12 }]}>
-          Photos are encrypted on this phone before upload. The server only stores encrypted data. The background backup only holds your public key: it can add photos but can't open any. It runs a few seconds after you take a photo, about every 15 minutes when Android allows, and when you open the app.
+        <Text variant="bodySmall" style={[st.hint, { color: theme.colors.onSurfaceVariant, marginTop: 12 }]}>
+          {t("Photos are encrypted on this phone before upload. The server only stores encrypted data. The background backup only holds your public key: it can add photos but can't open any. It runs a few seconds after you take a photo, about every 15 minutes when Android allows, and when you open the app.")}
         </Text>
       </ScrollView>
     </View>
@@ -253,12 +254,12 @@ export default function Backup() {
 }
 
 function Check({ ok, warn, icon, title, text, action }: { ok: boolean; warn?: boolean; icon: IconName; title: string; text: string; action?: [string, () => void] }) {
-  const t = useAppTheme();
+  const theme = useAppTheme();
   return (
     <List.Item title={title} description={text} descriptionNumberOfLines={3} titleNumberOfLines={2}
       left={() => (
-        <View style={[st.dot, { backgroundColor: ok ? t.colors.primaryContainer : warn ? t.colors.tertiaryContainer : t.colors.errorContainer }]}>
-          <Icon name={ok ? "check" : icon} size={18} color={ok ? t.colors.primary : warn ? t.colors.tertiary : t.colors.error} />
+        <View style={[st.dot, { backgroundColor: ok ? theme.colors.primaryContainer : warn ? theme.colors.tertiaryContainer : theme.colors.errorContainer }]}>
+          <Icon name={ok ? "check" : icon} size={18} color={ok ? theme.colors.primary : warn ? theme.colors.tertiary : theme.colors.error} />
         </View>
       )}
       right={() => (action ? <Button mode="outlined" compact onPress={action[1]} style={{ alignSelf: "center" }}>{action[0]}</Button> : null)} />

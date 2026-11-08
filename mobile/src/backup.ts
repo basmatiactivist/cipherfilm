@@ -22,6 +22,7 @@ import { fingerprint } from "./prints";
 import { indexUploaded, rememberUploaded, runBackgroundIndex } from "./search/background";
 import { forgetSettings, loadSettings } from "./search/settings";
 import { onSessionChange, onSignOut, savedServer } from "./session";
+import { t, tn } from "./i18n";
 
 export const TASK = "cipherfilm-backup";
 
@@ -101,14 +102,14 @@ const setLive = (p: LiveProgress | null) => { live = p; progressSubs.forEach((f)
 
 /** Checks the account's public key against its private key and pins it, then schedules the background task. */
 /** The server refuses every upload of the public demo login: a backup would only try again and again. */
-export const DEMO_BACKUP = "This is the public demo: it can't store photos, so backup stays off.";
+export const DEMO_BACKUP = () => t("This is the public demo: it can't store photos, so backup stays off.");
 
 export async function enableBackup(me: { user: { id: string; email: string }; pubkey: string; wrapped_privkey: string; demo?: boolean }, server: string, master: Uint8Array, choice: Omit<Config, "enabled" | "server" | "userId" | "email" | "pubkey">) {
-  if (me.demo) throw new Error(DEMO_BACKUP);
+  if (me.demo) throw new Error(DEMO_BACKUP());
   const s = await getSodium();
   const pair = accountKeyPair(s, unb64(s, me.wrapped_privkey), master, normEmail(me.user.email));
   s.memzero(pair.sk);
-  if (!s.memcmp(pair.pk, unb64(s, me.pubkey))) throw new Error("Your account's keys don't match. Backup was not turned on.");
+  if (!s.memcmp(pair.pk, unb64(s, me.pubkey))) throw new Error(t("Your account's keys don't match. Backup was not turned on."));
   await saveConfig({ ...choice, enabled: true, server, userId: me.user.id, email: me.user.email, pubkey: b64(s, pair.pk) });
   await scheduleBackground();
   changed();
@@ -138,7 +139,7 @@ export function chooseFolders(cur: Config, ids: Iterable<string>, includeExistin
   for (const id of ids) {
     const was = cur.folders[id];
     const newest = byId.get(id)?.newest ?? 0;
-    const name = was?.name ?? byId.get(id)?.name ?? "Folder";
+    const name = was?.name ?? byId.get(id)?.name ?? t("Folder");
     out[id] = was && !switched ? was : { name, after: was && !includeExisting ? Math.max(was.after, newest) : startAfter(includeExisting, newest) };
   }
   return out;
@@ -163,7 +164,7 @@ let running = false;
 let generation = 0; // bumped at sign-out and whenever the session changes hands: a run still going stops and keeps nothing
 const OTHER_ACCOUNT = "another account";
 const HALTED = "halted";
-const ANOTHER = "Signed in with another account. Backup continues when this account signs in again.";
+const ANOTHER = () => t("Signed in with another account. Backup continues when this account signs in again.");
 const BACKGROUND_BUDGET = 8 * 60_000; // WorkManager stops work after 10 minutes, if the service couldn't start
 const MAX_TRIES = 3;
 // files at once, like the web app; at most 3 × 2 parts of 4 MiB in memory (upload.ts SEGMENTS_IN_FLIGHT)
@@ -171,15 +172,17 @@ const FILES_IN_FLIGHT = 3;
 // the account check that counts finished files: after this many, or this long after the last one, and at the end
 const CHECK_FILES = 6;
 const CHECK_EVERY = 30_000;
-const EMPTY = "The file is empty (0 bytes).";
+const EMPTY = () => t("The file is empty (0 bytes).");
+const SIGNED_OUT = () => t("You were signed out. Sign in to continue the backup.");
+const CANT_CONNECT = () => t("Can't connect to the server. Trying again in a few minutes.");
 
 /** Whether a run may start now, and if not, why (in plain words). Manual runs ignore Wi-Fi and charging. */
 export function blocker(c: Config, manual: boolean): string | undefined {
   const st = N.backupState();
-  if (st.media === "none") return "Cipherfilm can't see your photos. Allow access in Backup.";
-  if (!st.online) return "Waiting for an internet connection.";
-  if (!manual && c.wifiOnly && !st.unmetered) return "Waiting for Wi-Fi.";
-  if (!manual && c.chargingOnly && !st.charging) return "Waiting for the phone to charge.";
+  if (st.media === "none") return t("Cipherfilm can't see your photos. Allow access in Backup.");
+  if (!st.online) return t("Waiting for an internet connection.");
+  if (!manual && c.wifiOnly && !st.unmetered) return t("Waiting for Wi-Fi.");
+  if (!manual && c.chargingOnly && !st.charging) return t("Waiting for the phone to charge.");
   return undefined;
 }
 
@@ -243,7 +246,7 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
     let waiting = 0;
     for (const [bucket, f] of Object.entries(c.folders)) waiting += await N.countFolderAfter(bucket, f.after);
     if (!waiting) { if (!status.needsYou?.length) status.lastDone = Date.now(); return; } // all done: say so, as of now
-    if (c.server !== (await savedServer())) { status.problem = "Cipherfilm now uses another server. Turn backup on again."; await disableBackup(); return; }
+    if (c.server !== (await savedServer())) { status.problem = t("Cipherfilm now uses another server. Turn backup on again."); await disableBackup(); return; }
     // the run's own server and token: the app's are left alone
     const to = remote(c.server);
     let me: { user: { id: string }; csrf: string };
@@ -251,11 +254,11 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
       me = await reach(to);
     } catch (e) {
       if (e instanceof ApiError) console.log(`backup: server not reached (${e.status}) ${e.detail}`);
-      status.problem = e instanceof ApiError && e.status === 401 ? "You were signed out. Sign in to continue the backup." : "Can't connect to the server. Trying again in a few minutes.";
-      if (e instanceof ApiError && e.status === 401) N.backupNotify("Backup paused", "Sign in to Cipherfilm to continue.", 0, false);
+      status.problem = e instanceof ApiError && e.status === 401 ? SIGNED_OUT() : CANT_CONNECT();
+      if (e instanceof ApiError && e.status === 401) N.backupNotify(t("Backup paused"), t("Sign in to Cipherfilm to continue."), 0, false);
       return;
     }
-    if (me.user.id !== c.userId) { status.problem = "Signed in with another account. Turn backup on again for this one."; await disableBackup(); return; }
+    if (me.user.id !== c.userId) { status.problem = t("Signed in with another account. Turn backup on again for this one."); await disableBackup(); return; }
     to.csrf = me.csrf;
     // the session may change hands while the run goes on: uploads go only to c.userId
     const stillMine = async () => {
@@ -283,7 +286,7 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
     // and go on in the next run. The GitHub build keeps it for every run.
     if (!isPlayBuild() || trigger === "manual") {
       holding = true;
-      held = keepRunning("backup", "Backing up", total === 1 ? "1 photo or video" : `${total} photos and videos`);
+      held = keepRunning("backup", t("Backing up"), tn(total, "{n} photo or video", "{n} photos and videos"));
     }
     if (held) deadline = Infinity;
     const outOfTime = () => Date.now() > deadline || (held && N.keepRunningLost()) || !current();
@@ -298,7 +301,7 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
       if (current()) setLive(p);
       const name = going.values().next().value;
       if (!name) return; // between files: the next one shows itself
-      const title = `Backing up ${p.position} of ${p.total}`;
+      const title = t("Backing up {n} of {total}", { n: p.position, total: p.total });
       const text = note ?? (p.speed ? `${name} · ${fmtSpeed(p.speed)}` : name);
       const same = `${title}\n${text}\n${Math.round(p.fraction * 100)}`;
       if (same === shown) return; // nothing new: no update for Android to drop
@@ -311,7 +314,7 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
     let halt = false;
     let abandon = false; // the session changed hands: the files under way stop too
     const stop = (problem?: string) => { halt = true; if (problem) status.problem ??= problem; };
-    const serverProblem = (e: ApiError) => (e.status === 413 ? "Your storage on the server is full." : e.status === 401 ? "You were signed out. Sign in to continue the backup." : "Can't connect to the server. Trying again in a few minutes.");
+    const serverProblem = (e: ApiError) => (e.status === 413 ? t("Your storage on the server is full.") : e.status === 401 ? SIGNED_OUT() : CANT_CONNECT());
     // the files under way, oldest first: status.attempt (a run that dies counts a try for each) and status.current
     const going = new Map<string, string>();
     const sync = () => {
@@ -368,7 +371,7 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
           // they went to whoever holds the session now, not to c.userId: not backed up, so not noted as such
           const gone = new Set(ready.map((u) => u.print));
           status.unconfirmed = status.unconfirmed?.filter((u) => !gone.has(u.print));
-          abandon = true; stop(ANOTHER); return;
+          abandon = true; stop(ANOTHER()); return;
         }
         unconfirmed.unshift(...ready); // counted at a later check, or uploaded again by the next run
         if (!soft) stop(e instanceof ApiError ? serverProblem(e) : e instanceof Error ? e.message : String(e));
@@ -412,13 +415,13 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
             id = await uploadFile(file, s, (itemKey, id) => sealItemKey(s, itemKey, pk, id), () => {
               if (abandon) throw new Error(OTHER_ACCOUNT);
               if (Date.now() > deadline + 90_000 || (held && N.keepRunningLost()) || !current()) throw new Error("out of time"); // finish next time
-            }, (d, t) => { progress.sent(key, t ? d / t : 0, d - sent); sent = d; show(); }, to);
+            }, (d, all) => { progress.sent(key, all ? d / all : 0, d - sent); sent = d; show(); }, to);
             break;
           } catch (e) {
             if (attempt >= 2 || !(e instanceof ApiError) || !(e.status === 0 || e.status >= 500) || outOfTime()) throw e;
             if (halt) throw new Error(HALTED); // the run stops for another reason: no wait, and not this file's failure
             console.log(`backup: upload failed (${e.status}) ${e.detail}; trying again`); // ids only, no names
-            show(true, `${m.name} · waiting for the server…`);
+            show(true, t("{name} · waiting for the server…", { name: m.name }));
             pausing++;
             settle("due"); // what is done so far counts before the wait
             await new Promise((r) => setTimeout(r, attempt ? 90_000 : 30_000)).finally(() => { pausing--; });
@@ -445,7 +448,7 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
           await past(m.id);
           stop();
         } else if (msg === "out of time" || msg === HALTED) stop();
-        else if (msg === OTHER_ACCOUNT) { abandon = true; stop(ANOTHER); }
+        else if (msg === OTHER_ACCOUNT) { abandon = true; stop(ANOTHER()); }
         else {
           const tries = (status.failures[key] ?? 0) + 1;
           status.failures[key] = tries;
@@ -483,7 +486,7 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
             const print = await fingerprint(m.name, m.size);
             if (known.has(print)) { progress.finish(); await past(m.id); continue; }
             if (!m.size) { // nothing to back up (an app left an empty file): named under Backup, not an empty photo in the library
-              status.skipped = [{ name: m.name, reason: EMPTY }, ...status.skipped].slice(0, 50);
+              status.skipped = [{ name: m.name, reason: EMPTY() }, ...status.skipped].slice(0, 50);
               gaveUp++;
               progress.finish();
               await past(m.id);
@@ -498,7 +501,7 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
               const left = attempts().filter((a) => a !== key);
               status.attempt = left.length ? left : undefined;
               if (tries >= MAX_TRIES) {
-                status.skipped = [{ name: m.name, reason: "Cipherfilm stopped while reading this file" }, ...status.skipped].slice(0, 50);
+                status.skipped = [{ name: m.name, reason: t("Cipherfilm stopped while reading this file") }, ...status.skipped].slice(0, 50);
                 delete status.failures[key];
                 gaveUp++;
                 progress.finish();
@@ -540,7 +543,7 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
   } finally {
     if (status.problem) status.problemAt = Date.now();
     // couldn't reach the server: try again in a few minutes, not only at the next periodic run
-    if (status.problem && /reach|connect/i.test(status.problem) && current()) N.retryBackupSoon(3);
+    if (status.problem && /reach|connect|erreich|verbind/i.test(status.problem) && current()) N.retryBackupSoon(3);
     console.log(`backup (${trigger}): ${done} uploaded${status.problem ? `, stopped: ${status.problem}` : ""}`); // no names, no keys
     status.running = false; status.current = undefined;
     setLive(null);
@@ -553,7 +556,7 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
     if (summary && current()) N.backupNotify(summary.title, summary.text, 0, false);
     const big = status.needsYou?.length ?? 0;
     if (big && current() && trigger !== "manual") {
-      N.backupNotify(big === 1 ? "A large video is waiting" : `${big} large videos are waiting`, "Open Cipherfilm › Backup and tap Back up now to upload it.", 0, false);
+      N.backupNotify(tn(big, "A large video is waiting", "{n} large videos are waiting"), tn(big, "Open Cipherfilm › Backup and tap Back up now to upload it.", "Open Cipherfilm › Backup and tap Back up now to upload them."), 0, false);
     }
   }
 }
@@ -562,10 +565,10 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
  *  nothing happened, so a run every 15 minutes that waits for Wi-Fi doesn't notify each time. */
 export function backupSummary(done: number, gaveUp: number, problem?: string): { title: string; text: string } | null {
   if (!done && !gaveUp) return null;
-  const parts = [done === 1 ? "1 photo or video backed up." : done ? `${done} photos and videos backed up.` : ""];
-  if (gaveUp) parts.push(gaveUp === 1 ? "1 couldn't be backed up." : `${gaveUp} couldn't be backed up.`);
-  if (problem) parts.push(`Stopped: ${problem}`);
-  return { title: gaveUp || problem ? "Backup incomplete" : "Backup done", text: parts.filter(Boolean).join(" ") };
+  const parts = [done ? tn(done, "{n} photo or video backed up.", "{n} photos and videos backed up.") : ""];
+  if (gaveUp) parts.push(tn(gaveUp, "{n} couldn't be backed up.", "{n} couldn't be backed up."));
+  if (problem) parts.push(t("Stopped: {problem}", { problem }));
+  return { title: gaveUp || problem ? t("Backup incomplete") : t("Backup done"), text: parts.filter(Boolean).join(" ") };
 }
 
 export const backupRunning = () => running;

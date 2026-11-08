@@ -184,7 +184,7 @@ Settings that live on GitHub, not in the repository, set once the repository is 
 - **Allow auto-merge** (General), so Dependabot's minor and patch updates merge once the required checks pass, and
   the label `automerge` (it marks them; the merge works without it).
 - **Ruleset for `master`:** no force pushes or deletion; pull requests need the checks `identity` (it checks the
-  pull request's own commits), `tokens`, `server`, `web`, `mobile`, `decrypt-tool` and `e2e`; the owner may bypass
+  pull request's own commits), `tokens`, `server`, `web`, `mobile`, `android` (the app builds), `decrypt-tool` and `e2e`; the owner may bypass
   (to push directly).
 - **Ruleset for tags `v*`:** only the owner may create, move or delete them (a tag starts a release).
 - **Environment `release`** (Settings › Environments): holds the secrets `ANDROID_KEYSTORE_B64` and

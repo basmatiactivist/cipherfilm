@@ -1,0 +1,50 @@
+name: Android dependencies
+# Reports the Android app's Gradle dependencies (Media3, JNA, ExifInterface, ONNX Runtime and everything React Native
+# and Expo pull in) to GitHub's dependency graph, so Dependabot alerts cover them too: GitHub reads package.json,
+# go.mod and Package.resolved by itself, but not Gradle builds. Only resolves dependencies, builds nothing, and holds no
+# secrets; the one write it needs is the dependency graph's (contents: write), so it runs apart from the release
+# build with its signing keys. On every change to the Android app on master, weekly (new advisories match what is
+# already reported, but the report should stay fresh), and by hand.
+on:
+  push:
+    branches: [master]
+    paths: ["mobile/**", ".github/workflows/android-deps.yml"]
+  schedule: [{ cron: "37 5 * * 2" }]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: android-deps
+  cancel-in-progress: true
+env:
+  # the same pinned Gradle as android.yml
+  GRADLE_DIST: gradle-9.4.1-bin.zip
+  GRADLE_SHA256: 2ab2958f2a1e51120c326cad6f385153bb11ee93b3c216c5fccebfdfbb7ec6cb
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write  # the dependency submission API; nothing is pushed
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with: { distribution: temurin, java-version: "17" }
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with: { node-version: "26", package-manager-cache: false }
+      - name: JavaScript dependencies and native project
+        run: |
+          cd mobile && npm ci
+          CF_VERSION=0.0.0 npx expo prebuild --platform android --clean --no-install
+      - name: Gradle only with the pinned hash
+        run: |
+          props=mobile/android/gradle/wrapper/gradle-wrapper.properties
+          grep -qx "distributionUrl=https\\\\://services.gradle.org/distributions/$GRADLE_DIST" "$props" \
+            || { echo "the wrapper wants another Gradle: pin its hash here and in android.yml"; grep distributionUrl "$props"; exit 1; }
+          echo "distributionSha256Sum=$GRADLE_SHA256" >> "$props"
+      - uses: gradle/actions/dependency-submission@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+        with:
+          build-root-directory: mobile/android
+          cache-disabled: true
+          validate-wrappers: true

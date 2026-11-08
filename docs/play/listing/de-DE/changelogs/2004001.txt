@@ -1,0 +1,3 @@
+• Die App dreht sich jetzt mit dem Handy und nutzt Tablets und Foldables ganz.
+• Ein geöffnetes Foto bleibt beim Drehen des Handys dasselbe.
+Benötigt Ihren eigenen Cipherfilm-Server: https://cipherfilm.app/de

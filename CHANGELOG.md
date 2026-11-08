@@ -7,6 +7,10 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+## [2.4.1] - 2026-11-08
+
+The Android app turns with the phone and fills tablets.
+
 ### Changed
 - Android: the app turns with the phone and fills tablets and foldables (it was locked to portrait; from Android 16
   large screens ignore that lock). The photo viewer stays on the same photo when the phone turns and measures the

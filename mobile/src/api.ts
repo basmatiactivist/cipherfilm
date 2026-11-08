@@ -82,7 +82,7 @@ export async function api<T = any>(method: string, path: string, body?: unknown,
   try { text = await res.text(); } catch (e) { if (res.ok) throw new ApiError(0, offline(), `${method} ${path.replace(/[0-9a-f]{32}/g, ":id")}: body ${why(e)}`); } finally { time.end(); }
   let data: any = null;
   try { data = text ? JSON.parse(text) : null; } catch { /* not JSON */ }
-  if (!res.ok) { ended(res, path, to); throw new ApiError(res.status, sentence(data?.error ?? t("Something went wrong.")), "", data?.code ?? ""); }
+  if (!res.ok) { ended(res, path, to); throw new ApiError(res.status, serverSays(data?.error) ?? t("Something went wrong."), "", data?.code ?? ""); }
   // a GET always answers with an object or a list; other methods may answer with nothing
   if ((text && data === null) || (method === "GET" && (data === null || typeof data !== "object"))) {
     throw new ApiError(0, offline(), `${method} ${path.replace(/[0-9a-f]{32}/g, ":id")}: ${res.status}, not a JSON answer`);
@@ -94,6 +94,13 @@ const RETRYABLE = new Set([0, 408, 429, 500, 502, 503, 504]);
 
 /** PUT ciphertext, retrying network drops and busy servers with backoff (about a minute and a half in all: a phone
  *  changing networks or reconnecting its VPN needs that long); other 4xx fail at once. */
+/** The server's own message as a sentence, in the app's language where the app knows it (the server speaks English):
+ *  the ones people meet in normal use are in the dictionary, any other stays as the server wrote it. */
+function serverSays(msg: unknown): string | undefined {
+  if (typeof msg !== "string" || !msg) return undefined;
+  return t(sentence(msg));
+}
+
 export async function putBytes(path: string, bytes: Uint8Array, to: Remote = here(), tries = 8): Promise<void> {
   let last: ApiError | undefined;
   for (let i = 0; i < tries; i++) {
@@ -108,7 +115,7 @@ export async function putBytes(path: string, bytes: Uint8Array, to: Remote = her
     if (res.ok) return;
     ended(res, path, to);
     let msg = t("Something went wrong.");
-    try { msg = sentence((await res.json()).error ?? msg); } catch { /* no body */ }
+    try { msg = serverSays((await res.json()).error) ?? msg; } catch { /* no body */ }
     last = new ApiError(res.status, msg);
     if (!RETRYABLE.has(res.status)) break;
   }

@@ -211,4 +211,6 @@ export const deApp: Record<string, string> = {
   "Couldn't load this item.": "Dieses Element konnte nicht geladen werden.",
   "Couldn't load these items.": "Diese Elemente konnten nicht geladen werden.",
   "action|Trash": "Löschen",
+  // the server's messages (server/*.go), shown through serverSays() in api.ts
+  "This is the public demo: changes are turned off.": "Dies ist die öffentliche Demo: Änderungen sind ausgeschaltet.",
 };

@@ -15,6 +15,12 @@ version into the GitHub release notes, so a release cannot be published without 
   photos or names. Android has the dialog in German too.
 - Issue forms on GitHub for problems, ideas and questions; security reports go to private vulnerability reporting.
 
+### Fixed
+- Android: naming a person said "No photos of this person" until the People list was opened again (with a big
+  library the faces are grouped again for a while after naming); the photos now stay, with the new name.
+- Android: the privacy policy opens in German (cipherfilm.app/de/datenschutz) when the app speaks German.
+- Android: the server's notice for the public demo ("changes are turned off") is in the app's language.
+
 ## [2.3.0] - 2026-11-08
 
 The Android app in German, a full-screen photo view, and fixes for backup and search found on a real phone.

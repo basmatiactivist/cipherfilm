@@ -1,0 +1,82 @@
+# The form the apps link to ("Report a problem"). The apps prefill fields by their id in the link
+# (?template=bug_report.yml&app_version=...), so renaming an id breaks that prefill: change the apps' report modules
+# (web/src/report.ts, mobile/src/report.ts, mac/Sources/CipherfilmCore/Report.swift) together with it.
+name: Report a problem
+description: Something in Cipherfilm doesn't work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. This page is public: please leave out your server address, e-mail addresses,
+        names and anything you see in your photos. For a security problem, use
+        [private vulnerability reporting](https://github.com/basmatiactivist/cipherfilm/security/advisories/new) instead.
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened?
+      description: What did you see? Error messages help, copied as text or as a screenshot without private details.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to make it happen
+      description: What did you do just before? If it happens every time, the steps to see it again.
+      placeholder: |
+        1. Open …
+        2. Tap …
+        3. …
+    validations:
+      required: false
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect instead?
+    validations:
+      required: false
+  - type: dropdown
+    id: app
+    attributes:
+      label: Which app?
+      # the apps prefill this with one of these labels: keep them in step with the apps' report modules
+      options:
+        - Android (Google Play)
+        - Android (GitHub APK)
+        - Web
+        - Mac
+        - Server/self-hosting
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: app_version
+    attributes:
+      label: App version
+      description: Account (Android, web) or Settings (Mac) shows it.
+      placeholder: 2.3.0
+    validations:
+      required: false
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      description: System and model, or browser and system.
+      placeholder: Android 15 · Google Pixel 9
+    validations:
+      required: false
+  - type: input
+    id: server_version
+    attributes:
+      label: Server version
+      description: Shown next to the app version. Leave empty if you don't know.
+      placeholder: 2.3.0
+    validations:
+      required: false
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Before you post
+      options:
+        - label: I removed private details (server address, e-mails, names)
+          required: true

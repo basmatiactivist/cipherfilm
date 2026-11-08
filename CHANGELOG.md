@@ -7,6 +7,14 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+### Added
+- "Report a problem" in every app (Android: Account, under About; web: the account menu; Mac: the Help menu and
+  Settings). It opens GitHub's issue form in the browser and, if you agree, fills in this device's details: the app
+  version, the system and model (or browser and system), and the server's version. The dialog shows exactly that line
+  first; "Without details" opens the empty form. The app sends nothing itself, and never the server address, e-mail,
+  photos or names. Android has the dialog in German too.
+- Issue forms on GitHub for problems, ideas and questions; security reports go to private vulnerability reporting.
+
 ## [2.3.0] - 2026-11-08
 
 The Android app in German, a full-screen photo view, and fixes for backup and search found on a real phone.

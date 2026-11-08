@@ -13,6 +13,7 @@ import { Field, Problem, SwitchItem, useAppTheme } from "../ui";
 import { setShake, useShake } from "../shake";
 import { CHOICES, away, expectAway, setAutoLock, useAutoLock } from "../autolock";
 import { PRIVACY_URL } from "../store";
+import { reportUrl, summary, thisPhone } from "../report";
 import { text } from "../tokens";
 import { busyIcon } from "../Loader";
 import { locale, t } from "../i18n";
@@ -36,6 +37,7 @@ export default function Account() {
   const shake = useShake();
   const auto = useAutoLock();
   const [pickLock, setPickLock] = useState(false);
+  const [report, setReport] = useState(false);
   useEffect(() => {
     const sub = AppState.addEventListener("change", (s) => { if (s === "active") setBioOk(biometricPossible()); }); // back from Android settings
     return () => sub.remove();
@@ -48,6 +50,8 @@ export default function Account() {
     // older sign-ins (or older servers) have it only here, if at all
     api<{ server_version?: string }>("GET", "/api/setup/status").then((r) => setServerVersion(typeof r.server_version === "string" ? r.server_version : undefined), () => {});
   }, [me?.server_version]);
+  // read once per dialog, so the link carries exactly the line the dialog shows
+  const phone = report ? thisPhone(serverVersion) : undefined;
 
   const leave = async (how: "lock" | "out" | "server") => {
     clearImages();
@@ -134,6 +138,8 @@ export default function Account() {
         <List.Item title={t("Server version")} description={serverVersion ?? t("Unknown")} style={st.item} />
         <List.Item title={t("Privacy policy")} description="cipherfilm.app/privacy"
           onPress={() => { expectAway(); Linking.openURL(PRIVACY_URL); }} style={st.item} />
+        <List.Item title={t("Report a problem")} description={t("Opens a form on GitHub")}
+          onPress={() => setReport(true)} style={st.item} />
       </ScrollView>
       <Portal>
         <Dialog visible={pickLock} onDismiss={() => setPickLock(false)}>
@@ -144,6 +150,20 @@ export default function Account() {
               {CHOICES.map((c) => <RadioButton.Item key={c.after} label={c.label} value={String(c.after)} />)}
             </RadioButton.Group>
           </Dialog.Content>
+        </Dialog>
+        {/* asks first and shows exactly what the link fills in; the browser opens it, the app sends nothing */}
+        <Dialog visible={report} onDismiss={() => setReport(false)}>
+          <Dialog.Title>{t("Report a problem on GitHub")}</Dialog.Title>
+          <Dialog.Content>
+            <Text variant="bodyMedium">{t("You'll continue on github.com (a free GitHub account is needed to post). We'll fill in this phone's details:")}</Text>
+            <Text variant="bodyMedium" style={{ marginVertical: 12, fontWeight: "600" }}>{phone ? summary(phone) : ""}</Text>
+            <Text variant="bodySmall" style={{ color: th.colors.onSurfaceVariant }}>{t("Nothing else is sent: no server address, e-mail, photos or names.")}</Text>
+          </Dialog.Content>
+          <Dialog.Actions style={st.stacked}>
+            <Button mode="contained" onPress={() => { setReport(false); expectAway(); Linking.openURL(reportUrl(phone)); }}>{t("Include details")}</Button>
+            <Button onPress={() => { setReport(false); expectAway(); Linking.openURL(reportUrl()); }}>{t("Without details")}</Button>
+            <Button onPress={() => setReport(false)}>{t("Cancel")}</Button>
+          </Dialog.Actions>
         </Dialog>
         <Dialog visible={confirmOut} onDismiss={() => setConfirmOut(false)}>
           <Dialog.Title>{t("Sign out of this phone?")}</Dialog.Title>

@@ -12,6 +12,7 @@ import { Album, addToAlbum, createAlbum, deleteAlbum, loadAlbums, removeFromAlbu
 import { DRAG_TYPE, Mods, Timeline, Tile } from "./grid";
 import { ContextMenu, MenuItem } from "./ctxmenu";
 import { ShortcutsHelp } from "./shortcuts";
+import { ReportDialog } from "./reportdialog";
 import { Field, KeepButton, Submit, fmtGB, useAction } from "./components";
 import { Icon, IconName, Logo } from "./icons";
 import { loadUsage } from "./auth";
@@ -74,6 +75,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const [adminSection, setAdminSection] = useState<"users" | "defaults" | "server" | "activity">("users");
   const [ctx, setCtx] = useState<{ x: number; y: number; kind: "item" | "album"; id: string } | null>(null);
   const [help, setHelp] = useState(false);
+  const [report, setReport] = useState(false);
   const lastSel = useRef<string | null>(null);
   const gPending = useRef(0);
   const [fileDrag, setFileDrag] = useState(false);
@@ -517,6 +519,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
                 {props.admin && <button class="menuitem" role="menuitem" onClick={() => { setMenuOpen(false); go({ n: "admin" }); }}><Icon name="shield" />Admin</button>}
                 <button class="menuitem" role="menuitem" onClick={() => { setMenuOpen(false); if (uploading) setError("Files are still uploading. Wait or cancel them, then lock."); else props.onLock(); }}><Icon name="lock" />Lock</button>
                 <button class="menuitem kbditem" role="menuitem" onClick={() => { setMenuOpen(false); setHelp(true); }}><Icon name="keyboard" />Keyboard shortcuts</button>
+                <button class="menuitem" role="menuitem" onClick={() => { setMenuOpen(false); setReport(true); }}><Icon name="info" />Report a problem</button>
                 <div class="menusep" />
                 <button class="menuitem" role="menuitem" onClick={() => { setMenuOpen(false); props.onSignOut(); }}><Icon name="logout" />Sign out</button>
               </div>
@@ -721,6 +724,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
 
       {ctx && libraryView && <ContextMenu x={ctx.x} y={ctx.y} title={ctx.kind === "album" ? "Album actions" : "Photo actions"} items={ctxItems()} onClose={() => setCtx(null)} />}
       {help && <ShortcutsHelp onClose={() => setHelp(false)} />}
+      {report && <ReportDialog serverVersion={mem.me?.server_version} onClose={() => setReport(false)} />}
 
       {lb !== null && libraryView && lbList[lb] && (
         <Lightbox items={lbList} index={lb} onIndex={setLb} onClose={closeLb} people={people} onPerson={(key) => { closeLb(); openPerson(key); }}

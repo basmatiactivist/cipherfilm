@@ -154,6 +154,15 @@ Don't rely on it where losing or leaking the data would be catastrophic, and kee
 | [MAC.md](docs/MAC.md) | the Mac app |
 | [RELEASING.md](docs/RELEASING.md) | how releases are built and signed |
 
+## Reporting problems
+
+Every app has a "Report a problem" entry: Account on Android (under About), the account menu on the web, the Help menu
+and Settings on the Mac. It opens the [issue form](https://github.com/basmatiactivist/cipherfilm/issues/new/choose)
+on GitHub in your browser. Before that it shows the details it would fill in (app version, system and model, the
+server's version) and lets you continue without them. The app sends nothing itself; you see every field on GitHub
+before posting. Issues are public, so leave out your server address, e-mails and names. Security problems go
+[privately](https://github.com/basmatiactivist/cipherfilm/security/advisories/new) instead (see [SECURITY.md](SECURITY.md)).
+
 ## Development
 
 ```bash

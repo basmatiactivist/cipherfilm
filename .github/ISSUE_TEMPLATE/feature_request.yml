@@ -1,0 +1,31 @@
+name: Suggest an idea
+description: Something Cipherfilm could do, or do better.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like?
+      description: Describe it the way you would use it.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why would it help you?
+      description: What are you trying to do, and what is in the way today?
+    validations:
+      required: false
+  - type: dropdown
+    id: app
+    attributes:
+      label: Which app?
+      multiple: true
+      options:
+        - Android
+        - Web
+        - Mac
+        - Server/self-hosting
+        - All of them
+    validations:
+      required: false

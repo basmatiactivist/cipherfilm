@@ -1,3 +1,4 @@
+import { Loading } from "./loader";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { memo } from "preact/compat";
 import type { Item } from "./items";
@@ -19,10 +20,12 @@ type Row = { top: number; h: number } & ({ head: string; year: number } | { item
 
 const aspect = (it: Item): number => (it.broken ? 1 : it.meta?.width && it.meta?.height ? Math.min(4, Math.max(0.4, it.meta.width / it.meta.height)) : 4 / 3);
 
-export function Tile(p: { item: Item; selectMode: boolean; selected: boolean; onOpen: (m: Mods) => void; onToggle: (m: Mods) => void; dragIds?: () => string[]; w?: number; onContext?: (e: MouseEvent) => void; plain?: boolean }) {
+export function Tile(p: { item: Item; selectMode: boolean; selected: boolean; onOpen: (m: Mods) => void; onToggle: (m: Mods) => void; dragIds?: () => string[]; w?: number; onContext?: (e: MouseEvent) => void; plain?: boolean; onShown?: (id: string) => void }) {
   const it = p.item;
   const [url, setUrl] = useState<string | undefined>(() => cachedThumb(it.id));
   const [failed, setFailed] = useState(false);
+  // a tile with nothing to wait for (no thumbnail, or one that failed) counts as shown at once
+  useEffect(() => { if (!it.has_thumb || it.broken || failed) p.onShown?.(it.id); }, [it.id, failed]);
   useEffect(() => {
     if (url || !it.has_thumb || it.broken) return;
     let alive = true;
@@ -59,7 +62,7 @@ export function Tile(p: { item: Item; selectMode: boolean; selected: boolean; on
       {it.broken || failed ? (
         <span class="ph bad"><span>Couldn't be verified</span></span>
       ) : url ? (
-        <img src={url} alt="" draggable={false} />
+        <img src={url} alt="" draggable={false} onLoad={() => p.onShown?.(it.id)} onError={() => p.onShown?.(it.id)} />
       ) : (
         <span class="ph" aria-hidden="true">
           {!it.has_thumb && <Icon name={it.kind === "video" ? "video" : "photos"} size={28} />}
@@ -74,13 +77,16 @@ export function Tile(p: { item: Item; selectMode: boolean; selected: boolean; on
 }
 
 /** Timeline by capture day: rows keep every photo's own proportions (justified layout), windowed so only rows near the viewport are in the DOM. */
-type Acts = { open: (id: string, m: Mods) => void; toggle: (id: string, m: Mods) => void; context: (id: string, e: MouseEvent) => void; drag: (id: string) => string[] };
+/** The longest the first screen waits for its photos before it shows what is there. */
+const VEIL_MAX = 12_000;
+
+type Acts = { open: (id: string, m: Mods) => void; toggle: (id: string, m: Mods) => void; context: (id: string, e: MouseEvent) => void; drag: (id: string) => string[]; shown: (id: string) => void };
 
 /** A tile in the timeline that renders again only when what it shows changes: not on every upload progress tick or
  *  selection elsewhere. Its handlers go through `acts`, which always calls the Timeline's latest ones. */
 const RowTile = memo((q: { it: Item; w: number; selectMode: boolean; selected: boolean; acts: Acts; ctx: boolean; drag: boolean }) => (
   <Tile w={q.w} item={q.it} selectMode={q.selectMode} selected={q.selected} onOpen={(m) => q.acts.open(q.it.id, m)} onToggle={(m) => q.acts.toggle(q.it.id, m)}
-    onContext={q.ctx ? (e) => q.acts.context(q.it.id, e) : undefined} dragIds={q.drag ? () => q.acts.drag(q.it.id) : undefined} />
+    onContext={q.ctx ? (e) => q.acts.context(q.it.id, e) : undefined} dragIds={q.drag ? () => q.acts.drag(q.it.id) : undefined} onShown={q.acts.shown} />
 ));
 
 export function Timeline(p: { items: Item[]; flat?: boolean; selectMode: boolean; selected: Set<string>; onOpen: (id: string, m: Mods) => void; onToggle: (id: string, m: Mods) => void; dragIds?: (id: string) => string[]; onContext?: (id: string, e: MouseEvent) => void }) {
@@ -89,7 +95,14 @@ export function Timeline(p: { items: Item[]; flat?: boolean; selectMode: boolean
   const acts = useMemo<Acts>(() => ({
     open: (id, m) => live.current.onOpen(id, m), toggle: (id, m) => live.current.onToggle(id, m),
     context: (id, e) => live.current.onContext?.(id, e), drag: (id) => live.current.dragIds?.(id) ?? [id],
+    shown: (id) => { seen.current.add(id); const w = waiting.current; if (w && w.delete(id) && !w.size) setVeiled(false); },
   }), []);
+  // The first screen appears only once its photos are decoded: the list is there before the thumbnails, and empty
+  // tiles in the meantime look broken. Until then the grid is laid out and loads, invisible, under the loading badge.
+  // At most VEIL_MAX, so one slow or missing thumbnail can't hold the library back.
+  const [veiled, setVeiled] = useState(true);
+  const seen = useRef(new Set<string>());
+  const waiting = useRef<Set<string> | null>(null);
   const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   const [view, setView] = useState({ top: 0, h: typeof innerHeight === "number" ? innerHeight : 800 });
@@ -158,6 +171,16 @@ export function Timeline(p: { items: Item[]; flat?: boolean; selectMode: boolean
     return { rows, total: top, years };
   }, [p.items, p.flat, width, target]);
 
+  useEffect(() => {
+    if (!veiled || !width || waiting.current) return;
+    const first = rows.filter((r) => !("head" in r) && r.top < view.top + view.h && r.top + r.h > view.top);
+    const want = first.flatMap((r) => ("items" in r ? r.items : [])).map((x) => x.it).filter((it) => it.has_thumb && !it.broken && !seen.current.has(it.id));
+    waiting.current = new Set(want.map((it) => it.id));
+    if (!waiting.current.size) { setVeiled(false); return; }
+    const tm = setTimeout(() => setVeiled(false), VEIL_MAX);
+    return () => clearTimeout(tm);
+  }, [width, rows, veiled]);
+
   const from = view.top - view.h, to = view.top + view.h * 2;
   const visible = rows.filter((r) => r.top + r.h >= from && r.top <= to);
   const currentYear = [...years].reverse().find((y) => y.top <= view.top + 80)?.year ?? years[0]?.year;
@@ -165,7 +188,8 @@ export function Timeline(p: { items: Item[]; flat?: boolean; selectMode: boolean
 
   return (
     <>
-      <div class={"timeline" + (years.length > 1 ? " hasscrub" : "")} ref={box} style={{ height: total + "px" }}>
+      <div class={"timeline" + (years.length > 1 ? " hasscrub" : "") + (veiled ? " veiled" : "")} ref={box} style={{ height: total + "px" }} aria-busy={veiled}>
+        {veiled && <div class="veil"><Loading label="Decrypting your photos…" /></div>}
         {visible.map((r) =>
           "head" in r ? (
             <h2 class="dayhead" key={"h" + r.top} style={{ top: r.top + "px", height: r.h + "px" }}>{r.head}</h2>

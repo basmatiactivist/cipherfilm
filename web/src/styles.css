@@ -265,6 +265,9 @@ form.inline { max-width: 420px; }
 
 /* timeline: justified rows, serif day heads */
 .timeline { position: relative; }
+/* the first screen until its photos are decoded (grid.tsx): laid out and loading, but invisible under the badge */
+.timeline.veiled { visibility: hidden; }
+.timeline.veiled > .veil { visibility: visible; position: absolute; inset: 0 0 auto 0; z-index: 1; }
 .dayhead { position: absolute; left: 0; right: 0; margin: 0; display: flex; align-items: flex-end; padding-bottom: var(--space-2); font-family: var(--serif); font-weight: 400; font-size: var(--text-heading); color: var(--ink); }
 .trow { position: absolute; left: 0; right: 0; display: flex; gap: var(--space-1); }
 .tile { position: relative; display: block; flex: none; height: 100%; padding: 0; border: 0; background: var(--paper-deep); border-radius: var(--radius-tile); overflow: hidden; cursor: pointer; }

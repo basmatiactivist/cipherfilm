@@ -22,6 +22,7 @@ import com.sun.jna.NativeLong
 import com.sun.jna.ptr.NativeLongByReference
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.exception.CodedException
+import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.io.ByteArrayOutputStream
@@ -30,6 +31,8 @@ import java.nio.ByteBuffer
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 private class SodiumFailed(what: String) : CodedException("ERR_SODIUM", "$what failed", null)
 
@@ -121,28 +124,39 @@ class CfNativeModule : Module() {
     }
 
     // ---- search on the phone (Vision.kt, SearchIndex.kt, Models.kt) ----
-    AsyncFunction("downloadModel") { url: String, path: String, sha256: String, size: Double ->
-      Models.download(url, File(path), sha256, size.toLong()) { done, total -> sendEvent("onModelProgress", mapOf("path" to path, "done" to done.toDouble(), "total" to total.toDouble())) }
+    // the long ones run on their own threads (Lanes.kt), not on the one every module's AsyncFunctions share
+    AsyncFunction("downloadModel") Coroutine { url: String, path: String, sha256: String, size: Double ->
+      withContext(Lanes.files) {
+        Models.download(url, File(path), sha256, size.toLong()) { done, total -> sendEvent("onModelProgress", mapOf("path" to path, "done" to done.toDouble(), "total" to total.toDouble())) }
+      }
     }
-    AsyncFunction("checkModel") { path: String, sha256: String -> Models.check(File(path), sha256) }
-    AsyncFunction("visionOpen") { dir: String, faces: Boolean, clip: String, indexes: Boolean, also: String? -> Vision.open(dir, faces, clip, indexes, also) }
-    Function("visionClose") { Vision.close() }
+    AsyncFunction("checkModel") Coroutine { path: String, sha256: String -> withContext(Lanes.files) { Models.check(File(path), sha256) } }
+    AsyncFunction("visionOpen") Coroutine { dir: String, faces: Boolean, clip: String, indexes: Boolean, also: String? ->
+      withContext(Lanes.vision) { Vision.open(dir, faces, clip, indexes, also) }
+    }
+    // after the jobs already asked for (an analysis still running finishes first); doesn't wait for them
+    Function("visionClose") { Lanes.visionExecutor.execute { Vision.close() } }
     Function("visionState") { Vision.state() }
-    AsyncFunction("visionAnalyze") { jpeg: ByteArray, faces: Boolean, clips: List<String> -> Vision.analyze(jpeg, faces, clips) }
-    AsyncFunction("visionText") { ids: List<Int> -> Vision.textVector(ids.toIntArray()) }
-    AsyncFunction("faceCrop") { jpeg: ByteArray, box: List<Double>, px: Int -> if (box.size == 4) Vision.faceCrop(jpeg, box, px.coerceIn(32, 512)) else null }
-    AsyncFunction("indexPut") { item: String, clip: ByteArray?, boxes: List<List<Double>>, scores: List<Double>, embs: ByteArray -> SearchIndex.put(item, clip, boxes, scores, embs) }
+    AsyncFunction("visionAnalyze") Coroutine { jpeg: ByteArray, faces: Boolean, clips: List<String> -> withContext(Lanes.vision) { Vision.analyze(jpeg, faces, clips) } }
+    AsyncFunction("visionText") Coroutine { ids: List<Int> -> withContext(Lanes.vision) { Vision.textVector(ids.toIntArray()) } }
+    // no model: only decoding and cropping, next to whatever the models do
+    AsyncFunction("faceCrop") Coroutine { jpeg: ByteArray, box: List<Double>, px: Int ->
+      withContext(Dispatchers.Default) { if (box.size == 4) Vision.faceCrop(jpeg, box, px.coerceIn(32, 512)) else null }
+    }
+    AsyncFunction("indexPut") Coroutine { item: String, clip: ByteArray?, boxes: List<List<Double>>, scores: List<Double>, embs: ByteArray ->
+      withContext(Lanes.index) { SearchIndex.put(item, clip, boxes, scores, embs) }
+    }
     Function("indexRemove") { item: String -> SearchIndex.remove(item) }
     Function("indexHas") { item: String -> SearchIndex.has(item) }
     Function("indexCount") { SearchIndex.count() }
     Function("indexClear") { SearchIndex.clear() }
-    AsyncFunction("indexSave") { path: String, key: ByteArray, ad: ByteArray, extra: String -> SearchIndex.save(path, key, ad, extra) }
-    AsyncFunction("indexLoad") { path: String, key: ByteArray, ad: ByteArray, faces: Boolean -> SearchIndex.load(path, key, ad, faces) }
-    AsyncFunction("indexSearch") { query: ByteArray, limit: Int, minScore: Double -> SearchIndex.search(query, limit, minScore) }
-    AsyncFunction("indexSimilar") { item: String, limit: Int, minScore: Double -> SearchIndex.similar(item, limit, minScore) }
+    AsyncFunction("indexSave") Coroutine { path: String, key: ByteArray, ad: ByteArray, extra: String -> withContext(Lanes.index) { SearchIndex.save(path, key, ad, extra) } }
+    AsyncFunction("indexLoad") Coroutine { path: String, key: ByteArray, ad: ByteArray, faces: Boolean -> withContext(Lanes.index) { SearchIndex.load(path, key, ad, faces) } }
+    AsyncFunction("indexSearch") Coroutine { query: ByteArray, limit: Int, minScore: Double -> withContext(Lanes.index) { SearchIndex.search(query, limit, minScore) } }
+    AsyncFunction("indexSimilar") Coroutine { item: String, limit: Int, minScore: Double -> withContext(Lanes.index) { SearchIndex.similar(item, limit, minScore) } }
     Function("indexFacesOf") { item: String -> SearchIndex.facesOf(item) }
-    AsyncFunction("indexCluster") { threshold: Double, anchors: Map<String, List<String>>, rejects: Map<String, List<String>>, minFaces: Int ->
-      SearchIndex.cluster(threshold, anchors, rejects, minFaces)
+    AsyncFunction("indexCluster") Coroutine { threshold: Double, anchors: Map<String, List<String>>, rejects: Map<String, List<String>>, minFaces: Int ->
+      withContext(Lanes.index) { SearchIndex.cluster(threshold, anchors, rejects, minFaces) }
     }
     // every photo and video on the phone, for "Free up space" (BackupNative.kt)
     AsyncFunction("phoneMedia") { BackupNative.allMedia(appContext.reactContext!!) }

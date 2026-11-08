@@ -67,6 +67,10 @@ internal object Vision {
   /** indexes = false: a phone that only searches (another device indexes) loads only the text model. alsoClip: a
    *  second image model the phone that indexes runs on every photo too (MobileCLIP next to LAION), or null. */
   @Synchronized fun open(path: String, faces: Boolean, clip: String, indexes: Boolean, alsoClip: String?) {
+    try { openModels(path, faces, clip, indexes, alsoClip) } finally { shown = snapshot() }
+  }
+
+  private fun openModels(path: String, faces: Boolean, clip: String, indexes: Boolean, alsoClip: String?) {
     val d = File(path)
     val k = CLIPS[clip] ?: throw IllegalArgumentException("unknown model $clip")
     val a = alsoClip?.let { CLIPS[it] ?: throw IllegalArgumentException("unknown model $it") }?.takeIf { it !== k && indexes }
@@ -90,8 +94,13 @@ internal object Vision {
     }
   }
 
+  // Read on the JS thread, so it never waits for the lock: opening the models holds it for seconds. While they open it
+  // still says what was open before, and the app asks to open them again, which then finds them open.
+  @Volatile private var shown: Map<String, Any?> = snapshot()
   /** What is open: the model, and whether the text side (searching), the image side (indexing) and faces are. */
-  @Synchronized fun state(): Map<String, Any?> = mapOf(
+  fun state(): Map<String, Any?> = shown
+
+  private fun snapshot(): Map<String, Any?> = mapOf(
     "clip" to CLIPS.entries.firstOrNull { it.value === clipKind }?.key, "dir" to dir?.path,
     "text" to (text != null), "image" to (image != null), "faces" to (det != null && rec != null),
     "also" to (if (also != null) CLIPS.entries.firstOrNull { it.value === alsoKind }?.key else null),
@@ -100,6 +109,7 @@ internal object Vision {
   @Synchronized fun close() {
     listOf(image, also, text, det, rec).forEach { runCatching { it?.close() } }
     image = null; also = null; alsoKind = null; text = null; det = null; rec = null; dir = null
+    shown = snapshot()
   }
 
   // ---- one photo ----

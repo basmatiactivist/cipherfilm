@@ -12,7 +12,7 @@ import { Icon } from "../icons";
 import { Field, Problem, SwitchItem, useAppTheme } from "../ui";
 import { setShake, useShake } from "../shake";
 import { CHOICES, away, expectAway, setAutoLock, useAutoLock } from "../autolock";
-import { PRIVACY_URL } from "../store";
+import { privacyUrl } from "../store";
 import { reportUrl, summary, thisPhone } from "../report";
 import { text } from "../tokens";
 import { busyIcon } from "../Loader";
@@ -136,8 +136,8 @@ export default function Account() {
         <List.Subheader>{t("About")}</List.Subheader>
         <List.Item title={t("App version")} description={app ?? t("Unknown")} style={st.item} />
         <List.Item title={t("Server version")} description={serverVersion ?? t("Unknown")} style={st.item} />
-        <List.Item title={t("Privacy policy")} description="cipherfilm.app/privacy"
-          onPress={() => { expectAway(); Linking.openURL(PRIVACY_URL); }} style={st.item} />
+        <List.Item title={t("Privacy policy")} description={privacyUrl().replace("https://", "")}
+          onPress={() => { expectAway(); Linking.openURL(privacyUrl()); }} style={st.item} />
         <List.Item title={t("Report a problem")} description={t("Opens a form on GitHub")}
           onPress={() => setReport(true)} style={st.item} />
       </ScrollView>

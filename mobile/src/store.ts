@@ -1,3 +1,4 @@
+import { currentLang } from "./i18n";
 // Which build this is: "play" for Google Play (built with CF_STORE=play), "github" for the APK on GitHub releases
 // (Obtainium). app.config.js puts it into the app's config (extra.store) at build time. The Play build never offers
 // the explicit search model (docs/SEARCH.md; the server's permission for it stays as it is) and doesn't ask Android
@@ -21,5 +22,6 @@ export const isPlayBuild = () => buildStore() === "play";
 /** Whether this build may offer explicit search where an admin allowed it. */
 export const explicitSearchOffered = () => !isPlayBuild();
 
-/** The app's privacy policy (Google Play wants it reachable inside the app, before and after sign-in). */
-export const PRIVACY_URL = "https://cipherfilm.app/privacy";
+/** The app's privacy policy (Google Play wants it reachable inside the app, before and after sign-in), in the
+ *  language the app speaks. */
+export const privacyUrl = () => (currentLang() === "de" ? "https://cipherfilm.app/de/privacy" : "https://cipherfilm.app/privacy");

@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 import { forgetLists, loadCachedLibrary, loadLibrary, prefetchThumbs, pruneCache, type Item } from "./library";
 import { onWipe, session } from "./session";
 import { rememberLibrary } from "./backup";
-import { startSearch, warmSearch } from "./search/engine";
+import { libraryChanged, warmSearch } from "./search/engine";
 import { api } from "./api";
 
 // One copy of the decrypted list for the library and the viewer; brought up to date after uploads and live updates
@@ -76,7 +76,7 @@ export async function refreshLibrary(opts?: { quiet?: boolean }) {
       setTimeout(() => {
         if (!current()) return;
         rememberLibrary(forUser, now).catch(() => {}); // the backup skips what is already here
-        startSearch(now).catch(() => {}); // search: the index for what is new
+        libraryChanged(now).catch(() => {}); // search: the index for what is new (a run going on takes it along)
       }, 1500);
     });
   } catch (e) {

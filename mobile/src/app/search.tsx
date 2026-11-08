@@ -158,14 +158,14 @@ function Status({ p }: { p: Progress }) {
   if (p.phase === "ready" || p.phase === "off") return null;
   const text = p.phase === "download" ? `Downloading the search models · ${mb(p.done)} of ${mb(p.total)}`
     : p.phase === "waitWifi" ? `Waiting for Wi-Fi to download the search models${p.total ? ` (${mb(p.total)})` : ""}.`
-    : p.phase === "loading" ? (p.total ? `Getting search ready · ${p.done} of ${p.total}` : "Getting search ready…")
+    : p.phase === "loading" ? (p.total ? `Getting search ready · ${p.done} of ${p.total}` : p.message ? `${p.message}…` : "Getting search ready…")
     : p.phase === "indexing" ? `Indexing for search · ${p.done} of ${p.total}`
     : `Search stopped: ${p.message ?? "something went wrong"}`;
   return (
     <Pressable onPress={() => router.push("/search-settings")} style={[st.card, { backgroundColor: t.colors.surfaceVariant }]} accessibilityRole="button">
       <Text variant="bodyMedium">{text}</Text>
-      {p.phase === "download" || p.phase === "indexing" ? (
-        <ProgressBar progress={p.total ? p.done / p.total : 0} color={t.colors.primary} style={{ height: 5, borderRadius: 3, marginTop: 10, backgroundColor: t.colors.outlineVariant }} />
+      {p.phase === "download" || p.phase === "indexing" || p.phase === "loading" ? (
+        <ProgressBar progress={p.total ? p.done / p.total : 0} indeterminate={p.phase === "loading" && !p.total} color={t.colors.primary} style={{ height: 5, borderRadius: 3, marginTop: 10, backgroundColor: t.colors.outlineVariant }} />
       ) : null}
       {p.phase === "indexing" ? <Text variant="bodySmall" style={{ marginTop: 8, color: t.colors.onSurfaceVariant }}>Results improve as it goes.</Text> : null}
     </Pressable>

@@ -27,15 +27,15 @@ export default function SearchSettingsScreen() {
   const inset = useSafeAreaInsets();
   const [s, setS] = useState<SearchSettings | null>(null);
   // explicit search: offered only where an admin allowed it; the choice is the account's (docs/SEARCH.md). The
-  // account is fetched again here, so a permission the admin gave since sign-in shows at once.
+  // account is fetched again here, so a permission the admin gave since sign-in shows once it arrives. The screen
+  // doesn't wait for it: it shows the account as the phone knows it, and the rows follow when the answer comes.
   const me = useSession().me;
   const allowed = !!me?.user.nsfw && explicitSearchOffered(); // never in the Play build (src/store.ts)
-  const [fresh, setFresh] = useState(false);
   const [explicit, setExplicitState] = useState<boolean | null>(null);
   // the device that computes the index, when it isn't this phone (docs/SEARCH.md "One device indexes")
   const [indexer, setIndexer] = useState<{ device: string; last_seen: number } | null>(null);
   const here = indexesHere(me);
-  useEffect(() => { refreshMe().catch(() => null).finally(() => setFresh(true)); }, []);
+  useEffect(() => { refreshMe().catch(() => null); }, []);
   useEffect(() => { if (allowed) loadPeople().then((d) => setExplicitState(!!d.explicit), () => setExplicitState(false)); }, [allowed]);
   useEffect(() => {
     if (here) { setIndexer(null); return; }
@@ -96,7 +96,14 @@ export default function SearchSettingsScreen() {
     } catch (e) { setError(e instanceof Error ? e.message : "That didn't work."); } finally { setBusy(false); }
   };
 
-  if (!s || !fresh) return <View style={{ flex: 1, backgroundColor: t.colors.background }} />;
+  const header = (
+    <Appbar.Header style={{ backgroundColor: t.colors.background }}>
+      <Appbar.Action icon="back" accessibilityLabel="Back" onPress={() => router.back()} />
+      <Appbar.Content title="Search and people" titleStyle={text.page} />
+    </Appbar.Header>
+  );
+  // (the settings are read once per start, then kept in memory: this shows only for a moment, if at all)
+  if (!s) return <View style={{ flex: 1, backgroundColor: t.colors.background }}>{header}<View style={st.waiting}><Loader /></View></View>;
   const size = downloadSize(s.faces, allowed && explicit ? "laion-b32" : "mobileclip-s2", here);
   // what this phone would download for each model: all of it if it indexes, only the text side if it only searches
   const need = (c: "mobileclip-s2" | "laion-b32") => { const n = downloadSize(s.faces, c, here); return n ? `a ${mb(n)} download` : "already on this phone"; };
@@ -112,10 +119,7 @@ export default function SearchSettingsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: t.colors.background }}>
-      <Appbar.Header style={{ backgroundColor: t.colors.background }}>
-        <Appbar.Action icon="back" accessibilityLabel="Back" onPress={() => router.back()} />
-        <Appbar.Content title="Search and people" titleStyle={text.page} />
-      </Appbar.Header>
+      {header}
       <ScrollView contentContainerStyle={{ paddingBottom: inset.bottom + 32 }}>
         <View style={[st.card, { backgroundColor: s.enabled ? t.colors.primaryContainer : t.colors.surfaceVariant }]}>
           <View style={st.row}>
@@ -126,13 +130,16 @@ export default function SearchSettingsScreen() {
                   : p.phase === "waitWifi" ? "Waiting for Wi-Fi to download the models"
                   : p.phase === "indexing" ? `Indexing for search · ${p.done} of ${p.total}`
                   : p.phase === "ready" ? `Ready · ${p.total} photos and videos`
-                  : p.phase === "error" ? `Stopped: ${p.message}` : "Getting ready…"}
+                  : p.phase === "error" ? `Stopped: ${p.message}`
+                  : p.phase === "loading" && p.total ? `Getting search ready · ${p.done} of ${p.total}`
+                  : p.phase === "loading" && p.message ? `${p.message}…` : "Getting ready…"}
               </Text>
             </View>
             {busy ? <Loader /> : <Switch value={s.enabled} onValueChange={(v) => (v ? turnOn() : setOff(true))} accessibilityLabel="Search what's in your photos" />}
           </View>
-          {s.enabled && (p.phase === "download" || p.phase === "indexing") ? (
-            <ProgressBar progress={p.total ? p.done / p.total : 0} color={t.colors.primary} style={{ height: 5, borderRadius: 3, marginTop: 12, backgroundColor: t.colors.outlineVariant }} />
+          {s.enabled && (p.phase === "download" || p.phase === "indexing" || p.phase === "loading") ? (
+            // getting ready (opening the models, the server's entries) has no count yet: it moves without one
+            <ProgressBar progress={p.total ? p.done / p.total : 0} indeterminate={p.phase === "loading" && !p.total} color={t.colors.primary} style={{ height: 5, borderRadius: 3, marginTop: 12, backgroundColor: t.colors.outlineVariant }} />
           ) : null}
           {s.enabled && (p.phase === "waitWifi" || p.phase === "error") ? (
             <Button mode="contained" style={{ marginTop: 12, alignSelf: "flex-start" }} onPress={() => (p.phase === "waitWifi" ? change({ wifiOnly: false }) : restart())}>
@@ -228,4 +235,5 @@ const st = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", gap: 12 },
   hint: { paddingHorizontal: 16, paddingVertical: 4 },
   stacked: { flexDirection: "column", alignItems: "flex-end", gap: 4 },
+  waiting: { flex: 1, alignItems: "center", justifyContent: "center" },
 });

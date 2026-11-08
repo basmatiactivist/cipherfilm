@@ -20,6 +20,8 @@ version into the GitHub release notes, so a release cannot be published without 
   library the faces are grouped again for a while after naming); the photos now stay, with the new name.
 - Android: the privacy policy opens in German (cipherfilm.app/de/datenschutz) when the app speaks German.
 - Android: the server's notice for the public demo ("changes are turned off") is in the app's language.
+- Web: a reload right after signing in or unlocking could ask for the password again; the tab now finishes
+  keeping the key for reloads before it shows the library.
 
 ## [2.3.0] - 2026-11-08
 

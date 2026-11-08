@@ -26,12 +26,18 @@ function assertSaneKdf(k: KdfParams) {
 /** The server's version, for the sign-in screen ("" until the setup status or a session reported it). */
 export let serverVersion = "";
 
-function adopt(me: Me, masterKey: Uint8Array | null) {
+/** Keeping the key for a reload takes a few milliseconds (IndexedDB, WebCrypto); sign-in and unlock wait for it, so a
+ *  reload right after them finds it, but never longer than this (a slow or broken IndexedDB only costs the password
+ *  on the next reload). */
+const KEEP_WAIT = 1500;
+const kept = (userId: string, key: Uint8Array) => Promise.race([keepKey(userId, key), new Promise<void>((r) => setTimeout(r, KEEP_WAIT))]);
+
+async function adopt(me: Me, masterKey: Uint8Array | null): Promise<void> {
   if (me.server_version) serverVersion = me.server_version; // the sign-in screen after a sign-out shows it too
   setCsrf(me.csrf);
   mem.me = me;
   mem.masterKey = masterKey;
-  if (masterKey) void keepKey(me.user.id, masterKey); // for a reload of this tab (keep.ts)
+  if (masterKey) await kept(me.user.id, masterKey); // for a reload of this tab (keep.ts)
 }
 
 /** A kept key is used only if it opens what the server keeps sealed under the account's master key. */
@@ -47,7 +53,7 @@ export async function loadSession(): Promise<Me | null> {
     // the key this tab kept (keep.ts), if it is this account's
     let key = mem.me && mem.me.user.id === me.user.id ? mem.masterKey : null;
     if (!key) { const k = await keptKey(me.user.id); if (k && (await opensAccount(me, k))) key = k; }
-    adopt(me, key);
+    await adopt(me, key);
     return me;
   } catch {
     return null;
@@ -125,7 +131,7 @@ export async function setup(token: string, email: string, password: string): Pro
   // stored first, so a wrong token shows in the form; a lost response still ends with the words on screen
   return createChecked(acc, email, password, async () => {
     const me = await api<Me>("POST", "/api/setup", { setup_token: token.trim(), email: normEmail(email), ...acc.bundle });
-    adopt(me, acc.masterKey);
+    await adopt(me, acc.masterKey);
   });
 }
 
@@ -137,7 +143,7 @@ export async function acceptInvite(token: string, email: string, password: strin
   const acc = await accountFor(`invite\0${token}`, email, password);
   return createChecked(acc, email, password, async () => {
     const me = await api<Me>("POST", `/api/invites/${encodeURIComponent(token)}/accept`, acc.bundle);
-    adopt(me, acc.masterKey);
+    await adopt(me, acc.masterKey);
   });
 }
 
@@ -149,7 +155,7 @@ export async function login(email: string, password: string): Promise<void> {
   clearPlayer(); // a different account may sign in on this browser: drop anything the Service Worker still holds
   const { auth, kek } = await loginProof(s, password, kdf);
   const me = await api<Me>("POST", "/api/auth/login", { email: e, auth });
-  adopt(me, unlockMasterKey(s, e, kek, me.wrapped_master_pw));
+  await adopt(me, unlockMasterKey(s, e, kek, me.wrapped_master_pw));
 }
 
 /** Session cookie is still valid after a reload; only the password is needed to rebuild the keys. */
@@ -163,7 +169,7 @@ export async function unlock(password: string): Promise<void> {
   } catch {
     throw new Error("That password isn't right.");
   }
-  void keepKey(me.user.id, mem.masterKey);
+  await kept(me.user.id, mem.masterKey);
 }
 
 /** Sign-out never waits for the network: everything this tab holds is forgotten before this returns. The server is

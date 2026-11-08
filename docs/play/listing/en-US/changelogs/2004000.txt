@@ -1,0 +1,5 @@
+• Report a problem: Account › Report a problem opens a form on GitHub, with this phone's details only if you agree.
+• Naming a person no longer shows "No photos of this person" for a moment.
+• The privacy policy opens in German when the app is in German.
+• The public demo's notices are in German too.
+Needs your own Cipherfilm server: https://cipherfilm.app

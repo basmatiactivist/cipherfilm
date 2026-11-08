@@ -1,0 +1,5 @@
+• Problem melden: Konto › Problem melden öffnet ein Formular auf GitHub, mit den Angaben zu diesem Handy nur, wenn Sie zustimmen.
+• Beim Benennen einer Person erscheint nicht mehr kurz „Keine Fotos dieser Person“.
+• Die Datenschutzerklärung öffnet sich auf Deutsch, wenn die App Deutsch spricht.
+• Die Hinweise der öffentlichen Demo sind jetzt auch auf Deutsch.
+Benötigt Ihren eigenen Cipherfilm-Server: https://cipherfilm.app/de

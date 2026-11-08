@@ -7,6 +7,10 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-11-08
+
+"Report a problem" in every app, and fixes for naming people, the German privacy policy and reloads on the web.
+
 ### Added
 - "Report a problem" in every app (Android: Account, under About; web: the account menu; Mac: the Help menu and
   Settings). It opens GitHub's issue form in the browser and, if you agree, fills in this device's details: the app

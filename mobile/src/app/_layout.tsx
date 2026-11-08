@@ -4,15 +4,25 @@ import { Stack, router, useSegments } from "expo-router";
 import { PaperProvider } from "react-native-paper";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import * as SystemUI from "expo-system-ui";
+import { Image } from "expo-image";
 import { dark, light, paperTheme } from "../theme";
 import { Icon, type IconName } from "../icons";
-import { start, useSession } from "../session";
+import { onWipe, start, useSession } from "../session";
 import { clearOutbox, tidyOutbox } from "../outbox";
 import { runBackup, scheduleBackground } from "../backup";
 import { startShake } from "../shake";
 import { startAutoLock } from "../autolock";
 import { liveUnlocked } from "../live";
 import { startLiveSync } from "../liveSync";
+
+// expo-image keeps decoded pictures (the viewer's previews, faces) in its memory cache beyond the
+// session that decrypted them: dropped at every lock and sign-out, and once more after the screens that showed them
+// have closed (a picture goes into that cache when its view goes away). Never on disk: those use cachePolicy "memory".
+onWipe(() => {
+  const drop = () => { Image.clearMemoryCache().catch(() => {}); };
+  drop();
+  setTimeout(drop, 1500);
+});
 
 const themes = { light: paperTheme(light, false), dark: paperTheme(dark, true) };
 // screens that show the library: none stays on screen while it is locked

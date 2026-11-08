@@ -125,6 +125,8 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   shareFiles(paths: string[], mimes: string[]): Promise<boolean>;
   /** takes back the read access the last share gave */
   revokeShared(): void;
+  /** removes the outbox's copies once they are past the grace period, even if the app isn't running then */
+  outboxSweepLater(): void;
   saveToLibrary(path: string, name: string, mime: string): Promise<string>;
   trashFromLibrary(uris: string[]): Promise<boolean>;
 }

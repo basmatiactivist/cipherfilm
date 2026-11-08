@@ -1,8 +1,9 @@
 // Decrypted copies for leaving the app: sharing to another app, or saving into the phone's own photo library. They are
 // written to one folder in the app's cache, which Android never backs up and other apps can't list; a share hands out
 // read access to exactly the shared files. The folder is emptied (and that access taken back) before every new share,
-// when the app starts, and when it comes back after a while (the receiving app may still be reading right after the
-// share sheet closes).
+// when the app starts, at every lock, and when it comes back after a while (the receiving app may still be reading
+// right after the share sheet closes). If Android ends the app before any of that, a native job removes the copies
+// after the same while (Outbox.kt), so they never wait for the next start.
 import { Directory, File, Paths } from "expo-file-system";
 import { getSodium } from "@crypto/sodium";
 import { decryptSegment } from "@crypto/file";
@@ -15,6 +16,11 @@ import { away } from "./autolock";
 const OUT = () => new Directory(Paths.cache, "cf-out");
 const KEEP_FOR = 15 * 60 * 1000;
 let lastShare = 0;
+
+/** The outbox has new decrypted copies: the native job removes them after KEEP_FOR even if the app isn't running. */
+function sweepLater() {
+  try { N.outboxSweepLater(); } catch { /* the app's own clean-ups still run */ }
+}
 
 export function clearOutbox() {
   try { N.revokeShared(); } catch { /* nothing shared */ }
@@ -73,6 +79,7 @@ export async function prepareShare(items: Item[], onProgress: (done: number, tot
   clearOutbox();
   const dir = new Directory(OUT(), (await getSodium()).to_hex((await getSodium()).randombytes_buf(16)));
   dir.create({ intermediates: true, idempotent: true });
+  sweepLater();
   const total = items.reduce((a, i) => a + i.size, 0);
   let done = 0;
   const used = new Set<string>();
@@ -90,6 +97,7 @@ export async function prepareShare(items: Item[], onProgress: (done: number, tot
 export async function saveItems(items: Item[], onProgress: (done: number, total: number) => void) {
   const dir = new Directory(OUT(), "save");
   dir.create({ intermediates: true, idempotent: true });
+  sweepLater(); // a copy cut short by a crash mid-save, too
   const total = items.reduce((a, i) => a + i.size, 0);
   let done = 0;
   const used = new Set<string>();

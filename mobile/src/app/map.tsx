@@ -8,13 +8,15 @@ import { Appbar, Button, IconButton, Text } from "react-native-paper";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Camera, GeoJSONSource, Layer, Map as MapView, ViewAnnotation, type CameraRef, type ViewAnnotationRef, type GeoJSONSourceRef, type MapRef } from "@maplibre/maplibre-react-native";
-import { ThumbView } from "../../modules/cf-native/src/CfNativeModule";
+import N, { ThumbView } from "../../modules/cf-native/src/CfNativeModule";
 import { NAV_HEIGHT, NavBar } from "../NavBar";
 import { Gallery } from "../Gallery";
 import { refreshLibrary, useLibrary } from "../libraryStore";
 import { areaTitle, coords } from "../places";
 import { setViewerList } from "../viewerList";
 import { useSession } from "../session";
+import { relocate } from "../relocate";
+import { askMediaLocation } from "../mediaAccess";
 import { mapCacheReady, mapPrivacyUrl, mapProviderLong, setMapOn, useMapOn } from "../mapConsent";
 import { expectAway } from "../autolock";
 import { Icon } from "../icons";
@@ -33,6 +35,8 @@ const WORLD_CENTER: [number, number] = [10, 25];
 
 type Marker = { key: string; lngLat: [number, number]; count: number; cluster?: number; id?: string; cover?: string };
 
+let askedLocation = false;
+
 export default function MapScreen() {
   const th = useAppTheme();
   const inset = useSafeAreaInsets();
@@ -43,6 +47,16 @@ export default function MapScreen() {
   useEffect(() => { if (on) mapCacheReady().then(() => setCacheOk(true)); }, [on]);
   const { items } = useLibrary();
   useEffect(() => { if (!items) refreshLibrary(); }, []);
+  // photos from this phone that arrived without where they were taken get it now (relocate.ts); once per run of the
+  // app the permission for it is asked here, where it is clear what it is for
+  const loaded = !!items;
+  useEffect(() => {
+    if (!on || !loaded) return;
+    (async () => {
+      if (!askedLocation && N.backupState().media !== "none" && !N.mediaLocationAllowed()) { askedLocation = true; await askMediaLocation(); }
+      relocate({ force: true }).catch(() => {});
+    })();
+  }, [on, loaded]);
   const located = useMemo(() => (items ?? []).flatMap((it) => { const c = coords(it); return c ? [{ it, ...c }] : []; }), [items]);
   const byId = useMemo(() => new Map(located.map((l) => [l.it.id, l.it])), [located]);
   const data = useMemo(() => ({

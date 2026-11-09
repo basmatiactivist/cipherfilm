@@ -123,6 +123,8 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   /** an https page in the browser, never an app that claims the address; false when nothing could open it */
   openInBrowser(url: string): boolean;
   pickMedia(): Promise<string[]>;
+  // whether what the app reads of photos keeps where they were taken (ACCESS_MEDIA_LOCATION, always before Android 10)
+  mediaLocationAllowed(): boolean;
   /** only files in the outbox (cache/cf-out, outbox.ts) */
   shareFiles(paths: string[], mimes: string[]): Promise<boolean>;
   /** takes back the read access the last share gave */

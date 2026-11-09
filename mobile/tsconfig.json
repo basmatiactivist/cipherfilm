@@ -22,6 +22,7 @@
     "**/*.tsx",
     "../web/src/crypto/*.ts",
     "../web/src/places/places.ts",
+    "../web/src/places/videoLocation.ts",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
   ],

@@ -1,3 +1,4 @@
+import { fileVideoLocation } from "./places/videoLocation";
 
 export const THUMB_PX = 640; // sharp enough for a wide photo stretched across a row on a 2x screen
 export const PREVIEW_PX = 2048;
@@ -40,6 +41,10 @@ export async function readMeta(f: File, dims?: { width: number; height: number; 
     } catch {
       /* no readable EXIF: file date stays */
     }
+  }
+  if (kindOf(f) === "video") {
+    const g = await fileVideoLocation(f);
+    if (g) meta.gps = g;
   }
   return meta;
 }

@@ -8,7 +8,13 @@ import UniformTypeIdentifiers
 enum Outbox {
   static let dir: URL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent((Bundle.main.bundleIdentifier ?? "app.cipherfilm.mac") + "/out", isDirectory: true)
 
+  /** The running Share…, stopped at lock and sign-out (cancel()) so it decrypts nothing after. */
+  @MainActor static var shareTask: Task<Void, Never>?
+
   static func clear() { try? FileManager.default.removeItem(at: dir) }
+
+  /** Lock or sign-out: a Share… still preparing stops, and the folder goes (AppModel.wipe). */
+  @MainActor static func cancel() { shareTask?.cancel(); shareTask = nil }
 
   static func sweep() {
     guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.creationDateKey]) else { return }
@@ -20,11 +26,14 @@ enum Outbox {
   /** The original, decrypted into its own folder under its own name. */
   static func file(_ it: Item, _ vault: Vault) async throws -> URL {
     guard it.openable, let folder = ServerId.folder(in: dir, it.id) else { throw CryptoError.failed("this item can't be read") }
+    // only while the library is unlocked: after a lock nothing more is decrypted, and what was being written goes
+    guard vault.isOpen else { throw CancellationError() }
     sweep()
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
     guard let url = FileName.inside(folder, FileName.of(it)) else { throw CryptoError.failed("bad file name") }
     if !FileManager.default.fileExists(atPath: url.path) {
       try await vault.saveOriginal(it, to: url)
+      guard vault.isOpen, !Task.isCancelled else { try? FileManager.default.removeItem(at: folder); throw CancellationError() }
       try? FileManager.default.setAttributes([.creationDate: it.date, .modificationDate: it.date], ofItemAtPath: url.path)
     }
     return url
@@ -52,14 +61,18 @@ enum Outbox {
     guard let vault = model.vault, !items.isEmpty else { return }
     let window = NSApp.keyWindow ?? NSApp.windows.first { $0.isVisible && $0.canBecomeMain }
     let at = window.map { $0.convertPoint(fromScreen: NSEvent.mouseLocation) }
-    Task {
+    shareTask?.cancel()
+    shareTask = Task {
       var urls: [URL] = []
       for (n, it) in items.prefix(50).enumerated() {
+        guard !Task.isCancelled, vault.isOpen else { model.working = nil; return }
         model.working = items.count == 1 ? "Preparing to share…" : "Preparing \(n + 1) of \(min(items.count, 50)) to share…"
-        do { urls.append(try await file(it, vault)) } catch { model.alert = "\(it.name) couldn't be prepared: \(error.localizedDescription)" }
+        do { urls.append(try await file(it, vault)) }
+        catch is CancellationError { model.working = nil; return }
+        catch { model.alert = "\(it.name) couldn't be prepared: \(error.localizedDescription)" }
       }
       model.working = nil
-      guard !urls.isEmpty, let view = window?.contentView else { return }
+      guard !Task.isCancelled, vault.isOpen, !urls.isEmpty, let view = window?.contentView else { return }
       let p = at.map { view.convert($0, from: nil) } ?? NSPoint(x: view.bounds.midX, y: view.bounds.midY)
       NSSharingServicePicker(items: urls).show(relativeTo: NSRect(x: p.x, y: p.y, width: 1, height: 1), of: view, preferredEdge: .minY)
     }

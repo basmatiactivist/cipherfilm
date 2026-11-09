@@ -289,6 +289,7 @@ final class AppModel {
     liveTask?.cancel(); liveTask = nil; liveFlush?.cancel(); liveFlush = nil; _ = liveBatch.take(); liveV = nil
     search.stop(clear: true)
     exporter.stop()
+    Outbox.cancel()
     // after a lock the queue stays (saved in the account's folder) and goes on after the next unlock; once the session
     // is gone it is not this Mac's to finish (it never goes on in another account)
     vault?.close()

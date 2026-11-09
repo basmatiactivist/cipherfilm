@@ -38,7 +38,12 @@ jobs:
       sums: ${{ steps.sums.outputs.sums }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with: { persist-credentials: false }  # no token left in .git for later steps
+        with: { persist-credentials: false, fetch-depth: 0 }  # no token left in .git; the history for the check below
+      - name: The commit is on master
+        # the signing keys only for what is on master, also for a build started by hand (the release checks it too)
+        run: |
+          git merge-base --is-ancestor HEAD origin/master \
+            || { echo "$GITHUB_REF_NAME points at $(git rev-parse HEAD), which is not on master: not built"; exit 1; }
       - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with: { distribution: temurin, java-version: "17" }
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

@@ -9,7 +9,8 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [2.5.0] - 2026-11-09
 
-Security fixes from an audit of the whole product, and the Android build is signed apart from where it is built.
+Security fixes from an audit of the whole product, limits for the public demo, and the Android build is signed apart
+from where it is built.
 
 ### Security
 - Android: libraries other modules bring along are raised past known security fixes: Gson 2.11.0 (from 2.8.6, in
@@ -22,6 +23,11 @@ Security fixes from an audit of the whole product, and the Android build is sign
   account can't hold up everyone else; incremental lists (`?since`) read only as many rows as one page carries.
 - Server: a part sent again while it is already stored needs room in the storage limit while it is received.
 - Server: the public demo login gets no device cookie, so one visitor's wrong passwords can't block the others.
+- Server: the public demo login is limited per visitor (address): requests (10 a second on average, 300 at once),
+  sign-ins (30 an hour, counted even when they succeed) and list requests (one visitor can't hold the account's
+  turns). It gets no search models through the server, and the server passes models through to older apps only two
+  at a time. Other accounts on the same server, an app-store reviewer's included, are not limited this way.
+- Server: request headers are capped at 64 KB.
 - Server: deleting an account also removes its invite and its mentions in the activity log; only the entry of the
   deletion itself keeps the e-mail address, as the delete-account page says.
 - Restore: what happened to the accounts after the backup stays as it is: changed passwords and recovery keys,

@@ -44,6 +44,8 @@ type App struct {
 	loginIP    *limiter
 	loginAcct  *limiter         // per (account, source)
 	loginDev   *limiter         // per account, for browsers carrying a valid device cookie
+	demoReqs   *demoBuckets     // requests of demo accounts, per source (demo.go)
+	demoSignIn *limiter         // sign-ins to demo accounts, per source (demo.go)
 	tickets    sync.Map         // recovery tickets: token hash -> ticket
 	resMu      sync.Mutex       // guards reserved
 	auxMu      sync.Mutex       // pairs a thumbnail or preview count with its file
@@ -114,6 +116,8 @@ func newApp(dataDir string) (*App, error) {
 		loginIP:    newLimiter(15*time.Minute, 30),
 		loginAcct:  newLimiter(15*time.Minute, 10),
 		loginDev:   newLimiter(15*time.Minute, 20),
+		demoReqs:   newDemoBuckets(),
+		demoSignIn: newLimiter(demoSignInWin, demoSignIns),
 		now:        time.Now,
 		reserved:   map[string]int64{},
 		lists:      map[string]chan struct{}{},
@@ -283,6 +287,11 @@ func (a *App) auth(admin bool, next func(http.ResponseWriter, *http.Request, *us
 		}
 		if s.renewed {
 			setSessionCookie(w, c.Value)
+		}
+		if a.isDemo(u) && !a.demoReqs.take(limiterIP(a.clientIP(r))) {
+			w.Header().Set("Retry-After", "10")
+			fail(w, http.StatusTooManyRequests, "too many requests, try again in a few seconds")
+			return
 		}
 		if a.isDemo(u) && !demoAllows(r) {
 			if demoIndexWrite[r.Pattern] {

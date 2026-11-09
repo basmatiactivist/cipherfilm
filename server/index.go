@@ -358,9 +358,19 @@ var modelURLs = func() map[string]string {
 func (a *App) getModel(w http.ResponseWriter, r *http.Request, u *user, _ *session) {
 	name := r.PathValue("name")
 	url, ok := modelURLs[name]
-	// the explicit-search model goes only to people the admin allowed it (off by default)
-	if !ok || (strings.HasPrefix(name, "nsfw-") && !u.NSFW) {
+	// the explicit-search model goes only to people the admin allowed it (off by default); never to a public demo
+	// login: its password is published, and each request makes this server fetch and send up to 143 MB
+	if !ok || (strings.HasPrefix(name, "nsfw-") && !u.NSFW) || a.isDemo(u) {
 		fail(w, 404, "not found")
+		return
+	}
+	// a few at once for the whole server: each one is a download and an upload of the full file
+	select {
+	case modelSlots <- struct{}{}:
+		defer func() { <-modelSlots }()
+	default:
+		w.Header().Set("Retry-After", "60")
+		fail(w, 503, "busy, try again in a minute")
 		return
 	}
 	// Apps since 2.1.4 download from Hugging Face themselves. Older ones ask here and follow no redirect (their
@@ -395,6 +405,9 @@ func (a *App) getModel(w http.ResponseWriter, r *http.Request, u *user, _ *sessi
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(idleWriter{w, http.NewResponseController(w)}, resp.Body)
 }
+
+// modelSlots: how many model downloads the server passes through at once.
+var modelSlots = make(chan struct{}, 2)
 
 // modelClient fetches a pinned model for an older app: Hugging Face's redirect to its CDN is followed (https only),
 // and a host that doesn't start answering within half a minute is given up on.

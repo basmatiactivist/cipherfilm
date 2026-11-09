@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"log"
 	"net/http"
@@ -512,11 +513,19 @@ const (
 // listWriteTime, so it cannot hold its turn and its page for ever.
 func (a *App) listing(h func(http.ResponseWriter, *http.Request, *user, *session)) func(http.ResponseWriter, *http.Request, *user, *session) {
 	return func(w http.ResponseWriter, r *http.Request, u *user, s *session) {
+		key := u.ID
+		if a.isDemo(u) {
+			// every visitor shares the demo login: turns per source (one of 64 groups, so the map stays small),
+			// so one visitor holding the account's turns doesn't stop everyone else
+			h := fnv.New32a()
+			h.Write([]byte(limiterIP(a.clientIP(r))))
+			key = fmt.Sprintf("demo|%d", h.Sum32()%64)
+		}
 		a.listMu.Lock()
-		turn := a.lists[u.ID]
+		turn := a.lists[key]
 		if turn == nil {
 			turn = make(chan struct{}, listPerUser)
-			a.lists[u.ID] = turn
+			a.lists[key] = turn
 		}
 		a.listMu.Unlock()
 		select {

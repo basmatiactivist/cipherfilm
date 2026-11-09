@@ -13,6 +13,13 @@ a seed, `seed.tar` (a backup made with `scripts/backup.sh`), restored by `reset.
 reviewer's included, so it runs only daily. What happened to the accounts since the seed was made stays as it is: a
 changed password, a disabled or deleted account and the activity log are taken over from the replaced data.
 
+Limits, because the login is published (server/demo.go): per visitor's address, 10 requests a second on average
+(300 at once), 30 sign-ins an hour and its own turns for the library lists; no search models through the server.
+Other accounts on the server, such as an app-store reviewer's, are not limited this way. A flood from many addresses
+can only be stopped in front of the server: put a CDN such as Cloudflare in front and let 80/443 in only from it.
+On a host shared with a private instance, give the demo less CPU weight (`cpu_shares: 512` for its app) so the
+private one stays responsive.
+
 ## 1. The server
 
 A normal install from the Cipherfilm checkout ([docs/SELF-HOSTING.md](../../docs/SELF-HOSTING.md)), on a public

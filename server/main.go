@@ -189,6 +189,7 @@ func main() {
 		Handler:           app.handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    64 << 10, // the apps send a few small headers; Go's default is 1 MB
 	}
 	log.Printf("listening on %s", addr)
 	log.Fatal(srv.ListenAndServe())

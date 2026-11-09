@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 )
 
 // Public demo accounts (DEMO_ACCOUNTS): one login published for anyone to try the apps. Everything is end-to-end
@@ -67,4 +69,60 @@ const demoIndexer = "demo"
 // demoAllows says whether a demo account may make this request; r.Pattern is the route it matched.
 func demoAllows(r *http.Request) bool {
 	return r.Method == http.MethodGet || r.Method == http.MethodHead || demoAllowed[r.Pattern]
+}
+
+// The demo's published login is shared by everyone, so what limits it is the visitor's address, not the account:
+// requests per source (a token bucket: a steady rate with room for a gallery's first burst) and sign-ins per source
+// (each costs an Argon2 check). Only demo accounts are limited this way; every other account on the same server, an
+// app-store reviewer's included, is not.
+const (
+	demoRate      = 10  // requests per second per source, on average
+	demoBurst     = 300 // and this many at once (a gallery's first screen and its thumbnails)
+	demoSignIns   = 30  // sign-ins per source and hour
+	demoSignInWin = time.Hour
+)
+
+type bucket struct {
+	tokens float64
+	at     time.Time
+}
+
+// demoBuckets is the per-source request budget of demo accounts.
+type demoBuckets struct {
+	mu    sync.Mutex
+	m     map[string]*bucket
+	now   func() time.Time
+	swept time.Time
+}
+
+func newDemoBuckets() *demoBuckets { return &demoBuckets{m: map[string]*bucket{}, now: time.Now} }
+
+// take spends one request of the source's budget; false when it is used up.
+func (d *demoBuckets) take(src string) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	t := d.now()
+	if len(d.m) > 10000 && t.Sub(d.swept) > time.Minute {
+		d.swept = t
+		for k, b := range d.m {
+			if t.Sub(b.at) > demoBurst*time.Second/demoRate {
+				delete(d.m, k) // full again by now: the same as no entry
+			}
+		}
+	}
+	b := d.m[src]
+	if b == nil {
+		b = &bucket{tokens: demoBurst, at: t}
+		d.m[src] = b
+	}
+	b.tokens += t.Sub(b.at).Seconds() * demoRate
+	if b.tokens > demoBurst {
+		b.tokens = demoBurst
+	}
+	b.at = t
+	if b.tokens < 1 {
+		return false
+	}
+	b.tokens--
+	return true
 }

@@ -187,6 +187,12 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 	// bucket is keyed by (account, source): failures from one source never lock the real user out from another.
 	ip := limiterIP(a.clientIP(r))
 	u, err := a.userByEmail(email)
+	// the demo's published password signs in for everyone, so a success clears no counter there: each source gets a
+	// number of demo sign-ins per hour, counted before the Argon2 check (demo.go)
+	if err == nil && a.isDemo(u) && !a.demoSignIn.take("demo|"+ip) {
+		fail(w, 429, "too many sign-ins to the demo from here, try later")
+		return
+	}
 	slots := []slot{{a.loginIP, "login|" + ip, false}, {a.loginAcct, "login|" + email + "|" + ip, true}}
 	known := err == nil && a.knownDevice(r, u)
 	if known {

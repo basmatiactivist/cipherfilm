@@ -13,6 +13,7 @@ import (
 	"net/mail"
 	"strings"
 	"time"
+	"unicode"
 )
 
 var b64 = base64.RawURLEncoding
@@ -45,6 +46,13 @@ func normEmail(e string) (string, bool) {
 	e = strings.ToLower(strings.TrimSpace(e))
 	if len(e) > 254 || len(e) < 3 {
 		return "", false
+	}
+	// no control characters: net/mail lets C1 controls (U+0080..U+009F) through, and an address is printed raw by the
+	// server commands in an operator's terminal (cipherfilm list-users), where they could rewrite what it shows
+	for _, c := range e {
+		if !unicode.IsPrint(c) {
+			return "", false
+		}
 	}
 	a, err := mail.ParseAddress(e)
 	if err != nil || a.Address != e {

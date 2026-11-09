@@ -10,7 +10,15 @@ version into the GitHub release notes, so a release cannot be published without 
 ### Changed
 - Server image: Alpine instead of distroless, so the container has a shell. The server commands now work in
   Portainer's (or any) container console: open it with `/bin/sh` and type `cipherfilm status` (docs/SERVER-COMMANDS.md).
-  `cipherfilm` on its own lists the commands. The app still runs as the same unprivileged user, read-only.
+  `cipherfilm` on its own lists the commands. The app still runs as the same unprivileged user (compose.yaml keeps it
+  read-only, without capabilities); nothing is added from the package index, so the image is the pinned base plus the app.
+- Server commands refuse to run as root on data the server owns as its own user (a console opened as root): the files
+  they create would lock the server out. Typing `/app` in the console no longer gets as far as touching the data: a
+  second server stops at the busy port first.
+
+### Security
+- E-mail addresses with control characters are refused (invites, sign-up, sign-in), so none can rewrite what the
+  server commands print in an operator's terminal.
 
 ## [2.5.0] - 2026-11-09
 

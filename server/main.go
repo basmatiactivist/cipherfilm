@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -121,6 +122,10 @@ func main() {
 		dataDir = "/data"
 	}
 	if len(os.Args) > 1 {
+		if err := notRootOnTheirData(dataDir); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 		switch os.Args[1] {
 		case "backup":
 			if err := runBackup(dataDir); err != nil {
@@ -172,6 +177,12 @@ func main() {
 			os.Exit(2)
 		}
 	}
+	// the port first: a second start next to a running server (`/app` typed in its console) stops here, before it
+	// touches the data (setup token, the janitor's cleanup of uploads in progress)
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatalf("can't listen on %s: %v. Is Cipherfilm already running here? Its commands: cipherfilm help", addr, err)
+	}
 	app, err := newApp(dataDir)
 	if err != nil {
 		log.Fatal(err)
@@ -194,5 +205,23 @@ func main() {
 		MaxHeaderBytes:    64 << 10, // the apps send a few small headers; Go's default is 1 MB
 	}
 	log.Printf("listening on %s", addr)
-	log.Fatal(srv.ListenAndServe())
+	log.Fatal(srv.Serve(ln))
+}
+
+// notRootOnTheirData refuses a server command run as root on data the server owns as another user (a console
+// opened as root, `docker exec -u root`): files it creates (backup/, backup.lock, the database's -wal and -shm)
+// would belong to root, and the server couldn't open them any more. Where the server itself runs as root, so does this.
+func notRootOnTheirData(dataDir string) error {
+	if os.Geteuid() != 0 {
+		return nil
+	}
+	fi, err := os.Stat(dataDir)
+	if err != nil {
+		return nil
+	}
+	if st, ok := fi.Sys().(*syscall.Stat_t); ok && st.Uid != 0 {
+		return fmt.Errorf("this is running as root, but %s belongs to user %d: files it creates would lock the server out.\n"+
+			"Run it as the server's user: in Portainer leave the console's User field empty; with docker, leave out -u root", dataDir, st.Uid)
+	}
+	return nil
 }

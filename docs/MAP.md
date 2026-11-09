@@ -6,9 +6,19 @@ apps. A photo's details show the place's name and a small map of its spot. Searc
 
 ## What stays on the device
 
-- **Coordinates.** A photo's location is part of its encrypted metadata (`gps` in `meta_enc`, docs/CRYPTO.md), written by
-  the app or tool that uploaded it. The server stores it encrypted and never sees it. The apps decrypt it with the rest of
-  the metadata and draw and cluster the photos on the device.
+- **Coordinates.** A photo's or video's location is part of its encrypted metadata (`gps` in `meta_enc`,
+  docs/CRYPTO.md), written by the app or tool that uploaded it: from a photo's EXIF, from a video's `udta/©xyz` (Android,
+  most cameras) or its `com.apple.quicktime.location.ISO6709` key (iPhone). The server stores it encrypted and never
+  sees it. The apps decrypt it with the rest of the metadata and draw and cluster the photos on the device.
+- **Android reads the originals.** From Android 10 the phone hands an app copies without the location unless it holds
+  "where photos were taken" (ACCESS_MEDIA_LOCATION); the photo picker behind the Upload button does the same. The app
+  asks for it where the backup is set up and before picking (Android grants it without a dialog), and reads the
+  original then. The uploaded file is always the original as the phone gives it, byte for byte.
+- **Added afterwards.** What arrived without its location gets it while the map is on: the Android app looks up the
+  photos and videos it uploaded on the phone (same name and size) and reads their originals; the web app reads videos'
+  header boxes from the encrypted originals (photos already got theirs at upload). Either writes the location into the
+  item's encrypted metadata (`PUT /api/items/{id}/meta`), and the other devices get it with their next change list.
+  A device remembers what it looked at, so this happens once.
 - **Thumbnails.** The markers show the photos' thumbnails, decrypted on the device like in the timeline.
 - **Place names.** They come from a file bundled with the apps, `web/src/places/places-v1.bin` (every place with at least
   1,000 inhabitants, with its region and country, from GeoNames), and are looked up on the device: the place whose

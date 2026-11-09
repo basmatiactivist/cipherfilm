@@ -5,6 +5,28 @@ All notable changes to Cipherfilm are listed here. The format follows
 [Semantic Versioning](https://semver.org/). The release workflow copies the section of the tagged
 version into the GitHub release notes, so a release cannot be published without an entry here.
 
+## [2.6.1] - 2026-11-10
+
+Photos and videos keep where they were taken, however they are uploaded, and what arrived without it gets it.
+
+### Fixed
+- Android: photos added with the Upload button arrived without their location (Android's photo picker hands out
+  copies without it), so they never showed on the map. The app now reads the original, asking first for "where photos
+  were taken" (Android grants it without a dialog), and keeps the photo's real file name instead of its number.
+- Android: photos backed up without that permission arrived without their location. While the map is on, photos and
+  videos this phone uploaded without their location get it from the original still on the phone, once the
+  permission is there (the map asks for it once).
+- Videos got no location in any app. The web, Android and Mac apps and the upload tool now read it from the video
+  (udta/©xyz as Android and most cameras write it, and the iPhone's location key), and with the map on the web app
+  adds it to videos uploaded before, reading only the video's header boxes from the encrypted original.
+- Android: a single photo on the map showed an empty circle instead of its picture.
+- Android: EXIF is read through the file itself, so HEIC photos keep their date and place too.
+
+### Added
+- Server: `PUT /api/items/{id}/meta` lets an app replace a finished item's encrypted details (for the location added
+  afterwards). The server can't read them, as at upload; the change reaches the other devices like any other, and the
+  public demo refuses it.
+
 ## [2.6.0] - 2026-11-09
 
 Your photos on a map, in every app: where they were taken, found by place, with the locations end-to-end encrypted.

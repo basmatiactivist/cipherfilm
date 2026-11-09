@@ -82,12 +82,16 @@ async function run(): Promise<number> {
   const me = session().me;
   if (!me || me.demo || !session().masterKey) return 0;
   // without the permission Android hands out copies without the location: nothing to learn, and nothing marked done
-  if (!N.mediaLocationAllowed() || N.backupState().media === "none") return 0;
+  const access = N.backupState().media;
+  if (!N.mediaLocationAllowed() || access === "none") return 0;
   const userId = me.user.id;
   const done = await loadDone(userId);
   const todo = lacking(libraryItems(), done);
   if (!todo.length) return 0;
   const found = await matchOnPhone(todo, await N.phoneMedia());
+  // with the whole library readable, what isn't on this phone came from elsewhere: not looked for again (with only
+  // some photos allowed, it may be among the others)
+  if (access === "full") for (const it of todo) if (!found.has(it)) done.add(it.id);
   const s = await getSodium();
   let added = 0;
   for (const [it, m] of found) {

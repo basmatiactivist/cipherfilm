@@ -1,0 +1,6 @@
+• Behoben: Fotos über „Hochladen“ oder aus einem Backup ohne Zugriff auf den Aufnahmeort behalten ihren Ort jetzt und erscheinen auf der Karte.
+• Früher von diesem Handy hochgeladene Fotos und Videos erhalten ihren Ort, solange die Karte an ist.
+• Auch Videos erscheinen auf der Karte.
+• Über „Hochladen“ gewählte Fotos behalten ihren echten Dateinamen.
+• Einzelne Fotos auf der Karte zeigen ihr Bild.
+Benötigt Ihren eigenen Cipherfilm-Server: https://cipherfilm.app/de

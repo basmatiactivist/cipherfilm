@@ -114,7 +114,7 @@ enum DebugDriver {
       let got = names.filter { n in m.items.contains { $0.name == n } }
       check(got.count == names.count && m.items.count >= before + names.count, "uploaded \(got.count)/\(names.count) files and they decrypt")
       for n in names {
-        if let it = m.items.first(where: { $0.name == n }) { log("  \(n): \(it.kind) \(Int(it.meta?.width ?? 0))x\(Int(it.meta?.height ?? 0)) thumb \(it.hasThumb) preview \(it.hasPreview)") }
+        if let it = m.items.first(where: { $0.name == n }) { log("  \(n): \(it.kind) \(Int(it.meta?.width ?? 0))x\(Int(it.meta?.height ?? 0)) thumb \(it.hasThumb) preview \(it.hasPreview) gps \(it.meta?.gps.map { "\($0.lat),\($0.lon)" } ?? "none")") }
       }
       // what the Mac uploaded must decrypt byte for byte
       if let n = names.first, let it = m.items.first(where: { $0.name == n }), let v = m.vault {

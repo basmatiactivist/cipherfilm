@@ -14,6 +14,8 @@ apps. A photo's details show the place's name and a small map of its spot. Searc
   1,000 inhabitants, with its region and country, from GeoNames), and are looked up on the device: the nearest place
   within 50 km, else only the country (within 300 km), at sea nothing. No coordinates are sent anywhere to name them.
   `scripts/places.mjs` builds the file; it is the same for everyone, so it says nothing about anyone's photos.
+  The Android app shows the country in its own language ("Zürich, Schweiz"), from Android's translations; search
+  finds a country by either name ("schweiz", "switzerland").
 - **Search by place** works over those names, on the device, like the rest of search (docs/SEARCH.md).
 
 ## What the map's server sees

@@ -3,10 +3,37 @@
 import { Asset } from "expo-asset";
 import { File } from "expo-file-system";
 import { fold, label, Places, summary, type Place } from "@places/places";
-import { t } from "./i18n";
+import { locale, t } from "./i18n";
 import type { Item } from "./library";
 
 export { label, type Place };
+
+type Hit = ReturnType<Places["nearest"]>;
+
+// The place file names countries in English; the app shows them in its own language (Android's translations,
+// once per language). In English, or when that fails, the file's names stay.
+let names: { lang: string; map: Record<string, string> } | null = null;
+function countryNames(p: Places): Record<string, string> {
+  const lang = locale().slice(0, 2);
+  if (lang === "en") return {};
+  if (names?.lang === lang) return names.map;
+  let map: Record<string, string> = {};
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const N = require("../modules/cf-native/src/CfNativeModule").default as { countryNames(c: string[], l: string): Record<string, string> };
+    map = N.countryNames(p.countries.map(([c]) => c), lang) ?? {};
+  } catch { /* not on a phone (tests): English */ }
+  names = { lang, map };
+  return map;
+}
+
+/** A place hit with its country in the app's language ("Zürich, Schweiz"). */
+function local(p: Places, r: Hit): Hit {
+  if (!r || !r.countryCode) return r;
+  const name = countryNames(p)[r.countryCode];
+  if (!name) return r;
+  return { ...r, country: name, place: r.place ? { ...r.place, country: name } : r.place };
+}
 
 let loading: Promise<Places> | null = null;
 
@@ -35,7 +62,7 @@ export function coords(it: Item): { lat: number; lon: number } | null {
 export async function placeName(it: Item): Promise<string> {
   const c = coords(it);
   if (!c) return "";
-  try { return label((await loadPlaces()).nearest(c.lat, c.lon)); } catch { return ""; }
+  try { const p = await loadPlaces(); return label(local(p, p.nearest(c.lat, c.lon))); } catch { return ""; }
 }
 
 /** For search: the photos taken in the place, region or country named ("zurich", "Zürich", "switzerland", "new york"),
@@ -51,7 +78,8 @@ export async function inPlace(items: Item[], words: string): Promise<{ ids: Set<
     if (!c) continue;
     const r = p.nearest(c.lat, c.lon);
     if (!r) continue;
-    const hit = [r.place?.name, r.place?.region, r.country].find((n) => n && (fold(n) === q || fold(n).startsWith(q)));
+    // the country as the file names it and in the app's language: "switzerland" and "schweiz" both find it
+    const hit = [r.place?.name, r.place?.region, local(p, r)?.country, r.country].find((n) => n && (fold(n) === q || fold(n).startsWith(q)));
     if (hit) { ids.add(it.id); name ||= hit; }
   }
   return ids.size ? { ids, name } : null;
@@ -67,7 +95,7 @@ export async function areaTitle(items: Item[]): Promise<string> {
   try {
     const p = await loadPlaces();
     const s = summary(items.map((it) => {
-      if (!placeOf.has(it)) { const c = coords(it); placeOf.set(it, c ? p.nearest(c.lat, c.lon) : null); }
+      if (!placeOf.has(it)) { const c = coords(it); placeOf.set(it, c ? local(p, p.nearest(c.lat, c.lon)) : null); }
       return placeOf.get(it) ?? null;
     }));
     const c = s.countries;

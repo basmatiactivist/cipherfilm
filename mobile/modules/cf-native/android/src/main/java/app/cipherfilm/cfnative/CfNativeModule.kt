@@ -106,6 +106,13 @@ class CfNativeModule : Module() {
       Unit
     }
 
+    // ---- country names in the app's language, for the place names on the device (src/places.ts) ----
+    Function("countryNames") { codes: List<String>, lang: String ->
+      val inLang = java.util.Locale.Builder().setLanguage(lang).build()
+      codes.filter { it.matches(Regex("^[A-Z]{2}$")) }.associateWith { java.util.Locale.Builder().setRegion(it).build().getDisplayCountry(inLang) }
+        .filterValues { it.isNotBlank() }
+    }
+
     // ---- automatic lock (AutoLock.kt) ----
     Function("lockAfter") { ms: Double -> AutoLock.schedule(ms.toLong()) }
     Function("lockCancel") { AutoLock.cancel() }

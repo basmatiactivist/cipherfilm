@@ -57,6 +57,41 @@ public struct Me: Codable, Sendable {
   /** the server's public demo login (DEMO_ACCOUNTS): it reads and searches, every change is refused */
   public let demo: Bool?
   public var isDemo: Bool { demo == true }
+  /** The map tab's base map (docs/MAP.md, server/mapconf.go): MapLibre style URLs, tried in order. Missing when the
+   *  operator turned the map off (MAP_STYLE=off) and from servers before the map. */
+  public let map: MapStyles?
+
+  public struct MapStyles: Codable, Sendable, Equatable {
+    public let light: [String]
+    public let dark: [String]
+
+    public init(from d: Decoder) throws {
+      let c = try d.container(keyedBy: CodingKeys.self)
+      // only https style URLs: the map's page allows exactly their hosts (MapPage.swift)
+      func https(_ k: CodingKeys) throws -> [String] {
+        try c.decode([String].self, forKey: k).filter { s in
+          guard let u = URLComponents(string: s) else { return false }
+          // a plain host name: it goes into the page's Content-Security-Policy
+          let host = u.host ?? ""
+          return u.scheme == "https" && !host.isEmpty && host.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "." || $0 == "-") }
+            && u.user == nil && u.password == nil
+        }
+      }
+      light = try https(.light)
+      dark = try https(.dark)
+    }
+
+    public init(light: [String], dark: [String]) { self.light = light; self.dark = dark }
+
+    /** The origins the styles load from ("https://tiles.openfreemap.org"): a style takes its tiles, fonts and icons
+     *  from its own host, as OpenFreeMap's and VersaTiles' do. */
+    public var origins: [String] {
+      Array(Set((light + dark).compactMap { URLComponents(string: $0).flatMap { u in u.host.map { h in "https://" + h + (u.port.map { ":\($0)" } ?? "") } } })).sorted()
+    }
+  }
+
+  /** Whether the map tab is shown: the server sends a light and a dark style. */
+  public var hasMap: Bool { !(map?.light.isEmpty ?? true) && !(map?.dark.isEmpty ?? true) }
   /** Shown wherever a demo login looks at its photos, so nobody takes it for their own library. */
   public static let demoNote = "Public demo · read-only · resets every hour"
 

@@ -54,6 +54,13 @@ struct GeneralSettings: View {
         if let p = model.agent.loginProblem { Text(p).font(Typo.caption).foregroundStyle(Ink.danger) }
       }
       Divider()
+      // the map's images come from a third party: off until turned on, per account on this Mac (MapPage.swift)
+      Section_(title: "Map", subtitle: "Loads map images from OpenFreeMap (or your server's map). Photo locations stay on this Mac.") {
+        Toggle("Map", isOn: Binding(get: { model.settings.mapOn }, set: { model.settings.mapOn = $0 }))
+          .disabled(model.me == nil || model.me?.hasMap != true)
+        if model.me != nil && model.me?.hasMap != true { Text("This server doesn't offer a map.").font(Typo.caption).foregroundStyle(.secondary) }
+      }
+      Divider()
       Section_(title: "Unlock with Touch ID", subtitle: "Your library's key is kept locked in this Mac's Secure Enclave. Changing your fingerprints turns it off. Your password always works.") {
         Toggle("Unlock with Touch ID", isOn: Binding(get: { model.touchID }, set: { on in
           touchError = nil
@@ -91,6 +98,9 @@ struct GeneralSettings: View {
       Divider()
       Text("Cipherfilm \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")\(model.me?.server_version.map { " · server \($0)" } ?? "") · libsodium \(Sodium.version) · ONNX Runtime \(Vision.runtimeVersion)")
         .font(Typo.small).foregroundStyle(.tertiary)
+      // the map's and the place names' sources ask to be named (OpenStreetMap: ODbL; GeoNames: CC BY 4.0)
+      Text("Map: © OpenStreetMap contributors, OpenFreeMap · MapLibre GL JS (BSD-3-Clause)\nPlace names: GeoNames (geonames.org), CC BY 4.0")
+        .font(Typo.small).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
     }
     .padding(24)
     .sheet(isPresented: $signOut) { SignOutSheet().environment(model) }

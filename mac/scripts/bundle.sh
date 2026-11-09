@@ -39,6 +39,8 @@ if [ "$CONF" = "debug" ]; then
   plutil -replace CFBundleDisplayName -string "Cipherfilm Dev" "$APP/Contents/Info.plist"
 fi
 cp Sources/Cipherfilm/Resources/AppIcon.icns "$APP/Contents/Resources/"
+# the map: its page, MapLibre GL JS (from web/node_modules) and the place names
+./scripts/map-assets.sh "$APP/Contents/Resources"
 FW=$(find "$BIN" -maxdepth 3 -name onnxruntime.framework -type d | head -1)
 [ -n "$FW" ] || FW=Vendor/onnxruntime.xcframework/macos-arm64/onnxruntime.framework
 cp -R "$FW" "$APP/Contents/Frameworks/"

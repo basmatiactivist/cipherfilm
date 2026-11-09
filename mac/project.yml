@@ -16,7 +16,14 @@ targets:
     platform: macOS
     sources:
       - path: Sources/Cipherfilm
-        excludes: [Info.plist, Cipherfilm.entitlements]
+        # the map's page goes into Resources/map with MapLibre (scripts/map-assets.sh, below)
+        excludes: [Info.plist, Cipherfilm.entitlements, Resources/map/**]
+    # the map: its page, MapLibre GL JS from web/node_modules (`npm ci --ignore-scripts` in web/ first) and the place
+    # names, into the app's Resources (before it is signed)
+    postCompileScripts:
+      - name: Map assets
+        script: '"$SRCROOT/scripts/map-assets.sh" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"'
+        basedOnDependencyAnalysis: false
     dependencies:
       - package: CipherfilmCore
         product: CipherfilmCore
@@ -31,6 +38,8 @@ targets:
         INFOPLIST_FILE: Sources/Cipherfilm/Info.plist
         CODE_SIGN_ENTITLEMENTS: Sources/Cipherfilm/Cipherfilm.entitlements
         ENABLE_HARDENED_RUNTIME: YES
+        # the map assets script reads ../web (scripts/map-assets.sh)
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
         SWIFT_VERSION: "6.0"
         ARCHS: arm64
         ONLY_ACTIVE_ARCH: NO

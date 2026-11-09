@@ -91,6 +91,8 @@ struct AccountSettings: Codable, Equatable {
   var pubkey: String?
   // this Mac
   var agentAsked = false
+  /** the map (MapPage.swift): off until the person turns it on, because its images come from a third party */
+  var mapOn = false
 
   static func load(_ userId: String) -> AccountSettings {
     let f = Paths.account(userId).appendingPathComponent("settings.json")

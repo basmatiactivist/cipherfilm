@@ -126,6 +126,8 @@ final class Watcher {
     let gen = generation
     running = true; problem = nil
     task = Task {
+      // after a stop (sign-out, account deleted) nothing is written: the account's folder may be gone and must stay gone
+      @MainActor func stillOn() -> Bool { gen == generation && !Task.isCancelled }
       defer { Task { @MainActor in self.task = nil; self.running = false; self.current = nil; if self.again { self.again = false; self.scan() } } }
       do {
         struct MeLite: Decodable { struct U: Decodable { let id: String; let nsfw: Bool? }; let user: U; let csrf: String; let session_id: String?; let indexer: String? }
@@ -136,6 +138,7 @@ final class Watcher {
         // only the indexing device computes entries (docs/SEARCH.md); on the others the new photo waits for it
         indexes = (me.indexer ?? "").isEmpty || me.indexer == me.session_id
       } catch let e as APIError {
+        guard stillOn() else { return }
         problem = e.status == 401 ? "Signed out. Sign in to keep uploading." : "Can't reach the server. Trying again later."
         return
       } catch { return }
@@ -157,17 +160,21 @@ final class Watcher {
         do {
           let flag = live
           let id = try await Uploader.upload(c.url, api: api, wrap: .sealed(pk: pk), live: { if flag.get() != gen { throw Stopped() } })
+          guard stillOn() else { return }
           if search && indexes { await SearchEngine.indexFile(c.url, id: id, video: Media.kind(name: c.url.lastPathComponent, mime: Media.mime(of: c.url)) == .video, faces: faces, clip: clip, pk: pk, api: api) }
           st.done.insert(c.print); st.failures.removeValue(forKey: c.print); st.uploaded += 1
           uploaded = st.uploaded
           waiting -= 1
+          guard stillOn() else { return }
           sf.write(st)
         } catch is Stopped {
           return
         } catch let e as APIError where e.status == 0 || e.status == 401 || e.status == 413 || e.status >= 500 {
+          guard stillOn() else { return }
           problem = e.status == 413 ? "Your storage on the server is full." : e.status == 401 ? "Signed out. Sign in to keep uploading." : "Can't reach the server. Trying again later."
           sf.write(st); return
         } catch {
+          guard stillOn() else { return } // a cancelled request is no failure of the file
           let tries = (st.failures[c.print] ?? 0) + 1
           st.failures[c.print] = tries
           if tries >= 3 { // this file can't be read or uploaded: leave it and go on
@@ -178,6 +185,7 @@ final class Watcher {
           sf.write(st)
         }
       }
+      guard stillOn() else { return }
       lastDone = Date()
       let now = st.uploaded - (uploadedAtStart ?? st.uploaded)
       if now > 0 {

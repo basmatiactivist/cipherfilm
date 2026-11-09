@@ -25,10 +25,14 @@
 </p>
 
 <p align="center">
-  <img src="docs/play/graphics/screenshots/en-US/01-timeline.png" width="190" alt="Timeline of photos">
-  <img src="docs/play/graphics/screenshots/en-US/02-search.png" width="190" alt="Searching photos by what is in them">
-  <img src="docs/play/graphics/screenshots/en-US/04-album.png" width="190" alt="An album">
-  <img src="docs/play/graphics/screenshots/en-US/05-backup.png" width="190" alt="Automatic backup settings">
+  <img src="docs/screenshots/android-timeline.png" width="190" alt="Timeline of photos on Android">
+  <img src="docs/screenshots/android-map.png" width="190" alt="Map of Europe with photos shown where they were taken">
+  <img src="docs/screenshots/android-search.png" width="190" alt="Searching for Italy finds the photos taken there">
+  <img src="docs/screenshots/android-details.png" width="190" alt="A photo's details: Paris, France, with a small map">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/web-map.png" width="800" alt="The web app's map: photos from all over Europe">
 </p>
 
 ## What it is
@@ -38,8 +42,9 @@ browser encrypt every photo **before** it is uploaded. The server you run stores
 pictures, file names, dates, places or album names, and neither can its administrator.
 
 It does what you expect from a photo app: a timeline, albums, favorites, automatic backup from your phone, search by
-what's in a picture ("beach", "dog") and by who is in it. Search and face recognition run on your own devices with
-open models, and their results are stored encrypted too.
+what's in a picture ("beach", "dog"), by who is in it and by where it was taken ("paris", "italy"), and a map of
+your photos. Search, face recognition and place names run on your own devices, and their results are stored encrypted
+too.
 
 > **Know this first:** if someone loses *both* their password and their recovery key, their photos are lost.
 > Nobody can reset it, not even the admin.
@@ -53,9 +58,9 @@ in with:
 |---|---|
 | `demo@cipherfilm.app` | `cipherfilm-demo` |
 
-A shared, read-only account with sample photos (public domain): browse, search ("mountains", "beach") and see how it
-feels. Uploads and changes are turned off, because everyone uses the same login, and visitors are signed out every
-hour. To keep your own photos, [run your own server](#run-your-own-server).
+A shared, read-only account with photos of well-known places in Europe (CC0): browse, open the map, search by place
+("paris", "italy") and see how it feels. Uploads and changes are turned off, because everyone uses the same login,
+and visitors are signed out every hour. To keep your own photos, [run your own server](#run-your-own-server).
 
 ## Features
 
@@ -66,6 +71,10 @@ hour. To keep your own photos, [run your own server](#run-your-own-server).
   but never read any.
 - **Search and people, on your device.** Find photos by content and group faces into people, with open CLIP and face
   models that run locally ([docs/SEARCH.md](docs/SEARCH.md), [docs/MODELS.md](docs/MODELS.md)).
+- **Map and places.** See your photos on a map, find them by town, region or country, and see where each was taken.
+  Coordinates stay encrypted and are only read on your devices. Place names come from a file inside the apps, so
+  naming a place sends nothing anywhere; the map is off until you turn it on, and what its tile server sees is in
+  [docs/MAP.md](docs/MAP.md).
 - **Free up space.** Remove photos from the phone once they are in Cipherfilm.
 - **Locks itself.** Fingerprint unlock, automatic lock after a time you choose or when the screen turns off, and
   shake to lock and close.
@@ -151,6 +160,7 @@ Don't rely on it where losing or leaking the data would be catastrophic, and kee
 | [TOOLS.md](docs/TOOLS.md) | bulk upload, decrypt without the app, run it on a Mac |
 | [CRYPTO.md](docs/CRYPTO.md) · [THREAT_MODEL.md](docs/THREAT_MODEL.md) | the encryption and what it does and doesn't protect |
 | [SEARCH.md](docs/SEARCH.md) · [MODELS.md](docs/MODELS.md) | on-device search and the models it uses |
+| [MAP.md](docs/MAP.md) | the map, place names, and using your own map server |
 | [MAC.md](docs/MAC.md) | the Mac app |
 | [RELEASING.md](docs/RELEASING.md) | how releases are built and signed |
 

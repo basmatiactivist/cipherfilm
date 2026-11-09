@@ -7,7 +7,7 @@ import { Linking, ScrollView, StyleSheet, useColorScheme, View } from "react-nat
 import { Appbar, Button, IconButton, Text } from "react-native-paper";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Camera, GeoJSONSource, Layer, Map as MapView, ViewAnnotation, type CameraRef, type GeoJSONSourceRef, type MapRef } from "@maplibre/maplibre-react-native";
+import { Camera, GeoJSONSource, Layer, Map as MapView, ViewAnnotation, type CameraRef, type ViewAnnotationRef, type GeoJSONSourceRef, type MapRef } from "@maplibre/maplibre-react-native";
 import { ThumbView } from "../../modules/cf-native/src/CfNativeModule";
 import { NAV_HEIGHT, NavBar } from "../NavBar";
 import { Gallery } from "../Gallery";
@@ -203,18 +203,7 @@ export default function MapScreen() {
               <Layer type="circle" id={SOURCE} paint={{ "circle-radius": 1, "circle-opacity": 0.01 }} />
             </GeoJSONSource>
             {markers.map((mk) => (
-              <ViewAnnotation key={mk.key} id={mk.key} lngLat={mk.lngLat} anchor="center" onPress={() => open(mk)}>
-                {/* drawn as a picture on the map, so the tap comes from the annotation, not from this view */}
-                <View accessibilityLabel={tn(mk.count, "{n} photo", "{n} photos")}
-                  style={[st.marker, { borderColor: th.colors.surface, backgroundColor: th.colors.primaryContainer }]}>
-                  {mk.cover && byId.get(mk.cover)?.has_thumb ? <ThumbView item={mk.cover} software style={st.thumb} /> : null}
-                  {mk.count > 1 && (
-                    <View style={[st.count, { backgroundColor: th.colors.primary, borderColor: th.colors.surface }]}>
-                      <Text style={{ color: th.colors.onPrimary, fontSize: 12, fontWeight: "700" }}>{mk.count > 999 ? `${Math.floor(mk.count / 1000)}k` : mk.count}</Text>
-                    </View>
-                  )}
-                </View>
-              </ViewAnnotation>
+              <PhotoMarker key={mk.key} mk={mk} thumb={!!mk.cover && !!byId.get(mk.cover)?.has_thumb} onPress={() => open(mk)} />
             ))}
           </MapView>
           )}
@@ -239,6 +228,27 @@ export default function MapScreen() {
       )}
       <NavBar current="map" />
     </View>
+  );
+}
+
+/** One marker: a round thumbnail, with the count for a cluster. MapLibre draws it as a picture taken when it is laid
+ *  out, so it is taken again once the thumbnail shows (else a single photo's marker stays empty). */
+function PhotoMarker({ mk, thumb, onPress }: { mk: Marker; thumb: boolean; onPress: () => void }) {
+  const th = useAppTheme();
+  const ref = useRef<ViewAnnotationRef>(null);
+  return (
+    <ViewAnnotation ref={ref} id={mk.key} lngLat={mk.lngLat} anchor="center" onPress={onPress}>
+      {/* drawn as a picture on the map, so the tap comes from the annotation, not from this view */}
+      <View accessibilityLabel={tn(mk.count, "{n} photo", "{n} photos")}
+        style={[st.marker, { borderColor: th.colors.surface, backgroundColor: th.colors.primaryContainer }]}>
+        {thumb && mk.cover ? <ThumbView item={mk.cover} software style={st.thumb} onShown={() => ref.current?.refresh()} /> : null}
+        {mk.count > 1 && (
+          <View style={[st.count, { backgroundColor: th.colors.primary, borderColor: th.colors.surface }]}>
+            <Text style={{ color: th.colors.onPrimary, fontSize: 12, fontWeight: "700" }}>{mk.count > 999 ? `${Math.floor(mk.count / 1000)}k` : mk.count}</Text>
+          </View>
+        )}
+      </View>
+    </ViewAnnotation>
   );
 }
 

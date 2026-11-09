@@ -1,18 +1,20 @@
 name: Android
 # Builds the signed APK (GitHub releases, Obtainium; signed with the app signing key) and the Android App Bundle for
 # Google Play (CF_STORE=play, signed with the key Play takes for uploads; Play App Signing re-signs it with the app signing key,
-# docs/RELEASING.md), and checks both for 16 KB memory pages. Called by the release workflow for a tag; can also be run by hand on a v* tag (Actions >
-# Android > Run workflow) to check the build without releasing. No Actions caches at all: what goes into the signed
-# app is fetched fresh and checked against a pinned hash (the NDK and Gradle here, libsodium in its build script, npm
-# through the lockfile), so nothing another job left behind can slip in. The signing key is a secret of the "release"
-# environment (docs/RELEASING.md), and so is the upload key.
+# docs/RELEASING.md), and checks both for 16 KB memory pages. Called by the release workflow for a tag; can also be run by hand
+# (Actions > Android > Run workflow) to check the build without releasing. Two jobs: "build" compiles everything (npm
+# packages, Expo, Gradle plugins) with no secrets at all and hands over unsigned files with their checksums; "sign"
+# holds the keys (secrets of the "release" environment, docs/RELEASING.md), runs none of the build's code, only
+# Google's zipalign, apksigner and the JDK's jarsigner, and only for commits on master. No Actions caches at all: what
+# goes into the app is fetched fresh and checked against a pinned hash (the NDK and Gradle here, libsodium in its build
+# script, npm through the lockfile), so nothing another job left behind can slip in.
 on:
   workflow_call:
     inputs:
       version: { type: string, required: true }
     outputs:
       # the files' checksums: the release job publishes only files that match them
-      sums: { value: "${{ jobs.apk.outputs.sums }}" }
+      sums: { value: "${{ jobs.sign.outputs.sums }}" }
   workflow_dispatch:
     inputs:
       version: { type: string, required: true, default: "0.0.0", description: "versionName for the test build" }
@@ -30,20 +32,15 @@ env:
   # the app signing key's certificate (docs/RELEASING.md); Play App Signing signs with the same key
   RELEASE_CERT_SHA256: 87d9e9ab855b03e7d7d3152f5a76a4d8afb5d38efca3b9932ad93f1ba17c6712
 jobs:
-  apk:
+  build:
+    # no environment, no secrets: whatever the npm packages and Gradle plugins run here can't reach a key
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    environment: release
     outputs:
       sums: ${{ steps.sums.outputs.sums }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with: { persist-credentials: false, fetch-depth: 0 }  # no token left in .git; the history for the check below
-      - name: The commit is on master
-        # the signing keys only for what is on master, also for a build started by hand (the release checks it too)
-        run: |
-          git merge-base --is-ancestor HEAD origin/master \
-            || { echo "$GITHUB_REF_NAME points at $(git rev-parse HEAD), which is not on master: not built"; exit 1; }
+        with: { persist-credentials: false }  # no token left in .git
       - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with: { distribution: temurin, java-version: "17" }
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -74,17 +71,12 @@ jobs:
           sha256sum mobile/android/gradle/wrapper/gradle-wrapper.jar | cut -d" " -f1 > "$RUNNER_TEMP/wrapper.sha256"
       - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
         with: { cache-disabled: true, validate-wrappers: true }  # the wrapper jar must be one Gradle released
-      - name: Build and sign the APK
-        env:
-          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
-          CF_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      - name: Build the APK (unsigned)
         run: |
-          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.p12"
-          trap 'rm -f "$RUNNER_TEMP/release.p12"' EXIT
           cd mobile/android
-          CF_VERSION="${VERSION#v}" CF_KEYSTORE="$RUNNER_TEMP/release.p12" ./gradlew assembleRelease \
+          CF_UNSIGNED=1 CF_VERSION="${VERSION#v}" ./gradlew assembleRelease \
             -PreactNativeArchitectures=arm64-v8a --parallel --console=plain
-          mkdir -p ../../dist && cp app/build/outputs/apk/release/app-release.apk "../../dist/cipherfilm-android-${VERSION#v}.apk"
+          mkdir -p ../../unsigned && cp app/build/outputs/apk/release/app-release-unsigned.apk "../../unsigned/cipherfilm-android-${VERSION#v}.apk"
       - name: Native project for Google Play
         # CF_STORE=play: no REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, no explicit search model (app.config.js, src/store.ts)
         run: |
@@ -96,8 +88,72 @@ jobs:
           echo "distributionSha256Sum=$GRADLE_SHA256" >> "$props"
           [ "$(sha256sum android/gradle/wrapper/gradle-wrapper.jar | cut -d" " -f1)" = "$(cat "$RUNNER_TEMP/wrapper.sha256")" ] \
             || { echo "the Play build's Gradle wrapper differs from the validated one"; exit 1; }
-      - name: Build the App Bundle for Google Play
-        # signed with the key Play Console has registered as upload key: the app signing key until Play accepted the
+      - name: Build the App Bundle for Google Play (unsigned)
+        run: |
+          cd mobile/android
+          # CF_STORE=play here too: the build writes the app's config (extra.store) again, from app.config.js
+          CF_UNSIGNED=1 CF_STORE=play CF_VERSION="${VERSION#v}" ./gradlew bundleRelease \
+            -PreactNativeArchitectures=arm64-v8a --parallel --console=plain
+          ../scripts/check-play-manifest.sh app
+          cp app/build/outputs/bundle/release/app-release.aab "../../unsigned/cipherfilm-play-${VERSION#v}.aab"
+      - name: Checksums for the signing job
+        id: sums
+        run: cd unsigned && echo "sums=$(sha256sum -- * | base64 -w0)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with: { name: android-unsigned, path: unsigned/ }
+
+  sign:
+    # the keys, and nothing of the build's code: no npm, no Gradle, only Google's build tools and the JDK
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release
+    outputs:
+      sums: ${{ steps.sums.outputs.sums }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false, fetch-depth: 0 }  # no token left in .git; the history for the check below
+      - name: The commit is on master
+        # the signing keys only for what is on master, also for a build started by hand (the release checks it too)
+        run: |
+          git merge-base --is-ancestor HEAD origin/master \
+            || { echo "$GITHUB_REF_NAME points at $(git rev-parse HEAD), which is not on master: not signed"; exit 1; }
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with: { distribution: temurin, java-version: "17" }
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with: { name: android-unsigned, path: unsigned }
+      - name: Exactly the files the build job made
+        env:
+          SUMS: ${{ needs.build.outputs.sums }}
+        run: |
+          cd unsigned
+          echo "$SUMS" | base64 -d > "$RUNNER_TEMP/built"
+          sha256sum -c --strict "$RUNNER_TEMP/built" || { echo "a file is not the one the build job made"; exit 1; }
+          [ "$(ls -1A | sort)" = "$(awk '{print $2}' "$RUNNER_TEMP/built" | sed 's/^\*//' | sort)" ] || { echo "files the build job didn't make:"; ls -lA; exit 1; }
+          ls "cipherfilm-android-${VERSION#v}.apk" "cipherfilm-play-${VERSION#v}.aab"
+      - name: Not a test build
+        # a tree prebuilt for a test build trusts a local test CA (withTestCA.js): never signed with a release key
+        run: |
+          for f in unsigned/*; do
+            if unzip -Z1 "$f" | grep -q 'cf_test_ca'; then echo "$f trusts a test CA: not signed"; exit 1; fi
+          done
+      - name: Sign the APK with the app signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          CF_KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          bt="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.p12"; unset KEYSTORE_B64
+          trap 'rm -f "$RUNNER_TEMP/release.p12" "$RUNNER_TEMP/aligned.apk"' EXIT
+          mkdir -p dist
+          "$bt/zipalign" -P 16 -f 4 "unsigned/cipherfilm-android-${VERSION#v}.apk" "$RUNNER_TEMP/aligned.apk"
+          # v2 only, as the Android Gradle plugin signed every earlier release (minSdk 24: no v1)
+          "$bt/apksigner" sign --ks "$RUNNER_TEMP/release.p12" --ks-type PKCS12 --ks-key-alias cipherfilm \
+            --ks-pass env:CF_KS_PASS --key-pass env:CF_KS_PASS --v3-signing-enabled false \
+            --out "dist/cipherfilm-android-${VERSION#v}.apk" "$RUNNER_TEMP/aligned.apk"
+          "$bt/apksigner" verify "dist/cipherfilm-android-${VERSION#v}.apk"
+      - name: Sign the App Bundle for Google Play
+        # with the key Play Console has registered as upload key: the app signing key until Play accepted the
         # separate upload key (upload key reset, docs/RELEASING.md), then the upload key once the release environment
         # has the variable PLAY_UPLOAD_KEY=upload
         env:
@@ -108,18 +164,26 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
           if [ "$PLAY_UPLOAD_KEY" = upload ]; then
-            echo "$UPLOAD_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/play.p12"; export CF_KEYSTORE_PASSWORD="$UPLOAD_KEYSTORE_PASSWORD" CF_KEY_ALIAS=upload
+            echo "$UPLOAD_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/play.p12"; export CF_KS_PASS="$UPLOAD_KEYSTORE_PASSWORD"; alias=upload
           else
-            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/play.p12"; export CF_KEYSTORE_PASSWORD="$KEYSTORE_PASSWORD"
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/play.p12"; export CF_KS_PASS="$KEYSTORE_PASSWORD"; alias=cipherfilm
           fi
           unset UPLOAD_KEYSTORE_B64 UPLOAD_KEYSTORE_PASSWORD KEYSTORE_B64 KEYSTORE_PASSWORD
           trap 'rm -f "$RUNNER_TEMP/play.p12"' EXIT
-          cd mobile/android
-          # CF_STORE=play here too: the build writes the app's config (extra.store) again, from app.config.js
-          CF_STORE=play CF_VERSION="${VERSION#v}" CF_KEYSTORE="$RUNNER_TEMP/play.p12" ./gradlew bundleRelease \
-            -PreactNativeArchitectures=arm64-v8a --parallel --console=plain
-          ../scripts/check-play-manifest.sh app
-          cp app/build/outputs/bundle/release/app-release.aab "../../dist/cipherfilm-play-${VERSION#v}.aab"
+          # SHA-256 like the Android Gradle plugin signs bundles (newer JDKs would pick SHA-384)
+          case "$(keytool -J-Duser.language=en -list -v -keystore "$RUNNER_TEMP/play.p12" -storetype PKCS12 -storepass:env CF_KS_PASS -alias "$alias" | grep -m1 'Subject Public Key Algorithm')" in
+            *RSA*) sigalg=SHA256withRSA ;;
+            *EC*) sigalg=SHA256withECDSA ;;
+            *) echo "unknown key type"; exit 1 ;;
+          esac
+          aab="dist/cipherfilm-play-${VERSION#v}.aab"
+          cp "unsigned/cipherfilm-play-${VERSION#v}.aab" "$aab"
+          jarsigner -keystore "$RUNNER_TEMP/play.p12" -storetype PKCS12 -storepass:env CF_KS_PASS \
+            -sigalg "$sigalg" -digestalg SHA-256 "$aab" "$alias" >/dev/null
+          # not -strict: that refuses every self-signed certificate, and Android signing keys always are
+          v=$(jarsigner -J-Duser.language=en -verify "$aab")
+          printf %s "$v" | grep -q "^jar verified" && ! printf %s "$v" | grep -qi "unsigned entries" \
+            || { echo "the bundle is not fully signed:"; printf %s "$v"; exit 1; }
       - name: Signatures (APK with the app signing key, AAB with the key Play takes)
         env:
           PLAY_UPLOAD_KEY: ${{ vars.PLAY_UPLOAD_KEY }}
@@ -135,8 +199,9 @@ jobs:
             [ "$aab" = "$RELEASE_CERT_SHA256" ] || { echo "the AAB must be signed with the app signing key"; exit 1; }
           fi
       - name: 16 KB memory pages (Google Play)
+        # llvm-readelf from the runner's own NDK: it only reads the libraries
         run: |
-          ZIPALIGN="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)/zipalign" ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$NDK" \
+          ZIPALIGN="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)/zipalign" ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME" \
             mobile/scripts/check-page-size.sh dist/cipherfilm-android-*.apk dist/cipherfilm-play-*.aab
       - name: Checksums for the release job
         id: sums

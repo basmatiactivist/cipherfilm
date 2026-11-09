@@ -83,8 +83,10 @@ open-testing or production release, so Play and GitHub installs update each othe
 separate **upload key** (`ANDROID_UPLOAD_KEYSTORE_B64` / `ANDROID_UPLOAD_KEYSTORE_PASSWORD` in the `release`
 environment, alias `upload`); Google can reset a lost upload key, never the app signing key. `withReleaseSigning`
 takes the key from `CF_KEYSTORE`, `CF_KEYSTORE_PASSWORD`, `CF_KEY_ALIAS` (default `cipherfilm`) and
-`CF_KEY_PASSWORD` (default: the keystore password). `android.yml` fails if the APK isn't signed with the app signing
-key.
+`CF_KEY_PASSWORD` (default: the keystore password); that is how `make play-aab` signs locally. In CI the keys never
+meet the build: `android.yml` builds unsigned (`CF_UNSIGNED=1`) in a job without secrets, and a second job in the
+`release` environment, which runs only Google's `zipalign` and `apksigner` and the JDK's `jarsigner`, checks the files
+against the build job's checksums and signs them. It fails if the APK isn't signed with the app signing key.
 
 Until Play Console accepts the upload key, the bundle is signed with the app signing key: the first upload to Play was
 signed with it, so Play registered it as the upload key too. To switch: Play Console › Test and release › App

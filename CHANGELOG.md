@@ -31,7 +31,8 @@ version into the GitHub release notes, so a release cannot be published without 
 - Android: a file that makes the phone's decoder hang no longer holds up the backup for good: after a while it
   counts as failed and the backup goes on.
 - Releases publish only the exact files their build jobs made (checked by checksum), the Android build runs no npm
-  install scripts, and the signing keys are used only for commits on master.
+  install scripts, and it is built without the signing keys: a separate job signs it, runs none of the build's code
+  and does so only for commits on master.
 
 ### Fixed
 - Android: saving a video says it went to Movies › Cipherfilm (it said Pictures).

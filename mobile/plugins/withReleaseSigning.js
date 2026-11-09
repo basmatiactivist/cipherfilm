@@ -1,7 +1,8 @@
-// Signs release builds with the key named by CF_KEYSTORE (the release workflow writes it from a secret); without it
-// a release build is signed with the debug key, for local testing only. CF_KEY_ALIAS picks the key in it: "cipherfilm"
-// (the app signing key, for the GitHub APK) unless set, "upload" for the AAB uploaded to Google Play (Play App Signing
-// re-signs it with the app signing key; docs/RELEASING.md). CF_KEY_PASSWORD defaults to the keystore's password.
+// Signs release builds with the key named by CF_KEYSTORE (CF_KEY_ALIAS picks the key in it: "cipherfilm", the app
+// signing key, unless set; "upload" for the bundle Google Play takes, which Play App Signing re-signs with the app
+// signing key, docs/RELEASING.md; CF_KEY_PASSWORD defaults to the keystore's password). Without CF_KEYSTORE a release
+// build is signed with the debug key, for local testing only, or not at all with CF_UNSIGNED=1: the release workflow
+// builds unsigned and signs in a separate job that holds the keys and runs none of the build's code (android.yml).
 const { withAppBuildGradle } = require("expo/config-plugins");
 
 module.exports = function withReleaseSigning(config) {
@@ -20,7 +21,7 @@ ${ind}        keyPassword System.getenv("CF_KEY_PASSWORD") ?: System.getenv("CF_
 ${ind}    }
 ${ind}}
 ${ind}debug {`);
-    g = g.replace(/(release \{[^{}]*?)signingConfig signingConfigs\.debug/, '$1signingConfig System.getenv("CF_KEYSTORE") ? signingConfigs.release : signingConfigs.debug');
+    g = g.replace(/(release \{[^{}]*?)signingConfig signingConfigs\.debug/, '$1signingConfig System.getenv("CF_KEYSTORE") ? signingConfigs.release : (System.getenv("CF_UNSIGNED") ? null : signingConfigs.debug)');
     if (!g.includes('System.getenv("CF_KEYSTORE") ? signingConfigs.release')) throw new Error("withReleaseSigning: build.gradle layout changed");
     c.modResults.contents = g;
     return c;

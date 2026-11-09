@@ -64,7 +64,8 @@ knows the published password could change the library, and whatever they leave w
 own computer, in a Cipherfilm checkout with a local install (`DEMO_ACCOUNTS` and `DEMO_LOGIN` empty, not reachable
 from the internet), restore the seed with `scripts/restore.sh seed.tar --yes`, change the library in the local web
 app, make the new seed with `scripts/backup.sh deploy/demo`, copy it to the server as `deploy/demo/seed.tar` and run
-`deploy/demo/reset.sh` there.
+`deploy/demo/reset.sh` there. Only the library comes in this way: the reset keeps the server's accounts as they are, so
+a password changed or an account added on the copy doesn't reach the server (an added account arrives disabled).
 
 ## 5. The resets
 

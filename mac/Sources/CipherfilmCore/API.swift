@@ -19,6 +19,11 @@ public enum ServerId {
   public static func valid(_ s: String) -> Bool {
     s.utf8.count == 32 && s.utf8.allSatisfy { (0x30...0x39).contains($0) || (0x61...0x66).contains($0) }
   }
+
+  /** dir/id, only for an id that passes valid(): an id from the server becomes a path only this way. */
+  public static func folder(in dir: URL, _ id: String) -> URL? {
+    valid(id) ? dir.appendingPathComponent(id, isDirectory: true) : nil
+  }
 }
 
 public struct Me: Codable, Sendable {

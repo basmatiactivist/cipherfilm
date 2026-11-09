@@ -19,8 +19,8 @@ enum Outbox {
 
   /** The original, decrypted into its own folder under its own name. */
   static func file(_ it: Item, _ vault: Vault) async throws -> URL {
+    guard it.openable, let folder = ServerId.folder(in: dir, it.id) else { throw CryptoError.failed("this item can't be read") }
     sweep()
-    let folder = dir.appendingPathComponent(it.id, isDirectory: true)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
     guard let url = FileName.inside(folder, FileName.of(it)) else { throw CryptoError.failed("bad file name") }
     if !FileManager.default.fileExists(atPath: url.path) {
@@ -33,7 +33,7 @@ enum Outbox {
   /** For a drag: the item id (albums take it) and the decrypted file, made only when it is dropped somewhere. */
   @MainActor static func provider(_ it: Item) -> NSItemProvider {
     let p = NSItemProvider(object: it.id as NSString)
-    guard let vault = AppModel.shared.vault else { return p }
+    guard let vault = AppModel.shared.vault, it.openable else { return p }
     let type = UTType(mimeType: it.meta?.mime ?? "") ?? UTType(filenameExtension: (it.name as NSString).pathExtension) ?? .data
     p.suggestedName = it.name
     p.registerFileRepresentation(forTypeIdentifier: type.identifier, fileOptions: [], visibility: .all) { done in
@@ -46,7 +46,9 @@ enum Outbox {
   }
 
   /** Share…: decrypts the items (with a note while it does), then shows macOS's share menu where the click was. */
-  @MainActor static func share(_ items: [Item], _ model: AppModel) {
+  @MainActor static func share(_ all: [Item], _ model: AppModel) {
+    let items = all.filter(\.openable)
+    if items.count < all.count { model.alert = all.count == 1 ? "This item can't be read, so it can't be shared." : "Items that can't be read were left out." }
     guard let vault = model.vault, !items.isEmpty else { return }
     let window = NSApp.keyWindow ?? NSApp.windows.first { $0.isVisible && $0.canBecomeMain }
     let at = window.map { $0.convertPoint(fromScreen: NSEvent.mouseLocation) }

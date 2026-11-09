@@ -47,6 +47,8 @@ public struct Item: Identifiable, Sendable, Hashable {
   public var when: Double { meta?.capture_ts ?? createdAt * 1000 }
   public var date: Date { Date(timeIntervalSince1970: when / 1000) }
   public var name: String { meta?.name ?? "" }
+  /** It decrypted and has a valid id: only such an item can be decrypted to a file. */
+  public var openable: Bool { !broken && itemKey != nil && meta != nil && ServerId.valid(id) }
   /** width / height, clamped like the web grid */
   public var aspect: Double {
     guard let w = meta?.width, let h = meta?.height, w > 0, h > 0 else { return 1 }

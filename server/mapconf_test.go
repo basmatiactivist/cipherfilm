@@ -72,3 +72,10 @@ func TestDefaultMapMatchesClients(t *testing.T) {
 		}
 	}
 }
+
+// The place-name file (web/src/places/places-v1.bin, a few MB) goes out gzip-compressed like the app's code.
+func TestPlacesFileCompressed(t *testing.T) {
+	if !compressible("assets/places-v1-abc123.bin") {
+		t.Fatal("the places file is sent uncompressed")
+	}
+}

@@ -10,7 +10,8 @@ accounts on the same server (your admin, an app-store reviewer) work as usual.
 The demo account stores nothing, so all that visitors leave behind are their sign-ins: every hour a timer signs out
 all of the demo account's devices (`/app sign-out DEMO_EMAIL`). Once a day (04:00 UTC) the whole server is put back to
 a seed, `seed.tar` (a backup made with `scripts/backup.sh`), restored by `reset.sh`; that ends every session, the
-reviewer's included, so it runs only daily.
+reviewer's included, so it runs only daily. What happened to the accounts since the seed was made stays as it is: a
+changed password, a disabled or deleted account and the activity log are taken over from the replaced data.
 
 ## 1. The server
 
@@ -56,8 +57,14 @@ docker compose up -d
 ```
 
 Set `DEMO_ACCOUNTS` only after the photos are uploaded and the seed is made: from then on the account can't add
-anything. To change the seed later, remove it from `.env`, `docker compose up -d`, change the library, make the seed
-again and put the setting back. Never list your admin or an account with real photos.
+anything. Never list your admin or an account with real photos.
+
+To change the seed later, do it on a copy, never on the public server: there, without `DEMO_ACCOUNTS`, everyone who
+knows the published password could change the library, and whatever they leave would go into the new seed. On your
+own computer, in a Cipherfilm checkout with a local install (`DEMO_ACCOUNTS` and `DEMO_LOGIN` empty, not reachable
+from the internet), restore the seed with `scripts/restore.sh seed.tar --yes`, change the library in the local web
+app, make the new seed with `scripts/backup.sh deploy/demo`, copy it to the server as `deploy/demo/seed.tar` and run
+`deploy/demo/reset.sh` there.
 
 ## 5. The resets
 

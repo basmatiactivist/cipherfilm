@@ -38,21 +38,24 @@ case "$cmd" in
     tar -tf "$FILE" > "$L/names"; tar -tvf "$FILE" > "$L/long"
     grep -qx "backup/app.db" "$L/names" && grep -qx "backup/secret" "$L/names" || { echo "Das Archiv hat kein backup/app.db oder backup/secret" >&2; exit 1; }
     if grep -E '^/|(^|/)\.\.(/|$)' "$L/names" >/dev/null; then echo "Archiv enthaelt unsichere Pfade" >&2; exit 1; fi
-    if grep -v '^[-d]' "$L/long" >/dev/null; then echo "Archiv enthaelt Links oder Geraete" >&2; exit 1; fi
+    if grep -v '^[-d]' "$L/long" >/dev/null || grep -E ' (->|link to) ' "$L/long" >/dev/null; then echo "Archiv enthaelt Links oder Geraete" >&2; exit 1; fi
     if grep -Ev '^(backup|blobs)(/|$)' "$L/names" >/dev/null; then echo "Archiv hat unerwartete Eintraege" >&2; exit 1; fi
     docker compose stop app >/dev/null
     # privat entpacken (wie die eigenen Ordner des Servers) und danach pruefen, was wirklich ausgepackt wurde: das
     # Archiv kann sich seit der Liste oben geaendert haben (z. B. auf einem geteilten oder externen Laufwerk)
     umask 077
     TS="$(date +%Y%m%d-%H%M%S)"; rm -rf .restore-tmp && mkdir .restore-tmp && tar -xf "$FILE" --no-same-owner -C .restore-tmp
-    if [ -n "$(find .restore-tmp ! -type f ! -type d | head -1)" ] || [ -n "$(find .restore-tmp -mindepth 1 -maxdepth 1 ! -name backup ! -name blobs | head -1)" ] \
+    if [ -n "$(find .restore-tmp \( ! -type f ! -type d \) -o \( -type f -links +1 \) | head -1)" ] || [ -n "$(find .restore-tmp -mindepth 1 -maxdepth 1 ! -name backup ! -name blobs | head -1)" ] \
       || [ ! -f .restore-tmp/backup/app.db ] || [ ! -f .restore-tmp/backup/secret ]; then
       rm -rf .restore-tmp; docker compose start app >/dev/null; echo "Archiv hat sich beim Entpacken als unsicher erwiesen; nichts ersetzt" >&2; exit 1
     fi
-    mv data "data.vorher-$TS"; mkdir data
+    mv data "data.vorher-$TS"; mkdir data data/.previous
+    # die ersetzte Datenbank dorthin, wo after-restore sie sucht: spaetere Abmeldungen, Passwoerter und gesperrte Konten bleiben
+    for f in app.db app.db-wal app.db-shm secret; do [ ! -e "data.vorher-$TS/$f" ] || cp -p "data.vorher-$TS/$f" data/.previous/; done
     if [ -d .restore-tmp/blobs ]; then mv .restore-tmp/blobs data/blobs; fi; mv .restore-tmp/backup/app.db data/app.db; mv .restore-tmp/backup/secret data/secret; rm -rf .restore-tmp
-    # vor dem Start: alle Sitzungen beenden und dem Papierkorb der Sicherung frische 30 Tage geben
+    # vor dem Start: alle Sitzungen beenden, Spaeteres uebernehmen und dem Papierkorb der Sicherung frische 30 Tage geben
     docker compose run --rm --no-deps -T app after-restore
+    rm -rf data/.previous
     docker compose up -d app; sleep 3
     docker compose exec -T app /app check
     echo "Fertig. Die alten Daten liegen noch in data.vorher-$TS (loeschen, wenn alles stimmt)."

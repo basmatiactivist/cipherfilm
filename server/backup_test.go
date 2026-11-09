@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -256,4 +258,91 @@ func TestRestoreKeepsLaterSignOuts(t *testing.T) {
 		defer db.Close()
 		db.Exec(`CREATE TABLE users(id TEXT)`)
 	})
+}
+
+// A restore brings photos back, not access taken away since: a changed password, a disabled or deleted account
+// and the activity log of the replaced database win over the backup. Only from the same server.
+func TestRestoreKeepsLaterAccountChanges(t *testing.T) {
+	e := newEnv(t)
+	admin, ab := e.setupAdmin("admin@x.org")
+	_, bb := e.acceptInvite(e.invite(admin, "bob@x.org"))
+	_, cb := e.acceptInvite(e.invite(admin, "carol@x.org"))
+	if err := runBackup(e.app.dataDir); err != nil {
+		t.Fatal(err)
+	}
+	// after the backup: the admin changes the password, bob is disabled, carol is deleted, an invite goes out
+	nb := bundle()
+	if code, _ := admin.do("POST", "/api/auth/password", map[string]any{"current_auth": ab["auth"], "new_auth": nb["auth"], "new_kdf": nb["kdf"], "new_wrapped_master_pw": nb["wrapped_master_pw"]}, true); code != 200 {
+		t.Fatalf("password change: %d", code)
+	}
+	admin = e.login("admin@x.org", nb)
+	bob, _ := e.app.userByEmail("bob@x.org")
+	carol, _ := e.app.userByEmail("carol@x.org")
+	if code, _ := admin.do("PATCH", "/api/admin/users/"+bob.ID, map[string]string{"status": "disabled"}, true); code != 200 {
+		t.Fatal("disable")
+	}
+	if code, _ := admin.do("DELETE", "/api/admin/users/"+carol.ID, nil, true); code != 200 {
+		t.Fatal("delete")
+	}
+	var logged int
+	e.app.db.QueryRow(`SELECT COUNT(*) FROM audit_log`).Scan(&logged)
+
+	restore := func(sameServer bool) *httptest.Server {
+		dir := t.TempDir()
+		os.MkdirAll(filepath.Join(dir, "blobs"), 0o700)
+		os.MkdirAll(filepath.Join(dir, ".previous"), 0o700)
+		for _, f := range []string{"app.db", "app.db-wal", "app.db-shm", "secret"} {
+			if _, err := os.Stat(filepath.Join(e.app.dataDir, f)); err == nil {
+				copyFile(filepath.Join(e.app.dataDir, f), filepath.Join(dir, ".previous", f))
+			}
+		}
+		if !sameServer {
+			os.WriteFile(filepath.Join(dir, ".previous", "secret"), randBytes(32), 0o600)
+		}
+		for _, f := range []string{"app.db", "secret"} {
+			if err := copyFile(filepath.Join(e.app.dataDir, "backup", f), filepath.Join(dir, f)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := runAfterRestore(dir); err != nil {
+			t.Fatal(err)
+		}
+		app2, err := newApp(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { app2.db.Close() })
+		srv := httptest.NewTLSServer(app2.handler())
+		t.Cleanup(srv.Close)
+		var n int
+		app2.db.QueryRow(`SELECT COUNT(*) FROM audit_log`).Scan(&n)
+		if sameServer && n < logged {
+			t.Fatalf("activity log after the restore: %d entries, before %d", n, logged)
+		}
+		return srv
+	}
+	login := func(srv *httptest.Server, email string, b map[string]any) int {
+		body, _ := json.Marshal(map[string]string{"email": email, "auth": b["auth"].(string)})
+		resp, err := srv.Client().Post(srv.URL+"/api/auth/login", "application/json", bytes.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	srv := restore(true)
+	for _, c := range []struct {
+		email string
+		b     map[string]any
+		want  int
+	}{{"admin@x.org", ab, 401}, {"admin@x.org", nb, 200}, {"bob@x.org", bb, 401}, {"carol@x.org", cb, 401}} {
+		if got := login(srv, c.email, c.b); got != c.want {
+			t.Fatalf("after the restore %s: %d, want %d", c.email, got, c.want)
+		}
+	}
+	// a replaced database of another server changes nothing about the backup's accounts
+	srv = restore(false)
+	if got := login(srv, "admin@x.org", ab); got != 200 {
+		t.Fatalf("restore over another server's data: %d", got)
+	}
 }

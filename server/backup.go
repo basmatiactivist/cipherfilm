@@ -82,7 +82,7 @@ func runAfterRestore(dataDir string) error {
 	}
 	defer conn.Close()
 	prev := filepath.Join(dataDir, ".previous", "app.db")
-	carry := false
+	carry, accounts := false, false
 	if _, err := os.Stat(prev); err == nil {
 		if _, err := conn.ExecContext(ctx, `ATTACH DATABASE ? AS prev`, "file:"+prev+"?mode=ro"); err != nil {
 			return fmt.Errorf("open the replaced database: %w", err)
@@ -91,6 +91,20 @@ func runAfterRestore(dataDir string) error {
 		var n int
 		conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM prev.sqlite_master WHERE type='table' AND name='revoked_sessions'`).Scan(&n)
 		carry = n > 0 // a database from before signed-out devices were remembered has none
+		// the accounts' later state only from the same server (same secret): never from a database of another one
+		old, err1 := os.ReadFile(filepath.Join(dataDir, ".previous", "secret"))
+		cur, err2 := os.ReadFile(filepath.Join(dataDir, "secret"))
+		accounts = err1 == nil && err2 == nil && len(cur) > 0 && string(old) == string(cur)
+		if accounts {
+			var cols, tables int
+			conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('users','prev') WHERE name IN ('kdf','auth_hash','wrapped_master_pw','wrapped_master_recovery','recovery_hash','role','status')`).Scan(&cols)
+			conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM prev.sqlite_master WHERE type='table' AND name IN ('invites','audit_log')`).Scan(&tables)
+			accounts = cols == 7 && tables == 2
+		} else {
+			fmt.Println("the replaced data has no secret of this server: accounts are taken as the backup has them")
+		}
+	} else {
+		fmt.Println("no replaced database in .previous/: sign-outs, password changes and disabled or deleted accounts since the backup are not carried over")
 	}
 	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
@@ -104,6 +118,11 @@ func runAfterRestore(dataDir string) error {
 			return err
 		}
 		revoked, _ = res.RowsAffected()
+	}
+	if accounts {
+		if err := carryAccounts(tx); err != nil {
+			return err
+		}
 	}
 	res, err := tx.Exec(`DELETE FROM sessions`)
 	if err != nil {
@@ -123,6 +142,44 @@ func runAfterRestore(dataDir string) error {
 		return err
 	}
 	fmt.Printf("ended %d sessions; kept %d later sign-outs; %d items in the trash keep it for another 30 days\n", sessions, revoked, trashed)
+	return nil
+}
+
+// carryAccounts takes over from the replaced database what happened to the accounts since the backup: a changed
+// password or recovery key (it wraps the same master key), a changed role, a disabled account, and accounts deleted
+// since stay disabled. A restore brings photos back, not access that was taken away. The replaced activity log is
+// kept too, and invites that were withdrawn or used since stay so.
+func carryAccounts(tx *sql.Tx) error {
+	disabled := []string{}
+	rows, err := tx.Query(`SELECT email FROM main.users m WHERE status='active' AND (NOT EXISTS (SELECT 1 FROM prev.users p WHERE p.id=m.id)
+		OR EXISTS (SELECT 1 FROM prev.users p WHERE p.id=m.id AND p.status<>'active'))`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var e string
+		if rows.Scan(&e) == nil {
+			disabled = append(disabled, e)
+		}
+	}
+	rows.Close()
+	for _, q := range []string{
+		`UPDATE main.users SET kdf=p.kdf, auth_hash=p.auth_hash, wrapped_master_pw=p.wrapped_master_pw,
+			wrapped_master_recovery=p.wrapped_master_recovery, recovery_hash=p.recovery_hash, role=p.role, status=p.status
+			FROM prev.users p WHERE p.id=users.id`,
+		`UPDATE main.users SET status='disabled' WHERE id NOT IN (SELECT id FROM prev.users)`,
+		`DELETE FROM main.invites WHERE used_at IS NULL AND token_hash NOT IN (SELECT token_hash FROM prev.invites WHERE used_at IS NULL)`,
+		`INSERT INTO main.audit_log(at,actor,action,target,detail) SELECT at,actor,action,target,detail FROM prev.audit_log p
+			WHERE NOT EXISTS (SELECT 1 FROM main.audit_log m WHERE m.at=p.at AND m.actor=p.actor AND m.action=p.action AND m.target=p.target AND m.detail=p.detail)
+			ORDER BY p.id`,
+	} {
+		if _, err := tx.Exec(q); err != nil {
+			return err
+		}
+	}
+	for _, e := range disabled {
+		fmt.Println("stays disabled (disabled or deleted after the backup):", e)
+	}
 	return nil
 }
 

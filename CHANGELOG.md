@@ -14,9 +14,30 @@ version into the GitHub release notes, so a release cannot be published without 
   them too (only what goes into the app, not the build tools).
 - The published server image is scanned with Trivy weekly and after each release; findings appear under the
   repository's Security › Code scanning.
+- Server: a list page gives its database connection back before it is sent, so slow or many large lists of one
+  account can't hold up everyone else; incremental lists (`?since`) read only as many rows as one page carries.
+- Server: a part sent again while it is already stored needs room in the storage limit while it is received.
+- Server: the public demo login gets no device cookie, so one visitor's wrong passwords can't block the others.
+- Server: deleting an account also removes its invite and its mentions in the activity log; only the entry of the
+  deletion itself keeps the e-mail address, as the delete-account page says.
+- Restore: what happened to the accounts after the backup stays as it is: changed passwords and recovery keys,
+  roles, disabled and deleted accounts (they stay disabled), withdrawn invites and the activity log. This also holds
+  for the demo server's daily reset. `restore.sh` and `fotocrypt.sh restore` refuse archives with hard links.
+- Web: signing out (or in) in one tab ends the session in the browser's other tabs too; they forget their keys and
+  the decrypted library at once.
+- Mac: an item id from the server becomes a folder name only after it passed the id check, and items that can't be
+  read aren't shared or dragged out; a watched-folder pass stopped by signing out writes nothing more for that account.
+  The live-update stream, dates and duplicate list entries from the server are handled without crashing.
+- Android: a file that makes the phone's decoder hang no longer holds up the backup for good: after a while it
+  counts as failed and the backup goes on.
+- Releases publish only the exact files their build jobs made (checked by checksum), the Android build runs no npm
+  install scripts, and the signing keys are used only for commits on master.
 
 ### Fixed
 - Android: saving a video says it went to Movies › Cipherfilm (it said Pictures).
+- Web and Android: the library appears once the first screen's photos are decoded, never as empty tiles.
+- Android: Report a problem opens in the browser (the GitHub app dropped the prefilled form).
+- Docs: the threat model says the search models come from Hugging Face.
 
 ## [2.4.1] - 2026-11-08
 

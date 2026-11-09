@@ -233,6 +233,7 @@ final class AppModel {
   /** Deletes the account's folders; only for an id of the server's shape, so the paths stay inside the app's own. */
   private func forget(account userId: String) {
     guard ServerId.valid(userId) else { return }
+    TouchID.disable(userId) // its keychain item lives outside the account's folder
     try? FileManager.default.removeItem(at: Paths.account(userId))
     if let dir = Vault.cacheDir(of: userId) { try? FileManager.default.removeItem(at: dir) }
   }

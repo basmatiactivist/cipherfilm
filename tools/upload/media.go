@@ -141,6 +141,16 @@ func safeExif(r io.ReaderAt, size int64) (x *exifInfo, err error) {
 	return readExif(r, size)
 }
 
+// safeVideo is safeExif for a video's header.
+func safeVideo(r io.ReaderAt, size int64) (v *videoInfo, err error) {
+	defer func() {
+		if recover() != nil {
+			v, err = nil, errNoExif
+		}
+	}()
+	return readVideo(r, size)
+}
+
 func readInfo(f *localFile) *fileInfo {
 	mt := f.MTime.UnixMilli()
 	fi := &fileInfo{Meta: itemMeta{Name: f.Name, Mime: f.Mime, Size: f.Size, LastModified: mt, CaptureTS: mt}}
@@ -162,11 +172,14 @@ func readInfo(f *localFile) *fileInfo {
 			}
 			fi.orientation = x.Orientation
 		}
-	} else if v, err := readVideo(h, f.Size); err == nil {
+	} else if v, err := safeVideo(h, f.Size); err == nil {
 		if !v.Created.IsZero() {
 			fi.Meta.CaptureTS = v.Created.UnixMilli()
 		}
 		fi.Meta.Width, fi.Meta.Height, fi.Meta.Duration = v.Width, v.Height, v.Duration
+		if v.HasGPS {
+			fi.Meta.GPS = &gpsMeta{v.Lat, v.Lon}
+		}
 	}
 	return fi
 }

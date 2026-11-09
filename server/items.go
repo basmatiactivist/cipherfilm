@@ -558,7 +558,7 @@ func (a *App) listItems(w http.ResponseWriter, r *http.Request, u *user, s *sess
 	if has {
 		q, args = q+` AND (created_at < ? OR (created_at = ? AND id > ?))`, append(args, ts, ts, after)
 	}
-	rows, err := a.db.Query(q+` ORDER BY created_at DESC, id LIMIT ?`, append(args, listPage)...)
+	rows, err := a.db.QueryContext(r.Context(), q+` ORDER BY created_at DESC, id LIMIT ?`, append(args, listPage)...)
 	if err != nil {
 		fail(w, 500, "server error")
 		return
@@ -577,6 +577,9 @@ func (a *App) listItems(w http.ResponseWriter, r *http.Request, u *user, s *sess
 			sent += len(key) + len(meta)
 		}
 	}
+	if !donePage(w, rows) {
+		return
+	}
 	if len(out) < listPage && sent < pageBytes {
 		next = ""
 	}
@@ -584,6 +587,17 @@ func (a *App) listItems(w http.ResponseWriter, r *http.Request, u *user, s *sess
 	var unlimited bool
 	left, unlimited = a.quotaLeft(u.ID)
 	writeJSON(w, 200, map[string]any{"items": out, "next": next, "quota_left": left, "unlimited": unlimited, "cursor": st.cursor(st.rev)})
+}
+
+// donePage ends the reading of a list page. A page cut at pageBytes leaves rows unread, and open rows keep one of
+// the few pooled database connections: it goes back before any further query and before the (possibly slow) write.
+func donePage(w http.ResponseWriter, rows *sql.Rows) bool {
+	rows.Close()
+	if rows.Err() != nil {
+		fail(w, 500, "server error")
+		return false
+	}
+	return true
 }
 
 func (a *App) getBlob(kind string) func(http.ResponseWriter, *http.Request, *user, *session) {
@@ -747,7 +761,7 @@ func (a *App) listTrash(w http.ResponseWriter, r *http.Request, u *user, s *sess
 	if has {
 		q, args = q+` AND (trashed_at < ? OR (trashed_at = ? AND id > ?))`, append(args, ts, ts, after)
 	}
-	rows, err := a.db.Query(q+` ORDER BY trashed_at DESC, id LIMIT ?`, append(args, listPage)...)
+	rows, err := a.db.QueryContext(r.Context(), q+` ORDER BY trashed_at DESC, id LIMIT ?`, append(args, listPage)...)
 	if err != nil {
 		fail(w, 500, "server error")
 		return
@@ -765,6 +779,9 @@ func (a *App) listTrash(w http.ResponseWriter, r *http.Request, u *user, s *sess
 			next = fmt.Sprintf("%d.%s", trashed, id)
 			sent += len(key) + len(meta)
 		}
+	}
+	if !donePage(w, rows) {
+		return
 	}
 	if len(out) < listPage && sent < pageBytes {
 		next = ""

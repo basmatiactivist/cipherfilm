@@ -199,10 +199,10 @@ func (a *App) listIndex(w http.ResponseWriter, r *http.Request, u *user, s *sess
 	var rows *sql.Rows
 	var err error
 	if after != "" {
-		rows, err = a.db.Query(`SELECT item_id,data_enc,updated_at FROM item_index WHERE user_id=? AND (?=1 OR model IN (?,''))
+		rows, err = a.db.QueryContext(r.Context(), `SELECT item_id,data_enc,updated_at FROM item_index WHERE user_id=? AND (?=1 OR model IN (?,''))
 			AND (updated_at > ? OR (updated_at = ? AND item_id > ?)) ORDER BY updated_at, item_id LIMIT ?`, u.ID, all, fam, since, since, after, indexPage)
 	} else {
-		rows, err = a.db.Query(`SELECT item_id,data_enc,updated_at FROM item_index WHERE user_id=? AND (?=1 OR model IN (?,'')) AND updated_at >= ?
+		rows, err = a.db.QueryContext(r.Context(), `SELECT item_id,data_enc,updated_at FROM item_index WHERE user_id=? AND (?=1 OR model IN (?,'')) AND updated_at >= ?
 			ORDER BY updated_at, item_id LIMIT ?`, u.ID, all, fam, since, indexPage)
 	}
 	if err != nil {
@@ -221,6 +221,9 @@ func (a *App) listIndex(w http.ResponseWriter, r *http.Request, u *user, s *sess
 			next = fmt.Sprintf("%d.%s", at, id)
 			sent += len(data)
 		}
+	}
+	if !donePage(w, rows) {
+		return
 	}
 	if len(out) < indexPage && sent < pageBytes {
 		next = ""

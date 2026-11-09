@@ -3,7 +3,7 @@
 // server's MAP_STYLE) only sees which map tiles are loaded. So the map opens on the whole world and never moves to
 // where the photos are by itself.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Linking, StyleSheet, useColorScheme, View } from "react-native";
+import { Linking, ScrollView, StyleSheet, useColorScheme, View } from "react-native";
 import { Appbar, Button, IconButton, Text } from "react-native-paper";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -123,16 +123,24 @@ export default function MapScreen() {
         <Text style={{ padding: 16, color: th.colors.onSurfaceVariant }}>{t("The map is turned off on this server.")}</Text>
       ) : !on ? (
         // before the yes nothing is loaded from the map's server (docs/MAP.md)
-        <View style={[st.consent, { backgroundColor: th.colors.surface, borderColor: th.colors.outlineVariant }]}>
-          <Icon name="map" size={28} color={th.colors.primary} />
-          <Text variant="titleLarge">{t("Show your photos on a map?")}</Text>
-          <Text variant="bodyMedium">{t("The map images come from {who}. That service sees this phone's IP address and which areas you look at. When you open a photo's details, a small map of its area is loaded too, so the service can tell roughly where that photo was taken.", { who: mapProviderLong() })}</Text>
-          <Text variant="bodyMedium">{t("Your photos, and the list of where they were taken, stay encrypted and are drawn on this phone.")}</Text>
-          <Text variant="bodySmall" style={{ color: th.colors.onSurfaceVariant }}>{t("You can turn the map off again under Account › Map.")}</Text>
-          <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
-            <Button mode="contained" onPress={() => setMapOn(true)}>{t("Turn on map")}</Button>
-            <Button mode="outlined" onPress={() => router.replace("/library")}>{t("Not now")}</Button>
-            <Button mode="text" onPress={() => { expectAway(); Linking.openURL(mapPrivacyUrl()); }}>{t("Privacy policy")}</Button>
+        <View style={{ flex: 1, marginBottom: NAV_HEIGHT + inset.bottom }}>
+          <ScrollView contentContainerStyle={st.consent}>
+            <View style={[st.consentIcon, { backgroundColor: th.colors.primaryContainer }]}>
+              <Icon name="map" size={28} color={th.colors.onPrimaryContainer} />
+            </View>
+            <Text variant="headlineSmall" accessibilityRole="header">{t("Show your photos on a map?")}</Text>
+            <Text variant="bodyLarge">{t("The map images come from {who}. That service sees this phone's IP address and which areas you look at. When you open a photo's details, a small map of its area is loaded too, so the service can tell roughly where that photo was taken.", { who: mapProviderLong() })}</Text>
+            <Text variant="bodyLarge">{t("Your photos, and the list of where they were taken, stay encrypted and are drawn on this phone.")}</Text>
+            <Text variant="bodyMedium" style={{ color: th.colors.onSurfaceVariant }}>
+              {t("You can turn the map off again under Account › Map.")}{" "}
+              <Text accessibilityRole="link" style={{ color: th.colors.primary, fontWeight: "600", textDecorationLine: "underline" }}
+                onPress={() => { expectAway(); Linking.openURL(mapPrivacyUrl()); }}>{t("Privacy policy")}</Text>
+            </Text>
+          </ScrollView>
+          {/* the choice sits at the bottom, in reach of the thumb: the yes first and filled, the no as plain text */}
+          <View style={[st.actions, { borderTopColor: th.colors.outlineVariant }]}>
+            <Button mode="contained" onPress={() => setMapOn(true)} contentStyle={st.actionBtn}>{t("Turn on map")}</Button>
+            <Button mode="text" onPress={() => router.replace("/library")} contentStyle={st.actionBtn}>{t("Not now")}</Button>
           </View>
         </View>
       ) : (
@@ -191,7 +199,10 @@ export default function MapScreen() {
 }
 
 const st = StyleSheet.create({
-  consent: { margin: 16, padding: 20, gap: 12, borderRadius: 16, borderWidth: 1 },
+  consent: { paddingHorizontal: 24, paddingTop: 16, paddingBottom: 24, gap: 16 },
+  consentIcon: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center" },
+  actions: { paddingHorizontal: 24, paddingTop: 12, paddingBottom: 12, gap: 4, borderTopWidth: StyleSheet.hairlineWidth },
+  actionBtn: { height: 48 },
   marker: { width: 52, height: 52, borderRadius: 26, borderWidth: 3, overflow: "visible", elevation: 4 },
   thumb: { width: 46, height: 46, borderRadius: 23, overflow: "hidden" },
   count: { position: "absolute", top: -6, right: -8, minWidth: 22, height: 22, paddingHorizontal: 6, borderRadius: 11, borderWidth: 2, alignItems: "center", justifyContent: "center" },

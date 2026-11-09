@@ -1,7 +1,7 @@
 // @ts-nocheck (Node APIs; vitest only)
 import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
-import { label, Places } from "./places";
+import { label, Places, summary } from "./places";
 
 let p: Places;
 beforeAll(() => {
@@ -40,5 +40,19 @@ describe("place names on the device", () => {
     const t = performance.now();
     for (let i = 0; i < 10000; i++) p.nearest(-60 + (i % 120), -170 + (i * 7) % 340);
     expect(performance.now() - t).toBeLessThan(1000);
+  });
+});
+
+describe("a title for photos from several places", () => {
+  const zurich = () => p.nearest(47.3769, 8.5417), lucerne = () => p.nearest(47.0502, 8.3093), paris = () => p.nearest(48.8566, 2.3522);
+  it("the place when all photos are from it", () => {
+    expect(summary([zurich(), zurich()])).toEqual({ place: "Zürich, Switzerland", countries: ["Switzerland"] });
+  });
+  it("the countries, most photos first, when the places differ", () => {
+    expect(summary([zurich(), lucerne()])).toEqual({ countries: ["Switzerland"] });
+    expect(summary([paris(), zurich(), lucerne()])).toEqual({ countries: ["Switzerland", "France"] });
+  });
+  it("nothing for photos far from any place", () => {
+    expect(summary([p.nearest(0, -30)])).toEqual({ countries: [] });
   });
 });

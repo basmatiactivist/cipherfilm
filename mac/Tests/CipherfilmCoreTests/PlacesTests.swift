@@ -73,4 +73,12 @@ private let places: Places = try! Places(contentsOf: repo.appendingPathComponent
     for i in 0..<10_000 { _ = places.nearest(-60 + Double(i % 120), -170 + Double((i * 7) % 340)) }
     #expect(Date().timeIntervalSince(t) < 1.5)
   }
+
+  @Test func titleForPhotosFromSeveralPlaces() {
+    let zurich = places.nearest(47.3769, 8.5417), lucerne = places.nearest(47.0502, 8.3093), paris = places.nearest(48.8566, 2.3522)
+    #expect(Places.title([zurich, zurich]) == "Zürich, Switzerland")
+    #expect(Places.title([zurich, lucerne]) == "Switzerland")
+    #expect(Places.title([paris, zurich, lucerne]) == "Switzerland and France")
+    #expect(Places.title([nil]) == nil)
+  }
 }

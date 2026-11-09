@@ -12,7 +12,8 @@ import { ThumbView } from "../../modules/cf-native/src/CfNativeModule";
 import { NAV_HEIGHT, NavBar } from "../NavBar";
 import { Gallery } from "../Gallery";
 import { refreshLibrary, useLibrary } from "../libraryStore";
-import { coords, placeName } from "../places";
+import { areaTitle, coords } from "../places";
+import { setViewerList } from "../viewerList";
 import { useSession } from "../session";
 import { mapCacheReady, mapPrivacyUrl, mapProviderLong, setMapOn, useMapOn } from "../mapConsent";
 import { expectAway } from "../autolock";
@@ -25,6 +26,7 @@ import type { Item } from "../library";
 const SOURCE = "cf-photos";
 const MAX_ZOOM = 16; // zoomed in this far, a cluster's tap shows its photos instead of zooming further
 const MAP_MAX = 19;
+const VISIBLE = 0.45; // the share of the map the open panel leaves free, at the top
 const MAX_MARKERS = 80;
 // the whole world, the same for everyone: never where the photos are (zoom 0 fits it on a phone in portrait)
 const WORLD_CENTER: [number, number] = [10, 25];
@@ -83,16 +85,46 @@ export default function MapScreen() {
     setMarkers(out);
   };
 
-  const showPanel = (list: Item[], fallback: string) => {
-    const sorted = [...list].sort((a, b) => (b.meta?.capture_ts ?? 0) - (a.meta?.capture_ts ?? 0));
-    setPanel({ items: sorted, title: fallback });
-    placeName(sorted[0]).then((n) => n && setPanel((cur) => (cur && cur.items === sorted ? { ...cur, title: n } : cur)), () => {});
+  // the panel lists the photos in the part of the map it leaves free (the upper VISIBLE share), made again after
+  // every zoom or move while it is open; its title says what their places have in common
+  const panelOpen = useRef(false);
+  const size = useRef({ w: 0, h: 0 });
+  const located$ = useRef(located);
+  located$.current = located;
+  const fillPanel = async () => {
+    const m = map.current;
+    if (!m || !panelOpen.current || !size.current.w) return;
+    const { w, h } = size.current;
+    const [nw, se] = await Promise.all([m.unproject([0, 0]), m.unproject([w, h * VISIBLE])]).catch(() => [null, null]);
+    if (!nw || !se || !panelOpen.current) return;
+    const [west, north] = nw, [east, south] = se;
+    const inside = (lon: number, lat: number) => lat >= south && lat <= north && (west <= east ? lon >= west && lon <= east : lon >= west || lon <= east);
+    const items = located$.current.filter((l) => inside(l.lon, l.lat)).map((l) => l.it).sort((a, b) => (b.meta?.capture_ts ?? 0) - (a.meta?.capture_ts ?? 0));
+    setPanel((cur) => ({ items, title: cur?.title ?? "" }));
+    areaTitle(items).then((title) => setPanel((cur) => (cur && cur.items === items ? { ...cur, title } : cur)), () => {});
+  };
+  const refill = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const refillSoon = () => { clearTimeout(refill.current); refill.current = setTimeout(() => { fillPanel(); }, 150); };
+  const openPanel = () => { panelOpen.current = true; fillPanel(); };
+  const closePanel = () => { panelOpen.current = false; setPanel(null); };
+  useEffect(() => { refillSoon(); }, [located]);
+
+  // a place moved into the part of the map the panel leaves free
+  const showAbovePanel = async (lngLat: [number, number], zoom?: number) => {
+    const m = map.current;
+    const { h } = size.current;
+    const at = m && h ? await m.project(lngLat).catch(() => null) : null;
+    const center = m && at ? await m.unproject([at[0], at[1] + h * (0.5 - VISIBLE / 2)]).catch(() => null) : null;
+    cam.current?.easeTo({ center: center ?? lngLat, ...(zoom !== undefined ? { zoom } : {}), duration: 400 });
   };
 
   const open = async (mk: Marker) => {
     if (mk.cluster === undefined) {
+      // one photo: straight to it, with the others on screen to swipe through
       const it = mk.id ? byId.get(mk.id) : undefined;
-      if (it) showPanel([it], t("1 photo"));
+      if (!it) return;
+      setViewerList([it.id]);
+      router.push({ pathname: "/photo/[id]", params: { id: it.id, within: "map" } });
       return;
     }
     const s = src.current, m = map.current;
@@ -101,19 +133,17 @@ export default function MapScreen() {
     // a marker from before the last move may name a cluster that no longer exists: redraw instead of guessing
     const next = await s.getClusterExpansionZoom(mk.cluster).catch(() => null);
     if (next === null) { refresh(); return; }
-    if (next <= MAX_ZOOM && zoom < MAX_ZOOM - 0.5) { cam.current?.easeTo({ center: mk.lngLat, zoom: next, duration: 400 }); return; }
-    const leaves = await s.getClusterLeaves(mk.cluster, 10000, 0).catch(() => null);
-    const list = (leaves ?? []).map((l) => byId.get((l.properties as { id: string }).id)).filter((x): x is Item => !!x);
-    showPanel(list, tn(list.length, "{n} photo", "{n} photos"));
+    if (next <= MAX_ZOOM && zoom < MAX_ZOOM - 0.5) {
+      if (panelOpen.current) showAbovePanel(mk.lngLat, next); else cam.current?.easeTo({ center: mk.lngLat, zoom: next, duration: 400 });
+      return;
+    }
+    // as close as the map goes: the photos around it, in the panel
+    panelOpen.current = true;
+    await showAbovePanel(mk.lngLat);
+    openPanel();
   };
 
-  const inView = async () => {
-    const b = await map.current?.getBounds().catch(() => null);
-    if (!b) return;
-    const [w, s, e, n] = b;
-    const inside = (lon: number, lat: number) => lat >= s && lat <= n && (w <= e ? lon >= w && lon <= e : lon >= w || lon <= e);
-    showPanel(located.filter((l) => inside(l.lon, l.lat)).map((l) => l.it), t("This area"));
-  };
+  const inView = openPanel;
 
   return (
     <View style={{ flex: 1, backgroundColor: th.colors.background }}>
@@ -146,14 +176,15 @@ export default function MapScreen() {
           </View>
         </View>
       ) : (
-        <View style={{ flex: 1, marginBottom: NAV_HEIGHT + inset.bottom }}>
+        <View style={{ flex: 1, marginBottom: NAV_HEIGHT + inset.bottom }}
+          onLayout={(e) => { size.current = { w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height }; }}>
           {cacheOk && (
           <MapView ref={map} style={StyleSheet.absoluteFill} mapStyle={styles[styleAt]} logo={false} compass={false} touchRotate={false} touchPitch={false}
             attribution attributionPosition={{ bottom: 8, right: 8 }}
             onDidFailLoadingMap={() => { if (styleAt + 1 < styles.length) setStyleAt(styleAt + 1); else setFailed(true); }}
             onDidFinishLoadingMap={() => { setFailed(false); refresh(); }}
             // the clusters at the new zoom are only queryable once a frame has been drawn fully after the move
-            onRegionDidChange={() => { moved.current = true; refresh(); }}
+            onRegionDidChange={() => { moved.current = true; refresh(); refillSoon(); }}
             onDidFinishRenderingFrameFully={() => { if (moved.current) { moved.current = false; refresh(); } }}>
             <Camera ref={cam} initialViewState={{ center: WORLD_CENTER, zoom: 0 }} minZoom={0} maxZoom={MAP_MAX} />
             <GeoJSONSource ref={src} id={SOURCE} data={data} cluster clusterRadius={56} clusterMaxZoom={MAP_MAX} maxzoom={MAP_MAX + 1}
@@ -190,7 +221,7 @@ export default function MapScreen() {
                   <Text variant="titleMedium" numberOfLines={1}>{panel.title}</Text>
                   <Text variant="bodySmall" style={{ color: th.colors.onSurfaceVariant }}>{tn(panel.items.length, "{n} photo", "{n} photos")}</Text>
                 </View>
-                <IconButton icon="x" accessibilityLabel={t("Close")} onPress={() => setPanel(null)} />
+                <IconButton icon="x" accessibilityLabel={t("Close")} onPress={closePanel} />
               </View>
               <Gallery items={panel.items} error={undefined} loading={false} onRefresh={() => {}} header={null} empty={null} flat within="map" />
             </View>
@@ -212,6 +243,6 @@ const st = StyleSheet.create({
   count: { position: "absolute", top: -6, right: -8, minWidth: 22, height: 22, paddingHorizontal: 6, borderRadius: 11, borderWidth: 2, alignItems: "center", justifyContent: "center" },
   bar: { position: "absolute", top: 12, left: 12, right: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, paddingLeft: 12, paddingRight: 4, paddingVertical: 4, borderRadius: 12, borderWidth: 1 },
   fail: { position: "absolute", top: 72, left: 12, right: 12, padding: 12, borderRadius: 12 },
-  panel: { position: "absolute", left: 0, right: 0, bottom: 0, height: "55%", borderTopLeftRadius: 20, borderTopRightRadius: 20, borderWidth: 1, overflow: "hidden" },
+  panel: { position: "absolute", left: 0, right: 0, bottom: 0, height: `${Math.round((1 - VISIBLE) * 100)}%`, borderTopLeftRadius: 20, borderTopRightRadius: 20, borderWidth: 1, overflow: "hidden" },
   panelHead: { flexDirection: "row", alignItems: "center", paddingLeft: 16, paddingTop: 8 },
 });

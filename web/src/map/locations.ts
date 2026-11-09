@@ -1,7 +1,7 @@
 // Where photos were taken, from their encrypted metadata (docs/MAP.md): only this device ever sees the coordinates.
 // Place names come from the GeoNames file bundled with the app (places/places.ts), loaded once when first needed.
 import placesUrl from "../places/places-v1.bin?url";
-import { fold, label, Places } from "../places/places";
+import { fold, label, Places, summary } from "../places/places";
 import type { Item } from "../items";
 
 export interface Located { item: Item; lat: number; lon: number }
@@ -54,4 +54,28 @@ export async function placeWords(items: Item[]): Promise<Map<string, string>> {
     out.set(l.item.id, `${words} ${fold(words)}`);
   }
   return out;
+}
+
+// each photo's place, looked up once (the panel's title is made again after every move of the map)
+const placeOf = new WeakMap<Item, ReturnType<Places["nearest"]>>();
+
+/** A title for the photos in the panel: their place when all are from one ("Zürich, Switzerland"), else their
+ *  countries ("Switzerland"; "France and Switzerland"; "France, Switzerland and 3 more"), else "This area". */
+export async function areaTitle(items: Item[]): Promise<string> {
+  if (!items.length) return "This area";
+  try {
+    const p = await loadPlaces();
+    const s = summary(items.map((it) => {
+      if (!placeOf.has(it)) { const c = coords(it); placeOf.set(it, c ? p.nearest(c.lat, c.lon) : null); }
+      return placeOf.get(it) ?? null;
+    }));
+    const c = s.countries;
+    if (s.place) return s.place;
+    if (c.length === 0) return "This area";
+    if (c.length === 1) return c[0];
+    if (c.length === 2) return `${c[0]} and ${c[1]}`;
+    return `${c[0]}, ${c[1]} and ${c.length - 2} more`;
+  } catch {
+    return "This area";
+  }
 }

@@ -18,6 +18,17 @@ enum PlaceBook {
     await Task.detached(priority: .userInitiated) { places?.nearest(g.lat, g.lon)?.label }.value
   }
 
+  /** A title for the map panel's photos: their place when all are from one ("Zürich, Switzerland"), else their
+   *  countries, most photos first ("Switzerland"; "France and Switzerland"; "France, Switzerland and 3 more"). */
+  static func title(_ items: [Item]) async -> String {
+    let spots = items.compactMap(\.location)
+    guard !spots.isEmpty, let places else { return "This area" }
+    return await Task.detached(priority: .userInitiated) {
+      let hits = spots.map { places.nearest($0.lat, $0.lon) }
+      return Places.title(hits) ?? "This area"
+    }.value
+  }
+
   private static let lock = NSLock()
   nonisolated(unsafe) private static var words: [String: [String]] = [:]
 
@@ -135,6 +146,9 @@ final class MapController: NSObject, WKNavigationDelegate, WKUIDelegate {
     return ((try? await web.callAsyncJavaScript("return cf.inView()", contentWorld: .page)) as? [String]) ?? []
   }
 
+  /** The panel is open (true) or closed: while it is, the page sends the photos in view after every move. */
+  func follow(_ on: Bool) { if ready { call("cf.follow(\(on))") } }
+
   private func call(_ js: String) { web.evaluateJavaScript(js, in: nil, in: .page) { _ in } }
 
   private func json<T: Encodable>(_ v: T) -> String { (try? JSONEncoder().encode(v)).flatMap { String(data: $0, encoding: .utf8) } ?? "null" }
@@ -155,7 +169,7 @@ final class MapController: NSObject, WKNavigationDelegate, WKUIDelegate {
     case "thumb":
       guard let id = m["id"] as? String else { return nil }
       return await thumb(id)
-    case "photos": if let ids = m["ids"] as? [String] { onPhotos?(ids) }
+    case "area": if let ids = m["ids"] as? [String] { onPhotos?(ids) }
     case "open": if let id = m["id"] as? String { onOpen?(id) }
     case "log":
       #if DEBUG
@@ -378,7 +392,7 @@ struct MapScreen: View {
           }
         }
         if let panel {
-          MapPanel(panel: panel, selection: selection) { self.panel = nil }
+          MapPanel(panel: panel, selection: selection) { self.panel = nil; map?.follow(false) }
             .frame(width: 340)
             .transition(.move(edge: .trailing).combined(with: .opacity))
         }
@@ -389,7 +403,7 @@ struct MapScreen: View {
     .onAppear {
       guard map == nil, let styles = model.me?.map else { return }
       let c = MapController(mode: .map, styles: styles, dark: scheme == .dark, model: model)
-      c.onPhotos = { ids in show(ids, title: nil) }
+      c.onPhotos = { ids in show(ids) }
       c.onOpen = { id in nav.viewer = ViewerState(ids: [id], index: 0) }
       c.show(model.items)
       map = c
@@ -402,19 +416,17 @@ struct MapScreen: View {
     .onChange(of: scheme) { _, s in map?.setDark(s == .dark) }
   }
 
-  private func inView() async {
-    guard let map else { return }
-    show(await map.inView(), title: "This area")
-  }
+  /** "Photos in This Area": the panel opens and from then on follows the map. */
+  private func inView() async { map?.follow(true) }
 
-  /** The panel's photos, newest first; its title is the place of the newest one. */
-  private func show(_ ids: [String], title: String?) {
+  /** The panel's photos (those in view), newest first; its title says what their places have in common. */
+  private func show(_ ids: [String]) {
     let items = ids.compactMap { model.item($0) }.sorted { $0.when > $1.when }
-    let fallback = title ?? (items.count == 1 ? "1 photo" : "\(items.count) photos")
-    panel = Panel(title: fallback, ids: items.map(\.id))
-    guard title == nil, let g = items.first?.location else { return }
+    let list = items.map(\.id)
+    panel = Panel(title: panel?.title ?? "", ids: list)
     Task {
-      if let name = await PlaceBook.label(g), panel?.ids == items.map(\.id) { panel?.title = name }
+      let t = await PlaceBook.title(items)
+      if panel?.ids == list { panel?.title = t }
     }
   }
 }

@@ -142,9 +142,10 @@ function draw() {
       if (!props.cluster) { post({ t: "open", id: props.id }); return; }
       const z = await src.getClusterExpansionZoom(props.cluster_id);
       if (z <= MAX_ZOOM && m.getZoom() < MAX_ZOOM - 0.5) { m.easeTo({ center: [lon, lat], zoom: Math.min(z, MAX_ZOOM) }); return; }
-      // at one spot, or zoomed in far: the cluster's photos in the panel beside the map
-      const leaves = await src.getClusterLeaves(props.cluster_id, Infinity, 0);
-      post({ t: "photos", ids: leaves.map((l) => l.properties.id) });
+      // as close as the map goes: the panel beside the map opens with the photos around it, and follows the map
+      following = true;
+      m.easeTo({ center: [lon, lat] });
+      sendArea();
     };
     const { el, img } = markerEl(count, open);
     markers.set(k, { marker: new Marker({ element: el }).setLngLat([lon, lat]).addTo(m), img });
@@ -173,16 +174,23 @@ if (!mini) {
     later();
   });
   m.on("sourcedata", (e) => { if (e.sourceId === SOURCE) later(); });
-  m.on("moveend", later);
+  m.on("moveend", () => { later(); areaSoon(); });
+  m.on("resize", areaSoon); // the panel opening makes the map narrower: a different area is on screen
   m.on("idle", later);
   m.on("zoomend", () => { clearMarkers(); later(); }); // clusters change their ids
 
   /** New or removed photos: the data again, without touching the view. */
-  window.cf.setPoints = (p) => { points = p; clearMarkers(); m.getSource(SOURCE)?.setData(geojson()); };
+  window.cf.setPoints = (p) => { points = p; clearMarkers(); m.getSource(SOURCE)?.setData(geojson()); areaSoon(); };
   /** The photos inside what the map shows now ("Photos in this area"). */
   window.cf.inView = () => {
     const b = m.getBounds();
     return points.filter((p) => b.contains([p.lon, p.lat])).map((p) => p.id);
   };
+  // while the panel is open, it gets the photos in view after every zoom or move
+  // (declarations, not consts: the map's events above may fire before this line runs)
+  var following = false, areaTimer;
+  function sendArea() { if (following) post({ t: "area", ids: window.cf.inView() }); }
+  function areaSoon() { clearTimeout(areaTimer); areaTimer = setTimeout(sendArea, 150); }
+  window.cf.follow = (on) => { following = on; if (on) sendArea(); };
   window.cf.markers = () => markers.size;
 }

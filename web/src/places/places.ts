@@ -138,3 +138,18 @@ export function label(r: ReturnType<Places["nearest"]>): string {
   if (!r) return "";
   return r.place ? `${r.place.name}, ${r.place.country}` : r.country ?? "";
 }
+
+/** What a set of photos' places have in common, for a title: the place when all are in the same one, else the
+ *  countries, most photos first ("Switzerland"; "France", "Switzerland", …). Photos at sea or far from any place
+ *  count for nothing. */
+export function summary(rs: ReturnType<Places["nearest"]>[]): { place?: string; countries: string[] } {
+  const labels = new Set<string>();
+  const count = new Map<string, number>();
+  for (const r of rs) {
+    if (!r) continue;
+    labels.add(label(r));
+    if (r.country) count.set(r.country, (count.get(r.country) ?? 0) + 1);
+  }
+  const countries = [...count.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([c]) => c);
+  return labels.size === 1 && rs.every((r) => r) ? { place: [...labels][0], countries } : { countries };
+}

@@ -12,7 +12,7 @@ import { mem } from "../state";
 import { dropImage, thumbUrl, wantImage } from "../cache";
 import { Timeline } from "../grid";
 import type { Item } from "../items";
-import { located, placeName, type Located } from "./locations";
+import { areaTitle, located, type Located } from "./locations";
 import { mapProviderLong, PRIVACY_URL, setMapOn, useMapOn } from "./consent";
 
 setWorkerUrl(workerUrl);
@@ -94,12 +94,21 @@ function MapView(p: { items: Item[]; onOpen: (list: Item[], index: number) => vo
   const dataRef = useRef(points);
   dataRef.current = points;
 
-  // the panel's title: the place of its newest photo
-  const showPanel = (items: Item[], fallback: string) => {
-    const sorted = [...items].sort((a, b) => (b.meta?.capture_ts ?? 0) - (a.meta?.capture_ts ?? 0));
-    setPanel({ items: sorted, title: fallback });
-    placeName(sorted[0]).then((n) => n && setPanel((cur) => (cur && cur.items === sorted ? { ...cur, title: n } : cur)));
+  // the panel lists the photos in the part of the map on screen, made again after every zoom or move while it is
+  // open; its title says what their places have in common
+  const panelOpen = useRef(false);
+  const fillPanel = useRef(() => {});
+  fillPanel.current = () => {
+    const m = map.current;
+    if (!m || !panelOpen.current) return;
+    const b = m.getBounds();
+    const items = dataRef.current.filter((l) => b.contains([l.lon, l.lat])).map((l) => l.item)
+      .sort((a, b2) => (b2.meta?.capture_ts ?? 0) - (a.meta?.capture_ts ?? 0));
+    setPanel((cur) => ({ items, title: cur?.title ?? "" }));
+    areaTitle(items).then((t) => setPanel((cur) => (cur && cur.items === items ? { ...cur, title: t } : cur)));
   };
+  const openPanel = () => { panelOpen.current = true; fillPanel.current(); };
+  const closePanel = () => { panelOpen.current = false; setPanel(null); };
 
   useEffect(() => {
     if (!conf || !box.current) return;
@@ -168,8 +177,9 @@ function MapView(p: { items: Item[]; onOpen: (list: Item[], index: number) => vo
           if (props.cluster) {
             const z = await src.getClusterExpansionZoom(props.cluster_id!);
             if (z <= MAX_ZOOM && m.getZoom() < MAX_ZOOM - 0.5) { m.easeTo({ center: [lon, lat], zoom: Math.min(z, MAX_ZOOM) }); return; }
-            const leaves = await src.getClusterLeaves(props.cluster_id!, Infinity, 0);
-            showPanel(leaves.map((l) => itemsRef.current.get((l.properties as { id: string }).id)).filter((x): x is Item => !!x), `${count} photos`);
+            // as close as the map goes: the photos around it, in the panel
+            m.easeTo({ center: [lon, lat] });
+            openPanel();
           } else {
             const it = itemsRef.current.get(props.id!);
             if (it) p.onOpen([it], 0);
@@ -192,7 +202,10 @@ function MapView(p: { items: Item[]; onOpen: (list: Item[], index: number) => vo
 
     m.on("style.load", () => { loaded = true; addSource(); later(); });
     m.on("sourcedata", (e: { sourceId?: string }) => { if (e.sourceId === SOURCE) later(); });
-    m.on("moveend", later);
+    let refill: ReturnType<typeof setTimeout> | undefined;
+    const refillSoon = () => { clearTimeout(refill); refill = setTimeout(() => fillPanel.current(), 150); };
+    m.on("moveend", () => { later(); refillSoon(); });
+    m.on("resize", refillSoon); // the panel opening makes the map narrower: a different area is on screen
     m.on("zoomend", () => { for (const k of [...markers.keys()]) drop(k); later(); }); // clusters change their ids
 
     // the system's dark mode changes: the other base map
@@ -211,14 +224,10 @@ function MapView(p: { items: Item[]; onOpen: (list: Item[], index: number) => vo
   useEffect(() => {
     const src = map.current?.getSource(SOURCE) as GeoJSONSource | undefined;
     src?.setData(geojson(points) as never);
+    fillPanel.current();
   }, [points]);
 
-  const inView = () => {
-    const m = map.current;
-    if (!m) return;
-    const b = m.getBounds();
-    showPanel(points.filter((l) => b.contains([l.lon, l.lat])).map((l) => l.item), "This area");
-  };
+  const inView = openPanel;
 
   if (!conf) return <p class="hint">The map is turned off on this server.</p>;
   return (
@@ -236,7 +245,7 @@ function MapView(p: { items: Item[]; onOpen: (list: Item[], index: number) => vo
           <div class="mappanelhead">
             <h2 dir="auto">{panel.title}</h2>
             <span class="muted small">{panel.items.length === 1 ? "1 photo" : `${panel.items.length} photos`}</span>
-            <button class="iconbtn" aria-label="Close" onClick={() => setPanel(null)}><Icon name="x" /></button>
+            <button class="iconbtn" aria-label="Close" onClick={closePanel}><Icon name="x" /></button>
           </div>
           {panel.items.length === 0
             ? <p class="hint">No photos in this area.</p>

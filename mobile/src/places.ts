@@ -2,7 +2,8 @@
 // asset and read once when the map, a photo's details or a search needs it. A photo's coordinates never leave the phone.
 import { Asset } from "expo-asset";
 import { File } from "expo-file-system";
-import { fold, label, Places, type Place } from "@places/places";
+import { fold, label, Places, summary, type Place } from "@places/places";
+import { t } from "./i18n";
 import type { Item } from "./library";
 
 export { label, type Place };
@@ -54,4 +55,28 @@ export async function inPlace(items: Item[], words: string): Promise<{ ids: Set<
     if (hit) { ids.add(it.id); name ||= hit; }
   }
   return ids.size ? { ids, name } : null;
+}
+
+// each photo's place, looked up once (the map's panel gets its title anew after every move)
+const placeOf = new WeakMap<Item, ReturnType<Places["nearest"]>>();
+
+/** A title for the photos in the map's panel: their place when all are from one ("Zürich, Switzerland"), else their
+ *  countries ("Switzerland"; "France and Switzerland"; "France, Switzerland and 3 more"), else "This area". */
+export async function areaTitle(items: Item[]): Promise<string> {
+  if (!items.length) return t("This area");
+  try {
+    const p = await loadPlaces();
+    const s = summary(items.map((it) => {
+      if (!placeOf.has(it)) { const c = coords(it); placeOf.set(it, c ? p.nearest(c.lat, c.lon) : null); }
+      return placeOf.get(it) ?? null;
+    }));
+    const c = s.countries;
+    if (s.place) return s.place;
+    if (c.length === 0) return t("This area");
+    if (c.length === 1) return c[0];
+    if (c.length === 2) return t("{a} and {b}", { a: c[0], b: c[1] });
+    return t("{a}, {b} and {n} more", { a: c[0], b: c[1], n: String(c.length - 2) });
+  } catch {
+    return t("This area");
+  }
 }

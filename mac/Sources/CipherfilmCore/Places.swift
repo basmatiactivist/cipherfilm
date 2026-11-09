@@ -211,3 +211,23 @@ extension Item {
     return g
   }
 }
+
+extension Places {
+  /** What a set of photos' places have in common (as web/src/places/places.ts summary): the place when all are in the
+   *  same one, else the countries, most photos first; nil when none is near a place. */
+  public static func title(_ hits: [PlaceHit?]) -> String? {
+    let found = hits.compactMap { $0 }
+    guard !found.isEmpty else { return nil }
+    let labels = Set(found.map(\.label))
+    if labels.count == 1, found.count == hits.count { return labels.first }
+    var count: [String: Int] = [:]
+    for h in found where !h.country.isEmpty { count[h.country, default: 0] += 1 }
+    let c = count.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }.map(\.key)
+    switch c.count {
+    case 0: return nil
+    case 1: return c[0]
+    case 2: return "\(c[0]) and \(c[1])"
+    default: return "\(c[0]), \(c[1]) and \(c.count - 2) more"
+    }
+  }
+}

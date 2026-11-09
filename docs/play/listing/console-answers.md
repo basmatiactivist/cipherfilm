@@ -126,7 +126,7 @@ Questions for that category:
 | Controlled substances (drugs, alcohol, tobacco) | No | |
 | Gambling, simulated gambling, real-money betting | No | |
 | Does the app natively allow users to interact or exchange content with other users (chat, sharing images, voice)? | **No** | Each account's library is private. There is no sharing between users, no comments, no messaging. "Share to Cipherfilm" uploads from the phone into the user's own library only. |
-| Does the app share the user's current physical location with other users? | No | Location is read only from photo EXIF, encrypted on the device, and never shown to anyone else. |
+| Does the app share the user's current physical location with other users? | No | Location is read only from photo EXIF, encrypted on the device, and never shown to other users. The optional map (docs/MAP.md) loads map images from OpenFreeMap: see Data safety, Approximate location. |
 | Does the app allow users to purchase digital goods? | No | Free, no in-app purchases. |
 | Does the app contain any swastikas or other hate symbols? (some questionnaire versions) | No | |
 | Is the app a web browser or search engine / provides unrestricted internet access? | No | It connects only to the one server the user signs in to, and once to Hugging Face to download the open search models. "Search" is a local search of the user's own photos. |
@@ -185,7 +185,8 @@ declared. This matches REQUIREMENTS §4.6.
 | Audio files, voice recordings, music | No | No | Videos are uploaded as files, end-to-end encrypted (as above). |
 | Files and docs | No | No | |
 | Calendar, Contacts | No | No | |
-| **Location** → Approximate, Precise | **No** (exempt) | No | GPS positions exist only inside photo EXIF, which is encrypted on the device with the photo. The app requests no location permission. |
+| **Location** → Approximate | **Yes**, optional, App functionality, not shared, not ephemeral | No | GPS positions exist only inside photo EXIF, encrypted on the device with the photo; that part is exempt. But the optional map (off until the person turns it on, docs/MAP.md) requests map images from OpenFreeMap (via Cloudflare): the areas viewed, and at district level (zoom 11) the area of a photo whose details are opened. That is approximate location sent to a third party. Entered in the Console on 2026-11-09. |
+| **Location** → Precise | **No** | No | The small map never goes past zoom 11 and can't be zoomed; the map tab's areas are chosen by the person. The app requests no location permission. |
 | Web browsing history | No | No | |
 | App activity → App interactions, in-app search history, installed apps, other UGC, other actions | No | No | Search runs on the phone; the search index and people list are encrypted on the device before they are stored. The server keeps upload and sign-in times as part of operating the user's account on the user's own server; they are not sent to the developer. *Conservative fallback if a reviewer asks: "App interactions, App functionality".* |
 | Search models from Hugging Face (not a data type; for the reviewer's notes) | No | No | When the user turns search on, the app downloads the open search models once from Hugging Face (`huggingface.co`, its CDN under `hf.co`), where they are published. It is a plain download of public files: no user data, account, photo, search word or identifier is sent; Hugging Face sees only the phone's IP address, as any server it connects to does. Each file is checked against a SHA-256 built into the app. Not "sharing" under Play's definition (no user data leaves the app). |

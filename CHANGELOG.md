@@ -7,6 +7,48 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+Your photos on a map, in every app: where they were taken, found by place, with the locations end-to-end encrypted.
+
+### Added
+- Map: photos where they were taken, as clustered thumbnails on a world map, in the web, Android and Mac apps. A
+  cluster opens closer; the panel beside (or below) the map lists the photos in view and follows every zoom and move,
+  titled with what their places share ("Zürich, Switzerland"; "France, Switzerland and 3 more").
+- A photo's details show the place's name and, with the map on, a small map of its spot at district level; with the
+  map off they offer "Show on the map".
+- Search by place: "zurich", "Zürich", "switzerland", "japan", "new york". On Android countries are in the app's
+  language ("Zürich, Schweiz") and found by either name.
+- Everything about locations happens on the device: the coordinates stay end-to-end encrypted, and place names come
+  from a GeoNames file bundled with the apps (every place with at least 1,000 inhabitants, a big city counting as far
+  as it reaches, so the Eiffel Tower is in Paris).
+- The map is off until each person turns it on, after a short explanation of what the map server sees; Account › Map
+  (Settings › General › Map on the Mac) turns it off again. If the server later names another map server, every device
+  asks again. The base map is OpenFreeMap (VersaTiles as fallback), which
+  sees the device's IP address and the map areas viewed, never a photo or its coordinates; the map opens on the whole
+  world and never moves to the photos by itself.
+- `MAP_STYLE` on the server: your own map server's styles, or `off` for no map (place names and place search keep
+  working). docs/MAP.md explains setting up your own map tiles.
+
+### Changed
+- The place-name file goes out gzip-compressed (2.2 MB instead of 3.8 MB on first use).
+
+### Security
+- Web, Android and Mac take an item's kind (photo, video) from its encrypted metadata, no longer from the server's
+  plain field, so a malicious server can't route a photo's bytes to the video player or the image decoder.
+- Web: a tab stays unlocked only across a real reload; a reopened tab, a restored browser session, the address typed
+  again or a phone browser reloading a tab it had dropped ask for the password (docs/CRYPTO.md). A page brought back from the browser's back/forward cache starts again and checks the session.
+- Android: the map doesn't stay on screen when the app locks, and the map's cache of loaded map images is cleared at
+  lock, sign-out and when the map is turned off.
+- Mac: Share and Save stop at lock and sign-out; copies of files dropped from other apps are deleted when their upload
+  is cancelled or removed and at sign-out; thumbnails and search entries still being opened at lock don't stay in
+  memory.
+- Mac: the Touch ID key's handle is in the login keychain, readable only by the app (it was a file other programs of
+  the same user could read). macOS asks once for the Mac's password after an update until the app is signed by Apple.
+- Updates of crypto and storage libraries (libsodium, x/crypto, JNA, SQLite) are never merged automatically.
+- The web app's crypto is tested against the same committed vectors as the decrypt tool and the Mac app.
+- Server image: the package manager, zlib and OpenSSL are no longer in it (only the package manager and busybox's
+  https client used them); this clears zlib's CVE-2026-4738 and keeps such alerts out. The shell for the `cipherfilm`
+  console command stays.
+
 ## [2.5.1] - 2026-11-09
 
 The server commands work in any container console, such as Portainer's: `cipherfilm status`.

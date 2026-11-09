@@ -39,6 +39,12 @@ struct NeedsUnlock: View {
 
 struct GeneralSettings: View {
   @Environment(AppModel.self) private var model
+  /** The map's credit when the server offers one: OpenStreetMap and OpenFreeMap for the default, else the map's own. */
+  private var mapCredit: String {
+    guard let m = model.me?.map else { return "" }
+    return m.isDefault ? "Map: © OpenStreetMap contributors, OpenFreeMap · MapLibre GL JS (BSD-3-Clause)\n" : "Map: MapLibre GL JS (BSD-3-Clause); its data is credited on the map\n"
+  }
+
   @State private var signOut = false
   @State private var deleteAccount = false
   @State private var touchError: String?
@@ -52,6 +58,13 @@ struct GeneralSettings: View {
         Toggle("Open at login", isOn: Binding(get: { model.agent.openAtLogin }, set: { model.agent.setOpenAtLogin($0) }))
         Toggle("Notify when uploads, exports and indexing finish", isOn: Binding(get: { Notifier.enabled }, set: { Notifier.enabled = $0 }))
         if let p = model.agent.loginProblem { Text(p).font(Typo.caption).foregroundStyle(Ink.danger) }
+      }
+      Divider()
+      // the map's images come from a third party: off until turned on, per account on this Mac (MapPage.swift)
+      Section_(title: "Map", subtitle: "Your photos on a map. Map images from \(MapConsent.provider(model.me?.map)).") {
+        Toggle("Map", isOn: Binding(get: { model.mapOn }, set: { model.mapOn = $0 }))
+          .disabled(model.me == nil || model.me?.hasMap != true)
+        if model.me != nil && model.me?.hasMap != true { Text("This server doesn't offer a map.").font(Typo.caption).foregroundStyle(.secondary) }
       }
       Divider()
       Section_(title: "Unlock with Touch ID", subtitle: "Your library's key is kept locked in this Mac's Secure Enclave. Changing your fingerprints turns it off. Your password always works.") {
@@ -91,6 +104,9 @@ struct GeneralSettings: View {
       Divider()
       Text("Cipherfilm \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")\(model.me?.server_version.map { " · server \($0)" } ?? "") · libsodium \(Sodium.version) · ONNX Runtime \(Vision.runtimeVersion)")
         .font(Typo.small).foregroundStyle(.tertiary)
+      // the map's and the place names' sources ask to be named (OpenStreetMap: ODbL; GeoNames: CC BY 4.0)
+      Text(mapCredit + "Place names: GeoNames (geonames.org), CC BY 4.0")
+        .font(Typo.small).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
     }
     .padding(24)
     .sheet(isPresented: $signOut) { SignOutSheet().environment(model) }

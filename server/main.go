@@ -19,12 +19,8 @@ import (
 //go:embed all:static
 var staticFS embed.FS
 
-// connect-src: besides this server, only Hugging Face, where the web app downloads the search text model
-// (server/models.json): huggingface.co answers with a redirect to its own CDN under hf.co, whose host name has changed
-// over time (cdn-lfs*.hf.co, cas-bridge.xethub.hf.co, now us.aws.cdn.hf.co), so the whole of hf.co is allowed.
-const csp = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; " +
-	"img-src 'self' blob:; media-src 'self' blob:; connect-src 'self' https://huggingface.co https://*.hf.co; worker-src 'self'; " +
-	"manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+// The web app's CSP (mapconf.go): set at start from MAP_STYLE, the default map until then.
+var csp = buildCSP(defaultMap.origins())
 
 // The HEIC decoder (libheif, built with embind) needs eval. It runs in a dedicated worker served from /heic/,
 // which gets a CSP that allows eval but forbids every network request, so it cannot send anything anywhere.
@@ -193,6 +189,7 @@ func main() {
 	if n := len(app.demo); n > 0 {
 		log.Printf("DEMO_ACCOUNTS: %d read-only public demo account(s)", n)
 	}
+	csp = buildCSP(app.mapConf.origins())
 	if err := app.initSetup(); err != nil {
 		log.Fatal(err)
 	}

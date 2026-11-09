@@ -29,7 +29,8 @@ type asset struct {
 
 func compressible(name string) bool {
 	switch path.Ext(name) {
-	case ".js", ".css", ".html", ".json", ".svg", ".txt", ".webmanifest":
+	case ".js", ".css", ".html", ".json", ".svg", ".txt", ".webmanifest",
+		".bin": // the place names for the map and search (web/src/places): 3.8 MB, about 2 MB compressed
 		return true
 	}
 	return false

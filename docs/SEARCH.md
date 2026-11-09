@@ -7,6 +7,9 @@ Cipherfilm can find photos by what is in them ("beach", "birthday cake") and gro
 you can name. All of it runs on the phone. The server stores the results encrypted, so it never learns what a photo
 shows or who is in it, and another device of the same person doesn't have to compute them again.
 
+Search by place ("zurich", "japan") needs none of this: it works from the photos' encrypted coordinates and the place
+names bundled with the apps, on the device, whether search or the map is on or not (docs/MAP.md).
+
 Search is off until the person turns it on (the app asks once after unlocking; Account › Search and people changes it
 any time). Turning it off removes the models from the phone; "Delete everything" also removes the index and the people
 list from the server.

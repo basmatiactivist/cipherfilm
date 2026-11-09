@@ -91,6 +91,8 @@ struct PhotoGrid: View {
   @Bindable var selection: Selection
   /** called when the end of the grid comes into view (more search results to show) */
   var more: (() -> Void)?
+  /** the space left and right of the photos (the map's side panel is narrower) */
+  var inset: CGFloat = 28
   let open: (Item, [Item]) -> Void
   @State private var width: CGFloat = 900
   @FocusState private var focused: Bool
@@ -134,8 +136,8 @@ struct PhotoGrid: View {
         }
         if let more { Color.clear.frame(height: 1).onAppear(perform: more) }
       }
-      .padding(.leading, 28).padding(.trailing, years.count > 1 ? 56 : 28).padding(.bottom, 80)
-      .background(GeometryReader { g in Color.clear.onAppear { width = g.size.width - (years.count > 1 ? 84 : 56) }.onChange(of: g.size.width) { _, w in width = w - (years.count > 1 ? 84 : 56) } })
+      .padding(.leading, inset).padding(.trailing, years.count > 1 ? inset + 28 : inset).padding(.bottom, 80)
+      .background(GeometryReader { g in Color.clear.onAppear { width = g.size.width - (years.count > 1 ? 2 * inset + 28 : 2 * inset) }.onChange(of: g.size.width) { _, w in width = w - (years.count > 1 ? 2 * inset + 28 : 2 * inset) } })
     }
     .overlay(alignment: .trailing) {
       if years.count > 1 { YearScrubber(years: years) { y in if let s = secs.first(where: { $0.year == y }) { withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(s.id, anchor: .top) } } } }
@@ -325,7 +327,8 @@ enum Saver {
       p.nameFieldStringValue = it.name.isEmpty ? "photo" : it.name
       p.canCreateDirectories = true
       guard p.runModal() == .OK, let url = p.url else { return }
-      Task {
+      Outbox.saveTask?.cancel()
+      Outbox.saveTask = Task {
         model.working = "Saving \(url.lastPathComponent)…"
         defer { model.working = nil }
         do {
@@ -341,11 +344,14 @@ enum Saver {
       p.canChooseDirectories = true; p.canChooseFiles = false; p.canCreateDirectories = true; p.prompt = "Save Here"
       p.message = "Choose a folder for the \(items.count) originals."
       guard p.runModal() == .OK, let dir = p.url else { return }
-      Task {
+      Outbox.saveTask?.cancel()
+      Outbox.saveTask = Task {
         var taken = Set<String>()
         var saved: [URL] = []
         var failed: [String] = []
         for (n, it) in items.enumerated() {
+          // a lock or sign-out stops it (Outbox.cancel): nothing more is decrypted
+          guard !Task.isCancelled, vault.isOpen else { break }
           model.working = "Saving \(n + 1) of \(items.count)…"
           // every candidate is one clean path component, the numbered ones too
           let first = FileName.of(it)

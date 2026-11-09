@@ -44,9 +44,12 @@ describe("recovery words", () => {
     const words = await keyToWords(k);
     expect(words).toHaveLength(24);
     expect(await wordsToKey(words.join(" ").toUpperCase())).toEqual(k);
-    const swapped = [...words];
+    // a swap is caught by the 8-bit checksum for all but about 1 key in 256, so it is checked with a fixed key
+    const fixed = await keyToWords(Uint8Array.from({ length: 32 }, (_, i) => i));
+    const swapped = [...fixed];
     [swapped[0], swapped[1]] = [swapped[1], swapped[0]];
-    if (swapped[0] !== words[0]) await expect(wordsToKey(swapped.join(" "))).rejects.toThrow();
+    expect(swapped[0]).not.toBe(fixed[0]);
+    await expect(wordsToKey(swapped.join(" "))).rejects.toThrow();
     await expect(wordsToKey("abandon ".repeat(24))).rejects.toThrow();
     await expect(wordsToKey("nonsenseword " + words.slice(1).join(" "))).rejects.toThrow();
   });

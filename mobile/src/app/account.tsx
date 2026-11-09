@@ -13,6 +13,7 @@ import { Field, Problem, SwitchItem, useAppTheme } from "../ui";
 import { setShake, useShake } from "../shake";
 import { CHOICES, away, expectAway, setAutoLock, useAutoLock } from "../autolock";
 import { privacyUrl } from "../store";
+import { mapProvider, setMapOn, useMapOn } from "../mapConsent";
 import { reportUrl, summary, thisPhone } from "../report";
 import { text } from "../tokens";
 import { busyIcon } from "../Loader";
@@ -28,6 +29,7 @@ export default function Account() {
   const th = useAppTheme();
   const inset = useSafeAreaInsets();
   const { me, server, biometric } = useSession();
+  const mapOn = useMapOn();
   const [usage, setUsage] = useState<{ used_bytes: number; quota_bytes: number; unlimited: boolean }>();
   const [error, setError] = useState<string>();
   const [confirmOut, setConfirmOut] = useState(false);
@@ -112,6 +114,9 @@ export default function Account() {
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="search" color={th.colors.primary} /></View>} onPress={() => router.push("/search-settings")} style={st.item} />
         <List.Item title={t("Free up space")} description={t("Remove photos from this phone that are already in Cipherfilm")}
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="phone" color={th.colors.primary} /></View>} onPress={() => router.push("/free-space")} style={st.item} />
+        {me?.map ? <SwitchItem title={t("Map")} description={t("Your photos on a map. Map images from {who}.", { who: mapProvider() || t("the map server") })}
+          left={() => <View style={st.icon}><Icon name="map" color={th.colors.primary} /></View>}
+          value={mapOn} onValueChange={(v) => setMapOn(v)} style={st.item} /> : null}
         <SwitchItem title={t("Unlock with fingerprint or face")}
           description={bioOk || biometric ? t("Your key stays in this phone's secure hardware") : t("Set up fingerprint or face unlock in Android settings first")}
           left={() => <View style={st.icon}><Icon name="fingerprint" color={bioOk || biometric ? th.colors.primary : th.colors.onSurfaceDisabled} /></View>}
@@ -141,6 +146,9 @@ export default function Account() {
         <List.Item title={t("Server version")} description={serverVersion ?? t("Unknown")} style={st.item} />
         <List.Item title={t("Privacy policy")} description={privacyUrl().replace("https://", "")}
           onPress={() => { expectAway(); Linking.openURL(privacyUrl()); }} style={st.item} />
+        {/* the sources ask to be named: GeoNames for the place names (always used), OpenStreetMap for the map */}
+        <List.Item title={t("Credits")} description={[t("Place names: GeoNames, CC BY 4.0."), me?.map ? (mapProvider() === "OpenFreeMap" ? t("Map data © OpenStreetMap contributors, OpenFreeMap.") : t("Map data: see the credits on the map.")) : ""].filter(Boolean).join(" ")}
+          descriptionNumberOfLines={4} style={st.item} />
         <List.Item title={t("Report a problem")} description={t("Opens a form on GitHub")}
           onPress={() => setReport(true)} style={st.item} />
       </ScrollView>

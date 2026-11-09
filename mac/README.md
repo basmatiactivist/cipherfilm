@@ -24,6 +24,7 @@ package lags behind, so it is not used).
 With Xcode (newest):
 
 ```bash
+(cd web && npm ci --ignore-scripts)   # MapLibre GL JS for the map, copied into the app by scripts/map-assets.sh
 cd mac
 ./scripts/fetch-onnxruntime.sh
 brew install xcodegen && xcodegen generate

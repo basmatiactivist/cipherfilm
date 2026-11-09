@@ -11,6 +11,9 @@
       ],
       "libsodium-wrappers": [
         "./src/crypto/libsodium.ts"
+      ],
+      "@places/*": [
+        "../web/src/places/*"
       ]
     }
   },
@@ -18,6 +21,7 @@
     "**/*.ts",
     "**/*.tsx",
     "../web/src/crypto/*.ts",
+    "../web/src/places/places.ts",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
   ],

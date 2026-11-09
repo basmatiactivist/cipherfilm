@@ -1,7 +1,9 @@
 // Staying unlocked across a reload of the tab. The master key lives in memory; a reload would lose it and ask for the
 // password again although the session is still valid. So at unlock it is encrypted with a random AES key that the
 // browser creates as non-extractable (WebCrypto) and keeps in IndexedDB, and the ciphertext goes into sessionStorage,
-// which belongs to this tab: a reload finds it, a closed tab or a new one doesn't. The AES key can't be read out of
+// which belongs to this tab: a reload finds it, a new tab doesn't. A closed tab the browser reopens (or a whole
+// session it restores) gets its sessionStorage back too, so the key counts only for a reload of a tab that was left
+// moments before (freshReload); anything else asks for the password. The AES key can't be read out of
 // the browser, only used by this origin. Lock, sign-out and being signed out from another device delete both.
 const DB = "cf-keep", STORE = "k", SLOT = "cf.mk";
 
@@ -30,6 +32,25 @@ async function idb<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBReq
 const b64 = (u: Uint8Array) => btoa(String.fromCharCode(...u));
 const unb64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 
+/** A real reload: the browser says so, and the page was left (pagehide) less than RELOAD_MS before. */
+export const RELOAD_MS = 30_000;
+export function freshReload(navType: string | undefined, leftAt: number | undefined, now: number): boolean {
+  return navType === "reload" && typeof leftAt === "number" && now - leftAt >= 0 && now - leftAt < RELOAD_MS;
+}
+const navType = () => {
+  try { return (performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined)?.type; } catch { return undefined; }
+};
+
+// when the page goes away, the kept key gets the time: only a reload right after may use it
+if (typeof addEventListener === "function") {
+  addEventListener("pagehide", () => {
+    try {
+      const raw = sessionStorage.getItem(SLOT);
+      if (raw) sessionStorage.setItem(SLOT, JSON.stringify({ ...JSON.parse(raw), t: Date.now() }));
+    } catch { /* nothing kept */ }
+  });
+}
+
 // counts every forget: a keepKey still running when the tab locks or signs out must not store the key afterwards
 let generation = 0;
 
@@ -54,8 +75,10 @@ export async function keptKey(userId: string): Promise<Uint8Array | null> {
   try {
     const raw = sessionStorage.getItem(SLOT);
     if (!raw) return null;
-    const v = JSON.parse(raw) as { u: string; iv: string; ct: string };
-    if (v.u !== userId) { forgetKept(); return null; }
+    const v = JSON.parse(raw) as { u: string; iv: string; ct: string; t?: number };
+    if (v.u !== userId || !freshReload(navType(), v.t, Date.now())) { forgetKept(); return null; }
+    // the time goes: the next reload needs this page to be left again first
+    sessionStorage.setItem(SLOT, JSON.stringify({ u: v.u, iv: v.iv, ct: v.ct }));
     const k = await idb<CryptoKey | undefined>("readonly", (s) => s.get(userId));
     if (!k) return null;
     return new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(v.iv), additionalData: new TextEncoder().encode(userId) }, k, unb64(v.ct)));

@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 declare module "libheif-js/wasm-bundle" {
   interface HeifImage {
     get_width(): number;

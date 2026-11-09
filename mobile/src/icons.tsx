@@ -4,6 +4,7 @@ import { useTheme } from "react-native-paper";
 import type { AppTheme } from "./theme";
 
 const paths = {
+  map: <><Path d="M9 4L3 6.5v13L9 17l6 2.5 6-2.5v-13L15 6.5 9 4z" /><Path d="M9 4v13M15 6.5v13" /></>,
   photos: <><Rect x="3" y="3" width="18" height="18" rx="3" /><Circle cx="9" cy="9" r="1.6" /><Path d="M21 16l-5-5-8 8" /></>,
   upload: <><Path d="M12 16V4M7 9l5-5 5 5" /><Path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" /></>,
   check: <Path d="M5 12.5l4.5 4.5L19 7.5" />,

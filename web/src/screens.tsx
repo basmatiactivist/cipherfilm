@@ -3,6 +3,7 @@ import { useEffect, useState } from "preact/hooks";
 import { api } from "./api";
 import * as auth from "./auth";
 import { mem } from "./state";
+import { mapProvider, PRIVACY_URL, setMapOn, useMapOn } from "./map/consent";
 import { Loader, Loading } from "./loader";
 import { BackupReport, backupState } from "./backup";
 import { explicitChosen, indexChecked, loadPeople, refreshIndex, searchFamily, setExplicit } from "./people/people";
@@ -155,10 +156,26 @@ export function Account() {
       {!mem.me!.demo && <ChangePassword />}
       {!mem.me!.demo && <DevicesPanel />}
       <SearchPanel />
+      {mem.me!.map && <MapPanel />}
       <StoragePanel />
       {!mem.me!.demo && <DeleteAccount />}
       <VersionLine server={mem.me!.server_version} />
+      {/* the sources ask to be named: GeoNames (CC BY 4.0) for the place names, always used; OpenStreetMap (ODbL) for the map */}
+      <p class="hint small">
+        Place names: GeoNames (geonames.org), CC BY 4.0.
+        {mem.me!.map ? (mapProvider() === "OpenFreeMap" ? " Map data © OpenStreetMap contributors, tiles OpenFreeMap / OpenMapTiles, drawn with MapLibre GL JS (BSD-3-Clause)." : " Map drawn with MapLibre GL JS (BSD-3-Clause); its data is credited on the map.") : ""}
+      </p>
     </div>
+  );
+}
+
+function MapPanel() {
+  const on = useMapOn();
+  return (
+    <Acc icon="map" title="Map" sub={on ? "On in this browser" : "Off"}>
+      <label class="check"><input type="checkbox" checked={on} onChange={(e) => setMapOn((e.target as HTMLInputElement).checked)} /> Show the map and the small maps in a photo's details</label>
+      <p class="hint">Your photos on a map. Map images from {mapProvider() || "the map server"}; what it sees is in the <a href={PRIVACY_URL} target="_blank" rel="noopener noreferrer">privacy policy</a>.</p>
+    </Acc>
   );
 }
 

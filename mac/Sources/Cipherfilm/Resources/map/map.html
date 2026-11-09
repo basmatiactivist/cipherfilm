@@ -1,0 +1,15 @@
+<!doctype html>
+<!-- The Mac app's map (MapPage.swift serves this from the app bundle as cfmap://app/map.html and fills in the
+     placeholders: the Content-Security-Policy with the base map's hosts, "map" or "mini", and the label). Nothing here
+     comes from the network but the base map. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="__CSP__">
+<meta name="referrer" content="no-referrer">
+<link rel="stylesheet" href="maplibre-gl.css">
+<link rel="stylesheet" href="map.css">
+<script type="module" src="map.js"></script>
+</head>
+<body class="__MODE__"><div id="map" role="region" aria-label="__LABEL__"></div></body>
+</html>

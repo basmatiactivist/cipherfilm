@@ -165,4 +165,8 @@ function Shell(p: { children: any; app?: boolean }) {
   );
 }
 
+// A page the browser brings back from its back/forward cache missed what happened meanwhile (a sign-out or another
+// account in another tab, a lock): it starts again, which checks the session and the kept key like any reload.
+window.addEventListener("pageshow", (e) => { if (e.persisted) location.reload(); });
+
 render(<App />, document.getElementById("app")!);

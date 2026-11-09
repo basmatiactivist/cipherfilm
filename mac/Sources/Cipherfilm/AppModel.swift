@@ -289,23 +289,48 @@ final class AppModel {
     liveTask?.cancel(); liveTask = nil; liveFlush?.cancel(); liveFlush = nil; _ = liveBatch.take(); liveV = nil
     search.stop(clear: true)
     exporter.stop()
+    Outbox.cancel()
     // after a lock the queue stays (saved in the account's folder) and goes on after the next unlock; once the session
     // is gone it is not this Mac's to finish (it never goes on in another account)
     vault?.close()
     vault = nil
     images.clear()
+    PlaceBook.forget()
     Outbox.clear()
     items = []; byId = [:]; albums = []; trash = []
-    if ended { watcher.stop(forget: true); uploads = []; uploadsOwner = nil; uploadsPaused = false }
+    if ended { watcher.stop(forget: true); uploads = []; uploadsOwner = nil; uploadsPaused = false; Inbox.clear() }
+  }
+
+  /** The map is on: the person agreed to exactly the map servers the Cipherfilm server names now (AccountSettings). */
+  var mapOn: Bool {
+    get { let h = me?.map?.hosts ?? []; return !h.isEmpty && settings.mapAgreed == h }
+    set { settings.mapAgreed = newValue ? (me?.map?.hosts ?? []) : [] }
   }
 
   // ---- the library ----
 
   /** Files dropped from apps that hand over only a temporary copy (Photos, Mail, browsers): copied into the app's
-   *  own inbox first, so they are still there when their turn in the queue comes; deleted once uploaded. */
+   *  own inbox first, so they are still there when their turn in the queue comes; deleted once uploaded, when the
+   *  upload is cancelled or removed, at sign-out, and when no queued upload needs them any more. */
   enum Inbox {
     static let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
       .appendingPathComponent((Bundle.main.bundleIdentifier ?? "app.cipherfilm.mac") + "/inbox", isDirectory: true)
+
+    /** The inbox copy behind a queued file, if it is one. */
+    static func drop(_ u: URL) {
+      let folder = u.deletingLastPathComponent()
+      if folder.deletingLastPathComponent().standardizedFileURL.path == dir.standardizedFileURL.path { try? FileManager.default.removeItem(at: folder) }
+    }
+
+    static func clear() { try? FileManager.default.removeItem(at: dir) }
+
+    /** Copies no queued upload refers to (left by a crash or an older version). */
+    static func sweep(keeping urls: [URL]) {
+      let keep = Set(urls.map { $0.deletingLastPathComponent().standardizedFileURL.path })
+      for f in (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [] where !keep.contains(f.standardizedFileURL.path) {
+        try? FileManager.default.removeItem(at: f)
+      }
+    }
 
     static func keep(_ u: URL) -> URL {
       let p = u.resolvingSymlinksInPath().path
@@ -542,8 +567,9 @@ final class AppModel {
   private func restoreUploads() {
     if uploadsOwner != me?.user.id { uploads = []; uploadsPaused = false }
     uploadsOwner = me?.user.id
-    guard uploads.isEmpty, let saved = queueFile?.read(), !saved.isEmpty else { pump(); return }
+    guard uploads.isEmpty, let saved = queueFile?.read(), !saved.isEmpty else { Inbox.sweep(keeping: uploads.map(\.url)); pump(); return }
     uploads = saved.map { var j = $0; if j.state == .running { j.state = .waiting; j.done = 0 }; return j }
+    Inbox.sweep(keeping: uploads.map(\.url))
     pump()
   }
 
@@ -570,7 +596,10 @@ final class AppModel {
   }
 
   func clearFinishedUploads() {
-    uploads.removeAll { if case .running = $0.state { return false }; if case .waiting = $0.state { return false }; return true }
+    uploads.removeAll {
+      if case .running = $0.state { return false }; if case .waiting = $0.state { return false }
+      Inbox.drop($0.url); return true
+    }
     saveQueue()
   }
 
@@ -583,7 +612,7 @@ final class AppModel {
   }
 
   func cancelUpload(_ id: UUID) {
-    uploads.removeAll { $0.id == id && $0.state != .running }
+    uploads.removeAll { if $0.id == id && $0.state != .running { Inbox.drop($0.url); return true }; return false }
     saveQueue()
   }
 

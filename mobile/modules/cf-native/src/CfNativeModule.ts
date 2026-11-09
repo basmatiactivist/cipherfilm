@@ -130,6 +130,8 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   /** removes the outbox's copies once they are past the grace period, even if the app isn't running then */
   outboxSweepLater(): void;
   saveToLibrary(path: string, name: string, mime: string): Promise<string>;
+  /** country names in a language ("CH" → "Schweiz" for "de"), from Android's own translations */
+  countryNames(codes: string[], lang: string): Record<string, string>;
   trashFromLibrary(uris: string[]): Promise<boolean>;
 }
 
@@ -145,4 +147,4 @@ export const VideoView = requireNativeView<ViewProps & {
 }>("CfNative");
 
 /** One item's thumbnail, decrypted natively (Thumbs.kt); `onFailed` when there is none or it can't be verified. */
-export const ThumbView = requireNativeView<ViewProps & { item: string; fit?: "cover" | "contain"; onFailed?: () => void; onShown?: () => void }>("CfNative", "CfThumbView");
+export const ThumbView = requireNativeView<ViewProps & { item: string; fit?: "cover" | "contain"; software?: boolean; onFailed?: () => void; onShown?: () => void }>("CfNative", "CfThumbView");

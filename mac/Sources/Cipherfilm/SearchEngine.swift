@@ -293,6 +293,7 @@ final class SearchEngine {
    *  all: the whole cache (at the start), otherwise only what is new. */
   private func pull(_ vault: Vault, _ cache: inout IndexCache, pair: KeyPair, faces: Bool, all: Bool) async throws {
     let (fresh, anew) = try await fetch(vault, &cache, family: clip.family)
+    guard live(vault) else { throw CancellationError() } // locked meanwhile: nothing more is opened
     if !all && !anew && fresh.isEmpty { return }
     cache.write(vault, clip.family)
     let ids = Set(items.map(\.id))
@@ -304,6 +305,7 @@ final class SearchEngine {
       var tags: [String: String] = [:]
       var bad: [String] = []
       for (id, enc) in entries where ids.contains(id) {
+        guard vault.isOpen, !Task.isCancelled else { break }
         guard let blob = try? B64.decode(enc), let e = try? IndexEntry.open(blob, pair: pair, itemId: id) else { bad.append(id); continue }
         let d = e.decoded(faces: faces)
         // a vector from the other model can't be compared with this one's: kept out until it is made again
@@ -312,6 +314,7 @@ final class SearchEngine {
       }
       return (tags, bad)
     }.value
+    guard live(vault) else { for id in opened.0.keys { idx.remove(id) }; throw CancellationError() } // opened during a lock: out again
     tags.merge(opened.0) { _, b in b }
     for id in opened.1 { cache.entries.removeValue(forKey: id) } // damaged or not for this item: made again
     for id in tags.keys where !ids.contains(id) { tags.removeValue(forKey: id); index.remove(id) }
@@ -554,14 +557,18 @@ final class SearchEngine {
     }
     let rest = d.rest
     if rest.isEmpty { return Result(items: pool.sorted { $0.when > $1.when }, people: people, how: how) }
-    // a file name or camera that contains the words comes first; then everything else, ranked by what is in it, and
-    // the filters above (people, kind, favorites, dates) only narrow that ranking
+    // a file name or camera that contains the words comes first, then photos taken at a place of that name (town,
+    // region, country, looked up on this Mac: PlaceBook); then everything else, ranked by what is in it, and the
+    // filters above (people, kind, favorites, dates) only narrow that ranking
     let named = pool.filter { $0.name.lowercased().contains(rest) || "\($0.meta?.make ?? "") \($0.meta?.model ?? "")".lowercased().contains(rest) }
+    let placed = await PlaceBook.matching(rest, in: pool)
     let hits = await textHits(rest)
     let inPool = Dictionary(pool.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
     var seen = Set<String>()
     var out: [Item] = []
     for i in named where seen.insert(i.id).inserted { out.append(i) }
+    for i in pool.filter({ placed.contains($0.id) }).sorted(by: { $0.when > $1.when }) where seen.insert(i.id).inserted { out.append(i) }
+    if !placed.isEmpty { how.append("taken in “\(rest)”") }
     for h in hits { if let it = inPool[h.id], seen.insert(it.id).inserted { out.append(it) } }
     if !hits.isEmpty { how.append("“\(rest)”") } else if !named.isEmpty { how.append("named “\(rest)”") }
     return Result(items: out, people: people, how: how, ranked: !hits.isEmpty)

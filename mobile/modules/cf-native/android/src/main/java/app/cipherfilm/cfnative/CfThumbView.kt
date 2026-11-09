@@ -22,6 +22,9 @@ class CfThumbView(context: Context, appContext: AppContext) : ExpoView(context, 
   private var ask: Thumbs.Ask? = null
   private var shown: String? = null // the item whose bitmap is on screen
   private var contain = false
+  /** a software copy of the bitmap: where the view is drawn into a software canvas (the map's markers, MapLibre's
+   *  view annotations), a hardware bitmap would crash the app */
+  private var software = false
   private val changed: () -> Unit = { if (Thumbs.cached(item ?: "") == null && !Thumbs.hasKey(item ?: "")) blank(); load() }
 
   init {
@@ -33,6 +36,13 @@ class CfThumbView(context: Context, appContext: AppContext) : ExpoView(context, 
     if (id == item) return
     item = id
     blank()
+  }
+
+  fun setSoftware(on: Boolean) {
+    if (on == software) return
+    software = on
+    shown = null
+    load()
   }
 
   fun setFit(fit: String?) {
@@ -68,7 +78,8 @@ class CfThumbView(context: Context, appContext: AppContext) : ExpoView(context, 
   private fun show(id: String, bmp: Bitmap, fade: Boolean) {
     val first = shown != id
     shown = id
-    image.setImageBitmap(bmp)
+    val b = if (software && bmp.config == Bitmap.Config.HARDWARE) bmp.copy(Bitmap.Config.ARGB_8888, false) ?: return else bmp
+    image.setImageBitmap(b)
     if (first) onShown(mapOf())
     if (fade) { image.alpha = 0f; image.animate().alpha(1f).setDuration(120).start() } else image.alpha = 1f
   }

@@ -5,16 +5,19 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Icon, type IconName } from "./icons";
 import { useAppTheme } from "./ui";
 import { t } from "./i18n";
+import { useSession } from "./session";
 
 export const NAV_HEIGHT = 80;
-type Tab = "library" | "search" | "albums";
+type Tab = "library" | "search" | "albums" | "map";
 
 /** Material 3 navigation bar with the top-level places. Switching replaces the screen, so Back leaves the app. */
 export function NavBar({ current }: { current: Tab }) {
   const th = useAppTheme();
   const inset = useSafeAreaInsets();
+  const map = !!useSession().me?.map; // the server may have turned the map off (MAP_STYLE=off)
   const tabs: { key: Tab; label: string; icon: IconName }[] = [
     { key: "library", label: t("Photos"), icon: "photos" }, { key: "search", label: t("Search"), icon: "search" }, { key: "albums", label: t("Albums"), icon: "albums" },
+    ...(map ? [{ key: "map" as Tab, label: t("Map"), icon: "map" as IconName }] : []),
   ];
   return (
     <View accessibilityRole="tablist" style={[st.bar, { height: NAV_HEIGHT + inset.bottom, paddingBottom: inset.bottom, backgroundColor: th.colors.surfaceVariant }]}>

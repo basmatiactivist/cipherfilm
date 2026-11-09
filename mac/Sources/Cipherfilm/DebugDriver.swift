@@ -2,6 +2,8 @@
 // (mobile/dev/compose.yaml) and writes "CFTEST PASS/FAIL" lines plus window snapshots. Never part of a release build.
 //   CF_AUTOTEST=1 CF_TEST_CA=<root.crt> CF_TEST_SERVER=https://localhost:8443 CF_TEST_EMAIL=… CF_TEST_PASSWORD=…
 //   CF_TEST_DIR=<scratch folder with files to upload> CF_SNAPSHOTS=<folder> [CF_APPEARANCE=dark]
+// CF_MAP=1: only the map's checks (an account with located photos; nothing is changed on the server).
+// CF_SIGNIN_ONLY=1: signs in and stops there, the app stays open.
 // Everything it makes in CF_TEST_DIR (copies, exports of the whole library, watched folders) is deleted at the start
 // and the end of a run; only upload/ stays. CF_KEEP=1 keeps the last run's.
 #if DEBUG
@@ -69,6 +71,8 @@ enum DebugDriver {
       do { try await m.unlock(password: env["CF_TEST_PASSWORD"]!) } catch { check(false, "unlock: \(error)") }
     }
     check(m.phase == .unlocked, "signed in and unlocked")
+    // CF_SIGNIN_ONLY=1: only signs in and leaves the app open as it is, for trying it by hand against the test server
+    if env["CF_SIGNIN_ONLY"] == "1" { log("DONE signed in"); return }
     m.agent.askNow = false
     m.settings.agentAsked = true
     m.settings.searchAsked = true
@@ -77,6 +81,7 @@ enum DebugDriver {
     check(!m.items.isEmpty && m.items.allSatisfy { !$0.broken }, "library decrypted: \(m.items.count) items, \(m.items.filter(\.broken).count) broken")
     snapshot("02-library")
     if env["CF_SHOTS"] == "1" { await shots(); return }
+    if env["CF_MAP"] == "1" { await mapChecks(); return }
 
     // ---- live updates: CF_LIVE_EXPECT photos uploaded by another device (a script that waits for LIVE READY) show
     // up without this Mac refreshing ----
@@ -504,6 +509,95 @@ enum DebugDriver {
     if env["CF_AUTOTEST_QUIT"] == "1" { AppDelegate.quitting = true; NSApp.terminate(nil) }
   }
 
+  /** CF_MAP=1: the map tab, place names and search by place, against an account whose photos carry coordinates
+   *  (30 located: Zürich 5, Lucerne 3, Paris 6, London 3, New York 4, Tokyo 4, Sydney 2, Cape Town 2, Reykjavik 1). */
+  static func mapChecks() async {
+    let m = AppModel.shared
+    let nav = DebugHooks.shared
+    func pause(_ s: Double = 1.5) async { try? await Task.sleep(nanoseconds: UInt64(s * 1e9)) }
+    func near(_ it: Item, _ lat: Double, _ lon: Double, _ d: Double = 0.6) -> Bool { it.location.map { abs($0.lat - lat) < d && abs($0.lon - lon) < d } ?? false }
+    if let api = m.api, let raw = try? await api.json("GET", "/api/me"), let o = try? JSONSerialization.jsonObject(with: raw) as? [String: Any] {
+      check(o["map"] != nil && m.me?.hasMap == true, "the Map entry is there: /api/me names the map's styles (\(m.me?.map?.light.first ?? "-"))")
+    } else { check(false, "/api/me") }
+    let located = m.items.filter { $0.location != nil }
+    check(located.count == 30, "located photos: \(located.count) of \(m.items.count) items")
+    check(PlaceBook.places != nil, "the place names file is in the app (\(PlaceBook.places?.count ?? 0) places)")
+    if let z = located.first(where: { near($0, 47.37, 8.54, 0.1) }), let g = z.location {
+      let name = await PlaceBook.label(g)
+      check(name == "Zürich, Switzerland", "place of a Zürich photo: \(name ?? "-")")
+    } else { check(false, "a photo in Zürich") }
+    // the place hits come first; on an account with a search index the rest of the library follows, ranked
+    let tokyo = Set(located.filter { near($0, 35.68, 139.7) }.map(\.id))
+    for q in ["japan", "Japan", "Tokyo"] {
+      let r = await m.search.search(q, library: m.items)
+      check(Set(r.items.prefix(tokyo.count).map(\.id)) == tokyo && tokyo.count == 4, "search “\(q)” finds the \(tokyo.count) Tokyo photos (\(r.items.count): \(r.how.joined(separator: ", ")))")
+    }
+    let zurich = Set(located.filter { near($0, 47.37, 8.54, 0.1) }.map(\.id))
+    for q in ["zurich", "Zürich"] {
+      let r = await m.search.search(q, library: m.items)
+      check(Set(r.items.prefix(zurich.count).map(\.id)) == zurich && zurich.count == 5, "search “\(q)” finds the \(zurich.count) Zürich photos (\(r.items.count))")
+    }
+    let swiss = await m.search.search("switzerland", library: m.items)
+    let swissIds = Set(located.filter { near($0, 47.37, 8.54, 0.1) || near($0, 47.05, 8.31, 0.1) }.map(\.id))
+    check(swissIds.count == 8 && Set(swiss.items.prefix(8).map(\.id)) == swissIds, "search “switzerland” finds Zürich and Lucerne first (\(swiss.items.count))")
+
+    // the map is off until the person turns it on: the tab asks first, and no web view (no map image) exists
+    m.mapOn = false
+    let tokyoPhoto = located.first(where: { near($0, 35.68, 139.7) })
+    nav.go?(.map)
+    await pause(2)
+    check(nav.map == nil, "map off by default: the tab shows the question, no map web view")
+    snapshot("map-00-consent")
+    // the same screen drawn without the window (a window snapshot draws only half of it while the display is off)
+    if let dir = env["CF_SNAPSHOTS"] {
+      let r = ImageRenderer(content: MapConsent(styles: m.me?.map, turnOn: {}).frame(width: 1000, height: 640).background(Ink.paper))
+      r.scale = 2
+      if let cg = r.cgImage { try? NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: dir).appendingPathComponent("map-00-consent-rendered.png")) }
+    }
+    if let z = tokyoPhoto {
+      nav.open?(z.id); await pause(2)
+      check(nav.mini == nil, "map off: no small map in the photo's details")
+      snapshot("map-00-viewer-info-off")
+      nav.close?(); await pause(0.5)
+    }
+    // turned on (the tab's button): the base map's style loads, the photos are drawn as clustered markers
+    m.mapOn = true
+    let styled = await wait("map style", timeout: 45) { nav.map?.styleLoaded == true || nav.map?.failed == true }
+    check(styled && nav.map?.styleLoaded == true, "the map's page loads its base map style")
+    let drawn = await wait("map markers", timeout: 20) { (nav.map?.markers ?? 0) > 0 }
+    check(drawn, "the map draws cluster markers (\(nav.map?.markers ?? 0))")
+    await pause(3) // tiles and thumbnails
+    snapshot("map-01-world")
+    if let c = nav.map {
+      let ids = await c.inView()
+      check(ids.count == 30, "“Photos in This Area” on the whole world lists every located photo (\(ids.count))")
+      c.onPhotos?(located.filter { near($0, 48.86, 2.35) }.map(\.id))
+      await pause(2.5)
+      snapshot("map-02-panel")
+    }
+    // the viewer's details: the place name over the coordinates, and the small map
+    if let z = tokyoPhoto {
+      nav.open?(z.id)
+      let mini = await wait("small map", timeout: 30) { nav.mini?.styleLoaded == true }
+      check(mini, "the small map in the photo's details loads")
+      await pause(2.5)
+      snapshot("map-03-viewer-info")
+      // turned off in Settings while the details are open: the small map goes at once
+      m.mapOn = false
+      let gone = await wait("small map gone", timeout: 5) { nav.mini == nil }
+      check(gone, "map turned off: the small map is gone from the photo's details")
+      nav.close?()
+    }
+    let mapGone = await wait("map gone", timeout: 5) { nav.map == nil }
+    check(mapGone, "map turned off: the map tab's web view is gone, the question is back")
+    snapshot("map-04-off-again")
+    // signed out again: the next run starts from the sign-in, and no session of the test account is left here
+    await m.signOut(deleteExport: false)
+    check(m.phase == .signedOut, "signed out at the end")
+    log(failures == 0 ? "DONE all passed" : "DONE \(failures) failed")
+    if env["CF_AUTOTEST_QUIT"] == "1" { AppDelegate.quitting = true; NSApp.terminate(nil) }
+  }
+
   /** CF_SHOTS=1: only look, change nothing on the server. Snapshots of the main screens for design reviews. */
   static func shots() async {
     let m = AppModel.shared
@@ -531,5 +625,8 @@ final class DebugHooks {
   var go: ((Screen) -> Void)?
   var query: ((String) -> Void)?
   var jump: ((Date) -> Void)?
+  /** the map tab's and the photo details' map pages, while they are shown */
+  weak var map: MapController?
+  weak var mini: MapController?
 }
 #endif

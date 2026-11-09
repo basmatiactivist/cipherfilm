@@ -89,8 +89,11 @@ Failure policy: any AEAD failure aborts decryption for that object, nothing is r
 survive a reload of the same tab (`web/src/keep.ts`), it is encrypted at unlock with AES-256-GCM under a random,
 non-extractable WebCrypto key that the browser keeps in IndexedDB (one per account, the user id as associated data);
 the ciphertext goes into `sessionStorage`, which belongs to that tab only. A reload finds both and checks that the key
-opens the account's private key before using it; a closed tab or a new one finds no ciphertext and asks for the
-password. Lock deletes the ciphertext; sign-out, an ended session and a sign-out from another device delete the
+opens the account's private key before using it; a new tab finds no ciphertext and asks for the password. Because a
+browser gives a reopened tab or a restored session its `sessionStorage` back, the ciphertext counts only for a real
+reload: the browser reports the navigation as a reload and the page was left (pagehide) less than 30 seconds before.
+Anything else (a reopened or restored tab, typing the address or a bookmark, going back to the app from another site
+when the browser didn't keep the page, a phone browser reloading a tab it had dropped) asks for the password. Lock deletes the ciphertext; sign-out, an ended session and a sign-out from another device delete the
 IndexedDB keys of every account as well. A key that is still being stored when the tab locks is not written.
 
 ## 7. Randomness and memory hygiene

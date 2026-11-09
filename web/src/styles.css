@@ -485,3 +485,6 @@ kbd { display: inline-block; padding: 1px 7px; font: inherit; font-size: var(--t
 @media (prefers-color-scheme: dark) {
   .maplibregl-ctrl-group button .maplibregl-ctrl-icon, .maplibregl-ctrl-attrib-button { filter: invert(1) hue-rotate(180deg); }
 }
+.mapconsent { max-width: 560px; margin: var(--space-6) auto; display: grid; gap: var(--space-3); justify-items: start; }
+.mapconsent h2 { margin: 0; }
+.mapconsent p { margin: 0; }

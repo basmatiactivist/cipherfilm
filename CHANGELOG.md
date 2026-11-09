@@ -7,6 +7,22 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+### Added
+- Map: photos where they were taken, as clustered thumbnails on a world map, in the web, Android and Mac apps; a photo's
+  details show the place's name and a small map of its spot; search finds photos by place ("zurich", "japan"). The
+  coordinates stay end-to-end encrypted and are drawn on the device; place names come from a GeoNames file bundled with
+  the apps. The base map is OpenFreeMap (VersaTiles as fallback), which only sees which map areas are viewed; the map
+  opens on the whole world and never moves to the photos by itself. `MAP_STYLE` sets your own styles or turns the map
+  off (docs/MAP.md).
+
+### Security
+- Web, Android and Mac take an item's kind (photo, video) from its encrypted metadata, no longer from the server's
+  plain field, so a malicious server can't route a photo's bytes to the video player or the image decoder.
+- Mac: the Touch ID key's handle is in the login keychain, readable only by the app (it was a file other programs of
+  the same user could read). macOS asks once for the Mac's password after an update until the app is signed by Apple.
+- Updates of crypto and storage libraries (libsodium, x/crypto, JNA, SQLite) are never merged automatically.
+- The web app's crypto is tested against the same committed vectors as the decrypt tool and the Mac app.
+
 ## [2.5.1] - 2026-11-09
 
 The server commands work in any container console, such as Portainer's: `cipherfilm status`.

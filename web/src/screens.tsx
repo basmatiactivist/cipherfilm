@@ -3,6 +3,7 @@ import { useEffect, useState } from "preact/hooks";
 import { api } from "./api";
 import * as auth from "./auth";
 import { mem } from "./state";
+import { mapProvider, PRIVACY_URL, setMapOn, useMapOn } from "./map/consent";
 import { Loader, Loading } from "./loader";
 import { BackupReport, backupState } from "./backup";
 import { explicitChosen, indexChecked, loadPeople, refreshIndex, searchFamily, setExplicit } from "./people/people";
@@ -155,10 +156,21 @@ export function Account() {
       {!mem.me!.demo && <ChangePassword />}
       {!mem.me!.demo && <DevicesPanel />}
       <SearchPanel />
+      {mem.me!.map && <MapPanel />}
       <StoragePanel />
       {!mem.me!.demo && <DeleteAccount />}
       <VersionLine server={mem.me!.server_version} />
     </div>
+  );
+}
+
+function MapPanel() {
+  const on = useMapOn();
+  return (
+    <Acc icon="map" title="Map" sub={on ? "On in this browser" : "Off"}>
+      <label class="check"><input type="checkbox" checked={on} onChange={(e) => setMapOn((e.target as HTMLInputElement).checked)} /> Show the map and the small maps in a photo's details</label>
+      <p class="hint">Loads map images from {mapProvider() || "the map server"}, which sees this device's IP address and the areas you look at. Photo locations stay encrypted and are only drawn here. <a href={PRIVACY_URL} target="_blank" rel="noopener noreferrer">Privacy policy</a></p>
+    </Acc>
   );
 }
 

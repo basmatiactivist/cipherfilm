@@ -13,6 +13,7 @@ import { dropImage, thumbUrl, wantImage } from "../cache";
 import { Timeline } from "../grid";
 import type { Item } from "../items";
 import { located, placeName, type Located } from "./locations";
+import { mapProvider, PRIVACY_URL, setMapOn, useMapOn } from "./consent";
 
 setWorkerUrl(workerUrl);
 
@@ -55,7 +56,28 @@ function markerEl(count: number, onClick: () => void): { el: HTMLElement; img: H
   return { el, img };
 }
 
+/** Before the first map: what turning it on means, and the button. */
+function MapConsent() {
+  const who = mapProvider() || "the map server";
+  return (
+    <section class="panel mapconsent" aria-labelledby="mapconsent-h">
+      <span class="accicon"><Icon name="map" size={22} /></span>
+      <h2 id="mapconsent-h">Show your photos on a map?</h2>
+      <p>The map images come from {who}. It sees this device's IP address and which areas you look at, never your photos or where they were taken: those stay encrypted and are drawn in this browser.</p>
+      <p class="small"><a href={PRIVACY_URL} target="_blank" rel="noopener noreferrer">Privacy policy</a> · You can turn the map off again under Account › Map.</p>
+      <button class="btn" onClick={() => setMapOn(true)}>Turn on map</button>
+    </section>
+  );
+}
+
 export function MapPage(p: { items: Item[]; onOpen: (list: Item[], index: number) => void }) {
+  const on = useMapOn();
+  if (!mem.me?.map) return <p class="hint">The map is turned off on this server.</p>;
+  if (!on) return <MapConsent />;
+  return <MapView {...p} />;
+}
+
+function MapView(p: { items: Item[]; onOpen: (list: Item[], index: number) => void }) {
   const conf = mem.me?.map;
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<MapLibre | null>(null);
@@ -224,7 +246,8 @@ export function MapPage(p: { items: Item[]; onOpen: (list: Item[], index: number
 /** The small map in a photo's details: its spot at district level (not street level), only when the details are
  *  opened, so the base map's server learns the area of exactly the photos whose details someone looks at. */
 export function MiniMap(p: { lat: number; lon: number }) {
-  const conf = mem.me?.map;
+  const on = useMapOn();
+  const conf = on ? mem.me?.map : undefined; // nothing is loaded before the person turned the map on
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!conf || !box.current) return;

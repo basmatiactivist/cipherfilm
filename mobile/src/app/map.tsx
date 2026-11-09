@@ -62,9 +62,11 @@ export default function MapScreen() {
   const [panel, setPanel] = useState<{ items: Item[]; title: string } | null>(null);
 
   // the clusters on screen as thumbnail markers, after every move
+  const refreshes = useRef(0); // an older refresh that finishes late doesn't overwrite a newer one's markers
   const refresh = async () => {
     const m = map.current, s = src.current;
     if (!m || !s) return;
+    const seq = ++refreshes.current;
     const feats = await m.queryRenderedFeatures({ layers: [SOURCE] }).catch(() => []);
     const seen = new Set<string>();
     const out: Marker[] = [];
@@ -82,7 +84,7 @@ export default function MapScreen() {
       const ps = (leaves ?? []).map((l) => l.properties as { id: string; ts: number }).sort((a, b) => b.ts - a.ts);
       x.cover = ps[0]?.id;
     }));
-    setMarkers(out);
+    if (seq === refreshes.current) setMarkers(out);
   };
 
   // the panel lists the photos in the part of the map it leaves free (the upper VISIBLE share), made again after
@@ -97,8 +99,12 @@ export default function MapScreen() {
     const { w, h } = size.current;
     const [nw, se] = await Promise.all([m.unproject([0, 0]), m.unproject([w, h * VISIBLE])]).catch(() => [null, null]);
     if (!nw || !se || !panelOpen.current) return;
-    const [west, north] = nw, [east, south] = se;
-    const inside = (lon: number, lat: number) => lat >= south && lat <= north && (west <= east ? lon >= west && lon <= east : lon >= west || lon <= east);
+    const [w0, north] = nw, [e0, south] = se;
+    // the map wraps around: longitudes back into -180…180, and a view wider than the world holds every longitude
+    const norm = (x: number) => ((((x + 180) % 360) + 360) % 360) - 180;
+    const all = e0 - w0 >= 360;
+    const west = norm(w0), east = norm(e0);
+    const inside = (lon: number, lat: number) => lat >= south && lat <= north && (all || (west <= east ? lon >= west && lon <= east : lon >= west || lon <= east));
     const items = located$.current.filter((l) => inside(l.lon, l.lat)).map((l) => l.it).sort((a, b) => (b.meta?.capture_ts ?? 0) - (a.meta?.capture_ts ?? 0));
     setPanel((cur) => ({ items, title: cur?.title ?? "" }));
     areaTitle(items).then((title) => setPanel((cur) => (cur && cur.items === items ? { ...cur, title } : cur)), () => {});
@@ -109,18 +115,21 @@ export default function MapScreen() {
   const closePanel = () => { panelOpen.current = false; setPanel(null); };
   useEffect(() => { refillSoon(); }, [located]);
 
-  // a place moved into the part of the map the panel leaves free
+  // a place moved into the part of the map the panel leaves free: the centre goes below it by a share of the height,
+  // measured at the zoom the map ends at (at the current zoom that distance is 2^(zoom change) times smaller)
   const showAbovePanel = async (lngLat: [number, number], zoom?: number) => {
     const m = map.current;
     const { h } = size.current;
+    const now = m ? await m.getZoom().catch(() => undefined) : undefined;
+    const scale = zoom !== undefined && now !== undefined ? Math.pow(2, zoom - now) : 1;
     const at = m && h ? await m.project(lngLat).catch(() => null) : null;
-    const center = m && at ? await m.unproject([at[0], at[1] + h * (0.5 - VISIBLE / 2)]).catch(() => null) : null;
+    const center = m && at ? await m.unproject([at[0], at[1] + (h * (0.5 - VISIBLE / 2)) / scale]).catch(() => null) : null;
     cam.current?.easeTo({ center: center ?? lngLat, ...(zoom !== undefined ? { zoom } : {}), duration: 400 });
   };
 
   const open = async (mk: Marker) => {
     if (mk.cluster === undefined) {
-      // one photo: straight to it, with the others on screen to swipe through
+      // one photo: straight to it in the viewer
       const it = mk.id ? byId.get(mk.id) : undefined;
       if (!it) return;
       setViewerList([it.id]);
@@ -137,9 +146,9 @@ export default function MapScreen() {
       if (panelOpen.current) showAbovePanel(mk.lngLat, next); else cam.current?.easeTo({ center: mk.lngLat, zoom: next, duration: 400 });
       return;
     }
-    // as close as the map goes: the photos around it, in the panel
+    // as close as the map goes (or photos at one spot): there, and the photos around it in the panel
     panelOpen.current = true;
-    await showAbovePanel(mk.lngLat);
+    await showAbovePanel(mk.lngLat, zoom < MAX_ZOOM - 0.5 ? MAX_ZOOM : undefined);
     openPanel();
   };
 

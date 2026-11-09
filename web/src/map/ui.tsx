@@ -176,9 +176,10 @@ function MapView(p: { items: Item[]; onOpen: (list: Item[], index: number) => vo
         const open = async () => {
           if (props.cluster) {
             const z = await src.getClusterExpansionZoom(props.cluster_id!);
-            if (z <= MAX_ZOOM && m.getZoom() < MAX_ZOOM - 0.5) { m.easeTo({ center: [lon, lat], zoom: Math.min(z, MAX_ZOOM) }); return; }
-            // as close as the map goes: the photos around it, in the panel
-            m.easeTo({ center: [lon, lat] });
+            const far = m.getZoom() < MAX_ZOOM - 0.5;
+            if (z <= MAX_ZOOM && far) { m.easeTo({ center: [lon, lat], zoom: Math.min(z, MAX_ZOOM) }); return; }
+            // as close as the map goes (or photos at one spot): there, and the photos around it in the panel
+            m.easeTo({ center: [lon, lat], ...(far ? { zoom: MAX_ZOOM } : {}) });
             openPanel();
           } else {
             const it = itemsRef.current.get(props.id!);

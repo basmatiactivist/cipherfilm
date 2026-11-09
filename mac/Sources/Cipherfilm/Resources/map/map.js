@@ -90,6 +90,12 @@ const geojson = () => ({
   features: points.map((p) => ({ type: "Feature", geometry: { type: "Point", coordinates: [p.lon, p.lat] }, properties: { id: p.id, ts: p.ts } })),
 });
 
+// while the panel is open, it gets the photos in view after every zoom or move (at the module's top level: the map's
+// events and the markers' clicks call these)
+let following = false, areaTimer;
+function sendArea() { if (following && window.cf?.inView) post({ t: "area", ids: window.cf.inView() }); }
+function areaSoon() { clearTimeout(areaTimer); areaTimer = setTimeout(sendArea, 150); }
+
 const markers = new Map(); // key -> { marker, img, cover }
 const thumbs = new Map(); // id -> data URL (a few hundred small JPEGs at most)
 function clearMarkers() { for (const x of markers.values()) x.marker.remove(); markers.clear(); }
@@ -141,11 +147,13 @@ function draw() {
     const open = async () => {
       if (!props.cluster) { post({ t: "open", id: props.id }); return; }
       const z = await src.getClusterExpansionZoom(props.cluster_id);
-      if (z <= MAX_ZOOM && m.getZoom() < MAX_ZOOM - 0.5) { m.easeTo({ center: [lon, lat], zoom: Math.min(z, MAX_ZOOM) }); return; }
-      // as close as the map goes: the panel beside the map opens with the photos around it, and follows the map
+      const far = m.getZoom() < MAX_ZOOM - 0.5;
+      if (z <= MAX_ZOOM && far) { m.easeTo({ center: [lon, lat], zoom: Math.min(z, MAX_ZOOM) }); return; }
+      // as close as the map goes (or photos at one spot): there, and the panel beside the map opens with the photos
+      // around it and follows the map
       following = true;
-      m.easeTo({ center: [lon, lat] });
-      sendArea();
+      m.easeTo({ center: [lon, lat], ...(far ? { zoom: MAX_ZOOM } : {}) });
+      areaSoon();
     };
     const { el, img } = markerEl(count, open);
     markers.set(k, { marker: new Marker({ element: el }).setLngLat([lon, lat]).addTo(m), img });
@@ -186,11 +194,6 @@ if (!mini) {
     const b = m.getBounds();
     return points.filter((p) => b.contains([p.lon, p.lat])).map((p) => p.id);
   };
-  // while the panel is open, it gets the photos in view after every zoom or move
-  // (declarations, not consts: the map's events above may fire before this line runs)
-  var following = false, areaTimer;
-  function sendArea() { if (following) post({ t: "area", ids: window.cf.inView() }); }
-  function areaSoon() { clearTimeout(areaTimer); areaTimer = setTimeout(sendArea, 150); }
   window.cf.follow = (on) => { following = on; if (on) sendArea(); };
   window.cf.markers = () => markers.size;
 }

@@ -22,6 +22,10 @@ func (a *App) deviceMAC(userID, authHash string) string {
 }
 
 func (a *App) knownDevice(r *http.Request, u *user) bool {
+	// a demo account's password is public: every visitor would get the same cookie and share one bucket
+	if a.isDemo(u) {
+		return false
+	}
 	c, err := r.Cookie(deviceCookie)
 	if err != nil {
 		return false
@@ -34,6 +38,9 @@ func (a *App) knownDevice(r *http.Request, u *user) bool {
 }
 
 func (a *App) setDevice(w http.ResponseWriter, u *user) {
+	if a.isDemo(u) {
+		return
+	}
 	http.SetCookie(w, &http.Cookie{Name: deviceCookie, Value: u.ID + "." + a.deviceMAC(u.ID, u.AuthHash), Path: "/",
 		MaxAge: 180 * 24 * 3600, HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode})
 }

@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -242,5 +245,48 @@ func TestDemoLoginOnTheSignInPage(t *testing.T) {
 	e2 := newEnv(t)
 	if _, out := e2.client().do("GET", "/api/setup/status", nil, false); out["demo_login"] != nil {
 		t.Fatalf("no DEMO_LOGIN, nothing offered: %v", out)
+	}
+}
+
+// A demo account's password is public, so a device cookie would be the same for every visitor: none is issued or
+// honoured for it, and one visitor's wrong guesses can't lock the others out.
+func TestDemoLoginsAreNotSharedByADeviceCookie(t *testing.T) {
+	t.Setenv("DEMO_ACCOUNTS", "demo@x.org")
+	e := newEnv(t)
+	admin, _ := e.setupAdmin("admin@x.org")
+	_, db := e.acceptInvite(e.invite(admin, "demo@x.org"))
+	e.app.trustProxy = true
+	u, _ := e.app.userByEmail("demo@x.org")
+	shared := &http.Cookie{Name: deviceCookie, Value: u.ID + "." + e.app.deviceMAC(u.ID, u.AuthHash)}
+	login := func(ip, auth string) (int, []*http.Cookie) {
+		b, _ := json.Marshal(map[string]string{"email": "demo@x.org", "auth": auth})
+		req, _ := http.NewRequest("POST", e.srv.URL+"/api/auth/login", bytes.NewReader(b))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Forwarded-For", ip)
+		req.AddCookie(shared)
+		resp, err := e.srv.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode, resp.Cookies()
+	}
+	code, cookies := login("203.0.113.9", db["auth"].(string))
+	if code != 200 {
+		t.Fatalf("demo login: %d", code)
+	}
+	for _, c := range cookies {
+		if c.Name == deviceCookie {
+			t.Fatal("a demo login got a device cookie")
+		}
+	}
+	for i := 0; i < 30; i++ {
+		login("198.51.100.1", rb(32))
+	}
+	if code, _ := login("198.51.100.1", rb(32)); code != 429 {
+		t.Fatalf("the guessing visitor is not throttled: %d", code)
+	}
+	if code, _ := login("203.0.113.9", db["auth"].(string)); code != 200 {
+		t.Fatalf("another visitor was locked out: %d", code)
 	}
 }

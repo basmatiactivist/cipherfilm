@@ -15,6 +15,14 @@ export interface Place {
 const CELL = 1; // grid cell in degrees for the nearest-place search
 const NEAR_KM = 50; // farther than this from every place: no place name (but still the country, see below)
 const COUNTRY_KM = 300; // farther than this: not even a country (open sea)
+const MAX_RADIUS_KM = 15; // no place counts as larger than this around its point
+
+/** How far a place reaches around its point, from its population class (2^size inhabitants): about 0.004 km per
+ *  square root of the population (Paris 6 km, Zürich 2.6 km, a town of 60,000 1 km, a village a few hundred
+ *  metres), at most MAX_RADIUS_KM. */
+export function radiusKm(size: number): number {
+  return size ? Math.min(MAX_RADIUS_KM, 0.004 * Math.pow(2, size / 2)) : 0.2;
+}
 
 /** Lower case, no accents: "Zürich" and "zurich" match. */
 export const fold = (s: string): string => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
@@ -74,11 +82,12 @@ export class Places {
     return { name: this.names[i], region: a === 65535 ? "" : this.admins[a][1], country, countryCode: code, lat: this.lat[i] / 1e5, lon: this.lon[i] / 1e5 };
   }
 
-  /** The nearest place within 50 km; a photo farther from every place gets only its country (within 300 km), at sea
-   *  nothing. */
+  /** The place a photo was taken in: the one whose edge (its point and radiusKm around it) is nearest, so the
+   *  Eiffel Tower is in Paris, not in the smaller town whose point happens to be closer; within 50 km. A photo
+   *  farther from every place gets only its country (within 300 km), at sea nothing. */
   nearest(lat: number, lon: number): { place?: Place; country?: string; countryCode?: string; km: number } | null {
     if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
-    let best = -1, bestKm = Infinity;
+    let best = -1, bestKm = Infinity, bestEdge = Infinity;
     // rings of cells around the photo, until the best found is nearer than the ring could hold anything closer
     for (let r = 0; r <= 4; r++) {
       for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
@@ -89,11 +98,13 @@ export class Places {
         if (!list) continue;
         for (const i of list) {
           const d = km(lat, lon, this.lat[i] / 1e5, this.lon[i] / 1e5);
-          if (d < bestKm) { bestKm = d; best = i; }
+          const edge = d - radiusKm(this.size[i]);
+          if (edge < bestEdge) { bestEdge = edge; bestKm = d; best = i; }
         }
       }
-      // a ring r holds nothing closer than about (r) cells of latitude away: stop once the best is closer than that
-      if (best >= 0 && bestKm < r * CELL * 111 * Math.max(0.2, Math.cos((lat * Math.PI) / 180))) break;
+      // a ring r holds nothing closer than about (r) cells of latitude away, and no place reaches more than
+      // MAX_RADIUS_KM: stop once the best edge is nearer than that
+      if (best >= 0 && bestEdge + MAX_RADIUS_KM < r * CELL * 111 * Math.max(0.2, Math.cos((lat * Math.PI) / 180))) break;
     }
     if (best < 0 || bestKm > COUNTRY_KM) return null;
     const p = this.place(best);

@@ -81,4 +81,12 @@ private let places: Places = try! Places(contentsOf: repo.appendingPathComponent
     #expect(Places.title([paris, zurich, lucerne]) == "Switzerland and France")
     #expect(Places.title([nil]) == nil)
   }
+
+  @Test func aBigCityReachesFartherThanItsPoint() {
+    #expect(places.nearest(48.8584, 2.2945)?.label == "Paris, France") // the Eiffel Tower
+    #expect(places.nearest(48.8846, 2.2697)?.label == "Neuilly-sur-Seine, France")
+    #expect(places.nearest(47.3236, 8.5466)?.label == "Kilchberg, Switzerland") // beside Zürich
+    #expect(places.nearest(48.8352, 2.241)?.label == "Boulogne-Billancourt, France")
+    #expect(places.nearest(47.3717, 8.5423)?.label == "Zürich, Switzerland")
+  }
 }

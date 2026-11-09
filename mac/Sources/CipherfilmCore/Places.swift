@@ -49,6 +49,13 @@ public final class Places: @unchecked Sendable {
   static let cell = 1.0 // grid cell in degrees for the nearest-place search
   static let nearKm = 50.0 // farther than this from every place: no place name (but still the country)
   static let countryKm = 300.0 // farther than this: not even a country (open sea)
+  static let maxRadiusKm = 15.0 // no place counts as larger than this around its point
+
+  /** How far a place reaches around its point, from its population class (2^size inhabitants), as
+   *  web/src/places/places.ts radiusKm: about 0.004 km per square root of the population, at most maxRadiusKm. */
+  static func radiusKm(_ size: UInt8) -> Double {
+    size == 0 ? 0.2 : min(maxRadiusKm, 0.004 * pow(2, Double(size) / 2))
+  }
 
   public let count: Int
   private let lat: [Int32]
@@ -129,12 +136,13 @@ public final class Places: @unchecked Sendable {
     return Place(name: names[i], region: region, country: c.name, countryCode: c.code, lat: Double(lat[i]) / 1e5, lon: Double(lon[i]) / 1e5)
   }
 
-  /** The nearest place within 50 km; a photo farther from every place gets only its country (within 300 km), at sea
-   *  nothing. */
+  /** The place a photo was taken in: the one whose edge (its point and radiusKm around it) is nearest, so the Eiffel
+   *  Tower is in Paris, not in the smaller town whose point happens to be closer; within 50 km. A photo farther from
+   *  every place gets only its country (within 300 km), at sea nothing. */
   public func nearest(_ la: Double, _ lo: Double) -> PlaceHit? {
     guard la.isFinite, lo.isFinite, abs(la) <= 90, abs(lo) <= 180 else { return nil }
     var best = -1
-    var bestKm = Double.infinity
+    var bestKm = Double.infinity, bestEdge = Double.infinity
     // rings of cells around the photo, until the best found is nearer than the ring could hold anything closer
     for r in 0...4 {
       for dy in -r...r {
@@ -145,11 +153,12 @@ public final class Places: @unchecked Sendable {
           for j in list {
             let i = Int(j)
             let d = Places.km(la, lo, Double(lat[i]) / 1e5, Double(lon[i]) / 1e5)
-            if d < bestKm { bestKm = d; best = i }
+            let edge = d - Self.radiusKm(size[i])
+            if edge < bestEdge { bestEdge = edge; bestKm = d; best = i }
           }
         }
       }
-      if best >= 0 && bestKm < Double(r) * Self.cell * 111 * max(0.2, cos(la * .pi / 180)) { break }
+      if best >= 0 && bestEdge + Self.maxRadiusKm < Double(r) * Self.cell * 111 * max(0.2, cos(la * .pi / 180)) { break }
     }
     guard best >= 0, bestKm <= Self.countryKm else { return nil }
     let p = place(best)

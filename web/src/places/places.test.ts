@@ -56,3 +56,19 @@ describe("a title for photos from several places", () => {
     expect(summary([p.nearest(0, -30)])).toEqual({ countries: [] });
   });
 });
+
+describe("a big city reaches farther than its point", () => {
+  it("the Eiffel Tower is in Paris, the middle of Neuilly in Neuilly", () => {
+    expect(label(p.nearest(48.8584, 2.2945))).toBe("Paris, France");
+    expect(label(p.nearest(48.8846, 2.2697))).toBe("Neuilly-sur-Seine, France");
+  });
+  it("a town next to a big city stays itself", () => {
+    expect(label(p.nearest(47.3236, 8.5466))).toBe("Kilchberg, Switzerland"); // beside Zürich
+    expect(label(p.nearest(48.8352, 2.241))).toBe("Boulogne-Billancourt, France"); // beside Paris
+    expect(label(p.nearest(48.8049, 2.1204))).toBe("Versailles, France");
+  });
+  it("Zürich's main station and old town are in Zürich", () => {
+    expect(label(p.nearest(47.3779, 8.5403))).toBe("Zürich, Switzerland");
+    expect(label(p.nearest(47.3717, 8.5423))).toBe("Zürich, Switzerland");
+  });
+});

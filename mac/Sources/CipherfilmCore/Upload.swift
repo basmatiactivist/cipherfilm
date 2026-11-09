@@ -88,6 +88,7 @@ public enum Media {
         out.width = Int(abs(r.width).rounded()); out.height = Int(abs(r.height).rounded())
       }
       if let d = try? await a.load(.creationDate), let date = try? await d.load(.dateValue) { out.captureTs = date.timeIntervalSince1970 * 1000 }
+      if let p = await videoLocation(a) { (out.lat, out.lon) = (p.lat, p.lon) }
       return out
     }
     guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
@@ -108,6 +109,58 @@ public enum Media {
       out.lon = (g[kCGImagePropertyGPSLongitudeRef] as? String) == "W" ? -lon : lon
     }
     return out
+  }
+
+  /** Where a video was recorded. iPhones write it as QuickTime metadata (moov/meta keys), Android and most cameras as
+   *  user data (moov/udta/©xyz). AVFoundation finds both, but in an MP4 (Android's) it hands the ©xyz atom over as
+   *  raw bytes, its 16-bit text length and language still in front: those are read here. */
+  static func videoLocation(_ a: AVURLAsset) async -> (lat: Double, lon: Double)? {
+    guard let items = try? await a.load(.metadata) else { return nil }
+    let ids: Set<AVMetadataIdentifier> = [
+      .quickTimeMetadataLocationISO6709, .quickTimeUserDataLocationISO6709, .commonIdentifierLocation,
+      AVMetadataIdentifier(rawValue: "uiso/%A9xyz"), // the ©xyz atom of an MP4
+    ]
+    for item in items where item.identifier.map(ids.contains) == true || item.commonKey == .commonKeyLocation {
+      if let s = try? await item.load(.stringValue), let p = iso6709(s) { return p }
+      if let d = try? await item.load(.dataValue), let p = xyzAtom(d) { return p }
+    }
+    return nil
+  }
+
+  /** A ©xyz atom's payload: text length, language, then the ISO 6709 text (at most what the atom holds). */
+  static func xyzAtom(_ d: Data) -> (lat: Double, lon: Double)? {
+    let b = [UInt8](d.prefix(4096))
+    guard b.count >= 4 else { return nil }
+    let n = Int(b[0]) << 8 | Int(b[1])
+    return String(bytes: b[4..<min(4 + n, b.count)], encoding: .utf8).flatMap(iso6709)
+  }
+
+  /** The decimal-degrees form of ISO 6709 only, as phones write it: "+47.3769+008.5417+408.000/". Sign and two digits
+   *  of latitude, sign and three of longitude, each with optional decimals; then nothing, "/", an altitude or "CRS…".
+   *  The degrees-minutes forms are refused rather than misread as degrees, and so is 0,0, like a photo's. */
+  static func iso6709(_ s: String) -> (lat: Double, lon: Double)? {
+    var rest = Substring(s.trimmingCharacters(in: .whitespaces.union(CharacterSet(charactersIn: "\0"))))
+    func number(_ digits: Int) -> Double? {
+      guard let sign = rest.first, sign == "+" || sign == "-" else { return nil }
+      var i = rest.index(after: rest.startIndex)
+      for _ in 0..<digits {
+        guard i < rest.endIndex, rest[i].isASCII, rest[i].isNumber else { return nil }
+        i = rest.index(after: i)
+      }
+      if i < rest.endIndex, rest[i] == "." {
+        var j = rest.index(after: i), n = 0
+        while j < rest.endIndex, rest[j].isASCII, rest[j].isNumber { j = rest.index(after: j); n += 1 }
+        guard n > 0, n <= 15 else { return nil } // a point needs digits after it, and no more than any device writes
+        i = j
+      }
+      let v = Double(rest[..<i])
+      rest = rest[i...]
+      return v
+    }
+    guard let lat = number(2), let lon = number(3) else { return nil }
+    if let c = rest.first, c != "/", c != "+", c != "-", !rest.hasPrefix("CRS") { return nil }
+    guard lat.isFinite, lon.isFinite, (-90...90).contains(lat), (-180...180).contains(lon), !(lat == 0 && lon == 0) else { return nil }
+    return (lat, lon)
   }
 
   /** "2024:07:14 18:03:22" with an optional "+02:00"; without one it is local time, like the other clients. */

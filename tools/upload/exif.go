@@ -570,9 +570,11 @@ type videoInfo struct {
 	Created       time.Time
 	Width, Height int
 	Duration      float64
+	HasGPS        bool
+	Lat, Lon      float64
 }
 
-// readVideo reads the creation time, duration and display size from the movie header boxes.
+// readVideo reads the creation time, duration, display size and place from the movie header boxes.
 func readVideo(r io.ReaderAt, size int64) (*videoInfo, error) {
 	moov, ok := find(boxes(r, 0, size), "moov")
 	if !ok {
@@ -630,5 +632,6 @@ func readVideo(r io.ReaderAt, size int64) (*videoInfo, error) {
 		v.Width, v.Height = w, h
 		break
 	}
+	v.Lat, v.Lon, v.HasGPS = videoGPS(r, inner)
 	return v, nil
 }

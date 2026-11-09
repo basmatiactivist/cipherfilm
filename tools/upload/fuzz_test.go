@@ -35,12 +35,33 @@ func FuzzReadVideo(f *testing.F) {
 	f.Add(mov[:len(mov)-40])
 	f.Add(bmff("moov", bmff("mvhd", []byte{1, 0, 0, 0})))
 	f.Add([]byte{})
+	f.Add(movie(false, xyzBox("+47.3769+008.5417+408.000/")))
+	f.Add(movie(true, appleMeta("+47.3769+008.5417/", false)))
+	f.Add(movie(true, appleMeta("-33.9249+018.4241/", true)))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		v, err := readVideo(bytes.NewReader(data), int64(len(data)))
 		if err == nil && (v.Width < 0 || v.Height < 0 || math.IsNaN(v.Duration)) {
 			t.Fatalf("%+v", v)
 		}
+		if err == nil && v.HasGPS && !validPosition(v.Lat, v.Lon) {
+			t.Fatalf("GPS position %v, %v", v.Lat, v.Lon)
+		}
 	})
+}
+
+func FuzzParseISO6709(f *testing.F) {
+	for _, s := range []string{"+47.3769+008.5417+408.000/", "+47.3769+008.5417/", "-33.9249+018.4241/", "+00.0+000.0/", "+4722.61+00832.50/", ""} {
+		f.Add([]byte(s))
+	}
+	f.Fuzz(func(t *testing.T, b []byte) {
+		if lat, lon, ok := parseISO6709(b); ok && !validPosition(lat, lon) {
+			t.Fatalf("%q gave %v, %v", b, lat, lon)
+		}
+	})
+}
+
+func validPosition(lat, lon float64) bool {
+	return lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180 && !(lat == 0 && lon == 0)
 }
 
 func FuzzPadUnpad(f *testing.F) {

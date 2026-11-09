@@ -87,6 +87,7 @@ export const deBackup: Record<string, string> = {
   "Your account's keys don't match. Backup was not turned on.": "Die Schlüssel Ihres Kontos passen nicht zusammen. Das Backup wurde nicht eingeschaltet.",
   "Signed in with another account. Backup continues when this account signs in again.": "Mit einem anderen Konto angemeldet. Das Backup geht weiter, wenn dieses Konto wieder angemeldet ist.",
   "The file is empty (0 bytes).": "Die Datei ist leer (0 Byte).",
+  "Android took too long to read this file.": "Android hat zu lange gebraucht, um diese Datei zu lesen.",
   "You were signed out. Sign in to continue the backup.": "Sie wurden abgemeldet. Melden Sie sich an, um das Backup fortzusetzen.",
   "Can't connect to the server. Trying again in a few minutes.": "Keine Verbindung zum Server. Neuer Versuch in einigen Minuten.",
   "Cipherfilm can't see your photos. Allow access in Backup.": "Cipherfilm sieht Ihre Fotos nicht. Erlauben Sie den Zugriff unter „Backup“.",

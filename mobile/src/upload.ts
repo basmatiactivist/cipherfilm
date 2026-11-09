@@ -10,6 +10,7 @@ import { session } from "./session";
 import { keepRunning, letGo, onlyHolder } from "./keepAlive";
 import type { ItemMeta } from "./library";
 import { locale, t, tn } from "./i18n";
+import { bounded } from "./bounded";
 
 export const THUMB_PX = 640;
 export const PREVIEW_PX = 2048;
@@ -97,6 +98,9 @@ export async function uploadShared(f: Shared, onProgress: (done: number, total: 
 
 /** The upload itself. wrap() locks the new item key: under the master key, or sealed to the account's public key by
  *  the background backup. mine() throws to stop between steps. The backup passes its own server in to. */
+const DECODE_MS = 90_000; // a thumbnail or a video frame; seconds even for very large files
+const READ_MS = 120_000; // one part of the file (4 MB) from local storage
+
 export async function uploadFile(f: Shared, s: Sodium, wrap: (itemKey: Uint8Array, id: string) => Uint8Array, mine: () => void, onProgress: (done: number, total: number) => void, to?: Remote): Promise<string> {
   if (f.size < 0) throw new Error(t("Can't upload: Android didn't report the file size."));
   if (f.size > MAX_FILE) throw new Error(t("Files over 8 GB can't be uploaded."));
@@ -114,7 +118,7 @@ export async function uploadFile(f: Shared, s: Sodium, wrap: (itemKey: Uint8Arra
     const thumbWork = (async () => {
       if (kind === "other") return;
       try {
-        const [th, p] = await Promise.all([N.jpeg(f.uri, kind === "video", THUMB_PX, 82), N.jpeg(f.uri, kind === "video", PREVIEW_PX, 85)]);
+        const [th, p] = await Promise.all([bounded(N.jpeg(f.uri, kind === "video", THUMB_PX, 82), DECODE_MS), bounded(N.jpeg(f.uri, kind === "video", PREVIEW_PX, 85), DECODE_MS)]);
         if (!th || !p) return;
         dims = { width: p.width, height: p.height };
         mine();
@@ -123,7 +127,7 @@ export async function uploadFile(f: Shared, s: Sodium, wrap: (itemKey: Uint8Arra
         if (e instanceof SignedOut) throw e;
       }
     })();
-    const infoWork = N.mediaInfo(f.uri, kind === "video").catch(() => ({}));
+    const infoWork = bounded(N.mediaInfo(f.uri, kind === "video"), DECODE_MS).catch(() => ({}));
 
     let done = 0;
     onProgress(0, f.size || 1);
@@ -132,7 +136,7 @@ export async function uploadFile(f: Shared, s: Sodium, wrap: (itemKey: Uint8Arra
     for (let i = 0; i < count && failure === undefined; i++) {
       mine();
       const len = f.size === 0 ? 0 : segmentPlainLen(f.size, i);
-      const plain = len ? await N.readRange(f.uri, i * SEG_PLAIN, len) : new Uint8Array(0);
+      const plain = len ? await bounded(N.readRange(f.uri, i * SEG_PLAIN, len), READ_MS) : new Uint8Array(0);
       const ct = encryptSegment(s, itemKey, id, i, count, f.size, plain);
       plain.fill(0);
       if (ct.length !== cipherLen(len)) throw new Error("internal size error");

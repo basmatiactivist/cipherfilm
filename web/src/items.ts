@@ -298,9 +298,10 @@ export function forgetUnfinished() {
   } catch { /* storage unavailable */ }
 }
 
-/** Upload-resume entries hold file names in their keys: forget them when the session ends. */
+/** Upload-resume entries hold file names in their keys, and which videos got a location (map/relocate.ts) item ids:
+ *  forget them when the session ends. */
 export function clearUploadMemory() {
   try {
-    for (const k of Object.keys(localStorage)) if (k.startsWith("cf-upload:")) localStorage.removeItem(k);
+    for (const k of Object.keys(localStorage)) if (k.startsWith("cf-upload:") || k.startsWith("cf-relocated:")) localStorage.removeItem(k);
   } catch { /* storage unavailable */ }
 }

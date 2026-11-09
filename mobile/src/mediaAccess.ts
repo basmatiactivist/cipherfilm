@@ -29,3 +29,11 @@ export async function requestMediaAccess(location: boolean): Promise<"full" | "p
   if (now === "none" && Object.values(r).includes(PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN)) { expectAway(); N.openAppSettings(); }
   return now;
 }
+
+/** ACCESS_MEDIA_LOCATION on its own (Android 10+): without it the photo picker and the library hand out copies without
+ *  the location, so a picked photo would arrive without it (and never show on the map). True when allowed. */
+export async function askMediaLocation(): Promise<boolean> {
+  if (N.backupState().sdk < 29 || N.mediaLocationAllowed()) return true;
+  const r = await away(() => PermissionsAndroid.request(LOCATION)).catch(() => null);
+  return r === PermissionsAndroid.RESULTS.GRANTED || N.mediaLocationAllowed();
+}

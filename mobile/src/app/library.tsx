@@ -6,6 +6,9 @@ import { answerOffer, claimOffer, releaseOffer } from "../search/settings";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import N from "../../modules/cf-native/src/CfNativeModule";
 import { away } from "../autolock";
+import { askMediaLocation } from "../mediaAccess";
+import { useMapOn } from "../mapConsent";
+import { relocate } from "../relocate";
 import { Gallery } from "../Gallery";
 import { NAV_HEIGHT, NavBar } from "../NavBar";
 import { Icon } from "../icons";
@@ -18,6 +21,7 @@ import { t } from "../i18n";
 
 /** Android's photo picker, then the same upload screen as sharing. */
 async function pick() {
+  await askMediaLocation(); // the picker's copies keep where they were taken only with it; the upload works without
   const uris = await away(() => N.pickMedia());
   if (!uris.length) return;
   setPicked(uris);
@@ -30,6 +34,9 @@ export default function Library() {
   const { items, error, loading } = useLibrary();
   const demo = !!useSession().me?.demo;
   useEffect(() => { if (!items) refreshLibrary(); }, []);
+  // while the map is on: what this phone uploaded without where it was taken gets it (relocate.ts, every few minutes)
+  const mapOn = useMapOn();
+  useEffect(() => { if (mapOn && items) relocate().catch(() => {}); }, [mapOn, !!items]);
   // once: offer search, which is off until the person turns it on; asked only while this screen is on top (a dialog
   // opened under the Backup screen would show over it)
   const [offer, setOffer] = useState(false);

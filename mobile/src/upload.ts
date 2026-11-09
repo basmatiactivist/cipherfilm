@@ -12,6 +12,7 @@ import type { ItemMeta } from "./library";
 import { locale, t, tn } from "./i18n";
 import { bounded } from "./bounded";
 import { kindOf } from "./kind";
+import { videoLocationOf } from "./videoGps";
 
 export const THUMB_PX = 640;
 export const PREVIEW_PX = 2048;
@@ -150,6 +151,8 @@ export async function uploadFile(f: Shared, s: Sodium, wrap: (itemKey: Uint8Arra
     if (failure !== undefined) throw failure;
 
     const info: Awaited<ReturnType<typeof N.mediaInfo>> = await infoWork;
+    // Android reads a video's location only from udta/©xyz; the iPhone's form (a meta box) is read here
+    if (kind === "video" && info.lat == null) Object.assign(info, (await videoLocationOf(f.uri, f.size)) ?? {});
     const now = Date.now();
     const meta: ItemMeta = {
       name: f.name, mime: f.mime, size: f.size, lastModified: now, capture_ts: info.captureTs ?? now,

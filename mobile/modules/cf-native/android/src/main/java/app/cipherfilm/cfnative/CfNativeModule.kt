@@ -304,7 +304,9 @@ class CfNativeModule : Module() {
     AsyncFunction("stat") { uri: String ->
       val u = Uri.parse(uri)
       var name: String? = null; var size = -1L
-      resolver.query(u, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use {
+      // the photo picker names a photo by its number ("812.jpg"): the library entry behind it has the real name
+      val named = original(uri).takeIf { it != u && it.pathSegments.firstOrNull()?.startsWith("picker") != true } ?: u
+      resolver.query(named, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use {
         if (it.moveToFirst()) {
           name = it.getString(0)
           if (!it.isNull(1)) size = it.getLong(1)
@@ -314,7 +316,7 @@ class CfNativeModule : Module() {
       mapOf("name" to (name ?: u.lastPathSegment ?: "file"), "size" to size, "mime" to resolver.getType(u), "deletable" to (mediaUri(u) != null))
     }.runOnQueue(files)
     AsyncFunction("readRange") { uri: String, offset: Long, length: Int ->
-      resolver.openFileDescriptor(Uri.parse(uri), "r")!!.use { pfd ->
+      resolver.openFileDescriptor(original(uri), "r")!!.use { pfd ->
         FileInputStream(pfd.fileDescriptor).channel.use { ch ->
           ch.position(offset)
           val buf = ByteBuffer.allocate(length)
@@ -325,7 +327,7 @@ class CfNativeModule : Module() {
       }
     }.runOnQueue(files)
     AsyncFunction("mediaInfo") { uri: String, isVideo: Boolean ->
-      val u = Uri.parse(uri)
+      val u = original(uri)
       val out = mutableMapOf<String, Any?>()
       if (isVideo) {
         MediaMetadataRetriever().apply {
@@ -337,12 +339,15 @@ class CfNativeModule : Module() {
             val rot = extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
             if (w != null && h != null) { out["width"] = if (rot % 180 == 0) w else h; out["height"] = if (rot % 180 == 0) h else w }
             extractMetadata(MediaMetadataRetriever.METADATA_KEY_DATE)?.let { parseVideoDate(it) }?.let { out["captureTs"] = it }
+            // where it was filmed, as the video stores it ("+47.3769+008.5417/", ISO 6709)
+            extractMetadata(MediaMetadataRetriever.METADATA_KEY_LOCATION)?.let { iso6709(it) }?.let { out["lat"] = it.first; out["lon"] = it.second }
           } catch (_: Exception) { } finally { release() }
         }
       } else {
         try {
-          resolver.openInputStream(u)?.use { s ->
-            val x = ExifInterface(s)
+          // through the file descriptor: HEIC needs to seek, which a plain stream may not allow
+          resolver.openFileDescriptor(u, "r")?.use { pfd ->
+            val x = ExifInterface(pfd.fileDescriptor)
             val when_ = x.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL) ?: x.getAttribute(ExifInterface.TAG_DATETIME)
             when_?.let { parseExifDate(it, x.getAttribute(ExifInterface.TAG_OFFSET_TIME_ORIGINAL)) }?.let { out["captureTs"] = it }
             x.getAttribute(ExifInterface.TAG_MAKE)?.let { out["make"] = it.trim() }
@@ -353,6 +358,8 @@ class CfNativeModule : Module() {
       }
       out
     }.runOnQueue(files)
+    // Whether what the app reads of a picked or backed-up photo keeps where it was taken (ACCESS_MEDIA_LOCATION).
+    Function("mediaLocationAllowed") { locationAllowed() }
     // A JPEG no larger than maxPx on its long side, upright; images and video frames. Null if Android can't decode it.
     AsyncFunction("jpeg") { uri: String, isVideo: Boolean, maxPx: Int, quality: Int ->
       val u = Uri.parse(uri)
@@ -362,7 +369,7 @@ class CfNativeModule : Module() {
             setDataSource(appContext.reactContext, u)
             if (Build.VERSION.SDK_INT >= 27) getScaledFrameAtTime(1_000_000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, maxPx, maxPx) else getFrameAtTime(1_000_000)
           } finally { release() }
-        } else ImageDecoder.decodeBitmap(ImageDecoder.createSource(resolver, u)) { dec, info, _ ->
+        } else ImageDecoder.decodeBitmap(ImageDecoder.createSource(resolver, original(uri))) { dec, info, _ ->
           val long = maxOf(info.size.width, info.size.height)
           if (long > maxPx) { val f = maxPx.toDouble() / long; dec.setTargetSize(maxOf(1, (info.size.width * f).toInt()), maxOf(1, (info.size.height * f).toInt())) }
           dec.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
@@ -534,6 +541,40 @@ class CfNativeModule : Module() {
     val id = seg[4].toLongOrNull() ?: return null
     val video = resolver.getType(u)?.startsWith("video/") == true
     return ContentUris.withAppendedId((if (video) MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL) else MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)), id)
+  }
+
+  private fun locationAllowed(): Boolean {
+    val ctx = appContext.reactContext ?: return false
+    return Build.VERSION.SDK_INT < 29 || androidx.core.content.ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.ACCESS_MEDIA_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+  }
+
+  // a photo's original as the app may read it, by the URI it was given; looked up once per URI
+  private val originals = java.util.concurrent.ConcurrentHashMap<String, Uri>()
+
+  /**
+   * The file to read for a photo or video: from Android 10 the library hands out copies without the location unless the
+   * app asks for the original (ACCESS_MEDIA_LOCATION), and the photo picker's copies lose it the same way. So, where
+   * allowed: the library entry behind a picked photo, or the picked one itself, as the original. Otherwise the URI as
+   * given. Original and copy have the same size; only the location differs.
+   */
+  private fun original(uri: String): Uri {
+    originals[uri]?.let { return it }
+    val u = Uri.parse(uri)
+    if (Build.VERSION.SDK_INT < 29 || u.authority != MediaStore.AUTHORITY || u.getBooleanQueryParameter("requireOriginal", false) || !locationAllowed()) return u
+    val tries = listOfNotNull(mediaUri(u)?.let { MediaStore.setRequireOriginal(it) }, MediaStore.setRequireOriginal(u))
+    val found = tries.firstOrNull { c -> runCatching { resolver.openFileDescriptor(c, "r")?.use { true } ?: false }.getOrDefault(false) } ?: u
+    if (originals.size > 2000) originals.clear()
+    originals[uri] = found
+    return found
+  }
+
+  // "+47.3769+008.5417/", "+47.3769+008.5417+408.000/": latitude and longitude in degrees; none for 0,0 or out of range
+  private fun iso6709(v: String): Pair<Double, Double>? {
+    val m = Regex("^([+-]\\d{1,2}(?:\\.\\d+)?)([+-]\\d{1,3}(?:\\.\\d+)?)").find(v.trim()) ?: return null
+    val lat = m.groupValues[1].toDoubleOrNull() ?: return null
+    val lon = m.groupValues[2].toDoubleOrNull() ?: return null
+    if (lat !in -90.0..90.0 || lon !in -180.0..180.0 || (lat == 0.0 && lon == 0.0)) return null
+    return lat to lon
   }
 
   /** Only the decrypted copies in the outbox (src/outbox.ts) ever leave the app, never another of its files. */

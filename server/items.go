@@ -74,6 +74,7 @@ func (a *App) itemRoutes(m *http.ServeMux) {
 	m.HandleFunc("PUT /api/items/{id}/thumb", a.auth(false, a.putAux("thumb", maxThumbBytes, "has_thumb")))
 	m.HandleFunc("PUT /api/items/{id}/preview", a.auth(false, a.putAux("preview", maxPreviewBytes, "has_preview")))
 	m.HandleFunc("POST /api/items/{id}/finalize", a.auth(false, a.finalizeItem))
+	m.HandleFunc("PUT /api/items/{id}/meta", a.auth(false, a.putMeta))
 	m.HandleFunc("GET /api/items/{id}/segments/{n}", a.auth(false, a.getBlob("seg")))
 	m.HandleFunc("GET /api/items/{id}/thumb", a.auth(false, a.getBlob("thumb")))
 	m.HandleFunc("GET /api/items/{id}/preview", a.auth(false, a.getBlob("preview")))
@@ -489,6 +490,51 @@ func (a *App) finalizeItem(w http.ResponseWriter, r *http.Request, u *user, s *s
 	res, err := a.db.Exec(`UPDATE items SET state='ready', wrapped_item_key=?, meta_enc=?, stored_bytes=stored_bytes+? WHERE id=? AND user_id=? AND state='uploading'`, req.WrappedItemKey, req.MetaEnc, extra, it.ID, u.ID)
 	if rowsAffected(res, err) != 1 {
 		fail(w, 409, "this upload is already finished")
+		return
+	}
+	a.changed(u.ID, tItems)
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+// putMeta replaces a finished item's encrypted metadata: an app adds what it could only read later, such as where a
+// photo was taken (docs/MAP.md). The server can't read it, as at finalize; the change reaches the other devices like
+// any other (items_rev_upd). Its size counts toward the storage limit like the rest of the item.
+func (a *App) putMeta(w http.ResponseWriter, r *http.Request, u *user, s *session) {
+	it, ok := a.owned(w, r, u)
+	if !ok {
+		return
+	}
+	var req struct {
+		MetaEnc string `json:"meta_enc"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	meta, err := b64.DecodeString(req.MetaEnc)
+	if err != nil || len(meta) < 1+24+16 || len(meta) > maxMetaBytes {
+		fail(w, 400, "invalid request")
+		return
+	}
+	if it.State != "ready" {
+		fail(w, 409, "this upload isn't finished")
+		return
+	}
+	var old string
+	if err := a.db.QueryRow(`SELECT COALESCE(meta_enc,'') FROM items WHERE id=? AND user_id=?`, it.ID, u.ID).Scan(&old); err != nil {
+		fail(w, 404, "not found")
+		return
+	}
+	grow := int64(len(req.MetaEnc) - len(old))
+	release, ok := a.reserveBytes(u.ID, grow)
+	if !ok {
+		fail(w, 413, "this would go over your storage limit")
+		return
+	}
+	defer release()
+	res, err := a.db.Exec(`UPDATE items SET meta_enc=?, stored_bytes=stored_bytes+? WHERE id=? AND user_id=? AND state='ready' AND COALESCE(meta_enc,'')=?`,
+		req.MetaEnc, grow, it.ID, u.ID, old)
+	if rowsAffected(res, err) != 1 {
+		fail(w, 409, "the item changed meanwhile")
 		return
 	}
 	a.changed(u.ID, tItems)

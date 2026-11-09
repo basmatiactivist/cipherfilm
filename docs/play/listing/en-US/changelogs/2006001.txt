@@ -1,0 +1,6 @@
+• Fixed: photos added with the Upload button or backed up without location access now keep where they were taken, and show on the map.
+• Photos and videos uploaded earlier from this phone get their place added while the map is on.
+• Videos show on the map too.
+• Photos picked with the Upload button keep their real file name.
+• Single photos on the map show their picture.
+Needs your own Cipherfilm server: https://cipherfilm.app

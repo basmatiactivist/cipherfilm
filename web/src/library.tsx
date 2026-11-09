@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useMapOn } from "./map/consent";
 import { Cancelled, discardUpload, forgetUnfinished, Item, SignedOut, loadItems, loadTrash, purgeTrash, restoreItems, setFavorite, trashItems, unfinishedUploads, uploadFile } from "./items";
 import { ApiError } from "./api";
 import { mem } from "./state";
@@ -96,6 +97,12 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const refreshTrash = () => loadTrash().then((r) => { setTrash(r.items); setRetention(r.retentionDays); }, (e) => setError(msg(e)));
   const refreshUsage = () => loadUsage().then(setUsage, () => {});
   useEffect(() => { refreshItems(); refreshAlbums(); refreshTrash(); refreshUsage(); }, []);
+  // while the map is on: videos uploaded before their location was read get it now (map/relocate.ts, loaded only then)
+  const mapIsOn = useMapOn();
+  useEffect(() => {
+    if (!mapIsOn || !items?.length) return;
+    import("./map/relocate").then((m) => m.relocateVideos(items)).then((n) => { if (n) refreshItems(); }, () => {});
+  }, [mapIsOn, !!items]);
   // what other devices change shows here within a second or two (live.ts): only the lists that changed load again
   useEffect(() => {
     const sync = coalesce(async (what) => {

@@ -70,18 +70,22 @@ export async function search(qRaw: string, library: Item[]): Promise<Result> {
   let rest = d.rest;
   if (!rest) return { items: sortByDate(pool), people, how };
 
-  // places, from each photo's coordinates on this phone (places.ts): all the words ("new york") or one of them
-  // ("zurich beach" is the photos from Zurich that show a beach)
-  const whole = await inPlace(pool, rest).catch(() => null);
-  if (whole) return { items: sortByDate(pool.filter((i) => whole.ids.has(i.id))), people, how: [...how, whole.name] };
-  for (const w of rest.split(/\s+/)) {
-    const r = await inPlace(pool, w).catch(() => null);
-    if (!r) continue;
-    pool = pool.filter((i) => r.ids.has(i.id));
-    how.push(r.name);
-    rest = rest.split(/\s+/).filter((x) => x !== w).join(" ");
+  // places, from each photo's coordinates on this phone (places.ts). With more words, one that is exactly a place
+  // narrows the rest to it ("zurich beach": the photos from Zurich that show a beach)
+  const placed0 = rest.includes(" ") ? await inPlace(pool, rest).catch(() => null) : null;
+  if (rest.includes(" ") && !placed0) {
+    for (const w of rest.split(/\s+/)) {
+      const r = await inPlace(pool, w, true).catch(() => null);
+      if (!r || r.ids.size === pool.length) continue;
+      pool = pool.filter((i) => r.ids.has(i.id));
+      how.push(r.name);
+      rest = rest.split(/\s+/).filter((x) => x !== w).join(" ");
+    }
+    if (!rest) return { items: sortByDate(pool), people, how };
   }
-  if (!rest) return { items: sortByDate(pool), people, how };
+  // what is left may name a place too: those photos come first, then the rest of the search (not instead of it,
+  // so "see" or "berg" still find lakes and mountains)
+  const placed = await inPlace(pool, rest).catch(() => null);
 
   // file names and cameras: exact substring matches first
   const named = pool.filter((i) => (i.meta?.name ?? "").toLowerCase().includes(rest) || `${i.meta?.make ?? ""} ${i.meta?.model ?? ""}`.toLowerCase().includes(rest));
@@ -92,6 +96,10 @@ export async function search(qRaw: string, library: Item[]): Promise<Result> {
   const seen = new Set<string>();
   const out: Item[] = [];
   for (const i of named) if (!seen.has(i.id)) { seen.add(i.id); out.push(i); }
+  if (placed) {
+    for (const i of sortByDate(pool.filter((x) => placed.ids.has(x.id)))) if (!seen.has(i.id)) { seen.add(i.id); out.push(i); }
+    how.push(placed.name);
+  }
   for (const h of hits) { const it = inPool.get(h.id); if (it && !seen.has(it.id)) { seen.add(it.id); out.push(it); } }
   if (hits.length) how.push(t('"{q}"', { q: rest }));
   else if (named.length) how.push(t('named "{q}"', { q: rest }));

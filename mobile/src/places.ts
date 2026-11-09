@@ -65,22 +65,43 @@ export async function placeName(it: Item): Promise<string> {
   try { const p = await loadPlaces(); return label(local(p, p.nearest(c.lat, c.lon))); } catch { return ""; }
 }
 
-/** For search: the photos taken in the place, region or country named ("zurich", "Zürich", "switzerland", "new york"),
- *  and that name as found; null when the words name no place. */
-export async function inPlace(items: Item[], words: string): Promise<{ ids: Set<string>; name: string } | null> {
-  const q = fold(words);
+// each photo's place words for search (town, region, country as the file names it and in the app's language), folded,
+// with the names as shown; worked out once per photo, not on every search
+type Words = { folded: string[]; names: string[] };
+const wordsOf = new WeakMap<Item, Words | null>();
+function placeWords(p: Places, it: Item): Words | null {
+  if (wordsOf.has(it)) return wordsOf.get(it) ?? null;
+  const c = coords(it);
+  const r = c ? p.nearest(c.lat, c.lon) : null;
+  const names = r ? [r.place?.name, r.place?.region, local(p, r)?.country, r.country].filter((n): n is string => !!n) : [];
+  const w = names.length ? { names, folded: names.map(fold) } : null;
+  wordsOf.set(it, w);
+  return w;
+}
+
+/** A query word against a place name: the whole name or one of its words, or the start of one from 4 letters on
+ *  ("zurich", "new york", "schweiz", "switz"); shorter words only whole, so "see" or "car" don't pull in every
+ *  "Seefeld" or "Carouge". */
+export function nameMatches(name: string, q: string): boolean {
+  if (name === q) return true;
+  const words = name.split(/[\s\-'’]+/);
+  return words.includes(q) || (q.length >= 4 && (name.startsWith(q) || words.some((w) => w.startsWith(q))));
+}
+
+/** For search: the photos taken in the place, region or country the words name ("zurich", "Zürich", "switzerland",
+ *  "new york"), and that place as found; null when the words name no place. exact: only a place's whole name
+ *  ("zurich", not the "new" of "New York"). */
+export async function inPlace(items: Item[], words: string, exact = false): Promise<{ ids: Set<string>; name: string } | null> {
+  const q = fold(words).trim();
   if (q.length < 3) return null;
   const p = await loadPlaces();
   const ids = new Set<string>();
   let name = "";
   for (const it of items) {
-    const c = coords(it);
-    if (!c) continue;
-    const r = p.nearest(c.lat, c.lon);
-    if (!r) continue;
-    // the country as the file names it and in the app's language: "switzerland" and "schweiz" both find it
-    const hit = [r.place?.name, r.place?.region, local(p, r)?.country, r.country].find((n) => n && (fold(n) === q || fold(n).startsWith(q)));
-    if (hit) { ids.add(it.id); name ||= hit; }
+    const w = placeWords(p, it);
+    if (!w) continue;
+    const i = w.folded.findIndex((n) => (exact ? n === q : nameMatches(n, q)));
+    if (i >= 0) { ids.add(it.id); name ||= w.names[i]; }
   }
   return ids.size ? { ids, name } : null;
 }

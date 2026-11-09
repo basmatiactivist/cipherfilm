@@ -2,7 +2,7 @@
 # Restores a backup made by backup.sh. REPLACES everything in the data volume; what it replaces is kept in .previous/.
 #   scripts/restore.sh path/to/cipherfilm-YYYYMMDD-HHMMSS.tar --yes
 # The archive is checked BEFORE anything is deleted: required members must exist, and members that are not plain
-# files or directories (symlinks, devices) or that try to leave the data directory are rejected.
+# files or directories (symlinks, hard links, devices) or that try to leave the data directory are rejected.
 set -eu
 FILE="${1:-}"
 [ -f "$FILE" ] || { echo "usage: $0 backup.tar --yes" >&2; exit 2; }
@@ -17,7 +17,8 @@ docker run --rm -v "$FILE":/in.tar:ro alpine:3.24 sh -ec '
   grep -qx "backup/app.db" /tmp/names || { echo "archive has no backup/app.db" >&2; exit 1; }
   grep -qx "backup/secret" /tmp/names || { echo "archive has no backup/secret" >&2; exit 1; }
   if grep -E "^/|(^|/)\.\.(/|$)" /tmp/names >/dev/null; then echo "archive has unsafe paths" >&2; exit 1; fi
-  if grep -v "^[-d]" /tmp/long >/dev/null; then echo "archive has members that are not plain files or directories" >&2; exit 1; fi
+  # a hard link lists as a plain file, with its target after the name
+  if grep -v "^[-d]" /tmp/long >/dev/null || grep -E " (->|link to) " /tmp/long >/dev/null; then echo "archive has members that are not plain files or directories" >&2; exit 1; fi
   if grep -Ev "^(backup|blobs)(/|$)" /tmp/names >/dev/null; then echo "archive has unexpected top-level members" >&2; exit 1; fi
 '
 
@@ -38,6 +39,10 @@ docker run --rm -v "$VOLUME":/data -v "$FILE":/in.tar:ro alpine:3.24 sh -ec '
   fi
   mkdir /data/.restore
   tar -xf /in.tar -C /data/.restore                    # extract aside first; nothing is touched if this fails
+  # and what was really extracted (the archive may have changed since the check): only plain files with one name
+  if [ -n "$(find /data/.restore \( ! -type f ! -type d \) -o \( -type f -links +1 \) | head -1)" ]; then
+    rm -rf /data/.restore; echo "archive has links or devices; nothing was replaced" >&2; exit 1
+  fi
   [ -d /data/.restore/blobs ] || mkdir /data/.restore/blobs   # no blobs/ until the first upload
   { [ -f /data/.restore/backup/app.db ] && [ -f /data/.restore/backup/secret ]; } || { echo "the archive lacks backup/app.db or backup/secret" >&2; exit 1; }
   # the data being replaced is moved aside, not deleted (a rename, so it needs no extra space): if this was the

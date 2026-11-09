@@ -38,6 +38,8 @@ version into the GitHub release notes, so a release cannot be published without 
 - Android: saving a video says it went to Movies › Cipherfilm (it said Pictures).
 - Web and Android: the library appears once the first screen's photos are decoded, never as empty tiles.
 - Android: Report a problem opens in the browser (the GitHub app dropped the prefilled form).
+- Android: a video whose file says "no date" (MP4 date 0, written by some apps and tools) is no longer filed under
+  January 1, 1904; it gets the upload time, like a photo without a date.
 - Docs: the threat model says the search models come from Hugging Face.
 
 ## [2.4.1] - 2026-11-08

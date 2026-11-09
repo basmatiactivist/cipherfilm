@@ -548,8 +548,11 @@ class CfNativeModule : Module() {
     f.parse(v)?.time
   } catch (_: Exception) { null }
 
+  // An MP4 counts its dates from 1904, and 0 there means "not set" (some apps and tools write it): anything before 1905
+  // is no date at all, as in the uploader (tools/upload/exif.go), so the video doesn't land in January 1904.
   private fun parseVideoDate(v: String): Long? = try {
     SimpleDateFormat("yyyyMMdd'T'HHmmss.SSS'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }.parse(v)?.time
+      ?.takeIf { it >= -2_051_222_400_000L } // 1905-01-01 UTC
   } catch (_: Exception) { null }
 
   companion object { private const val PICK_REQUEST = 0x5057; private const val SHARE_REQUEST = 0x5058; private const val TRASH_REQUEST = 0x5059; private const val PHOTO_PICKER = "com.android.providers.media.photopicker" }

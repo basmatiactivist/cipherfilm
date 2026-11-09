@@ -158,7 +158,7 @@ lost device, make an invite link, status). A password can't be reset from the se
 | `PUBLIC_HOSTS` | `.env` | required | names your proxy serves, e.g. `photos.example.com`; others get 421 |
 | `TRUST_PROXY` | `.env` | `1` | trust the last `X-Forwarded-For` entry from exactly one proxy; `0` for a chain, a Cloudflare Tunnel or Tailscale Serve |
 | `TRUSTED_PROXIES` | `.env` | empty (loopback and private networks) | addresses or CIDRs whose `X-Forwarded-For` is believed, comma-separated |
-| `MAP_STYLE` | `.env` | empty (OpenFreeMap, VersaTiles as fallback) | the map tab's base map: `off`, or `LIGHT_STYLE_URL DARK_STYLE_URL` (your own MapLibre styles over https); photo locations never leave the devices, the tile server only sees which map areas are viewed ([docs/MAP.md](MAP.md)) |
+| `MAP_STYLE` | `.env` | empty (OpenFreeMap, VersaTiles as fallback) | the map tab's base map: `off`, or `LIGHT_STYLE_URL DARK_STYLE_URL` (your own MapLibre styles over https); photo locations never leave the devices, the tile server only sees which map areas are viewed ([docs/MAP.md](MAP.md); your own map server: [Your own map tiles](MAP.md#your-own-map-tiles)) |
 | `DEMO_ACCOUNTS` | `.env` | empty | e-mail addresses of public demo accounts, comma-separated: they can sign in, look and search, but not upload, edit, delete or change the account (403); see [deploy/demo](../deploy/demo/README.md) |
 | `DEMO_LOGIN` | `.env` | empty | `EMAIL PASSWORD` of one `DEMO_ACCOUNTS` login: the sign-in page shows it with an "Open the demo" button. The password is published, so only for a demo |
 | `APP_PORT` | `.env` | `8080` | port your proxy connects to |

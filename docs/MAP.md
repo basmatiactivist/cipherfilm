@@ -41,9 +41,56 @@ thumbnail or anything else from the library. To keep that small:
 |---|---|
 | empty (default) | OpenFreeMap (light: `positron`, dark: `dark`), VersaTiles as fallback |
 | `off` | no map: the tab and the small maps are gone; place names and search by place still work (they need no server) |
-| `LIGHT_URL DARK_URL` | your own MapLibre styles over https, e.g. a self-hosted tile server; everything a style loads (tiles, fonts, icons) must come from its own host, which the web app's CSP then allows |
+| `LIGHT_URL DARK_URL` | your own MapLibre styles over https, e.g. a self-hosted tile server; everything a style loads (tiles, fonts, icons) must come from its own host, which the web app's CSP then allows; see [Your own map tiles](#your-own-map-tiles) |
 
 The apps get the setting at sign-in (`map` in `/api/me`). The light or dark style follows the device's appearance.
+
+## Your own map tiles
+
+A self-hosted server can use its own map server instead of OpenFreeMap. Then no outside map provider sees anything:
+the map requests go to a server you run (or choose), and the privacy policy's map part applies to that server and its
+operator, not to OpenFreeMap or VersaTiles.
+
+What the apps need is two [MapLibre style](https://maplibre.org/maplibre-style-spec/) files, one for light and one for
+dark mode, each a JSON file reachable over https. A style names where its tiles (the map data), glyphs (fonts) and
+sprite (icons) come from. Any map server that serves MapLibre styles works, for example a self-hosted
+[VersaTiles](https://versatiles.org) or [OpenFreeMap](https://github.com/hyperknot/openfreemap) instance, or
+[TileServer GL](https://github.com/maptiler/tileserver-gl); their own guides cover downloading map data and running
+them.
+
+1. **Put the map server behind https**, on a host the devices can reach (your domain, your LAN, or your tailnet, the
+   same way they reach Cipherfilm).
+2. **Check the styles.** Every URL inside them (`sources` › `url` or `tiles`, `glyphs`, `sprite`) must point at the
+   same host as the style itself: the web app's and the Mac app's Content-Security-Policy allow the styles' hosts and
+   nothing else, so a font or tile from another host is blocked. To list the hosts a style uses:
+
+   ```sh
+   curl -s https://maps.example.com/styles/light.json | grep -oE 'https?://[^/"]+' | sort -u
+   ```
+
+   If a style points somewhere else, edit its URLs (or serve those files from your host) before using it. When the
+   style uses a TileJSON `url`, check that file's `tiles` too.
+3. **Allow cross-origin requests.** The web app (on your Cipherfilm address) and the Mac app's map view load the map
+   from another origin, so the map server must answer with `Access-Control-Allow-Origin: *` (or your Cipherfilm
+   address plus `cfmap://app` for the Mac app). Most map servers send it already. No cookies or logins: the apps send
+   none to the map server.
+4. **Set `MAP_STYLE`** in the server's `.env` to the two style URLs, light first, separated by a space, and restart:
+
+   ```sh
+   MAP_STYLE="https://maps.example.com/styles/light.json https://maps.example.com/styles/dark.json"
+   ```
+
+   The server refuses anything that isn't two https URLs (or empty, or `off`) at start, and builds the web app's
+   Content-Security-Policy from these hosts. One style for both modes works too: give the same URL twice.
+5. **Check it.** The apps load the setting from the server when someone signs in or unlocks, so sign out and in (or
+   lock and unlock) on each device. The question before the map then names your map server's host instead of
+   OpenFreeMap. If the map stays empty, open the browser's developer tools on the web app: a blocked request
+   ("Content-Security-Policy") means a style URL points at another host (step 2), a CORS error means step 3.
+6. **Keep the attribution.** Map data from OpenStreetMap needs its credit; put it in the style's source `attribution`
+   (for example `© OpenStreetMap contributors`), and the map shows it.
+
+With your own styles there is no fallback: if your map server is down, the map says it couldn't be loaded
+until it is back. Place names and search by place don't use the map server and keep working.
 
 ## Software and data
 

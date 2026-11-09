@@ -6,10 +6,13 @@ import { privacyUrl } from "./store";
 import { onWipe, session } from "./session";
 import { OfflineManager } from "@maplibre/maplibre-react-native";
 import { t } from "./i18n";
-import { mapProviderOf } from "@places/mapHosts";
+import { mapHosts, mapProviderOf } from "@places/mapHosts";
 
 const name = (userId: string) => `map_on_${userId}`;
-let on: { userId: string; value: boolean } | null = null;
+// what is stored is the map servers agreed to: another map server on the Cipherfilm server (MAP_STYLE) asks again
+let on: { userId: string; stored: string | null } | null = null;
+const agreed = () => mapHosts(session().me?.map).join(" ");
+const isOn = (stored: string | null | undefined) => !!stored && stored === agreed();
 const subs = new Set<() => void>();
 const changed = () => subs.forEach((f) => f());
 
@@ -18,17 +21,18 @@ export async function loadMapOn(): Promise<boolean> {
   const id = session().me?.user.id;
   if (!id) return false;
   if (on?.userId !== id) {
-    on = { userId: id, value: (await SecureStore.getItemAsync(name(id)).catch(() => null)) === "1" };
+    on = { userId: id, stored: await SecureStore.getItemAsync(name(id)).catch(() => null) };
     changed();
   }
-  return on.value;
+  return isOn(on.stored);
 }
 
 export async function setMapOn(value: boolean) {
   const id = session().me?.user.id;
   if (!id) return;
-  if (value) await SecureStore.setItemAsync(name(id), "1"); else await SecureStore.deleteItemAsync(name(id)).catch(() => {});
-  on = { userId: id, value };
+  const hosts = agreed();
+  if (value && hosts) await SecureStore.setItemAsync(name(id), hosts); else await SecureStore.deleteItemAsync(name(id)).catch(() => {});
+  on = { userId: id, stored: value && hosts ? hosts : null };
   changed();
   if (!value) clearMapCache();
 }
@@ -36,7 +40,7 @@ export async function setMapOn(value: boolean) {
 /** Whether the map is on for the signed-in account; false until it was read. */
 export function useMapOn(): boolean {
   const id = session().me?.user.id;
-  const v = useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => (on && on.userId === id ? on.value : false));
+  const v = useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => (on && on.userId === id ? isOn(on.stored) : false));
   if (id && on?.userId !== id) loadMapOn();
   return v;
 }

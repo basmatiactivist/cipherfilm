@@ -542,7 +542,7 @@ enum DebugDriver {
     check(swissIds.count == 8 && Set(swiss.items.prefix(8).map(\.id)) == swissIds, "search “switzerland” finds Zürich and Lucerne first (\(swiss.items.count))")
 
     // the map is off until the person turns it on: the tab asks first, and no web view (no map image) exists
-    m.settings.mapOn = false
+    m.mapOn = false
     let tokyoPhoto = located.first(where: { near($0, 35.68, 139.7) })
     nav.go?(.map)
     await pause(2)
@@ -561,7 +561,7 @@ enum DebugDriver {
       nav.close?(); await pause(0.5)
     }
     // turned on (the tab's button): the base map's style loads, the photos are drawn as clustered markers
-    m.settings.mapOn = true
+    m.mapOn = true
     let styled = await wait("map style", timeout: 45) { nav.map?.styleLoaded == true || nav.map?.failed == true }
     check(styled && nav.map?.styleLoaded == true, "the map's page loads its base map style")
     let drawn = await wait("map markers", timeout: 20) { (nav.map?.markers ?? 0) > 0 }
@@ -583,7 +583,7 @@ enum DebugDriver {
       await pause(2.5)
       snapshot("map-03-viewer-info")
       // turned off in Settings while the details are open: the small map goes at once
-      m.settings.mapOn = false
+      m.mapOn = false
       let gone = await wait("small map gone", timeout: 5) { nav.mini == nil }
       check(gone, "map turned off: the small map is gone from the photo's details")
       nav.close?()

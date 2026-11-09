@@ -301,6 +301,12 @@ final class AppModel {
     if ended { watcher.stop(forget: true); uploads = []; uploadsOwner = nil; uploadsPaused = false; Inbox.clear() }
   }
 
+  /** The map is on: the person agreed to exactly the map servers the Cipherfilm server names now (AccountSettings). */
+  var mapOn: Bool {
+    get { let h = me?.map?.hosts ?? []; return !h.isEmpty && settings.mapAgreed == h }
+    set { settings.mapAgreed = newValue ? (me?.map?.hosts ?? []) : [] }
+  }
+
   // ---- the library ----
 
   /** Files dropped from apps that hand over only a temporary copy (Photos, Mail, browsers): copied into the app's

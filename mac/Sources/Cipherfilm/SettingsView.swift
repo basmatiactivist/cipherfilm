@@ -56,7 +56,7 @@ struct GeneralSettings: View {
       Divider()
       // the map's images come from a third party: off until turned on, per account on this Mac (MapPage.swift)
       Section_(title: "Map", subtitle: "Your photos on a map. Map images from \(MapConsent.provider(model.me?.map)).") {
-        Toggle("Map", isOn: Binding(get: { model.settings.mapOn }, set: { model.settings.mapOn = $0 }))
+        Toggle("Map", isOn: Binding(get: { model.mapOn }, set: { model.mapOn = $0 }))
           .disabled(model.me == nil || model.me?.hasMap != true)
         if model.me != nil && model.me?.hasMap != true { Text("This server doesn't offer a map.").font(Typo.caption).foregroundStyle(.secondary) }
       }

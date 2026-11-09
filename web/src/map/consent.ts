@@ -3,17 +3,20 @@
 // under Account › Map.
 import { useEffect, useState } from "preact/hooks";
 import { mem } from "../state";
-import { mapProviderOf } from "../places/mapHosts";
+import { mapHosts, mapProviderOf } from "../places/mapHosts";
 
 const key = () => `cf-map-on:${mem.me?.user.id ?? ""}`;
 const subs = new Set<() => void>();
 
+// what is stored is the map servers agreed to: another map server on the Cipherfilm server (MAP_STYLE) asks again
+const agreed = () => mapHosts(mem.me?.map).join(" ");
+
 export function mapOn(): boolean {
-  try { return !!mem.me && localStorage.getItem(key()) === "1"; } catch { return false; }
+  try { return !!mem.me && !!agreed() && localStorage.getItem(key()) === agreed(); } catch { return false; }
 }
 
 export function setMapOn(on: boolean) {
-  try { if (on) localStorage.setItem(key(), "1"); else localStorage.removeItem(key()); } catch { /* storage off: the map stays off */ }
+  try { if (on) localStorage.setItem(key(), agreed()); else localStorage.removeItem(key()); } catch { /* storage off: the map stays off */ }
   subs.forEach((f) => f());
 }
 

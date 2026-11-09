@@ -381,7 +381,7 @@ struct InfoPanel: View {
       Text(String(format: "%.5f, %.5f", g.lat, g.lon)).font(placeName == nil ? Typo.body : Typo.caption)
         .foregroundStyle(placeName == nil ? Ink.ink : Ink.muted).textSelection(.enabled)
       // only once the person turned the map on (its images come from a third party)
-      if model.settings.mapOn, let at = item.location, let styles = model.me?.map, model.me?.hasMap == true {
+      if model.mapOn, let at = item.location, let styles = model.me?.map, model.me?.hasMap == true {
         MiniMap(at: at, styles: styles).padding(.top, 6)
       } else if model.me?.hasMap == true {
         // the map is off on this Mac: the way to it (the question about it comes first)

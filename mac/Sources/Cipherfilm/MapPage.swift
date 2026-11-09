@@ -305,10 +305,10 @@ struct MapTab: View {
   @Bindable var selection: Selection
 
   var body: some View {
-    if model.settings.mapOn {
+    if model.mapOn {
       MapScreen(selection: selection)
     } else {
-      MapConsent(styles: model.me?.map, turnOn: { model.settings.mapOn = true }, later: { nav.go(.photos) })
+      MapConsent(styles: model.me?.map, turnOn: { model.mapOn = true }, later: { nav.go(.photos) })
     }
   }
 }

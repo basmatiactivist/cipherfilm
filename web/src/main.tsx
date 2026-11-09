@@ -16,6 +16,7 @@ import { Library } from "./library";
 import { Login, Unlock } from "./signin";
 import { lazy } from "./lazy";
 import { Loading } from "./loader";
+import { announce, endsHere, onAnnounce } from "./tabs";
 
 // first-time and recovery screens: most visits never show them
 const Setup = lazy(() => import("./screens").then((m) => m.Setup));
@@ -28,16 +29,17 @@ type Screen =
   | { n: "invite"; token: string }
   | { n: "keys"; pending: auth.PendingKey; then: "home" | "login"; title?: string; replacing?: boolean };
 
-/** Drops every key and decrypted byte this tab holds: locking, an ended session. */
-function forgetKeys() {
+/** Drops every key and decrypted byte this tab holds: locking, an ended session. shared: also what the browser keeps
+ *  for all its tabs (the Service Worker's keys, upload notes, stored thumbnails), which is left alone when another
+ *  account signed in, as that account may be using it now. */
+function forgetKeys(shared = true) {
   dropRequests(); // answers still on their way belong to the keys going now
   dropMasterKey();
   forgetKept(); // a lock asks for the password again, also after a reload
   forgetDecrypted();
-  clearCaches();
+  clearCaches(shared);
   clearPeople();
-  clearPlayer();
-  clearUploadMemory();
+  if (shared) { clearPlayer(); clearUploadMemory(); }
 }
 
 const TITLES: Partial<Record<Screen["n"], string>> = { setup: "Set up", login: "Sign in", recover: "Reset password", unlock: "Unlock", invite: "Create your account", keys: "Recovery key" };
@@ -65,37 +67,53 @@ function App() {
     }
   };
   useEffect(() => {
-    const ended = () => {
-      // a 401 for a request that was already on its way when this tab signed out: nothing is left to end
-      if (!mem.me) return;
-      // an ended session is a sign-out by the server: the same is forgotten (kept keys, search models, upload notes)
-      forgetKeys();
-      auth.forgetLocal();
-      setNotice("Your session has ended. Sign in again.");
+    const toLogin = (n: string) => {
+      setNotice(n);
       history.replaceState(null, "", "/");
       setScreen({ n: "login" });
     };
-    const revoked = () => {
+    // an ended session is a sign-out by the server: the same is forgotten (kept keys, search models, upload notes),
+    // and the other tabs on the same session are told (auth.logout does the same)
+    const signedOut = (n: string, session = true) => {
+      const me = mem.me;
       forgetKeys();
       auth.forgetLocal();
-      setNotice("This browser was signed out from another device. Its copy of your library was deleted.");
-      history.replaceState(null, "", "/");
-      setScreen({ n: "login" });
+      if (me) announce({ t: "signed-out", user: me.user.id, session: session ? me.session_id : undefined });
+      toLogin(n);
     };
+    // a 401 for a request that was already on its way when this tab signed out: nothing is left to end
+    const ended = () => { if (mem.me) signedOut("Your session has ended. Sign in again."); };
+    const revoked = () => signedOut("This browser was signed out from another device. Its copy of your library was deleted.");
     const deleted = () => {
       forgetKeys();
-      auth.forgetLocal();
-      setNotice("Your account and everything in it were deleted from this server.");
-      history.replaceState(null, "", "/");
-      setScreen({ n: "login" });
+      auth.forgetLocal(); // auth.deleteAccount has told the other tabs
+      toLogin("Your account and everything in it were deleted from this server.");
     };
+    // the cookie now belongs to another sign-in: only this tab's memory goes, the rest is the new session's
+    const replaced = () => {
+      if (!mem.me) return;
+      forgetKeys(false);
+      auth.leaveSession();
+      toLogin("Someone signed in on this browser in another tab. Sign in again.");
+    };
+    // another tab signed out or in: the same as here, without asking the server again
+    const stopTabs = onAnnounce((s) => {
+      if (!endsHere(s, mem.me)) return;
+      if (s.t === "signed-in") return replaced();
+      forgetKeys();
+      auth.forgetLocal();
+      toLogin("You were signed out in another tab.");
+    });
     window.addEventListener("cf-session-ended", ended);
     window.addEventListener("cf-session-revoked", revoked);
     window.addEventListener("cf-account-deleted", deleted);
+    window.addEventListener("cf-session-replaced", replaced);
     return () => {
+      stopTabs();
       window.removeEventListener("cf-session-ended", ended);
       window.removeEventListener("cf-session-revoked", revoked);
       window.removeEventListener("cf-account-deleted", deleted);
+      window.removeEventListener("cf-session-replaced", replaced);
     };
   }, []);
   useEffect(() => { route(); window.onpopstate = () => { if (mem.masterKey && location.pathname === "/") return; route(); }; }, []);

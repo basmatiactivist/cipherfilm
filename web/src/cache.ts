@@ -154,9 +154,10 @@ export function prefetchThumbs(items: Item[]) {
   // queued oldest first: the batcher sends the latest request first
   for (const it of want.reverse()) load("thumb", thumbs, it, () => true).catch(() => {});
 }
-export function clearCaches() {
+/** stored: also the thumbnails and previews stored for every tab (Cache Storage), not only this tab's images. */
+export function clearCaches(stored = true) {
   generation++;
   thumbs.clear(); previews.clear();
   opened.clear(); lru = null; clearTimeout(saveTimer);
-  if (typeof caches !== "undefined") for (const name of Object.values(STORED)) caches.delete(name).catch(() => {});
+  if (stored && typeof caches !== "undefined") for (const name of Object.values(STORED)) caches.delete(name).catch(() => {});
 }

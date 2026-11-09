@@ -15,7 +15,7 @@ import { ShortcutsHelp } from "./shortcuts";
 import { ReportDialog } from "./reportdialog";
 import { Field, KeepButton, Submit, fmtGB, useAction } from "./components";
 import { Icon, IconName, Logo } from "./icons";
-import { loadUsage } from "./auth";
+import { checkSession, loadUsage } from "./auth";
 import { hasIndex, loadPeople, refreshIndex, searchFamily, usePeople } from "./people/people";
 import { coalesce, startLive } from "./live";
 import { lazy } from "./lazy";
@@ -107,7 +107,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
       if (what.has("index")) jobs.push(refreshIndex(true).catch(() => {}));
       await Promise.all(jobs);
     });
-    const stop = startLive({ onChange: (what) => sync.ping(what), probe: loadUsage });
+    const stop = startLive({ onChange: (what) => sync.ping(what), probe: checkSession }); // the same account and session, or back to sign-in
     return () => { stop(); sync.stop(); };
   }, []);
   // once the grid has its first thumbnails, the lightbox's code comes ahead of the first click

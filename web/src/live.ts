@@ -57,7 +57,8 @@ export interface LiveOptions {
   /** Called with what changed; after a reconnect that may have missed pings, with everything. */
   onChange: (what: Topic[]) => void;
   /** An ordinary request, before reconnecting: it fails while the server is away, and a session that ended is noticed
-   *  the usual way (api.ts), which EventSource can't do (it doesn't show the status of a refused answer). */
+   *  the usual way (api.ts), which EventSource can't do (it doesn't show the status of a refused answer). It also
+   *  checks that the session is still this tab's (auth.checkSession): a sign-in meanwhile may have replaced it. */
   probe: () => Promise<unknown>;
   open?: (url: string) => Source;
   clock?: Clock;

@@ -1,0 +1,3 @@
+• Small security improvements.
+• Server operators can now manage their server from a container console such as Portainer's.
+Needs your own Cipherfilm server: https://cipherfilm.app

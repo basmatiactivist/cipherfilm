@@ -7,6 +7,10 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+## [2.5.1] - 2026-11-09
+
+The server commands work in any container console, such as Portainer's: `cipherfilm status`.
+
 ### Changed
 - Server image: Alpine instead of distroless, so the container has a shell. The server commands now work in
   Portainer's (or any) container console: open it with `/bin/sh` and type `cipherfilm status` (docs/SERVER-COMMANDS.md).

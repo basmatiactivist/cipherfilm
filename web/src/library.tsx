@@ -743,7 +743,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
       {report && <ReportDialog serverVersion={mem.me?.server_version} onClose={() => setReport(false)} />}
 
       {lb !== null && libraryView && lbList[lb] && (
-        <Lightbox items={lbList} index={lb} onIndex={setLb} onClose={closeLb} people={people} onPerson={(key) => { closeLb(); openPerson(key); }}
+        <Lightbox items={lbList} index={lb} onIndex={setLb} onClose={closeLb} people={people} onPerson={(key) => { closeLb(); openPerson(key); }} onMap={() => { closeLb(); go({ n: "map" }); }}
           onFavorite={view.n === "trash" ? undefined : (it) => favorite([it.id], !it.favorite)}
           action={view.n === "trash"
             ? { label: "Restore", run: async (it) => { await restore([it.id]); closeLb(); setTimeout(() => document.getElementById("main")?.focus(), 60); } }

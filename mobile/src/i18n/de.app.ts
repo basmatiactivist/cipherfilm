@@ -56,6 +56,7 @@ export const deApp: Record<string, string> = {
   "Each file is encrypted on this phone, then uploaded only to your server ({server}). The developer of Cipherfilm never receives your photos or anything about them.": "Jede Datei wird auf diesem Handy verschlüsselt und dann nur auf Ihren Server ({server}) hochgeladen. Der Entwickler von Cipherfilm erhält nie Ihre Fotos oder irgendetwas über sie.",
   "Android asks next. If you allow only some photos, Cipherfilm backs up just those.": "Als Nächstes fragt Android. Wenn Sie nur einige Fotos erlauben, sichert Cipherfilm nur diese.",
   "Not now": "Nicht jetzt",
+  "Show on the map": "Auf der Karte zeigen",
   "Your photos on a map. Map images from {who}.": "Ihre Fotos auf einer Karte. Kartenbilder von {who}.",
   "{a} and {b}": "{a} und {b}",
   "{a}, {b} and {n} more": "{a}, {b} und {n} weitere",

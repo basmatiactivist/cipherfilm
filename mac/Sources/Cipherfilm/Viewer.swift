@@ -383,6 +383,9 @@ struct InfoPanel: View {
       // only once the person turned the map on (its images come from a third party)
       if model.settings.mapOn, let at = item.location, let styles = model.me?.map, model.me?.hasMap == true {
         MiniMap(at: at, styles: styles).padding(.top, 6)
+      } else if model.me?.hasMap == true {
+        // the map is off on this Mac: the way to it (the question about it comes first)
+        Button("Show on the map") { nav.go(.map) }.buttonStyle(TextLink()).padding(.top, 4)
       }
     }
   }

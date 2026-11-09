@@ -48,7 +48,7 @@ function VideoPlayer({ item }: { item: Item }) {
   );
 }
 
-export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number) => void; onClose: () => void; action?: { label: string; run: (it: Item) => Promise<void> }; people?: { all: Group[]; ready: boolean }; onPerson?: (key: string) => void; onFavorite?: (it: Item) => void }) {
+export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number) => void; onClose: () => void; action?: { label: string; run: (it: Item) => Promise<void> }; people?: { all: Group[]; ready: boolean }; onPerson?: (key: string) => void; onFavorite?: (it: Item) => void; onMap?: () => void }) {
   const dlg = useRef<HTMLDialogElement>(null);
   const startX = useRef<number | null>(null);
   const it = p.items[p.index];
@@ -153,7 +153,7 @@ export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number)
             <div><dt>Size</dt><dd>{fmtBytes(it.size)}{m?.width ? `, ${m.width} × ${m.height}` : ""}{m?.mime ? `, ${m.mime}` : ""}</dd></div>
             {(m?.make || m?.model) && <div><dt>Camera</dt><dd>{[m.make, m.model].filter(Boolean).join(" ")}</dd></div>}
             {m?.gps && <div><dt>Location</dt><dd><PlaceName item={it} />{m.gps.lat.toFixed(4)}, {m.gps.lon.toFixed(4)}</dd></div>}
-            {m?.gps && Number.isFinite(m.gps.lat) && Number.isFinite(m.gps.lon) && <MiniMap lat={m.gps.lat} lon={m.gps.lon} />}
+            {m?.gps && Number.isFinite(m.gps.lat) && Number.isFinite(m.gps.lon) && <MiniMap lat={m.gps.lat} lon={m.gps.lon} onShowMap={p.onMap} />}
             {m?.duration ? <div><dt>Length</dt><dd>{Math.round(m.duration)} s</dd></div> : null}
             {p.people && p.onPerson && !it.broken && <PhotoPeople item={it} all={p.people.all} ready={p.people.ready} onPerson={p.onPerson} />}
           </dl>

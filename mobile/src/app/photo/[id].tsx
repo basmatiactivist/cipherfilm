@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Animated, AppState, Easing, FlatList, PanResponder, Pressable, StatusBar, StyleSheet, useColorScheme, useWindowDimensions, View, type GestureResponderEvent } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Image } from "expo-image";
-import { Dialog, IconButton, Modal, Portal, ProgressBar, Snackbar, Text } from "react-native-paper";
+import { Button, Dialog, IconButton, Modal, Portal, ProgressBar, Snackbar, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { previewUri, when, type Item } from "../../library";
 import { libraryItems, refreshLibrary, setFavorite } from "../../libraryStore";
@@ -470,6 +470,8 @@ function MiniMap({ lat, lon }: { lat: number; lon: number }) {
   const [at, setAt] = useState(0);
   const [cacheOk, setCacheOk] = useState(false); // an earlier run's map cache is gone before the map shows
   useEffect(() => { if (conf) mapCacheReady().then(() => setCacheOk(true)); }, [!!conf]);
+  // the map is off on this phone: the way to it (the question about it comes first)
+  if (!conf && all) return <Button mode="text" compact onPress={() => router.replace("/map")} style={{ alignSelf: "flex-start", marginTop: 4 }}>{t("Show on the map")}</Button>;
   if (!conf || !cacheOk) return null;
   const styles = scheme === "dark" || th.dark ? conf.dark : conf.light;
   return (

@@ -258,7 +258,7 @@ function MapView(p: { items: Item[]; onOpen: (list: Item[], index: number) => vo
 
 /** The small map in a photo's details: its spot at district level (not street level), only when the details are
  *  opened, so the base map's server learns the area of exactly the photos whose details someone looks at. */
-export function MiniMap(p: { lat: number; lon: number }) {
+export function MiniMap(p: { lat: number; lon: number; onShowMap?: () => void }) {
   const on = useMapOn();
   const conf = on ? mem.me?.map : undefined; // nothing is loaded before the person turned the map on
   const box = useRef<HTMLDivElement>(null);
@@ -279,6 +279,7 @@ export function MiniMap(p: { lat: number; lon: number }) {
     new Marker({ element: pin }).setLngLat([p.lon, p.lat]).addTo(m);
     return () => m.remove();
   }, [conf, p.lat, p.lon]);
-  if (!conf) return null;
+  // the map is off in this browser: the way to it (the question about it comes first)
+  if (!conf) return mem.me?.map && p.onShowMap ? <button class="link" onClick={p.onShowMap}>Show on the map</button> : null;
   return <div ref={box} class="minimap" role="img" aria-label="Where this photo was taken" />;
 }

@@ -42,6 +42,11 @@ version into the GitHub release notes, so a release cannot be published without 
   January 1, 1904; it gets the upload time, like a photo without a date.
 - Docs: the threat model says the search models come from Hugging Face.
 
+## [2.5.0-rc.1] - 2026-11-09
+
+A test run of the release pipeline for 2.5.0 (build without keys, signing job, checksums). Not for use;
+removed again with 2.5.0.
+
 ## [2.4.1] - 2026-11-08
 
 The Android app turns with the phone and fills tablets.

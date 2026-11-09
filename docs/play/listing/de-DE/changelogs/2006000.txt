@@ -1,0 +1,5 @@
+• Neu: die Karte. Ihre Fotos dort, wo sie aufgenommen wurden; die Orte bleiben verschlüsselt und werden auf dem Handy gezeichnet. Aus, bis Sie sie einschalten.
+• Suche nach Orten: „zürich“, „japan“.
+• In den Details eines Fotos: der Ortsname und eine kleine Karte.
+• Mehr Schutz beim Sperren und Abmelden.
+Benötigt Ihren eigenen Cipherfilm-Server: https://cipherfilm.app/de

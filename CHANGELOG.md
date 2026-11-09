@@ -5,7 +5,7 @@ All notable changes to Cipherfilm are listed here. The format follows
 [Semantic Versioning](https://semver.org/). The release workflow copies the section of the tagged
 version into the GitHub release notes, so a release cannot be published without an entry here.
 
-## [Unreleased]
+## [2.6.0] - 2026-11-09
 
 Your photos on a map, in every app: where they were taken, found by place, with the locations end-to-end encrypted.
 

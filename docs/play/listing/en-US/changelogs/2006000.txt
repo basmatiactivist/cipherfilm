@@ -1,0 +1,5 @@
+• New: the map. Your photos where they were taken; the places stay encrypted and are drawn on your phone. Off until you turn it on.
+• Search by place: "zurich", "japan".
+• A photo's details show the place's name and a small map.
+• More protection when the app locks or signs out.
+Needs your own Cipherfilm server: https://cipherfilm.app

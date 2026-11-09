@@ -59,7 +59,10 @@ sprite (icons) come from. Any map server that serves MapLibre styles works, for 
 them.
 
 1. **Put the map server behind https**, on a host the devices can reach (your domain, your LAN, or your tailnet, the
-   same way they reach Cipherfilm).
+   same way they reach Cipherfilm), with a certificate the devices trust: a public one (for example from Let's Encrypt,
+   which Caddy gets by itself, as in compose.yaml for Cipherfilm, or `tailscale cert` on a tailnet). With a self-signed or private certificate
+   browsers and the Mac app refuse the map ("the map couldn't be loaded"), even when Cipherfilm itself was opened
+   past a warning.
 2. **Check the styles.** Every URL inside them (`sources` › `url` or `tiles`, `glyphs`, `sprite`) must point at the
    same host as the style itself: the web app's and the Mac app's Content-Security-Policy allow the styles' hosts and
    nothing else, so a font or tile from another host is blocked. To list the hosts a style uses:
@@ -85,7 +88,8 @@ them.
 5. **Check it.** The apps load the setting from the server when someone signs in or unlocks, so sign out and in (or
    lock and unlock) on each device. The question before the map then names your map server's host instead of
    OpenFreeMap. If the map stays empty, open the browser's developer tools on the web app: a blocked request
-   ("Content-Security-Policy") means a style URL points at another host (step 2), a CORS error means step 3.
+   ("Content-Security-Policy") means a style URL points at another host (step 2), a CORS error means step 3, a
+   certificate error means step 1.
 6. **Keep the attribution.** Map data from OpenStreetMap needs its credit; put it in the style's source `attribution`
    (for example `© OpenStreetMap contributors`), and the map shows it.
 

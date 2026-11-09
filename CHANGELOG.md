@@ -13,7 +13,8 @@ version into the GitHub release notes, so a release cannot be published without 
   coordinates stay end-to-end encrypted and are drawn on the device; place names come from a GeoNames file bundled with
   the apps. The base map is OpenFreeMap (VersaTiles as fallback), which only sees which map areas are viewed; the map
   opens on the whole world and never moves to the photos by itself. `MAP_STYLE` sets your own styles or turns the map
-  off (docs/MAP.md).
+  off; a self-hosted server can use its own map server (docs/MAP.md). The map is off until each person turns it on,
+  after a short explanation of what the map server sees.
 
 ### Security
 - Web, Android and Mac take an item's kind (photo, video) from its encrypted metadata, no longer from the server's
@@ -22,6 +23,9 @@ version into the GitHub release notes, so a release cannot be published without 
   the same user could read). macOS asks once for the Mac's password after an update until the app is signed by Apple.
 - Updates of crypto and storage libraries (libsodium, x/crypto, JNA, SQLite) are never merged automatically.
 - The web app's crypto is tested against the same committed vectors as the decrypt tool and the Mac app.
+- Server image: the package manager, zlib and OpenSSL are no longer in it (only the package manager and busybox's
+  https client used them); this clears zlib's CVE-2026-4738 and keeps such alerts out. The shell for the `cipherfilm`
+  console command stays.
 
 ## [2.5.1] - 2026-11-09
 

@@ -96,7 +96,11 @@ them.
    from another origin, so the map server must answer with `Access-Control-Allow-Origin: *` (or your Cipherfilm
    address plus `cfmap://app` for the Mac app). Most map servers send it already. No cookies or logins: the apps send
    none to the map server.
-4. **Set `MAP_STYLE`** in the server's `.env` to the two style URLs, light first, separated by a space, and restart:
+4. **Set `MAP_STYLE`** in the server's `.env` to the two style URLs, light first, separated by a space, and restart.
+   It is a setting of the server, not of the web app's admin area: it decides which outside server every device loads
+   from, and the web app's Content-Security-Policy is built from it, so it belongs with whoever runs the server, like
+   the other settings in `.env` (docs/SELF-HOSTING.md). After a change every device asks again before using the new
+   map server:
 
    ```sh
    MAP_STYLE="https://maps.example.com/styles/light.json https://maps.example.com/styles/dark.json"

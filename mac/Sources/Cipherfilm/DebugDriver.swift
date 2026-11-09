@@ -81,6 +81,7 @@ enum DebugDriver {
       m.turnOnSearch(explicit: m.me?.user.nsfw == true ? false : nil)
       _ = await wait("search ready", timeout: 1800) { m.search.phase == .ready || m.search.phase == .error }
       check(m.search.phase == .ready, "indexed: \(m.search.index.count.items) items (\(m.search.message))")
+      await m.signOut(deleteExport: false) // the next account signs in from scratch
       log("DONE \(failures) failed")
       return
     }

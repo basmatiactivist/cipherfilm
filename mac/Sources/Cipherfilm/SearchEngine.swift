@@ -779,7 +779,7 @@ struct IndexCache: Codable {
   func write(_ v: Vault, _ family: String) {
     guard let u = Self.url(v, family) else { return }
     try? FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-    if let d = try? JSONEncoder().encode(self) { try? d.write(to: u, options: .atomic) }
+    if let d = try? JSONEncoder().encode(self), (try? d.write(to: u, options: .atomic)) != nil { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: u.path) }
   }
   static func delete(_ v: Vault, _ family: String) { if let u = url(v, family) { try? FileManager.default.removeItem(at: u) } }
   static func delete(_ v: Vault) { for f in families { delete(v, f) } }

@@ -23,13 +23,16 @@ func sections(_ items: [Item], _ g: Grouping) -> [GridSection] {
   var curDay: DateComponents?
   for it in items {
     let d = cal.dateComponents([.year, .month, .day], from: it.date)
-    if d != curDay, !cur.isEmpty { out.append(GridSection(id: "\(curDay!.year!)-\(curDay!.month!)-\(curDay!.day!)", title: cur[0].date.dayTitle, items: cur)); cur = [] }
+    if d != curDay, !cur.isEmpty, let c = curDay { out.append(GridSection(id: dayId(c), title: cur[0].date.dayTitle, items: cur)); cur = [] }
     curDay = d
     cur.append(it)
   }
-  if !cur.isEmpty, let d = curDay { out.append(GridSection(id: "\(d.year!)-\(d.month!)-\(d.day!)", title: cur[0].date.dayTitle, items: cur)) }
+  if !cur.isEmpty, let d = curDay { out.append(GridSection(id: dayId(d), title: cur[0].date.dayTitle, items: cur)) }
   return out
 }
+
+/** A day's section id; a component the calendar didn't give counts as 0. */
+private func dayId(_ d: DateComponents) -> String { "\(d.year ?? 0)-\(d.month ?? 0)-\(d.day ?? 0)" }
 
 struct Row: Identifiable {
   let id: String

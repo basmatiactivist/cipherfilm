@@ -189,6 +189,8 @@ public final class Vault: @unchecked Sendable {
         guard meta.size == x.size, (0...Segments.maxTotal).contains(x.size), x.segment_count == Segments.count(x.size) else { throw CryptoError.failed("size mismatch") }
         meta.width = Self.dimension(meta.width); meta.height = Self.dimension(meta.height)
         if let d = meta.duration, !(d.isFinite && d >= 0 && d < 1e7) { meta.duration = nil }
+        meta.capture_ts = Self.timestamp(meta.capture_ts) ?? Self.timestamp(x.created_at * 1000) ?? 0
+        meta.lastModified = Self.timestamp(meta.lastModified)
         it.itemKey = key; it.meta = meta
       } catch {
         it.broken = true
@@ -196,6 +198,15 @@ public final class Vault: @unchecked Sendable {
       out[i] = it
     }
     return out.compactMap { $0 }.sorted { $0.when > $1.when }
+  }
+
+  /** The times in milliseconds taken as dates: 1 January 1900 to 1 January 2100. */
+  static let timestamps: ClosedRange<Double> = -2_208_988_800_000...4_102_444_800_000
+
+  /** A time in milliseconds in that range, else none. */
+  static func timestamp(_ v: Double?) -> Double? {
+    guard let v, v.isFinite, timestamps.contains(v) else { return nil }
+    return v
   }
 
   /** A width or height as a picture can have it, else none. */
@@ -256,8 +267,10 @@ public final class Vault: @unchecked Sendable {
   public func loadCachedLibrary() -> [Item]? {
     guard let d = cached("list.json") else { return nil }
     let kept = (try? JSONDecoder().decode(KeptList.self, from: d)) ?? (try? JSONDecoder().decode([RawItem].self, from: d)).map { KeptList(cursor: nil, wholeAt: nil, items: $0) }
-    guard let kept, let items = try? decrypt(kept.items) else { return nil }
-    lock.withLock { pendingSeed = (items, kept.items, kept.cursor, kept.wholeAt ?? 0) }
+    guard let kept else { return nil }
+    let records = ListSync.unique(kept.items)
+    guard let items = try? decrypt(records) else { return nil }
+    lock.withLock { pendingSeed = (items, records, kept.cursor, kept.wholeAt ?? 0) }
     return items
   }
 
@@ -350,6 +363,7 @@ public final class Vault: @unchecked Sendable {
   /** The original file, decrypted into a file at `to`: written next to it first (or in `staging`, for a place the person
    *  picked in a save panel, where macOS allows writing only that one file), then moved into place. */
   public func saveOriginal(_ it: Item, to dest: URL, staging: URL? = nil, progress: (@Sendable (Double) -> Void)? = nil) async throws {
+    guard ServerId.valid(it.id) else { throw CryptoError.failed("bad item id") }
     if let staging { try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true) }
     let tmp = (staging ?? dest.deletingLastPathComponent()).appendingPathComponent(".cf-\(UUID().uuidString).part")
     FileManager.default.createFile(atPath: tmp.path, contents: nil)

@@ -40,7 +40,7 @@ enum FileName {
 
   static func of(_ it: Item) -> String {
     let c = clean(it.name)
-    return c.isEmpty ? "photo-\(it.id.prefix(8))" : c
+    return c.isEmpty ? clean("photo-\(it.id.prefix(8))") : c
   }
 
   /** "name (k).ext" for the k-th file of the same name. */

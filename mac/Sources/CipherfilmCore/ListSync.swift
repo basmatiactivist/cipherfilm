@@ -95,6 +95,7 @@ public actor ListSync {
       guard pages <= Vault.maxListPages, raw.count <= Vault.maxListItems, p.next != next else { throw APIError(status: -1, message: "The server's list doesn't end.") }
       next = p.next ?? ""
     }
+    raw = Self.unique(raw)
     let items = try decrypt(raw).sorted(by: order)
     // the first page's cursor: what changed while the later pages loaded comes with the next ?since
     if g == gen {
@@ -131,6 +132,14 @@ public actor ListSync {
     if g == gen { self.list = list; records = recs; cursor = cur }
     defer { seeded = false }
     return Loaded(items: list, retentionDays: days, full: false, changed: changed || seeded)
+  }
+
+  /** One record per id (the last one sent, as in `records`), in the order they came: an id twice would show twice. */
+  static func unique(_ raw: [RawItem]) -> [RawItem] {
+    var last: [String: Int] = [:]
+    for (i, x) in raw.enumerated() { last[x.id] = i }
+    guard last.count < raw.count else { return raw }
+    return raw.enumerated().filter { last[$0.element.id] == $0.offset }.map(\.element)
   }
 
   /** a cursor is "<epoch>.<number>": sent as it is */

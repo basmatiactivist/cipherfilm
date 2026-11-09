@@ -391,6 +391,7 @@ public final class API: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     var parser = SSEParser()
     for try await b in bytes {
       if let e = parser.feed(b), let s = LiveSignal(e), !(await handle(s)) { return }
+      if parser.overflowed { throw APIError(status: 0, message: APIError.offline) } // the caller connects again
     }
   }
 

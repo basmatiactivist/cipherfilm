@@ -15,24 +15,33 @@ public struct SSEvent: Equatable, Sendable {
 }
 
 /** Splits the stream into events, byte by byte as they arrive (URLSession's line sequence drops the empty lines that
- *  end an event). */
+ *  end an event). A line or an event longer than `limit` bytes sets `overflowed`, drops what was read and reads no more:
+ *  the pings are tiny, so the stream is not one to keep reading. */
 public struct SSEParser: Sendable {
+  public static let defaultLimit = 1 << 20
+  private let limit: Int
   private var line: [UInt8] = []
   private var event = ""
   private var data: [String] = []
+  private var dataBytes = 0
   private var comment = false
   private var lastCR = false
+  public private(set) var overflowed = false
 
-  public init() {}
+  public init(limit: Int = SSEParser.defaultLimit) { self.limit = limit }
 
   public mutating func feed(_ b: UInt8) -> SSEvent? {
+    if overflowed { return nil }
     if b == 0x0A && lastCR { lastCR = false; return nil } // the "\n" of a "\r\n"
     lastCR = b == 0x0D
-    guard b == 0x0A || b == 0x0D else { line.append(b); return nil }
+    guard b == 0x0A || b == 0x0D else {
+      guard line.count < limit else { overflow(); return nil }
+      line.append(b); return nil
+    }
     let text = String(decoding: line, as: UTF8.self)
     line.removeAll(keepingCapacity: true)
     if text.isEmpty {
-      defer { event = ""; data = []; comment = false }
+      defer { event = ""; data = []; dataBytes = 0; comment = false }
       if !data.isEmpty || !event.isEmpty { return SSEvent(event: event.isEmpty ? "message" : event, data: data.joined(separator: "\n")) }
       return comment ? SSEvent(event: ":", data: "") : nil
     }
@@ -42,10 +51,18 @@ public struct SSEParser: Sendable {
     if value.hasPrefix(" ") { value.removeFirst() }
     switch parts[0] {
     case "event": event = value
-    case "data": data.append(value)
+    case "data":
+      dataBytes += value.utf8.count + 1
+      guard dataBytes <= limit else { overflow(); return nil }
+      data.append(value)
     default: break
     }
     return nil
+  }
+
+  private mutating func overflow() {
+    overflowed = true
+    line = []; event = ""; data = []; dataBytes = 0; comment = false
   }
 
   public mutating func feed<S: Sequence>(_ bytes: S) -> [SSEvent] where S.Element == UInt8 {

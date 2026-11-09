@@ -39,4 +39,17 @@ import Testing
     #expect(liveBackoff(20, jitter: 1) == 60)
     #expect((0.8...1.2).contains(liveBackoff(0)))
   }
+
+  @Test func overlongLinesAndEventsOverflow() {
+    var p = SSEParser(limit: 16)
+    #expect(p.feed(Array("event: ready\ndata: {}\n\n".utf8)) == [SSEvent(event: "ready", data: "{}")])
+    #expect(!p.overflowed)
+    // one line without an end
+    _ = p.feed(Array(String(repeating: "x", count: 40).utf8))
+    #expect(p.overflowed)
+    // many short data lines in one event
+    var q = SSEParser(limit: 16)
+    #expect(q.feed(Array(String(repeating: "data: abcd\n", count: 5).utf8) + [0x0A]).isEmpty)
+    #expect(q.overflowed)
+  }
 }

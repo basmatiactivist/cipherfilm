@@ -118,6 +118,25 @@ private let newest: @Sendable (Item, Item) -> Bool = { $0.when > $1.when }
     #expect(s.asked == ["/api/items", "/api/items", "/api/items"])
   }
 
+  @Test func anIdTwiceInTheWholeListShowsOnce() async throws {
+    let s = Script(["/api/items": [["items": [raw("a", 1), raw("b", 2), raw("a", 1, fav: true)], "cursor": "e.1"]]])
+    let l = ListSync(path: "/api/items", order: newest)
+    let r = try await sync(s, l)
+    #expect(r.items.map(\.id) == ["b", "a"])
+    #expect(r.items.last?.favorite == true) // the last record sent, as in the kept records
+  }
+
+  @Test func timestampsOutsideTheRangeAreDropped() {
+    #expect(Vault.timestamp(1_700_000_000_000) == 1_700_000_000_000)
+    #expect(Vault.timestamp(-1_000) == -1_000)
+    #expect(Vault.timestamp(nil) == nil)
+    #expect(Vault.timestamp(.infinity) == nil)
+    #expect(Vault.timestamp(.nan) == nil)
+    #expect(Vault.timestamp(1e300) == nil)
+    #expect(Vault.timestamp(-1e300) == nil)
+    #expect(Vault.timestamp(4_102_444_800_001) == nil)
+  }
+
   @Test func pagesThatNeverEndAreStopped() async throws {
     let s = Script([
       "/api/items": [["items": [], "cursor": "e.1"]],

@@ -128,7 +128,8 @@ final class Watcher {
     task = Task {
       // after a stop (sign-out, account deleted) nothing is written: the account's folder may be gone and must stay gone
       @MainActor func stillOn() -> Bool { gen == generation && !Task.isCancelled }
-      defer { Task { @MainActor in self.task = nil; self.running = false; self.current = nil; if self.again { self.again = false; self.scan() } } }
+      // only this scan's own state: after a stop a newer scan may already be running
+      defer { Task { @MainActor in guard gen == self.generation else { return }; self.task = nil; self.running = false; self.current = nil; if self.again { self.again = false; self.scan() } } }
       do {
         struct MeLite: Decodable { struct U: Decodable { let id: String; let nsfw: Bool? }; let user: U; let csrf: String; let session_id: String?; let indexer: String? }
         let me = try JSONDecoder().decode(MeLite.self, from: try await api.json("GET", "/api/me"))
@@ -169,7 +170,8 @@ final class Watcher {
           sf.write(st)
         } catch is Stopped {
           return
-        } catch let e as APIError where e.status == 0 || e.status == 401 || e.status == 413 || e.status >= 500 {
+        } catch let e as APIError where e.status == 0 || e.status == 401 || e.status == 408 || e.status == 413 || e.status == 429 || e.status >= 500 {
+          // the server or the way to it, not the file (408, 429: try again later): this pass ends, no failure counted
           guard stillOn() else { return }
           problem = e.status == 413 ? "Your storage on the server is full." : e.status == 401 ? "Signed out. Sign in to keep uploading." : "Can't reach the server. Trying again later."
           sf.write(st); return

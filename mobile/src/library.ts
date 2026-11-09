@@ -14,6 +14,7 @@ import { api, csrfToken, getBytes, postForBytes, server } from "./api";
 import { onWipe, session } from "./session";
 import { t } from "./i18n";
 import { ThumbBatcher } from "./thumbbatch";
+import { kindOf } from "./kind";
 import { ListSync, type Page } from "./sync";
 
 export interface ItemMeta {
@@ -47,13 +48,14 @@ function decrypt(s: Sodium, master: Uint8Array, pair: () => KeyPair, x: any): It
   const it: Item = { id: x.id, kind: x.kind, size: x.size, segment_count: x.segment_count, created_at: x.created_at, has_thumb: x.has_thumb, has_preview: x.has_preview, trashed_at: x.trashed_at, purge_at: x.purge_at, favorite: !!x.favorite };
   const k = known.get(x.id);
   if (k && k.master === master && k.w === x.wrapped_item_key && k.m === x.meta_enc && k.key && k.meta && k.meta.size === x.size) {
-    it.itemKey = k.key; it.meta = k.meta;
+    it.itemKey = k.key; it.meta = k.meta; it.kind = kindOf(k.meta);
     return it;
   }
   try {
     it.itemKey = unwrapAnyItemKey(s, unb64(s, x.wrapped_item_key), master, pair, x.id);
     it.meta = decryptMeta<ItemMeta>(s, unb64(s, x.meta_enc), it.itemKey, x.id);
     if (it.meta.size !== it.size) throw new Error("size mismatch");
+    it.kind = kindOf(it.meta);
     known.set(x.id, { w: x.wrapped_item_key, m: x.meta_enc, master, key: it.itemKey, meta: it.meta });
   } catch {
     it.broken = true;

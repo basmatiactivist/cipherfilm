@@ -18,9 +18,12 @@ export interface ItemMeta {
   gps?: { lat: number; lon: number };
 }
 
-export const isHeic = (f: File): boolean => /^image\/hei[cf]/.test(f.type) || /\.(heic|heif)$/i.test(f.name);
-export const kindOf = (f: File): "image" | "video" | "other" =>
+export const isHeic = (f: Pick<File, "type" | "name">): boolean => /^image\/hei[cf]/.test(f.type) || /\.(heic|heif)$/i.test(f.name);
+export const kindOf = (f: Pick<File, "type" | "name">): "image" | "video" | "other" =>
   f.type.startsWith("video/") || /\.(mp4|mov|m4v)$/i.test(f.name) ? "video" : f.type.startsWith("image/") || isHeic(f) ? "image" : "other";
+/** The kind of an item as its encrypted, authenticated metadata says, by the same rule as at upload: never the
+ *  server's plain `kind`, which a malicious server could change to route a photo's bytes to the video player. */
+export const kindOfMeta = (m: Pick<ItemMeta, "mime" | "name">): "image" | "video" | "other" => kindOf({ type: m.mime, name: m.name });
 
 export async function readMeta(f: File, dims?: { width: number; height: number; duration?: number }): Promise<ItemMeta> {
   const meta: ItemMeta = { name: f.name, mime: f.type || "application/octet-stream", size: f.size, lastModified: f.lastModified, capture_ts: f.lastModified, ...dims };

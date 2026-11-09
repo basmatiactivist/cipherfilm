@@ -3,7 +3,7 @@ import { getSodium, b64, unb64, Sodium } from "./crypto/sodium";
 import { cipherLen, decryptSegment, encryptSegment, segmentCount, segmentPlainLen, SEG_PLAIN } from "./crypto/file";
 import { accountKeyPair, decryptMeta, encryptMeta, encryptPreview, encryptThumb, newItemKey, unwrapAnyItemKey, unwrapItemKey, wrapItemKey, type KeyPair } from "./crypto/item";
 import { normEmail } from "./crypto/account";
-import { decodeImage, decodeVideoFrame, ItemMeta, kindOf, PREVIEW_PX, readMeta, THUMB_PX, thumbsInWorker, toJpeg } from "./media";
+import { decodeImage, decodeVideoFrame, ItemMeta, kindOf, kindOfMeta, PREVIEW_PX, readMeta, THUMB_PX, thumbsInWorker, toJpeg } from "./media";
 import { mem } from "./state";
 import { ListSync, type Page } from "./sync";
 
@@ -61,7 +61,7 @@ function decryptRecords(s: Sodium, raw: any[]): Item[] {
       // the same record: keep what was decrypted, take the fields that change (favorite, thumbnail, trash) anew
       const same = k.item;
       if (same.favorite === it.favorite && same.has_thumb === it.has_thumb && same.has_preview === it.has_preview && same.trashed_at === it.trashed_at && same.purge_at === it.purge_at) return same;
-      const next = { ...it, itemKey: same.itemKey, meta: same.meta, broken: same.broken };
+      const next = { ...it, kind: same.kind, itemKey: same.itemKey, meta: same.meta, broken: same.broken };
       known.set(x.id, { ...k, item: next });
       return next;
     }
@@ -69,6 +69,7 @@ function decryptRecords(s: Sodium, raw: any[]): Item[] {
       it.itemKey = unwrapAnyItemKey(s, unb64(s, x.wrapped_item_key), master, keyPair, x.id);
       it.meta = wellFormed(decryptMeta<ItemMeta>(s, unb64(s, x.meta_enc), it.itemKey, x.id), x.created_at);
       if (it.meta.size !== it.size) throw new Error("size mismatch");
+      it.kind = kindOfMeta(it.meta);
     } catch {
       it.broken = true;
     }

@@ -29,7 +29,8 @@ public enum Kind: String, Codable, Sendable { case image, video, other }
 
 public struct Item: Identifiable, Sendable, Hashable {
   public let id: String
-  public let kind: Kind
+  /** From the encrypted metadata (decrypt), never the server's plain field. */
+  public var kind: Kind
   public let size: Int64
   public let segmentCount: Int
   public let createdAt: Double
@@ -191,6 +192,9 @@ public final class Vault: @unchecked Sendable {
         if let d = meta.duration, !(d.isFinite && d >= 0 && d < 1e7) { meta.duration = nil }
         meta.capture_ts = Self.timestamp(meta.capture_ts) ?? Self.timestamp(x.created_at * 1000) ?? 0
         meta.lastModified = Self.timestamp(meta.lastModified)
+        // the kind as the authenticated metadata says, by the rule the upload used: the server's plain `kind` could
+        // otherwise route this item's own bytes to the video player or the image decoder at will
+        it.kind = Media.kind(name: meta.name, mime: meta.mime)
         it.itemKey = key; it.meta = meta
       } catch {
         it.broken = true

@@ -11,6 +11,7 @@ import { keepRunning, letGo, onlyHolder } from "./keepAlive";
 import type { ItemMeta } from "./library";
 import { locale, t, tn } from "./i18n";
 import { bounded } from "./bounded";
+import { kindOf } from "./kind";
 
 export const THUMB_PX = 640;
 export const PREVIEW_PX = 2048;
@@ -35,9 +36,7 @@ export function shareSummary(files: Pick<Shared, "size">[], email: string): stri
   return tn(files.length, "{n} file ({size}) to encrypt and upload to {email}.", "{n} files ({size}) to encrypt and upload to {email}.", { size: fmtSize(total), email });
 }
 
-export const kindOf = (f: Pick<Shared, "mime" | "name">): "image" | "video" | "other" =>
-  f.mime.startsWith("video/") || /\.(mp4|mov|m4v|3gp|webm)$/i.test(f.name) ? "video"
-    : f.mime.startsWith("image/") || /\.(jpe?g|png|webp|heic|heif|gif|dng)$/i.test(f.name) ? "image" : "other";
+export { kindOf } from "./kind";
 
 /** Uploads in progress: the app doesn't lock itself while one runs (but once they are over, autolock.ts). */
 let running = 0;

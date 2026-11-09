@@ -88,6 +88,18 @@ describe("the library on the phone", () => {
     expect(await lib.loadLibrary()).toBe(after);
   });
 
+  it("an item's kind comes from its encrypted metadata, never from the server's plain field", async () => {
+    const lib = await import("./library");
+    const vid = JSON.stringify({ name: "clip.mp4", mime: "video/mp4", size: 10, lastModified: 0, capture_ts: 2 });
+    st.answers["/api/items"] = { items: [rec(A, 1, { kind: "video" }), rec(B, 2, { kind: "image", meta_enc: vid })], next: "", cursor: "e.1" };
+    const first = await lib.loadLibrary();
+    expect(first.find((x) => x.id === A)!.kind).toBe("image");
+    expect(first.find((x) => x.id === B)!.kind).toBe("video");
+    // the same records again with the server's kind flipped: what was decrypted is kept, and so is its kind
+    st.answers["/api/items?since=e.1"] = { items: [rec(A, 1, { kind: "other", favorite: true })], removed: [], cursor: "e.2", more: false };
+    expect((await lib.loadLibrary()).find((x) => x.id === A)!.kind).toBe("image");
+  });
+
   it("list.json keeps records and cursor together, written a few seconds after changes", async () => {
     vi.useFakeTimers();
     const lib = await import("./library");

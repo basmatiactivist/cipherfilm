@@ -293,6 +293,7 @@ final class SearchEngine {
    *  all: the whole cache (at the start), otherwise only what is new. */
   private func pull(_ vault: Vault, _ cache: inout IndexCache, pair: KeyPair, faces: Bool, all: Bool) async throws {
     let (fresh, anew) = try await fetch(vault, &cache, family: clip.family)
+    guard live(vault) else { throw CancellationError() } // locked meanwhile: nothing more is opened
     if !all && !anew && fresh.isEmpty { return }
     cache.write(vault, clip.family)
     let ids = Set(items.map(\.id))
@@ -304,6 +305,7 @@ final class SearchEngine {
       var tags: [String: String] = [:]
       var bad: [String] = []
       for (id, enc) in entries where ids.contains(id) {
+        guard vault.isOpen, !Task.isCancelled else { break }
         guard let blob = try? B64.decode(enc), let e = try? IndexEntry.open(blob, pair: pair, itemId: id) else { bad.append(id); continue }
         let d = e.decoded(faces: faces)
         // a vector from the other model can't be compared with this one's: kept out until it is made again
@@ -312,6 +314,7 @@ final class SearchEngine {
       }
       return (tags, bad)
     }.value
+    guard live(vault) else { for id in opened.0.keys { idx.remove(id) }; throw CancellationError() } // opened during a lock: out again
     tags.merge(opened.0) { _, b in b }
     for id in opened.1 { cache.entries.removeValue(forKey: id) } // damaged or not for this item: made again
     for id in tags.keys where !ids.contains(id) { tags.removeValue(forKey: id); index.remove(id) }

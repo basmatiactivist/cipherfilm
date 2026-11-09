@@ -9,6 +9,10 @@ final class ImageStore: @unchecked Sendable {
   private let previews = NSCache<NSString, NSImage>()
   private let faces = NSCache<NSString, NSImage>()
   private let gate = Gate(12)
+  // counts the clears (every lock and sign-out): work started before one stores nothing after it
+  private let genLock = NSLock()
+  private var gen = 0
+  private var generation: Int { genLock.withLock { gen } }
 
   init() {
     thumbs.countLimit = 3000
@@ -17,6 +21,7 @@ final class ImageStore: @unchecked Sendable {
   }
 
   func clear() {
+    genLock.withLock { gen += 1 }
     thumbs.removeAllObjects(); previews.removeAllObjects(); faces.removeAllObjects()
   }
 
@@ -28,8 +33,9 @@ final class ImageStore: @unchecked Sendable {
   func thumb(_ it: Item, _ vault: Vault) async -> NSImage? {
     if let hit = thumbs.object(forKey: it.id as NSString) { return hit }
     guard it.hasThumb, !it.broken else { return nil }
+    let g = generation
     guard let d = await batcher.get(it, vault), let img = await Task.detached(priority: .userInitiated, operation: { Self.decode(d) }).value else { return nil }
-    guard vault.isOpen else { return nil }
+    guard vault.isOpen, g == generation else { return nil }
     thumbs.setObject(img, forKey: it.id as NSString)
     return img
   }
@@ -38,10 +44,14 @@ final class ImageStore: @unchecked Sendable {
   func prefetch(_ items: [Item], _ vault: Vault) {
     let want = items.filter { $0.hasThumb && !$0.broken && thumbs.object(forKey: $0.id as NSString) == nil }
     guard !want.isEmpty else { return }
+    let g = generation
     Task.detached(priority: .utility) {
       for chunk in want.chunked(100) {
-        guard vault.isOpen, let got = try? await vault.thumbnails(chunk) else { return }
-        for (id, d) in got { if let img = Self.decode(d) { self.thumbs.setObject(img, forKey: id as NSString) } }
+        guard vault.isOpen, g == self.generation, let got = try? await vault.thumbnails(chunk) else { return }
+        for (id, d) in got {
+          guard vault.isOpen, g == self.generation else { return } // locked meanwhile: nothing goes into memory
+          if let img = Self.decode(d) { self.thumbs.setObject(img, forKey: id as NSString) }
+        }
       }
     }
   }
@@ -56,9 +66,10 @@ final class ImageStore: @unchecked Sendable {
   func preview(_ it: Item, _ vault: Vault) async -> NSImage? {
     if let hit = previews.object(forKey: it.id as NSString) { return hit }
     guard it.hasPreview || it.hasThumb, !it.broken else { return nil }
+    let g = generation
     guard let d = try? await vault.picture(it.hasPreview ? .preview : .thumb, of: it),
           let img = await Task.detached(priority: .userInitiated, operation: { Self.decode(d) }).value else { return nil }
-    guard vault.isOpen else { return nil }
+    guard vault.isOpen, g == generation else { return nil }
     previews.setObject(img, forKey: it.id as NSString)
     return img
   }
@@ -78,9 +89,10 @@ final class ImageStore: @unchecked Sendable {
   /** A round-ready square crop of a face from the item's thumbnail. */
   func face(_ cover: FaceGroup.Cover, item: Item, _ vault: Vault) async -> NSImage? {
     if let hit = faces.object(forKey: cover.key as NSString) { return hit }
+    let g = generation
     guard let d = try? await gate.run({ try await vault.bestPicture(of: item) }), let cg = Vision.faceCrop(d, box: cover.box, px: 192) else { return nil }
     let img = NSImage(cgImage: cg, size: NSSize(width: 96, height: 96))
-    guard vault.isOpen else { return nil }
+    guard vault.isOpen, g == generation else { return nil }
     faces.setObject(img, forKey: cover.key as NSString)
     return img
   }

@@ -14,7 +14,7 @@ import { Gallery } from "../Gallery";
 import { refreshLibrary, useLibrary } from "../libraryStore";
 import { coords, placeName } from "../places";
 import { useSession } from "../session";
-import { mapPrivacyUrl, mapProvider, setMapOn, useMapOn } from "../mapConsent";
+import { mapPrivacyUrl, mapProviderLong, setMapOn, useMapOn } from "../mapConsent";
 import { expectAway } from "../autolock";
 import { Icon } from "../icons";
 import { useAppTheme } from "../ui";
@@ -126,10 +126,12 @@ export default function MapScreen() {
         <View style={[st.consent, { backgroundColor: th.colors.surface, borderColor: th.colors.outlineVariant }]}>
           <Icon name="map" size={28} color={th.colors.primary} />
           <Text variant="titleLarge">{t("Show your photos on a map?")}</Text>
-          <Text variant="bodyMedium">{t("The map images come from {who}. It sees this phone's IP address and which areas you look at, never your photos or where they were taken: those stay encrypted and are drawn on this phone.", { who: mapProvider() || t("the map server") })}</Text>
+          <Text variant="bodyMedium">{t("The map images come from {who}. That service sees this phone's IP address and which areas you look at. When you open a photo's details, a small map of its area is loaded too, so the service can tell roughly where that photo was taken.", { who: mapProviderLong() })}</Text>
+          <Text variant="bodyMedium">{t("Your photos, and the list of where they were taken, stay encrypted and are drawn on this phone.")}</Text>
           <Text variant="bodySmall" style={{ color: th.colors.onSurfaceVariant }}>{t("You can turn the map off again under Account › Map.")}</Text>
           <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
             <Button mode="contained" onPress={() => setMapOn(true)}>{t("Turn on map")}</Button>
+            <Button mode="outlined" onPress={() => router.replace("/library")}>{t("Not now")}</Button>
             <Button mode="text" onPress={() => { expectAway(); Linking.openURL(mapPrivacyUrl()); }}>{t("Privacy policy")}</Button>
           </View>
         </View>

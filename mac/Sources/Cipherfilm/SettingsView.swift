@@ -55,7 +55,7 @@ struct GeneralSettings: View {
       }
       Divider()
       // the map's images come from a third party: off until turned on, per account on this Mac (MapPage.swift)
-      Section_(title: "Map", subtitle: "Loads map images from OpenFreeMap (or your server's map). Photo locations stay on this Mac.") {
+      Section_(title: "Map", subtitle: "Loads map images from OpenFreeMap (or your server's map), which sees this Mac's IP address and the areas you look at, including roughly where a photo was taken when you open its details.") {
         Toggle("Map", isOn: Binding(get: { model.settings.mapOn }, set: { model.settings.mapOn = $0 }))
           .disabled(model.me == nil || model.me?.hasMap != true)
         if model.me != nil && model.me?.hasMap != true { Text("This server doesn't offer a map.").font(Typo.caption).foregroundStyle(.secondary) }

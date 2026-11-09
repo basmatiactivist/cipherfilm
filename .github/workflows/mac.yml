@@ -11,9 +11,9 @@ on:
       sums: { value: "${{ jobs.build.outputs.sums }}" }  # the release job publishes only the file that matches
   push:
     branches: [master]
-    paths: ["mac/**", "tools/decrypt/testdata/**", ".github/workflows/mac.yml"]
+    paths: ["mac/**", "tools/decrypt/testdata/**", "web/src/places/**", "web/package-lock.json", ".github/workflows/mac.yml"]
   pull_request:
-    paths: ["mac/**", "tools/decrypt/testdata/**", ".github/workflows/mac.yml"]
+    paths: ["mac/**", "tools/decrypt/testdata/**", "web/src/places/**", "web/package-lock.json", ".github/workflows/mac.yml"]
   workflow_dispatch:
 permissions:
   contents: read
@@ -36,6 +36,11 @@ jobs:
       # no Actions cache: this job builds the released app, so every input is fetched and checked here
       - name: ONNX Runtime (pinned release, checked against its SHA-256)
         run: ./scripts/fetch-onnxruntime.sh
+      # the map view runs MapLibre GL JS, the version the web app pins, from web/node_modules (mac/scripts/map-assets.sh);
+      # the lockfile's hashes check it, and no install scripts run
+      - name: MapLibre (web/package-lock.json)
+        working-directory: web
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Core tests
         run: swift test
       - name: Xcode project (XcodeGen, pinned release checked against its SHA-256)

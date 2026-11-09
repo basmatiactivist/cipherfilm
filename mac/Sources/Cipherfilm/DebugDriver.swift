@@ -545,7 +545,7 @@ enum DebugDriver {
     snapshot("map-00-consent")
     // the same screen drawn without the window (a window snapshot draws only half of it while the display is off)
     if let dir = env["CF_SNAPSHOTS"] {
-      let r = ImageRenderer(content: MapConsent(styles: m.me?.map) {}.frame(width: 1000, height: 640).background(Ink.paper))
+      let r = ImageRenderer(content: MapConsent(styles: m.me?.map, turnOn: {}).frame(width: 1000, height: 640).background(Ink.paper))
       r.scale = 2
       if let cg = r.cgImage { try? NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: dir).appendingPathComponent("map-00-consent-rendered.png")) }
     }

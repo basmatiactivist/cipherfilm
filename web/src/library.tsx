@@ -663,7 +663,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
           {view.n === "albums" && !albumsLoaded && <Loading label="Opening your albums…" />}
           {view.n === "albums" && albumsLoaded && <AlbumList onContext={(id, e) => setCtx({ x: e.clientX, y: e.clientY, kind: "album", id })} albums={albums} items={items ?? []} dropTarget={(a) => dropTarget((ids) => addIdsToAlbum(a, ids))} onOpen={(id) => go({ n: "album", id })} onCreated={(a) => { setAlbums((x) => [...x, a]); go({ n: "album", id: a.id }); }} setError={setError} />}
 
-          {view.n === "map" && <MapPage items={items ?? []} onOpen={(list, i) => { setMapList(list); openLb(i); }} />}
+          {view.n === "map" && <MapPage items={items ?? []} onOpen={(list, i) => { setMapList(list); openLb(i); }} onLater={() => go({ n: "timeline" })} />}
           {view.n === "people" && <PeopleList groups={people.groups} ready={people.ready} error={people.error} byId={byId} onOpen={(key) => openPerson(key)} />}
 
           {view.n === "person" && !person && (people.ready && people.groups ? <p>This person is no longer in your library. <button class="link" onClick={() => go({ n: "people" })}>Back to people</button></p> : <Loading label="Loading people…" />)}

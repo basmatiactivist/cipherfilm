@@ -13,7 +13,7 @@ import { dropImage, thumbUrl, wantImage } from "../cache";
 import { Timeline } from "../grid";
 import type { Item } from "../items";
 import { located, placeName, type Located } from "./locations";
-import { mapProvider, PRIVACY_URL, setMapOn, useMapOn } from "./consent";
+import { mapProviderLong, PRIVACY_URL, setMapOn, useMapOn } from "./consent";
 
 setWorkerUrl(workerUrl);
 
@@ -57,23 +57,27 @@ function markerEl(count: number, onClick: () => void): { el: HTMLElement; img: H
 }
 
 /** Before the first map: what turning it on means, and the button. */
-function MapConsent() {
-  const who = mapProvider() || "the map server";
+function MapConsent(p: { onLater: () => void }) {
+  const who = mapProviderLong();
   return (
     <section class="panel mapconsent" aria-labelledby="mapconsent-h">
       <span class="accicon"><Icon name="map" size={22} /></span>
       <h2 id="mapconsent-h">Show your photos on a map?</h2>
-      <p>The map images come from {who}. It sees this device's IP address and which areas you look at, never your photos or where they were taken: those stay encrypted and are drawn in this browser.</p>
+      <p>The map images come from {who}. That service sees this device's IP address and which areas you look at. When you open a photo's details, a small map of its area is loaded too, so the service can tell roughly where that photo was taken.</p>
+      <p>Your photos, and the list of where they were taken, stay encrypted and are drawn in this browser.</p>
       <p class="small"><a href={PRIVACY_URL} target="_blank" rel="noopener noreferrer">Privacy policy</a> · You can turn the map off again under Account › Map.</p>
-      <button class="btn" onClick={() => setMapOn(true)}>Turn on map</button>
+      <div class="row">
+        <button class="btn" onClick={() => setMapOn(true)}>Turn on map</button>
+        <button class="btn secondary" onClick={p.onLater}>Not now</button>
+      </div>
     </section>
   );
 }
 
-export function MapPage(p: { items: Item[]; onOpen: (list: Item[], index: number) => void }) {
+export function MapPage(p: { items: Item[]; onOpen: (list: Item[], index: number) => void; onLater: () => void }) {
   const on = useMapOn();
   if (!mem.me?.map) return <p class="hint">The map is turned off on this server.</p>;
-  if (!on) return <MapConsent />;
+  if (!on) return <MapConsent onLater={p.onLater} />;
   return <MapView {...p} />;
 }
 

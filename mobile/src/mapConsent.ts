@@ -4,6 +4,7 @@ import { useSyncExternalStore } from "react";
 import * as SecureStore from "expo-secure-store";
 import { privacyUrl } from "./store";
 import { session } from "./session";
+import { t } from "./i18n";
 
 const name = (userId: string) => `map_on_${userId}`;
 let on: { userId: string; value: boolean } | null = null;
@@ -43,6 +44,12 @@ export function mapProvider(): string {
   if (!u) return "";
   const h = /^https:\/\/([^/]+)/.exec(u)?.[1] ?? "";
   return h === "tiles.openfreemap.org" ? "OpenFreeMap" : h;
+}
+
+/** Who serves the map images, as the question before the map says it: with the CDN and the fallback for the default. */
+export function mapProviderLong(): string {
+  const p = mapProvider();
+  return p === "OpenFreeMap" ? t("OpenFreeMap (through Cloudflare; VersaTiles if OpenFreeMap doesn't answer)") : p || t("the map server");
 }
 
 /** The privacy policy's part about the map. */

@@ -114,9 +114,10 @@ export default function Account() {
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="search" color={th.colors.primary} /></View>} onPress={() => router.push("/search-settings")} style={st.item} />
         <List.Item title={t("Free up space")} description={t("Remove photos from this phone that are already in Cipherfilm")}
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="phone" color={th.colors.primary} /></View>} onPress={() => router.push("/free-space")} style={st.item} />
-        {me?.map ? <SwitchItem title={t("Map")} description={t("Loads map images from {who}. Photo locations stay on this phone.", { who: mapProvider() || t("the map server") })}
+        {me?.map ? <SwitchItem title={t("Map")} description={t("Loads map images from {who}, which sees this phone's IP address and the areas you look at, including roughly where a photo was taken when you open its details.", { who: mapProvider() || t("the map server") })}
           value={mapOn} onValueChange={(v) => setMapOn(v)} /> : null}
-        {me?.map ? <List.Item title={t("About the map and privacy")} description={mapPrivacyUrl().replace("https://", "")}
+        {me?.map ? <List.Item title={t("About the map and privacy")} description={`${mapPrivacyUrl().replace("https://", "")}\n${t("Map data © OpenStreetMap contributors, OpenFreeMap. Place names: GeoNames, CC BY 4.0.")}`}
+          descriptionNumberOfLines={4}
           onPress={() => { expectAway(); Linking.openURL(mapPrivacyUrl()); }} style={st.item} /> : null}
         <SwitchItem title={t("Unlock with fingerprint or face")}
           description={bioOk || biometric ? t("Your key stays in this phone's secure hardware") : t("Set up fingerprint or face unlock in Android settings first")}

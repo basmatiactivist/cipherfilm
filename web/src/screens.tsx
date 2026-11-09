@@ -169,7 +169,8 @@ function MapPanel() {
   return (
     <Acc icon="map" title="Map" sub={on ? "On in this browser" : "Off"}>
       <label class="check"><input type="checkbox" checked={on} onChange={(e) => setMapOn((e.target as HTMLInputElement).checked)} /> Show the map and the small maps in a photo's details</label>
-      <p class="hint">Loads map images from {mapProvider() || "the map server"}, which sees this device's IP address and the areas you look at. Photo locations stay encrypted and are only drawn here. <a href={PRIVACY_URL} target="_blank" rel="noopener noreferrer">Privacy policy</a></p>
+      <p class="hint">Loads map images from {mapProvider() || "the map server"}, which sees this device's IP address and the areas you look at, including roughly where a photo was taken when you open its details. Photo locations stay encrypted and are only drawn here. <a href={PRIVACY_URL} target="_blank" rel="noopener noreferrer">Privacy policy</a></p>
+      <p class="hint small">Map data © OpenStreetMap contributors, tiles OpenFreeMap / OpenMapTiles, drawn with MapLibre GL JS (BSD-3-Clause). Place names: GeoNames (geonames.org), CC BY 4.0.</p>
     </Acc>
   );
 }

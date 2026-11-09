@@ -287,13 +287,14 @@ struct MapWebView: NSViewRepresentable {
  *  no map image is requested before they agreed. */
 struct MapTab: View {
   @Environment(AppModel.self) private var model
+  @Environment(Navigator.self) private var nav
   @Bindable var selection: Selection
 
   var body: some View {
     if model.settings.mapOn {
       MapScreen(selection: selection)
     } else {
-      MapConsent(styles: model.me?.map) { model.settings.mapOn = true }
+      MapConsent(styles: model.me?.map, turnOn: { model.settings.mapOn = true }, later: { nav.go(.photos) })
     }
   }
 }
@@ -301,6 +302,7 @@ struct MapTab: View {
 struct MapConsent: View {
   let styles: Me.MapStyles?
   let turnOn: () -> Void
+  var later: () -> Void = {}
   static let privacy = URL(string: "https://cipherfilm.app/privacy#map")!
 
   /** "OpenFreeMap" for the default styles, else the host the server's style comes from. */
@@ -311,17 +313,20 @@ struct MapConsent: View {
 
   var body: some View {
     let p = Self.provider(styles)
-    let from = p == "OpenFreeMap" ? "from OpenFreeMap" : "from the map server set on your Cipherfilm server (\(p))"
+    let from = p == "OpenFreeMap" ? "from OpenFreeMap (through Cloudflare; VersaTiles if OpenFreeMap doesn't answer)" : "from the map server set on your Cipherfilm server (\(p))"
     VStack(spacing: 0) {
       PageTitle(title: "Map")
       Spacer()
       VStack(alignment: .leading, spacing: 14) {
         Image(systemName: "map").font(.system(size: 30)).foregroundStyle(Ink.teal)
         Text("Show your photos on a map?").font(Typo.dialog).foregroundStyle(Ink.ink)
-        Text("The map images come \(from). It sees this Mac's IP address and which areas you look at, never your photos or where they were taken: those stay encrypted and are drawn on this Mac.")
+        Text("The map images come \(from). That service sees this Mac's IP address and which areas you look at. When you open a photo's details, a small map of its area is loaded too, so the service can tell roughly where that photo was taken.")
+          .font(Typo.body).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
+        Text("Your photos, and the list of where they were taken, stay encrypted and are drawn on this Mac. You can turn the map off again in Settings › General › Map.")
           .font(Typo.body).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
         HStack(spacing: 16) {
           Button("Turn on map", action: turnOn).buttonStyle(PrimaryButton()).keyboardShortcut(.defaultAction)
+          Button("Not now", action: later).buttonStyle(SecondaryButton()).keyboardShortcut(.cancelAction)
           Button("Privacy policy") { NSWorkspace.shared.open(Self.privacy) }.buttonStyle(TextLink())
         }
         .padding(.top, 4)

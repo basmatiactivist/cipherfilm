@@ -294,6 +294,7 @@ final class AppModel {
     vault?.close()
     vault = nil
     images.clear()
+    PlaceBook.forget()
     Outbox.clear()
     items = []; byId = [:]; albums = []; trash = []
     if ended { watcher.stop(forget: true); uploads = []; uploadsOwner = nil; uploadsPaused = false }

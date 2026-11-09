@@ -1,11 +1,11 @@
-// The unlocked window: a paper sidebar (Photos, Favorites, Videos, People, Albums, Trash), the screen, one search box,
+// The unlocked window: a paper sidebar (Photos, Favorites, Videos, People, Albums, Map, Trash), the screen, one search box,
 // Upload, and a drop veil for files dragged in from the Finder.
 import CipherfilmCore
 import UniformTypeIdentifiers
 import SwiftUI
 
 enum Screen: Hashable {
-  case photos, favorites, videos, people, albums, trash
+  case photos, favorites, videos, people, albums, map, trash
   case album(String)
   case person(String)
   case similar(String)
@@ -230,6 +230,8 @@ struct Sidebar: View {
           ForEach(model.albums.prefix(12)) { a in
             NavItem(title: a.name, icon: nil, screen: .album(a.id), nav: nav, indent: true)
           }
+          // the server sends the base map's styles; none when its operator turned the map off
+          if model.me?.hasMap == true { NavItem(title: "Map", icon: "map", screen: .map, nav: nav) }
           NavItem(title: "Trash", icon: "trash", screen: .trash, nav: nav)
         }
         .padding(.horizontal, 10)
@@ -438,6 +440,7 @@ struct Detail: View {
         case .person(let key): PersonView(key: key, selection: selection)
         case .albums: AlbumsView()
         case .album(let id): AlbumView(id: id, selection: selection)
+        case .map: if model.me?.hasMap == true { MapTab(selection: selection) } else { Spacer(); EmptyState(icon: "map", title: "The map is turned off", text: "This server doesn't offer a map."); Spacer() }
         case .trash: TrashView(selection: selection)
         case .similar(let id): SimilarView(id: id, selection: selection)
         }

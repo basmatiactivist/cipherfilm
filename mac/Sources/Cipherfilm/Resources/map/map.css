@@ -1,0 +1,26 @@
+/* The Mac app's map page (map.js). Colours: the Mac's design tokens (mac/Sources/Cipherfilm/Tokens.swift), light and
+   dark; the marker is the web app's (.mapmarker in web/src/styles.css). */
+:root {
+  --card: #FFFEFB; --teal: #1F6F6B; --on-teal: #FFFFFF; --teal-tint: #E3EEEB; --paper-deep: #F3EEE5;
+  --shade: rgba(31, 42, 51, 0.14); --shade-2: rgba(31, 42, 51, 0.08);
+}
+body.dark {
+  --card: #1B2127; --teal: #6CBDB4; --on-teal: #0E1F1D; --teal-tint: #1D3532; --paper-deep: #1E252B;
+  --shade: rgba(0, 0, 0, 0.42); --shade-2: rgba(0, 0, 0, 0.3);
+}
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--paper-deep); font: 12px -apple-system, system-ui, sans-serif; -webkit-user-select: none; user-select: none; }
+#map { position: absolute; inset: 0; }
+/* .mapmarker gets "position: absolute" from MapLibre (.maplibregl-marker); a position here would take it away */
+.mapmarker { width: 52px; height: 52px; padding: 0; border: 3px solid var(--card); border-radius: 50%; background: var(--teal-tint); box-shadow: 0 2px 8px var(--shade), 0 0 0 1px var(--shade-2); cursor: pointer; }
+.mapmarker img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+.mapmarker img:not([src]) { visibility: hidden; }
+.mapmarker:hover, .mapmarker:focus-visible { outline: none; box-shadow: 0 3px 12px var(--shade), 0 0 0 3px var(--teal); }
+.mapcount { position: absolute; top: -6px; right: -8px; min-width: 22px; height: 22px; box-sizing: border-box; padding: 0 6px; font-size: 12px; font-weight: 700; line-height: 18px; text-align: center; color: var(--on-teal); background: var(--teal); border: 2px solid var(--card); border-radius: 11px; }
+.mappin { width: 18px; height: 18px; box-sizing: border-box; border-radius: 50%; background: var(--teal); border: 3px solid var(--card); box-shadow: 0 1px 6px var(--shade); }
+.maplibregl-ctrl-attrib { font-size: 11px; }
+/* MapLibre's controls in the dark appearance */
+body.dark .maplibregl-ctrl-group { background: var(--card); }
+body.dark .maplibregl-ctrl-group button + button { border-top-color: rgba(255, 255, 255, 0.12); }
+body.dark .maplibregl-ctrl-icon, body.dark .maplibregl-ctrl-attrib-button { filter: invert(0.9); }
+body.dark .maplibregl-ctrl-attrib { background: rgba(27, 33, 39, 0.85); color: #B4BCC2; }
+body.dark .maplibregl-ctrl-attrib a { color: #B4BCC2; }

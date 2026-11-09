@@ -554,14 +554,18 @@ final class SearchEngine {
     }
     let rest = d.rest
     if rest.isEmpty { return Result(items: pool.sorted { $0.when > $1.when }, people: people, how: how) }
-    // a file name or camera that contains the words comes first; then everything else, ranked by what is in it, and
-    // the filters above (people, kind, favorites, dates) only narrow that ranking
+    // a file name or camera that contains the words comes first, then photos taken at a place of that name (town,
+    // region, country, looked up on this Mac: PlaceBook); then everything else, ranked by what is in it, and the
+    // filters above (people, kind, favorites, dates) only narrow that ranking
     let named = pool.filter { $0.name.lowercased().contains(rest) || "\($0.meta?.make ?? "") \($0.meta?.model ?? "")".lowercased().contains(rest) }
+    let placed = await PlaceBook.matching(rest, in: pool)
     let hits = await textHits(rest)
     let inPool = Dictionary(pool.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
     var seen = Set<String>()
     var out: [Item] = []
     for i in named where seen.insert(i.id).inserted { out.append(i) }
+    for i in pool.filter({ placed.contains($0.id) }).sorted(by: { $0.when > $1.when }) where seen.insert(i.id).inserted { out.append(i) }
+    if !placed.isEmpty { how.append("taken in “\(rest)”") }
     for h in hits { if let it = inPool[h.id], seen.insert(it.id).inserted { out.append(it) } }
     if !hits.isEmpty { how.append("“\(rest)”") } else if !named.isEmpty { how.append("named “\(rest)”") }
     return Result(items: out, people: people, how: how, ranked: !hits.isEmpty)

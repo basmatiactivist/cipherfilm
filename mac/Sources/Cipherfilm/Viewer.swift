@@ -299,6 +299,8 @@ struct InfoPanel: View {
   @State private var faces: [SearchEngine.FaceInPhoto] = []
   @State private var naming: SearchEngine.FaceInPhoto?
   @State private var error: String?
+  /** the town and country of the photo's coordinates, looked up on this Mac (PlaceBook) */
+  @State private var placeName: String?
 
   var body: some View {
     ScrollView {
@@ -344,7 +346,7 @@ struct InfoPanel: View {
         if let w = item.meta?.width, let h = item.meta?.height { row("Size", "\(Int(exactly: w.rounded(.towardZero)) ?? 0) × \(Int(exactly: h.rounded(.towardZero)) ?? 0) · \(bytes(item.size))") } else { row("Size", bytes(item.size)) }
         if let d = item.meta?.duration { row("Length", Duration.seconds(d).formatted(.time(pattern: .minuteSecond))) }
         if let m = [item.meta?.make, item.meta?.model].compactMap({ $0 }).joined(separator: " ").nilIfEmpty { row("Camera", cameraName(m)) }
-        if let g = item.meta?.gps { row("Place", String(format: "%.5f, %.5f", g.lat, g.lon)) }
+        if let g = item.meta?.gps { place(g) }
         row("Type", item.meta?.mime ?? item.kind.rawValue)
         let albums = model.albums.filter { $0.itemIds.contains(item.id) }
         if !albums.isEmpty { row("Albums", albums.map(\.name).joined(separator: ", ")) }
@@ -356,12 +358,31 @@ struct InfoPanel: View {
     .foregroundStyle(Ink.ink)
     .background(Ink.card)
     .task(id: item.id + "\(model.search.version)") { faces = await model.search.facesIn(item.id) }
+    .task(id: item.id) {
+      placeName = nil
+      if let g = item.location { placeName = await PlaceBook.label(g) }
+    }
     .sheet(item: $naming) { f in
       NameSheet(title: f.group?.person?.name.isEmpty == false ? "Rename" : "Who is this?", placeholder: "Name", action: "Save", initial: f.group?.person?.name ?? "") { n in
         Task {
           do { try await model.search.name(face: f, n); error = nil; faces = await model.search.facesIn(item.id) }
           catch { self.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription }
         }
+      }
+    }
+  }
+
+  /** "Minato City, Japan" over the coordinates, and the spot on a small map (only while this panel is open, so the
+   *  base map's server learns the area of just the photos whose details someone looks at). */
+  @ViewBuilder private func place(_ g: GPS) -> some View {
+    VStack(alignment: .leading, spacing: 2) {
+      Text("Place").font(Typo.caption.weight(.semibold)).foregroundStyle(Ink.muted)
+      if let placeName { Text(placeName).font(Typo.body).textSelection(.enabled) }
+      Text(String(format: "%.5f, %.5f", g.lat, g.lon)).font(placeName == nil ? Typo.body : Typo.caption)
+        .foregroundStyle(placeName == nil ? Ink.ink : Ink.muted).textSelection(.enabled)
+      // only once the person turned the map on (its images come from a third party)
+      if model.settings.mapOn, let at = item.location, let styles = model.me?.map, model.me?.hasMap == true {
+        MiniMap(at: at, styles: styles).padding(.top, 6)
       }
     }
   }

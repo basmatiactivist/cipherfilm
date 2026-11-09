@@ -137,6 +137,19 @@ jobs:
           for f in unsigned/*; do
             if unzip -Z1 "$f" | grep -q 'cf_test_ca'; then echo "$f trusts a test CA: not signed"; exit 1; fi
           done
+      - name: The APK is the GitHub build, the bundle the Play build
+        # they differ (app.config.js, docs/play/REQUIREMENTS.md): the APK asks for the battery exemption directly and
+        # offers explicit search, the Play bundle does neither; a mix-up must never be signed
+        run: |
+          bt="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          apk="unsigned/cipherfilm-android-${VERSION#v}.apk"; aab="unsigned/cipherfilm-play-${VERSION#v}.aab"
+          unzip -p "$apk" assets/app.config | grep -q '"store":"github"' || { echo "the APK is not the GitHub build"; exit 1; }
+          unzip -p "$aab" base/assets/app.config | grep -q '"store":"play"' || { echo "the bundle is not the Play build"; exit 1; }
+          "$bt/aapt2" dump permissions "$apk" | grep -q 'REQUEST_IGNORE_BATTERY_OPTIMIZATIONS' \
+            || { echo "the APK lacks the battery exemption request"; exit 1; }
+          if unzip -p "$aab" base/manifest/AndroidManifest.xml | grep -aq 'REQUEST_IGNORE_BATTERY_OPTIMIZATIONS'; then
+            echo "the Play bundle declares the battery exemption request"; exit 1
+          fi
       - name: Sign the APK with the app signing key
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}

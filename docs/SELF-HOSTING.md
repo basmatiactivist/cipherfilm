@@ -147,7 +147,7 @@ How releases are made: [docs/RELEASING.md](RELEASING.md).
 
 ### Server commands
 
-Accounts can also be managed on the server: `docker compose exec app /app help` lists the commands (list users, make someone an administrator, lock or delete an account, set a storage limit, sign out a
+Accounts can also be managed on the server: `docker compose exec app cipherfilm help`, or `cipherfilm help` in the app container's console (Portainer: Console, `/bin/sh`), lists the commands (list users, make someone an administrator, lock or delete an account, set a storage limit, sign out a
 lost device, make an invite link, status). A password can't be reset from the server, by design. All commands and why:
 [docs/SERVER-COMMANDS.md](SERVER-COMMANDS.md).
 

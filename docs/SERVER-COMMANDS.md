@@ -1,11 +1,21 @@
 # Server commands
 
-The server image has commands for whoever runs it. Run them in the folder with your `compose.yaml`, while the server
-runs:
+The server image has commands for whoever runs it, while the server runs. Either open a console in the app
+container, for example in Portainer (Containers › your Cipherfilm app container › Console, command `/bin/sh`, user
+left empty), and type:
+
+```sh
+cipherfilm help
+cipherfilm status
+```
+
+or run them from the folder with your `compose.yaml`:
 
 ```bash
-docker compose exec app /app help
+docker compose exec app cipherfilm help
 ```
+
+`cipherfilm` is the same program as `/app`, which older notes use; both work.
 
 They work on the same database as the running server. Every change is written to the audit log (Admin › Activity)
 as "server console".

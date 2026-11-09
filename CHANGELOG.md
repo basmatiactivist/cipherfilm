@@ -7,6 +7,11 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+### Changed
+- Server image: Alpine instead of distroless, so the container has a shell. The server commands now work in
+  Portainer's (or any) container console: open it with `/bin/sh` and type `cipherfilm status` (docs/SERVER-COMMANDS.md).
+  `cipherfilm` on its own lists the commands. The app still runs as the same unprivileged user, read-only.
+
 ## [2.5.0] - 2026-11-09
 
 Security fixes from an audit of the whole product, limits for the public demo, and the Android build is signed apart

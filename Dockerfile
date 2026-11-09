@@ -20,10 +20,17 @@ COPY server/ ./
 COPY --from=web /web/dist ./static
 RUN mkdir -p /out/data && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/app .
 
-FROM gcr.io/distroless/static-debian13:nonroot@sha256:25ac8f0c3b2334a9eb05452266bd4697864a8c8ef0ef71e5e6480d7f92868329
+# Alpine rather than distroless: a shell for the server's own commands in Portainer's (or any) container console,
+# `cipherfilm status` (docs/SERVER-COMMANDS.md). The app still runs as an unprivileged user, read-only, with no capabilities.
+# The shell's home is /tmp, so its history never lands in the data folder (and its backups).
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
+RUN apk add --no-cache ca-certificates tzdata \
+ && addgroup -S -g 65532 nonroot && adduser -S -D -H -u 65532 -G nonroot -h /tmp -s /bin/sh nonroot \
+ && ln -s /app /usr/local/bin/cipherfilm
 COPY --from=server /out/app /app
 COPY --from=server --chown=65532:65532 /out/data /data
 ENV LISTEN_ADDR=:8080 DATA_DIR=/data GOMEMLIMIT=600MiB
+WORKDIR /data
 EXPOSE 8080
 USER nonroot:nonroot
 HEALTHCHECK --interval=15s --timeout=5s --start-period=5s CMD ["/app", "healthcheck"]

@@ -67,7 +67,7 @@ func runCLI(dataDir, name string, args []string, out io.Writer) (bool, error) {
 }
 
 func printHelp(out io.Writer) {
-	fmt.Fprintf(out, "Cipherfilm %s: server commands\n\nUsage: docker compose exec app /app COMMAND [ARGS]\n\n", version)
+	fmt.Fprintf(out, "Cipherfilm %s: server commands\n\nUsage, in the app container's console (Portainer: Console, /bin/sh): cipherfilm COMMAND [ARGS]\n   or from the host: docker compose exec app cipherfilm COMMAND [ARGS]\n\n", version)
 	tw := tabwriter.NewWriter(out, 2, 4, 2, ' ', 0)
 	for _, c := range cliCmds {
 		fmt.Fprintf(tw, "  %s %s\t%s\n", c.name, c.args, c.help)

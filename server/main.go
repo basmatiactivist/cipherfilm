@@ -107,7 +107,9 @@ func main() {
 		fmt.Println("Cipherfilm", version)
 		return
 	}
-	if len(os.Args) > 1 && (os.Args[1] == "help" || os.Args[1] == "--help" || os.Args[1] == "-h") {
+	// `cipherfilm` on its own, typed in the container's console, lists the commands instead of starting a second
+	// server next to the running one; the image starts the server as /app
+	if len(os.Args) > 1 && (os.Args[1] == "help" || os.Args[1] == "--help" || os.Args[1] == "-h") || (len(os.Args) == 1 && filepath.Base(os.Args[0]) == "cipherfilm") {
 		printHelp(os.Stdout)
 		return
 	}
@@ -166,7 +168,7 @@ func main() {
 				return
 			}
 			// a script's command this version doesn't know must fail, not quietly start a second server on the data
-			fmt.Fprintf(os.Stderr, "unknown command %q (version %s); /app help lists them\n", os.Args[1], version)
+			fmt.Fprintf(os.Stderr, "unknown command %q (version %s); cipherfilm help lists them\n", os.Args[1], version)
 			os.Exit(2)
 		}
 	}

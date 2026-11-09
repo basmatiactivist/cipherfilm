@@ -1,6 +1,7 @@
 import { Icon } from "./icons";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Item, fetchOriginal } from "./items";
+import { lazy } from "./lazy";
 import { downloadOriginal } from "./downloads";
 import { BLOB_LIMIT, forgetStream, prepareStream, streamingAvailable } from "./player";
 import { playMime } from "./sw-range";
@@ -151,7 +152,8 @@ export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number)
             <div><dt>File</dt><dd class="lbfull" dir="auto">{name}</dd></div>
             <div><dt>Size</dt><dd>{fmtBytes(it.size)}{m?.width ? `, ${m.width} × ${m.height}` : ""}{m?.mime ? `, ${m.mime}` : ""}</dd></div>
             {(m?.make || m?.model) && <div><dt>Camera</dt><dd>{[m.make, m.model].filter(Boolean).join(" ")}</dd></div>}
-            {m?.gps && <div><dt>Location</dt><dd>{m.gps.lat.toFixed(4)}, {m.gps.lon.toFixed(4)}</dd></div>}
+            {m?.gps && <div><dt>Location</dt><dd><PlaceName item={it} />{m.gps.lat.toFixed(4)}, {m.gps.lon.toFixed(4)}</dd></div>}
+            {m?.gps && Number.isFinite(m.gps.lat) && Number.isFinite(m.gps.lon) && <MiniMap lat={m.gps.lat} lon={m.gps.lon} />}
             {m?.duration ? <div><dt>Length</dt><dd>{Math.round(m.duration)} s</dd></div> : null}
             {p.people && p.onPerson && !it.broken && <PhotoPeople item={it} all={p.people.all} ready={p.people.ready} onPerson={p.onPerson} />}
           </dl>
@@ -160,4 +162,19 @@ export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number)
       )}
     </dialog>
   );
+}
+
+// the base map (MapLibre) loads only when a photo with a location shows its details
+const MiniMap = lazy(() => import("./map/ui").then((m) => m.MiniMap), () => null);
+
+/** The town and country of a photo's coordinates, looked up on this device (map/locations.ts). */
+function PlaceName({ item }: { item: Item }) {
+  const [name, setName] = useState("");
+  useEffect(() => {
+    let alive = true;
+    setName("");
+    import("./map/locations").then((m) => m.placeName(item)).then((n) => alive && setName(n), () => {});
+    return () => { alive = false; };
+  }, [item.id]);
+  return name ? <><span dir="auto">{name}</span><br /></> : null;
 }

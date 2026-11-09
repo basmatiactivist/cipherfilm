@@ -154,8 +154,9 @@ func TestHealthzAndHeaders(t *testing.T) {
 	if !strings.Contains(csp, "default-src 'none'") || strings.Contains(csp, "unsafe-inline") {
 		t.Fatalf("bad CSP: %s", csp)
 	}
-	// the web app talks to this server and, for the search model, to Hugging Face only
-	if !strings.Contains(csp, "; connect-src 'self' https://huggingface.co https://*.hf.co;") {
+	// the web app talks to this server, for the search model to Hugging Face, and for the map's base map to its tile
+	// servers (mapconf.go) only
+	if !strings.Contains(csp, "; connect-src 'self' https://huggingface.co https://*.hf.co https://tiles.openfreemap.org https://tiles.versatiles.org;") {
 		t.Fatalf("connect-src: %s", csp)
 	}
 	if resp.Header.Get("X-Content-Type-Options") != "nosniff" {

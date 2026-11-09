@@ -11,6 +11,8 @@ export interface Me {
   wrapped_privkey: string;
   pubkey: string;
   server_version?: string;
+  /** the map tab's base map styles (light, dark: tried in order); absent when the server turned the map off (MAP_STYLE) */
+  map?: { light: string[]; dark: string[] };
   /** the server's public demo login (DEMO_ACCOUNTS): it reads and searches, every change is refused */
   demo?: boolean;
 }

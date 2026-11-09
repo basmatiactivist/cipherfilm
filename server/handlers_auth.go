@@ -68,6 +68,9 @@ func (a *App) sessionBundle(u *user, s *session) map[string]any {
 		"pubkey":            u.Pubkey,
 		"server_version":    version, // shown in the apps' settings
 	}
+	if a.mapConf != nil {
+		b["map"] = a.mapConf // the base map's styles; absent when the operator turned the map off
+	}
 	if a.isDemo(u) {
 		b["indexer"] = demoIndexer
 		b["demo"] = true // the apps show a notice and hide what would be refused

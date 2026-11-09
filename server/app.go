@@ -38,6 +38,7 @@ type App struct {
 	trustProxy bool
 	proxies    []netip.Prefix    // TRUSTED_PROXIES: the peers whose X-Forwarded-For counts; empty: loopback and private
 	hosts      map[string]bool   // PUBLIC_HOSTS; empty: any
+	mapConf    *mapConfig        // MAP_STYLE; nil: no map (mapconf.go)
 	demo       map[string]bool   // DEMO_ACCOUNTS: read-only public logins (demo.go)
 	demoLogin  map[string]string // DEMO_LOGIN: the one the sign-in page offers (email, password), or nil
 	dummyHash  string
@@ -101,6 +102,10 @@ func newApp(dataDir string) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	mapConf, err := mapSetting(os.Getenv("MAP_STYLE"))
+	if err != nil {
+		return nil, err
+	}
 	demoLogin, err := demoLoginSetting(os.Getenv("DEMO_LOGIN"), demo)
 	if err != nil {
 		return nil, err
@@ -113,6 +118,7 @@ func newApp(dataDir string) (*App, error) {
 		hosts:      publicHosts(os.Getenv("PUBLIC_HOSTS")),
 		demo:       demo,
 		demoLogin:  demoLogin,
+		mapConf:    mapConf,
 		loginIP:    newLimiter(15*time.Minute, 30),
 		loginAcct:  newLimiter(15*time.Minute, 10),
 		loginDev:   newLimiter(15*time.Minute, 20),

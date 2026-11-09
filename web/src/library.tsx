@@ -25,11 +25,13 @@ import { Loading } from "./loader";
 const Lightbox = lazy(() => import("./lightbox").then((m) => m.Lightbox), () => <div class="lightbox lbwait"><Loading stage label="Opening the viewer…" /></div>);
 const PeopleList = lazy(() => import("./people/ui").then((m) => m.PeopleList));
 const PersonHeader = lazy(() => import("./people/ui").then((m) => m.PersonHeader), () => null);
+// the map (MapLibre, a few hundred KB) loads only when the tab is opened
+const MapPage = lazy(() => import("./map/ui").then((m) => m.MapPage));
 const Account = lazy(() => import("./screens").then((m) => m.Account));
 const Admin = lazy(() => import("./screens").then((m) => m.Admin));
 
 interface Job { key: number; owner: string; name: string; file: File; done: number; total: number; state: "queued" | "working" | "done" | "error"; error?: string; retryable?: boolean; stop: { cancelled: boolean } }
-type View = { n: "timeline" } | { n: "favorites" } | { n: "albums" } | { n: "album"; id: string } | { n: "people" } | { n: "person"; key: string; cover?: string } | { n: "trash" };
+type View = { n: "timeline" } | { n: "favorites" } | { n: "albums" } | { n: "album"; id: string } | { n: "people" } | { n: "person"; key: string; cover?: string } | { n: "map" } | { n: "trash" };
 type Page = View | { n: "account" } | { n: "admin" };
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : "Something went wrong.");
@@ -297,8 +299,8 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const [unfinished, setUnfinished] = useState<string[]>(() => unfinishedUploads());
   useEffect(() => { if (!uploading) setUnfinished(unfinishedUploads().filter((n) => !active.some((j) => j.name === n))); }, [uploading]);
   const empty = items && items.length === 0 && active.length === 0;
-  const libraryView = page.n === "timeline" || page.n === "favorites" || page.n === "albums" || page.n === "album" || page.n === "people" || page.n === "person" || page.n === "trash";
-  const title = page.n === "timeline" ? "Timeline" : page.n === "favorites" ? "Favorites" : page.n === "albums" ? "Albums" : page.n === "trash" ? "Trash" : page.n === "people" ? "People" : page.n === "person" ? person?.person?.name || "Not named yet" : page.n === "account" ? "Account" : page.n === "admin" ? { users: "Users", defaults: "Defaults", server: "Server", activity: "Activity" }[adminSection] : album?.name ?? "Album";
+  const libraryView = page.n === "timeline" || page.n === "favorites" || page.n === "albums" || page.n === "album" || page.n === "people" || page.n === "person" || page.n === "map" || page.n === "trash";
+  const title = page.n === "timeline" ? "Timeline" : page.n === "favorites" ? "Favorites" : page.n === "albums" ? "Albums" : page.n === "trash" ? "Trash" : page.n === "people" ? "People" : page.n === "map" ? "Map" : page.n === "person" ? person?.person?.name || "Not named yet" : page.n === "account" ? "Account" : page.n === "admin" ? { users: "Users", defaults: "Defaults", server: "Server", activity: "Activity" }[adminSection] : album?.name ?? "Album";
   const pct = usage && !usage.unlimited && usage.quota_bytes ? Math.min(100, Math.round((usage.used_bytes / usage.quota_bytes) * 100)) : 0;
 
   // the library is filtered 150 ms after typing stops, not on every key: matching a big library takes a moment.
@@ -312,15 +314,26 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const q = searched.trim().toLowerCase();
   // what each item can be found by (name, date, camera, type, its albums, the people in it), rebuilt only when the library changes
   const personNames = useMemo(() => people.all.flatMap((g) => (g.person?.name && !g.person.hidden ? [g.person.name] : [])), [people.all]);
+  // where the photos were taken, as words for search: the place file loads the first time something is searched
+  const [placeWords, setPlaceWords] = useState<Map<string, string> | null>(null);
+  const placeWordsFor = useRef<Item[] | null>(null); // the list they were computed for: again only when it changed
+  useEffect(() => {
+    if (q.trim().length < 2 || !items?.length || placeWordsFor.current === items) return;
+    const these = items;
+    let alive = true;
+    import("./map/locations").then((m) => m.placeWords(these)).then((w) => { if (alive) { placeWordsFor.current = these; setPlaceWords(w); } }, () => {});
+    return () => { alive = false; };
+  }, [q, items]);
   const hay = useMemo(() => {
     const extra = new Map<string, string[]>();
     const add = (id: string, n: string) => extra.set(id, [...(extra.get(id) ?? []), n]);
+    for (const [id, w] of placeWords ?? []) add(id, w);
     for (const a of albums) for (const id of a.itemIds) add(id, a.name);
     for (const g of people.all) if (g.person?.name && !g.person.hidden) for (const id of g.items) add(id, g.person.name);
     const out = new Map<string, string>();
     for (const it of [...(items ?? []), ...(trash ?? [])]) out.set(it.id, haystack(it, extra.get(it.id)));
     return out;
-  }, [items, trash, albums, people.all]);
+  }, [items, trash, albums, people.all, placeWords]);
 
   // what is in the photos: the words that aren't a date, a kind or a name go to the text model (search/content.ts),
   // over the image vectors the Android and Mac apps stored; asked a moment after typing stops
@@ -369,7 +382,8 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const shownItems = useMemo(() => (ranked ? shownAll.slice(0, limit) : shownAll), [shownAll, ranked, limit]);
   const trashItemsShown = useMemo(() => match(trash ?? [], false), [trash, q]);
   const moreLeft = !!ranked && (view.n === "timeline" ? timelineAll : shownAll).length > limit;
-  const lbList = view.n === "timeline" ? timelineItems : view.n === "trash" ? trashItemsShown : shownItems;
+  const [mapList, setMapList] = useState<Item[]>([]);
+  const lbList = view.n === "timeline" ? timelineItems : view.n === "trash" ? trashItemsShown : view.n === "map" ? mapList : shownItems;
   /** The photos on screen, in order: what select all, a range and the selection work on. */
   function listed() { return view.n === "trash" ? trashItemsShown : view.n === "album" || view.n === "person" || view.n === "favorites" ? shownItems : view.n === "timeline" ? timelineItems : []; }
   const selectAll = () => { setSelectMode(true); setSelected(new Set(listed().map((i) => i.id))); };
@@ -546,6 +560,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
               <NavItem icon="heart" label="Favorites" current={page.n === "favorites"} onClick={() => go({ n: "favorites" })} />
               <NavItem icon="albums" label="Albums" current={page.n === "albums" || page.n === "album"} onClick={() => go({ n: "albums" })} />
               {(hasIndex() || page.n === "people" || page.n === "person") && <NavItem icon="users" label="People" current={page.n === "people" || page.n === "person"} onClick={() => go({ n: "people" })} />}
+              {mem.me?.map && <NavItem icon="map" label="Map" current={page.n === "map"} onClick={() => go({ n: "map" })} />}
               <NavItem icon="trash" label="Trash" badge={trash && trash.length > 0 ? trash.length : undefined} current={page.n === "trash"} onClick={() => { go({ n: "trash" }); refreshTrash(); }} />
             </>
           )}
@@ -648,6 +663,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
           {view.n === "albums" && !albumsLoaded && <Loading label="Opening your albums…" />}
           {view.n === "albums" && albumsLoaded && <AlbumList onContext={(id, e) => setCtx({ x: e.clientX, y: e.clientY, kind: "album", id })} albums={albums} items={items ?? []} dropTarget={(a) => dropTarget((ids) => addIdsToAlbum(a, ids))} onOpen={(id) => go({ n: "album", id })} onCreated={(a) => { setAlbums((x) => [...x, a]); go({ n: "album", id: a.id }); }} setError={setError} />}
 
+          {view.n === "map" && <MapPage items={items ?? []} onOpen={(list, i) => { setMapList(list); openLb(i); }} />}
           {view.n === "people" && <PeopleList groups={people.groups} ready={people.ready} error={people.error} byId={byId} onOpen={(key) => openPerson(key)} />}
 
           {view.n === "person" && !person && (people.ready && people.groups ? <p>This person is no longer in your library. <button class="link" onClick={() => go({ n: "people" })}>Back to people</button></p> : <Loading label="Loading people…" />)}

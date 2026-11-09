@@ -39,8 +39,8 @@ dependencies {
   // Lowest versions for libraries other modules bring along, past known security fixes (Dependabot alerts from
   // .github/workflows/android-deps.yml); constraints only raise a version when it is in the app anyway, they add nothing
   constraints {
-    implementation("com.google.code.gson:gson:2.11.0") { because "Gson < 2.8.9 (expo-modules-core): deserialization DoS" }
-    implementation("commons-io:commons-io:2.18.0") { because "commons-io < 2.7 (expo-file-system): path traversal in FilenameUtils" }
+    implementation("com.google.code.gson:gson:2.15.0") { because "Gson < 2.8.9 (expo-modules-core): deserialization DoS" }
+    implementation("commons-io:commons-io:2.22.0") { because "commons-io < 2.7 (expo-file-system): path traversal in FilenameUtils" }
     implementation("com.google.guava:guava:33.7.2-android") { because "Guava <= 33.7.1 (Media3, Glide): deserialization" }
   }
 }

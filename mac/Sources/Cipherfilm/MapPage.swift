@@ -314,32 +314,32 @@ struct MapConsent: View {
   var body: some View {
     let p = Self.provider(styles)
     let from = p == "OpenFreeMap" ? "from OpenFreeMap (through Cloudflare; VersaTiles if OpenFreeMap doesn't answer)" : "from the map server set on your Cipherfilm server (\(p))"
-    VStack(spacing: 0) {
+    // the page's title, then the question in a card that scrolls in a small window (the structure of the other pages)
+    VStack(alignment: .leading, spacing: 0) {
       PageTitle(title: "Map")
-      Spacer()
-      VStack(alignment: .leading, spacing: 14) {
-        Image(systemName: "map").font(.system(size: 30)).foregroundStyle(Ink.teal)
-        Text("Show your photos on a map?").font(Typo.dialog).foregroundStyle(Ink.ink)
-        Text("The map images come \(from). That service sees this Mac's IP address and which areas you look at. When you open a photo's details, a small map of its area is loaded too, so the service can tell roughly where that photo was taken.")
-          .font(Typo.body).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
-        Text("Your photos, and the list of where they were taken, stay encrypted and are drawn on this Mac. You can turn the map off again in Settings › General › Map.")
-          .font(Typo.body).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
-        HStack(spacing: 16) {
-          Button("Turn on map", action: turnOn).buttonStyle(PrimaryButton()).keyboardShortcut(.defaultAction)
-          Button("Not now", action: later).buttonStyle(SecondaryButton()).keyboardShortcut(.cancelAction)
-          Button("Privacy policy") { NSWorkspace.shared.open(Self.privacy) }.buttonStyle(TextLink())
+      ScrollView {
+        VStack(alignment: .leading, spacing: 14) {
+          Image(systemName: "map").font(.system(size: 30)).foregroundStyle(Ink.teal)
+          Text("Show your photos on a map?").font(Typo.dialog).foregroundStyle(Ink.ink)
+          Text("The map images come \(from). That service sees this Mac's IP address and which areas you look at. When you open a photo's details, a small map of its area is loaded too, so the service can tell roughly where that photo was taken.")
+            .font(Typo.body).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
+          Text("Your photos, and the list of where they were taken, stay encrypted and are drawn on this Mac. You can turn the map off again in Settings › General › Map.")
+            .font(Typo.body).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
+          HStack(spacing: 16) {
+            Button("Turn on map", action: turnOn).buttonStyle(PrimaryButton()).keyboardShortcut(.defaultAction)
+            Button("Not now", action: later).buttonStyle(SecondaryButton())
+            Button("Privacy policy") { NSWorkspace.shared.open(Self.privacy) }.buttonStyle(TextLink())
+          }
+          .padding(.top, 4)
         }
-        .padding(.top, 4)
+        .padding(28)
+        .frame(maxWidth: 520, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: Radius.card).fill(Ink.card))
+        .overlay(RoundedRectangle(cornerRadius: Radius.card).strokeBorder(Ink.rule, lineWidth: 1))
+        .padding(.horizontal, 28).padding(.vertical, 24)
+        .frame(maxWidth: .infinity)
       }
-      .padding(28)
-      .frame(maxWidth: 480, alignment: .leading)
-      .background(RoundedRectangle(cornerRadius: Radius.card).fill(Ink.card))
-      .overlay(RoundedRectangle(cornerRadius: Radius.card).strokeBorder(Ink.rule, lineWidth: 1))
-      .padding(.horizontal, 28)
-      Spacer()
-      Spacer()
     }
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 }
 

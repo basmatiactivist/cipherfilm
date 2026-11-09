@@ -526,18 +526,20 @@ enum DebugDriver {
       let name = await PlaceBook.label(g)
       check(name == "Zürich, Switzerland", "place of a Zürich photo: \(name ?? "-")")
     } else { check(false, "a photo in Zürich") }
+    // the place hits come first; on an account with a search index the rest of the library follows, ranked
     let tokyo = Set(located.filter { near($0, 35.68, 139.7) }.map(\.id))
     for q in ["japan", "Japan", "Tokyo"] {
       let r = await m.search.search(q, library: m.items)
-      check(Set(r.items.map(\.id)) == tokyo && tokyo.count == 4, "search “\(q)” finds the \(tokyo.count) Tokyo photos (\(r.items.count): \(r.how.joined(separator: ", ")))")
+      check(Set(r.items.prefix(tokyo.count).map(\.id)) == tokyo && tokyo.count == 4, "search “\(q)” finds the \(tokyo.count) Tokyo photos (\(r.items.count): \(r.how.joined(separator: ", ")))")
     }
     let zurich = Set(located.filter { near($0, 47.37, 8.54, 0.1) }.map(\.id))
     for q in ["zurich", "Zürich"] {
       let r = await m.search.search(q, library: m.items)
-      check(Set(r.items.map(\.id)) == zurich && zurich.count == 5, "search “\(q)” finds the \(zurich.count) Zürich photos (\(r.items.count))")
+      check(Set(r.items.prefix(zurich.count).map(\.id)) == zurich && zurich.count == 5, "search “\(q)” finds the \(zurich.count) Zürich photos (\(r.items.count))")
     }
     let swiss = await m.search.search("switzerland", library: m.items)
-    check(swiss.items.count == 8, "search “switzerland” finds Zürich and Lucerne (\(swiss.items.count))")
+    let swissIds = Set(located.filter { near($0, 47.37, 8.54, 0.1) || near($0, 47.05, 8.31, 0.1) }.map(\.id))
+    check(swissIds.count == 8 && Set(swiss.items.prefix(8).map(\.id)) == swissIds, "search “switzerland” finds Zürich and Lucerne first (\(swiss.items.count))")
 
     // the map is off until the person turns it on: the tab asks first, and no web view (no map image) exists
     m.settings.mapOn = false

@@ -2,8 +2,9 @@ name: CodeQL
 # Static analysis of the server (Go), the web and Android JavaScript/TypeScript, and the workflows themselves. GitHub
 # runs it for free on public repositories only; on a private one the jobs are skipped.
 on:
-  push: { branches: [master] }
-  pull_request: { branches: [master] }
+  # text and docs/ aren't code: nothing to analyze
+  push: { branches: [master], paths-ignore: ["**/*.md", "docs/**"] }
+  pull_request: { branches: [master], paths-ignore: ["**/*.md", "docs/**"] }
   schedule: [{ cron: "23 4 * * 1" }]
 permissions:
   contents: read

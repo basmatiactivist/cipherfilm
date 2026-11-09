@@ -300,6 +300,7 @@ func cliDeleteUser(a *App, out io.Writer, args []string) error {
 	for _, id := range ids {
 		a.removeBlobs(id)
 	}
+	forgetEmail(a.db, u.Email)
 	a.audit(consoleActor, "deleted", u.Email, "")
 	fmt.Fprintf(out, "deleted %s and %d photos and videos\n", u.Email, len(ids))
 	return nil

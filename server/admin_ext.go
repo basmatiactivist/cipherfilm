@@ -84,6 +84,25 @@ func inviteQuota(q sql.NullInt64, def int64) int64 {
 	return def
 }
 
+// forgetEmail removes what the server keeps of a deleted account's e-mail address outside its own rows: the invite
+// it came with and its mentions in the activity log (its own device entries go, its name in others' entries is
+// replaced). Only the entry of the deletion itself, written afterwards, names it, as the delete-account page says.
+func forgetEmail(x interface {
+	Exec(string, ...any) (sql.Result, error)
+}, email string) error {
+	for _, q := range []string{
+		`DELETE FROM invites WHERE email=?`,
+		`DELETE FROM audit_log WHERE ` + selfService + ` AND actor=?`,
+		`UPDATE audit_log SET actor='a deleted account' WHERE actor=?`,
+		`UPDATE audit_log SET target='a deleted account' WHERE target=?`,
+	} {
+		if _, err := x.Exec(q, email); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // audit records an administrative event: who did what to whom. Metadata only, never content.
 // selfService matches the entries people write about their own devices. They are kept, and shown, apart from the
 // administrative ones, so however many of them someone writes, they never push an admin's actions out of the log.

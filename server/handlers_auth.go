@@ -375,6 +375,10 @@ func (a *App) deleteMe(w http.ResponseWriter, r *http.Request, u *user, s *sessi
 		fail(w, 409, "your password or role changed; sign in again and retry")
 		return
 	}
+	if err := forgetEmail(tx, u.Email); err != nil {
+		fail(w, 500, "server error")
+		return
+	}
 	if err := tx.Commit(); err != nil {
 		fail(w, 500, "server error")
 		return

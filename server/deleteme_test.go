@@ -80,3 +80,42 @@ func TestDeleteOwnAccount(t *testing.T) {
 		t.Fatalf("admin with a successor: %d %v", code, out)
 	}
 }
+
+// After a deletion the server keeps the e-mail address only in the one activity-log entry of the deletion: not in
+// the invite it came with, not in earlier entries, and none of its device entries.
+func TestDeletedAccountLeavesOnlyTheDeletionEntry(t *testing.T) {
+	e := newEnv(t)
+	admin, _ := e.setupAdmin("admin@x.org")
+	_, bb := e.acceptInvite(e.invite(admin, "bob@x.org"))
+	bob := e.login("bob@x.org", bb)
+	e.acceptInvite(e.invite(admin, "carol@x.org"))
+	e.app.audit("bob@x.org", "signed out a device", "bob@x.org", "Bob's phone")
+	e.app.audit("admin@x.org", "storage limit changed", "bob@x.org", "1000")
+	e.app.audit("carol@x.org", "signed out a device", "carol@x.org", "Carol's phone")
+	if code, out := bob.do("DELETE", "/api/me", map[string]any{"current_auth": bb["auth"]}, true); code != 200 {
+		t.Fatalf("delete: %d %v", code, out)
+	}
+	carol, _ := e.app.userByEmail("carol@x.org")
+	if code, _ := admin.do("DELETE", "/api/admin/users/"+carol.ID, nil, true); code != 200 {
+		t.Fatalf("admin delete: %d", code)
+	}
+	for _, email := range []string{"bob@x.org", "carol@x.org"} {
+		var inv, rows int
+		e.app.db.QueryRow(`SELECT COUNT(*) FROM invites WHERE email=?`, email).Scan(&inv)
+		e.app.db.QueryRow(`SELECT COUNT(*) FROM audit_log WHERE actor=?1 OR target=?1 OR detail LIKE '%'||?1||'%'`, email).Scan(&rows)
+		if inv != 0 || rows != 1 {
+			t.Fatalf("%s: %d invites, %d activity entries left", email, inv, rows)
+		}
+	}
+	var labels int
+	e.app.db.QueryRow(`SELECT COUNT(*) FROM audit_log WHERE detail LIKE '%phone%'`).Scan(&labels)
+	if labels != 0 {
+		t.Fatalf("device labels left: %d", labels)
+	}
+	// the administrator's own entries stay, with the deleted person's name taken out
+	var kept int
+	e.app.db.QueryRow(`SELECT COUNT(*) FROM audit_log WHERE action='storage limit changed' AND target='a deleted account'`).Scan(&kept)
+	if kept != 1 {
+		t.Fatalf("admin entry about the deleted account: %d", kept)
+	}
+}

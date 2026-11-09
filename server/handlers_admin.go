@@ -210,6 +210,7 @@ func (a *App) adminDeleteUser(w http.ResponseWriter, r *http.Request, u *user, s
 		a.removeBlobs(it)
 	}
 	a.live.recheck(id)
+	forgetEmail(a.db, victim.Email)
 	a.audit(u.Email, "deleted", victim.Email, "")
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }

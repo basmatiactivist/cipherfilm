@@ -131,12 +131,15 @@ jobs:
   tool:
     needs: [verify, e2e]
     runs-on: ubuntu-latest
+    outputs:
+      sums: ${{ steps.build.outputs.sums }}  # the release job publishes only files that match
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }  # no token left in .git for later steps
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with: { go-version: "1.27", cache: false }  # a release builds without caches: nothing earlier can slip in
       - name: Build the offline decrypt tool and the Mac uploader
+        id: build
         run: |
           mkdir -p dist
           cd tools/decrypt
@@ -149,6 +152,7 @@ jobs:
             CGO_ENABLED=0 GOOS=darwin GOARCH=$arch go build -trimpath -ldflags="-s -w -X main.version=${GITHUB_REF_NAME#v}" -o ../../dist/cipherfilm-upload-darwin-$arch .
           done
           cd ../../dist && sha256sum cipherfilm-decrypt-* cipherfilm-upload-* > SHA256SUMS
+          echo "sums=$(base64 -w0 SHA256SUMS)" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with: { name: decrypt-tool, path: dist/ }
 
@@ -193,8 +197,20 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: ${{ needs.mac.result == 'success' }}
         with: { name: mac-app, path: dist }
+      - name: Exactly the files their jobs built
+        # each building job hands over its files' checksums as a job output: a file swapped in the run's artifacts
+        # after it was built doesn't match, and nothing else may come along
+        env:
+          TOOL_SUMS: ${{ needs.tool.outputs.sums }}
+          ANDROID_SUMS: ${{ needs.android.outputs.sums }}
+          MAC_SUMS: ${{ needs.mac.result == 'success' && needs.mac.outputs.sums || '' }}
+        run: |
+          cd dist && rm -f SHA256SUMS
+          { echo "$TOOL_SUMS" | base64 -d; echo "$ANDROID_SUMS" | base64 -d; [ -z "$MAC_SUMS" ] || echo "$MAC_SUMS" | base64 -d; } > "$RUNNER_TEMP/built"
+          sha256sum -c --strict "$RUNNER_TEMP/built" || { echo "a file is not the one its job built"; exit 1; }
+          [ "$(ls -1A | sort)" = "$(awk '{print $2}' "$RUNNER_TEMP/built" | sed 's/^\*//' | sort)" ] || { echo "files no job built:"; ls -lA; exit 1; }
       - name: Checksums for everything attached
-        run: cd dist && rm -f SHA256SUMS && sha256sum -- * > SHA256SUMS
+        run: cd dist && sha256sum -- * > SHA256SUMS
       - name: Release notes from CHANGELOG.md
         run: |
           v="${GITHUB_REF_NAME#v}"
@@ -247,7 +263,7 @@ jobs:
     # docs/play/listing/<lang>/changelogs/<versionCode>.txt or else CHANGELOG.md (mobile/scripts/play-notes.sh).
     # Production is a separate, hand-started step (play-promote.yml). Not for pre-releases; without the service
     # account's key in the release environment it only warns (docs/RELEASING.md, "Google Play from CI").
-    needs: release
+    needs: [release, android]
     if: ${{ !cancelled() && needs.release.result == 'success' && needs.release.outputs.created == 'true' && !contains(github.ref_name, '-') }}
     runs-on: ubuntu-latest
     environment: release
@@ -256,6 +272,10 @@ jobs:
         with: { persist-credentials: false }  # no token left in .git for later steps
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with: { name: android-app, path: dist }
+      - name: The bundle the Android job built
+        env:
+          ANDROID_SUMS: ${{ needs.android.outputs.sums }}
+        run: cd dist && echo "$ANDROID_SUMS" | base64 -d | sha256sum -c --strict
       - name: Upload to the internal testing track
         env:
           PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}

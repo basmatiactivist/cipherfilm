@@ -59,7 +59,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with: { node-version: "26", cache: npm, cache-dependency-path: "mobile/package-lock.json" }
       - name: install, type-check, test
-        run: (cd web && npm ci --ignore-scripts) && cd mobile && npm ci && npx tsc --noEmit && npm test
+        run: (cd web && npm ci --ignore-scripts) && cd mobile && npm ci --ignore-scripts && npx tsc --noEmit && npm test
   android:
     # The Android app builds (the native module, Media3, ONNX Runtime, JNA, React Native and Expo together), so a
     # dependency update that breaks the build can't merge: the unit tests above never compile it. Debug-signed, no
@@ -80,7 +80,7 @@ jobs:
       - name: JavaScript dependencies and native project
         run: |
           (cd web && npm ci --ignore-scripts)
-          cd mobile && npm ci
+          cd mobile && npm ci --ignore-scripts
           CF_VERSION=0.0.1 npx expo prebuild --platform android --clean --no-install
           mkdir -p modules/cf-native/android/src/main/jniLibs/arm64-v8a
           : > modules/cf-native/android/src/main/jniLibs/arm64-v8a/libsodium.so

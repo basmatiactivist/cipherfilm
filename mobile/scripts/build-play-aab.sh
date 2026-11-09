@@ -24,7 +24,7 @@ case "$ROOT" in "$HOME"/*) echo "warning: $ROOT is inside the home folder; the b
 cd "$ROOT/mobile"
 [ -f modules/cf-native/android/src/main/jniLibs/arm64-v8a/libsodium.so ] \
   || ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$NDK" modules/cf-native/scripts/build-libsodium.sh
-[ -d node_modules ] || npm ci
+[ -d node_modules ] || npm ci --ignore-scripts
 CF_STORE=play CF_VERSION="$VERSION" npx expo prebuild --platform android --clean --no-install
 
 # the password only in this process's environment, never on the command line or in a file Gradle writes

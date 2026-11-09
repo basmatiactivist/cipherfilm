@@ -7,6 +7,8 @@ on:
   workflow_call:
     inputs:
       version: { type: string, required: true }
+    outputs:
+      sums: { value: "${{ jobs.build.outputs.sums }}" }  # the release job publishes only the file that matches
   push:
     branches: [master]
     paths: ["mac/**", "tools/decrypt/testdata/**", ".github/workflows/mac.yml"]
@@ -18,6 +20,8 @@ permissions:
 jobs:
   build:
     runs-on: macos-26
+    outputs:
+      sums: ${{ steps.sums.outputs.sums }}
     timeout-minutes: 40
     defaults:
       run: { working-directory: mac }
@@ -76,6 +80,9 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Contents/Info.plist")" = "${v%%-*}"
           mkdir -p ../dist
           ditto -c -k --keepParent "$APP" "../dist/cipherfilm-mac-$v.zip"
+      - name: Checksum for the release job
+        id: sums
+        run: cd dist && echo "sums=$(shasum -a 256 -- cipherfilm-mac-*.zip | base64 | tr -d '\n')" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mac-app

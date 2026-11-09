@@ -136,7 +136,7 @@ Ergänzung zu **„Ihre Rechte“** (DE):
 ## Check before publishing
 
 - [ ] The facts still match the app: permissions in the merged manifest, no analytics SDK, `expo-updates` off,
-      HTTPS-only, models from the user's server, "Delete account" present in the Android, Mac and web apps.
+      HTTPS-only, search models downloaded from Hugging Face (pinned, SHA-256 checked), "Delete account" present in the Android, Mac and web apps.
 - [ ] The Mac app accesses chosen folders (watched and export folders) and Touch ID; if the Mac app is meant to be
       covered in detail, add one line: "On the Mac: the folders you choose to watch or export to, and Touch ID
       (handled by macOS)." / "Auf dem Mac: die Ordner, die Sie zum Beobachten oder Exportieren wählen, und Touch ID

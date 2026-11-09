@@ -81,7 +81,8 @@ class CfThumbView(context: Context, appContext: AppContext) : ExpoView(context, 
     val b = if (software && bmp.config == Bitmap.Config.HARDWARE) bmp.copy(Bitmap.Config.ARGB_8888, false) ?: return else bmp
     image.setImageBitmap(b)
     if (first) onShown(mapOf())
-    if (fade) { image.alpha = 0f; image.animate().alpha(1f).setDuration(120).start() } else image.alpha = 1f
+    // no fade on the map: its markers are pictures taken of this view, one taken mid-fade would stay see-through
+    if (fade && !software) { image.alpha = 0f; image.animate().alpha(1f).setDuration(120).start() } else image.alpha = 1f
   }
 
   override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {

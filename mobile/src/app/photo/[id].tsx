@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, AppState, Easing, FlatList, PanResponder, Pressable, StatusBar, StyleSheet, useWindowDimensions, View, type GestureResponderEvent } from "react-native";
+import { Animated, AppState, Easing, FlatList, PanResponder, Pressable, StatusBar, StyleSheet, useColorScheme, useWindowDimensions, View, type GestureResponderEvent } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Image } from "expo-image";
 import { Dialog, IconButton, Modal, Portal, ProgressBar, Snackbar, Text } from "react-native-paper";
@@ -23,6 +23,10 @@ import { Loading, useReducedMotion } from "../../Loader";
 import { hideSystemBars, largestInsets, type Insets } from "../../immersive";
 import { taps } from "../../taps";
 import { locale, t } from "../../i18n";
+import { Camera, Map as MapView, ViewAnnotation } from "@maplibre/maplibre-react-native";
+import { coords, placeName } from "../../places";
+import { useSession } from "../../session";
+import { useMapOn } from "../../mapConsent";
 
 const fmtWhen = (ms: number) => new Intl.DateTimeFormat(locale(), { dateStyle: "full", timeStyle: "short" }).format(new Date(ms));
 const one = (n: number) => n.toLocaleString(locale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -358,12 +362,15 @@ function Info({ item, visible, onClose }: { item: Item; visible: boolean; onClos
   const th = useAppTheme();
   const inset = useSafeAreaInsets();
   const m = item.meta;
+  const [place, setPlace] = useState("");
+  useEffect(() => { setPlace(""); if (visible) placeName(item).then(setPlace, () => {}); }, [item.id, visible]);
+  const at = coords(item);
   const rows: [string, string | undefined][] = [
     [t("Taken"), fmtWhen(when(item))],
     [t("File"), m?.name],
     [t("Size"), fmtSize(item.size) + (m?.width && m?.height ? ` · ${m.width} × ${m.height}` : "")],
     [t("Camera"), [m?.make, m?.model].filter(Boolean).join(" ") || undefined],
-    [t("Place"), m?.gps ? `${m.gps.lat.toFixed(4)}, ${m.gps.lon.toFixed(4)}` : undefined],
+    [t("Place"), m?.gps ? `${place ? place + "\n" : ""}${m.gps.lat.toFixed(4)}, ${m.gps.lon.toFixed(4)}` : undefined],
   ];
   return (
     <Portal>
@@ -375,6 +382,7 @@ function Info({ item, visible, onClose }: { item: Item; visible: boolean; onClos
             <Text variant="bodyMedium" style={{ flex: 1 }} selectable>{v}</Text>
           </View>
         ))}
+        {visible && at ? <MiniMap lat={at.lat} lon={at.lon} /> : null}
         {visible ? <InPhoto item={item} onClose={onClose} /> : null}
         <Text variant="bodySmall" style={{ color: th.colors.onSurfaceVariant, marginTop: 12 }}>{t("Only you can read these details. The server stores them encrypted.")}</Text>
       </Modal>
@@ -447,4 +455,31 @@ const st = StyleSheet.create({
   action: { flex: 1, maxWidth: 110, alignItems: "center", paddingVertical: 8, borderRadius: 12 },
   sheet: { marginTop: "auto", borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 24 },
   row: { flexDirection: "row", gap: 12, paddingVertical: 8 },
+  minimap: { height: 160, marginTop: 8, borderRadius: 12, borderWidth: 1, overflow: "hidden" },
+  pin: { width: 18, height: 18, borderRadius: 9, borderWidth: 3 },
 });
+
+/** The photo's spot at district level (not street level), only while its details are open: the base map's server
+ *  learns the area of exactly the photos whose details someone looks at (docs/MAP.md). */
+function MiniMap({ lat, lon }: { lat: number; lon: number }) {
+  const th = useAppTheme();
+  const scheme = useColorScheme();
+  const on = useMapOn();
+  const all = useSession().me?.map;
+  const conf = on ? all : undefined; // nothing is loaded before the person turned the map on
+  const [at, setAt] = useState(0);
+  if (!conf) return null;
+  const styles = scheme === "dark" || th.dark ? conf.dark : conf.light;
+  return (
+    <View style={[st.minimap, { borderColor: th.colors.outlineVariant }]} accessible accessibilityLabel={t("Where this photo was taken")}>
+      <MapView style={StyleSheet.absoluteFill} mapStyle={styles[at]} logo={false} compass={false} touchRotate={false} touchPitch={false}
+        dragPan={false} touchZoom={false} doubleTapZoom={false} attribution attributionPosition={{ bottom: 4, right: 4 }}
+        onDidFailLoadingMap={() => { if (at + 1 < styles.length) setAt(at + 1); }}>
+        <Camera initialViewState={{ center: [lon, lat], zoom: 11 }} />
+        <ViewAnnotation id="here" lngLat={[lon, lat]} anchor="center">
+          <View style={[st.pin, { backgroundColor: th.colors.primary, borderColor: th.colors.surface }]} />
+        </ViewAnnotation>
+      </MapView>
+    </View>
+  );
+}

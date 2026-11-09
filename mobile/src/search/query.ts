@@ -5,6 +5,7 @@ import { when, type Item } from "../library";
 import { textSearch } from "./engine";
 import { peopleGroups, type Group } from "./people";
 import { locale, t } from "../i18n";
+import { inPlace } from "../places";
 
 export interface Result { items: Item[]; people: Group[]; how: string[] }
 
@@ -30,7 +31,6 @@ export function parseDate(q: string): { year?: number; month?: number; day?: num
 const isVideoWord = (w: string) => /^(videos?|filme?|clips?)$/.test(w);
 const isFavWord = (w: string) => /^(favou?rites?|favoriten?|liked|herz)$/.test(w);
 const isShotWord = (w: string) => /^(screenshots?|bildschirmfotos?)$/.test(w);
-
 export async function search(qRaw: string, library: Item[]): Promise<Result> {
   const q = qRaw.trim();
   if (!q) return { items: [], people: [], how: [] };
@@ -67,7 +67,20 @@ export async function search(qRaw: string, library: Item[]): Promise<Result> {
     });
     how.push([d.month !== undefined ? new Intl.DateTimeFormat(locale(), { month: "long" }).format(new Date(2000, d.month, 1)) : "", d.year ?? ""].join(" ").trim());
   }
-  const rest = d.rest;
+  let rest = d.rest;
+  if (!rest) return { items: sortByDate(pool), people, how };
+
+  // places, from each photo's coordinates on this phone (places.ts): all the words ("new york") or one of them
+  // ("zurich beach" is the photos from Zurich that show a beach)
+  const whole = await inPlace(pool, rest).catch(() => null);
+  if (whole) return { items: sortByDate(pool.filter((i) => whole.ids.has(i.id))), people, how: [...how, whole.name] };
+  for (const w of rest.split(/\s+/)) {
+    const r = await inPlace(pool, w).catch(() => null);
+    if (!r) continue;
+    pool = pool.filter((i) => r.ids.has(i.id));
+    how.push(r.name);
+    rest = rest.split(/\s+/).filter((x) => x !== w).join(" ");
+  }
   if (!rest) return { items: sortByDate(pool), people, how };
 
   // file names and cameras: exact substring matches first

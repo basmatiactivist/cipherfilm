@@ -62,7 +62,8 @@
             ]
           }
         }
-      ]
+      ],
+      "@maplibre/maplibre-react-native"
     ],
     "scheme": "cipherfilm",
     "platforms": [

@@ -145,4 +145,4 @@ export const VideoView = requireNativeView<ViewProps & {
 }>("CfNative");
 
 /** One item's thumbnail, decrypted natively (Thumbs.kt); `onFailed` when there is none or it can't be verified. */
-export const ThumbView = requireNativeView<ViewProps & { item: string; fit?: "cover" | "contain"; onFailed?: () => void; onShown?: () => void }>("CfNative", "CfThumbView");
+export const ThumbView = requireNativeView<ViewProps & { item: string; fit?: "cover" | "contain"; software?: boolean; onFailed?: () => void; onShown?: () => void }>("CfNative", "CfThumbView");

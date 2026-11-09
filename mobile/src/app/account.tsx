@@ -13,6 +13,7 @@ import { Field, Problem, SwitchItem, useAppTheme } from "../ui";
 import { setShake, useShake } from "../shake";
 import { CHOICES, away, expectAway, setAutoLock, useAutoLock } from "../autolock";
 import { privacyUrl } from "../store";
+import { mapPrivacyUrl, mapProvider, setMapOn, useMapOn } from "../mapConsent";
 import { reportUrl, summary, thisPhone } from "../report";
 import { text } from "../tokens";
 import { busyIcon } from "../Loader";
@@ -28,6 +29,7 @@ export default function Account() {
   const th = useAppTheme();
   const inset = useSafeAreaInsets();
   const { me, server, biometric } = useSession();
+  const mapOn = useMapOn();
   const [usage, setUsage] = useState<{ used_bytes: number; quota_bytes: number; unlimited: boolean }>();
   const [error, setError] = useState<string>();
   const [confirmOut, setConfirmOut] = useState(false);
@@ -112,6 +114,10 @@ export default function Account() {
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="search" color={th.colors.primary} /></View>} onPress={() => router.push("/search-settings")} style={st.item} />
         <List.Item title={t("Free up space")} description={t("Remove photos from this phone that are already in Cipherfilm")}
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="phone" color={th.colors.primary} /></View>} onPress={() => router.push("/free-space")} style={st.item} />
+        {me?.map ? <SwitchItem title={t("Map")} description={t("Loads map images from {who}. Photo locations stay on this phone.", { who: mapProvider() || t("the map server") })}
+          value={mapOn} onValueChange={(v) => setMapOn(v)} /> : null}
+        {me?.map ? <List.Item title={t("About the map and privacy")} description={mapPrivacyUrl().replace("https://", "")}
+          onPress={() => { expectAway(); Linking.openURL(mapPrivacyUrl()); }} style={st.item} /> : null}
         <SwitchItem title={t("Unlock with fingerprint or face")}
           description={bioOk || biometric ? t("Your key stays in this phone's secure hardware") : t("Set up fingerprint or face unlock in Android settings first")}
           left={() => <View style={st.icon}><Icon name="fingerprint" color={bioOk || biometric ? th.colors.primary : th.colors.onSurfaceDisabled} /></View>}

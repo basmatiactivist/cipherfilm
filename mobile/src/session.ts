@@ -23,6 +23,8 @@ export interface Me {
   server_version?: string;
   /** the server's public demo login (DEMO_ACCOUNTS): it reads and searches, every change is refused */
   demo?: boolean;
+  /** the map tab's base map styles (light, dark: tried in order); absent when the server turned the map off */
+  map?: { light: string[]; dark: string[] };
 }
 
 type Phase = "starting" | "noServer" | "signedOut" | "locked" | "unlocked";

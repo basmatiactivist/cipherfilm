@@ -9,8 +9,11 @@ const webCrypto = path.resolve(__dirname, "../web/src/crypto");
 const vectors = path.resolve(__dirname, "../tools/decrypt/testdata");
 // the search models' list (models.json), shared with the server and the other apps
 const server = path.resolve(__dirname, "../server");
+// the place names for the map (web/src/places: the reader and its .bin, bundled as an asset)
+const webPlaces = path.resolve(__dirname, "../web/src/places");
 
-config.watchFolders = [webCrypto, vectors, server];
+config.watchFolders = [webCrypto, vectors, server, webPlaces];
+config.resolver.assetExts = [...config.resolver.assetExts, "bin"];
 config.resolver.nodeModulesPaths = [path.resolve(__dirname, "node_modules")];
 const resolve = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, name, platform) => {

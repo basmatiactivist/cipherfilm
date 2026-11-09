@@ -1,0 +1,7 @@
+• Your library appears once the first photos are ready, never as empty tiles.
+• A file the phone can't read no longer holds up the backup.
+• Videos without a date in the file are no longer filed under 1904.
+• Saving a video says it went to Movies › Cipherfilm.
+• Report a problem opens in your browser.
+• Security updates to built-in libraries.
+Needs your own Cipherfilm server: https://cipherfilm.app

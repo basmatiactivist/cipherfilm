@@ -1,0 +1,7 @@
+• Die Mediathek erscheint, sobald die ersten Fotos bereit sind, nie als leere Kacheln.
+• Eine Datei, die das Handy nicht lesen kann, hält die Sicherung nicht mehr auf.
+• Videos ohne Datum in der Datei landen nicht mehr im Jahr 1904.
+• Beim Speichern eines Videos steht richtig: Filme › Cipherfilm.
+• Problem melden öffnet sich im Browser.
+• Sicherheitsupdates für eingebaute Bibliotheken.
+Benötigt Ihren eigenen Cipherfilm-Server: https://cipherfilm.app/de

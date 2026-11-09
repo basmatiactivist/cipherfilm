@@ -7,6 +7,10 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-11-09
+
+Security fixes from an audit of the whole product, and the Android build is signed apart from where it is built.
+
 ### Security
 - Android: libraries other modules bring along are raised past known security fixes: Gson 2.11.0 (from 2.8.6, in
   Expo's core), commons-io 2.18.0 (from 1.4, in Expo's file system) and Guava 33.7.2 (from 33.3.1, in Media3 and
@@ -41,11 +45,6 @@ version into the GitHub release notes, so a release cannot be published without 
 - Android: a video whose file says "no date" (MP4 date 0, written by some apps and tools) is no longer filed under
   January 1, 1904; it gets the upload time, like a photo without a date.
 - Docs: the threat model says the search models come from Hugging Face.
-
-## [2.5.0-rc.1] - 2026-11-09
-
-A test run of the release pipeline for 2.5.0 (build without keys, signing job, checksums). Not for use;
-removed again with 2.5.0.
 
 ## [2.4.1] - 2026-11-08
 

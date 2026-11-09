@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -254,5 +255,61 @@ func TestTinyItemsChargeTheirDiskBlocks(t *testing.T) {
 	e.app.db.QueryRow(`SELECT stored_bytes FROM items WHERE id=?`, id).Scan(&stored)
 	if stored < 4*4096 { // three files and the item's directory, a block each
 		t.Fatalf("a minimal item is charged %d bytes", stored)
+	}
+}
+
+// A re-sent part is staged in full before it replaces the stored copy: that staging needs room in the quota too, so
+// held re-sends can't fill the disk beyond it. A re-send with no room left keeps the stored copy and succeeds.
+func TestResentSegmentIsReservedInFull(t *testing.T) {
+	e := newEnv(t)
+	admin, _ := e.setupAdmin("admin@x.org")
+	bob, _ := e.acceptInvite(e.invite(admin, "bob@x.org"))
+	id := e.newItem(bob, 10)
+	part := randBytes(int(cipherLen(10)))
+	if code, _ := bob.put("/api/items/"+id+"/segments/0", part); code != 200 {
+		t.Fatalf("first upload: %d", code)
+	}
+	// the quota is now exactly full
+	var used int64
+	e.app.db.QueryRow(`SELECT `+usedBytesSQL("?"), e.userID("bob@x.org"), e.userID("bob@x.org"), e.userID("bob@x.org")).Scan(&used)
+	e.app.db.Exec(`UPDATE users SET quota_bytes=? WHERE email='bob@x.org'`, used)
+	release, ok := e.app.reserveBytes(e.userID("bob@x.org"), 1)
+	if ok {
+		release()
+		t.Fatal("quota not full")
+	}
+	// a held re-send must not be staged next to the stored copy: no room is left for it
+	pr, pw := io.Pipe()
+	defer pw.Close()
+	req, _ := http.NewRequest("PUT", e.srv.URL+"/api/items/"+id+"/segments/0", pr)
+	req.ContentLength = cipherLen(10)
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("X-CSRF-Token", bob.csrf)
+	done := make(chan int, 1)
+	go func() {
+		resp, err := bob.c.Do(req)
+		if err != nil {
+			done <- 0
+			return
+		}
+		resp.Body.Close()
+		done <- resp.StatusCode
+	}()
+	pw.Write(part[:5])
+	time.Sleep(time.Second)
+	entries, _ := os.ReadDir(e.app.itemDir(id))
+	for _, en := range entries {
+		if strings.HasPrefix(en.Name(), ".tmp") {
+			t.Fatalf("a re-send was staged beyond the quota: %s", en.Name())
+		}
+	}
+	pw.Write(part[5:])
+	pw.Close()
+	if code := <-done; code != 200 {
+		t.Fatalf("re-send with a full quota: %d", code)
+	}
+	got, _ := os.ReadFile(filepath.Join(e.app.itemDir(id), "seg000000"))
+	if !bytes.Equal(got, part) {
+		t.Fatal("stored copy changed")
 	}
 }

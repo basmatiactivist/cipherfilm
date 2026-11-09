@@ -307,8 +307,15 @@ func (a *App) putSegment(w http.ResponseWriter, r *http.Request, u *user, s *ses
 	want := expectedSegmentLen(it.Size, n)
 	var prev int64
 	a.db.QueryRow(`SELECT bytes FROM segments WHERE item_id=? AND n=?`, it.ID, n).Scan(&prev)
-	release, ok := a.reserveBytes(u.ID, want-prev)
+	// the body is staged in full next to the stored copy until it replaces it, so the whole part is reserved for
+	// that time, not only what it adds: otherwise re-sends of a stored part would put files on disk beyond the quota
+	release, ok := a.reserveBytes(u.ID, want)
 	if !ok {
+		if prev == want {
+			// already stored in full (a retry after a lost answer): keep that copy, no room needed
+			writeJSON(w, 200, map[string]bool{"ok": true})
+			return
+		}
 		fail(w, 413, "this would go over your storage limit")
 		return
 	}

@@ -305,10 +305,10 @@ struct MapConsent: View {
   var later: () -> Void = {}
   static let privacy = URL(string: "https://cipherfilm.app/privacy#map")!
 
-  /** "OpenFreeMap" for the default styles, else the host the server's style comes from. */
+  /** "OpenFreeMap" for the server's default, else every host of its light and dark styles (Me.MapStyles.provider). */
   static func provider(_ styles: Me.MapStyles?) -> String {
-    let host = styles?.light.first.flatMap { URLComponents(string: $0)?.host } ?? ""
-    return host == "tiles.openfreemap.org" || host.isEmpty ? "OpenFreeMap" : host
+    let p = styles?.provider ?? ""
+    return p.isEmpty ? "the map server" : p
   }
 
   var body: some View {

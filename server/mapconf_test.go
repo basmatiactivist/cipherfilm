@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -53,5 +54,21 @@ func TestMapInTheSessionAndTheCSP(t *testing.T) {
 	admin2, _ := e2.setupAdmin("admin@x.org")
 	if _, me := admin2.do("GET", "/api/me", nil, false); me["map"] != nil {
 		t.Fatalf("map though off: %v", me["map"])
+	}
+}
+
+// The apps call only this exact setting "OpenFreeMap" (web/src/places/mapHosts.ts, mac Me.MapStyles.provider): their
+// copy of the default must stay the same as the server's.
+func TestDefaultMapMatchesClients(t *testing.T) {
+	for _, f := range []string{"../web/src/places/mapHosts.ts", "../mac/Sources/CipherfilmCore/MapHosts.swift"} {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, u := range append(append([]string{}, defaultMap.Light...), defaultMap.Dark...) {
+			if !strings.Contains(string(b), `"`+u+`"`) {
+				t.Errorf("%s lacks the default style %s", f, u)
+			}
+		}
 	}
 }

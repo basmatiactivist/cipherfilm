@@ -3,6 +3,7 @@
 // under Account › Map.
 import { useEffect, useState } from "preact/hooks";
 import { mem } from "../state";
+import { mapProviderOf } from "../places/mapHosts";
 
 const key = () => `cf-map-on:${mem.me?.user.id ?? ""}`;
 const subs = new Set<() => void>();
@@ -28,11 +29,8 @@ export function useMapOn(): boolean {
   return on;
 }
 
-/** Who serves the map images: "OpenFreeMap" for the default, else the host of the server's own style. */
 export function mapProvider(): string {
-  const u = mem.me?.map?.light?.[0];
-  if (!u) return "";
-  try { const h = new URL(u).host; return h === "tiles.openfreemap.org" ? "OpenFreeMap" : h; } catch { return ""; }
+  return mapProviderOf(mem.me?.map);
 }
 
 /** Who serves the map images, as the question before the map says it: with the CDN and the fallback for the default. */

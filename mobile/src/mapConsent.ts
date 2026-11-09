@@ -5,6 +5,7 @@ import * as SecureStore from "expo-secure-store";
 import { privacyUrl } from "./store";
 import { session } from "./session";
 import { t } from "./i18n";
+import { mapProviderOf } from "@places/mapHosts";
 
 const name = (userId: string) => `map_on_${userId}`;
 let on: { userId: string; value: boolean } | null = null;
@@ -38,12 +39,9 @@ export function useMapOn(): boolean {
   return v;
 }
 
-/** Who serves the map images: "OpenFreeMap" for the default, else the host of the server's own style. */
+/** Who serves the map images: "OpenFreeMap" for the server's default, else every host the styles name. */
 export function mapProvider(): string {
-  const u = session().me?.map?.light?.[0];
-  if (!u) return "";
-  const h = /^https:\/\/([^/]+)/.exec(u)?.[1] ?? "";
-  return h === "tiles.openfreemap.org" ? "OpenFreeMap" : h;
+  return mapProviderOf(session().me?.map);
 }
 
 /** Who serves the map images, as the question before the map says it: with the CDN and the fallback for the default. */

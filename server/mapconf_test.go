@@ -79,3 +79,19 @@ func TestPlacesFileCompressed(t *testing.T) {
 		t.Fatal("the places file is sent uncompressed")
 	}
 }
+
+// A host that could add to the Content-Security-Policy is refused; a port and an IPv6 address pass.
+func TestMapSettingHosts(t *testing.T) {
+	for _, bad := range []string{"https://a;b.example/s.json", "https://'self'/s.json", "https://*.example.org/s.json", "https://a,b.example/s.json", "https://h.example:x/s.json"} {
+		if _, err := mapSetting(bad + " https://ok.example/d.json"); err == nil {
+			t.Errorf("%s was accepted", bad)
+		}
+	}
+	m, err := mapSetting("https://maps.example.org:8443/l.json https://[2001:db8::1]/d.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(m.origins(), " "); got != "https://[2001:db8::1] https://maps.example.org:8443" {
+		t.Errorf("origins: %s", got)
+	}
+}

@@ -32,13 +32,37 @@ func mapSetting(v string) (*mapConfig, error) {
 	case len(f) == 2:
 		for _, s := range f {
 			u, err := url.Parse(s)
-			if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
+			if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || !plainHost(u.Host) {
 				return nil, fmt.Errorf("MAP_STYLE: %q is not an https URL", s)
 			}
 		}
 		return &mapConfig{Light: f[:1], Dark: f[1:]}, nil
 	}
 	return nil, fmt.Errorf(`MAP_STYLE: expected nothing (OpenFreeMap), "off", or "LIGHT_STYLE_URL DARK_STYLE_URL"`)
+}
+
+// plainHost: a host name of letters, digits, dots and dashes, or an IPv6 address in brackets, with an optional port.
+// The host goes into the web app's Content-Security-Policy, so nothing else may pass (no ';', quotes, '*', ',').
+func plainHost(h string) bool {
+	host, port := h, ""
+	if i := strings.LastIndex(h, ":"); i >= 0 && !strings.HasSuffix(h, "]") {
+		host, port = h[:i], h[i+1:]
+		if port == "" || len(port) > 5 || strings.Trim(port, "0123456789") != "" {
+			return false
+		}
+	}
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		return len(host) > 2 && strings.Trim(host[1:len(host)-1], "0123456789abcdefABCDEF:") == ""
+	}
+	if host == "" || strings.HasPrefix(host, ".") || strings.HasPrefix(host, "-") {
+		return false
+	}
+	for _, c := range host {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '.' || c == '-') {
+			return false
+		}
+	}
+	return true
 }
 
 // origins the web app's CSP must allow for the map (the styles' hosts; a style loads its tiles, fonts and icons from

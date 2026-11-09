@@ -21,7 +21,8 @@ Your photos on a map, in every app: where they were taken, found by place, with 
   from a GeoNames file bundled with the apps (every place with at least 1,000 inhabitants, a big city counting as far
   as it reaches, so the Eiffel Tower is in Paris).
 - The map is off until each person turns it on, after a short explanation of what the map server sees; Account › Map
-  (Settings › General › Map on the Mac) turns it off again. The base map is OpenFreeMap (VersaTiles as fallback), which
+  (Settings › General › Map on the Mac) turns it off again. If the server later names another map server, every device
+  asks again. The base map is OpenFreeMap (VersaTiles as fallback), which
   sees the device's IP address and the map areas viewed, never a photo or its coordinates; the map opens on the whole
   world and never moves to the photos by itself.
 - `MAP_STYLE` on the server: your own map server's styles, or `off` for no map (place names and place search keep
@@ -33,8 +34,8 @@ Your photos on a map, in every app: where they were taken, found by place, with 
 ### Security
 - Web, Android and Mac take an item's kind (photo, video) from its encrypted metadata, no longer from the server's
   plain field, so a malicious server can't route a photo's bytes to the video player or the image decoder.
-- Web: a tab stays unlocked only across a real reload; a reopened tab or a restored browser session asks for the
-  password. A page brought back from the browser's back/forward cache starts again and checks the session.
+- Web: a tab stays unlocked only across a real reload; a reopened tab, a restored browser session, the address typed
+  again or a phone browser reloading a tab it had dropped ask for the password (docs/CRYPTO.md). A page brought back from the browser's back/forward cache starts again and checks the session.
 - Android: the map doesn't stay on screen when the app locks, and the map's cache of loaded map images is cleared at
   lock, sign-out and when the map is turned off.
 - Mac: Share and Save stop at lock and sign-out; copies of files dropped from other apps are deleted when their upload

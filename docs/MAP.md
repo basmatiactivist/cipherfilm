@@ -11,8 +11,10 @@ apps. A photo's details show the place's name and a small map of its spot. Searc
   the metadata and draw and cluster the photos on the device.
 - **Thumbnails.** The markers show the photos' thumbnails, decrypted on the device like in the timeline.
 - **Place names.** They come from a file bundled with the apps, `web/src/places/places-v1.bin` (every place with at least
-  1,000 inhabitants, with its region and country, from GeoNames), and are looked up on the device: the nearest place
-  within 50 km, else only the country (within 300 km), at sea nothing. No coordinates are sent anywhere to name them.
+  1,000 inhabitants, with its region and country, from GeoNames), and are looked up on the device: the place whose
+  edge is nearest, a place reaching about 0.004 km per square root of its population around its point (Paris 6 km, at
+  most 15 km), so the Eiffel Tower is in Paris and a town next to a city stays itself; within 50 km, else only the
+  country (within 300 km), at sea nothing. No coordinates are sent anywhere to name them.
   `scripts/places.mjs` builds the file; it is the same for everyone, so it says nothing about anyone's photos.
   The Android app shows the country in its own language ("Zürich, Schweiz"), from Android's translations; search
   finds a country by either name ("schweiz", "switzerland").
@@ -34,6 +36,21 @@ thumbnail or anything else from the library. To keep that small:
 - OpenFreeMap: no account, no API key, no cookies; IP addresses are not in its access logs, error logs are deleted after
   7 days ([privacy](https://openfreemap.org/privacy/)). It may serve through Cloudflare. VersaTiles: no key, "does not
   track your users".
+
+## Turning it on
+
+The map is off for every account on every device until the person turns it on. The first time they open the Map tab,
+the app asks, names the map server(s) and says what they see; nothing is loaded before "Turn on map", and "Not now"
+leaves it off. While it is off, a photo's details offer "Show on the map", which only opens that question. Account ›
+Map (Settings › General › Map on the Mac) turns it off again; on Android that also clears the map's cache of loaded
+map images, as locking and signing out do.
+
+What a device stores is the list of map servers the person agreed to. If the Cipherfilm server later names other
+ones (`MAP_STYLE`), every device asks again before loading anything from them.
+
+Search by place adds the photos of a place to the other results, ahead of them; a word narrows a longer search to a
+place only when it is that place's whole name ("zurich beach"), so common words ("see", "berg") still search for what
+is in the photos.
 
 ## Settings
 

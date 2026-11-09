@@ -30,7 +30,7 @@ FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5
 RUN addgroup -S -g 65532 nonroot && adduser -S -D -H -u 65532 -G nonroot -h /tmp -s /bin/sh nonroot \
  && ln -s /app /usr/local/bin/cipherfilm \
  && echo ca-certificates-bundle >> /etc/apk/world \
- && apk del --no-cache --quiet ssl_client libssl3 libcrypto3 scanelf apk-tools libapk zlib \
+ && apk del --quiet ssl_client libssl3 libcrypto3 scanelf apk-tools libapk zlib \
  && rm -rf /etc/apk /lib/apk/exec /var/cache/apk
 COPY --from=server /out/app /app
 COPY --from=server --chown=65532:65532 /out/data /data

@@ -39,6 +39,12 @@ struct NeedsUnlock: View {
 
 struct GeneralSettings: View {
   @Environment(AppModel.self) private var model
+  /** The map's credit when the server offers one: OpenStreetMap and OpenFreeMap for the default, else the map's own. */
+  private var mapCredit: String {
+    guard let m = model.me?.map else { return "" }
+    return m.isDefault ? "Map: © OpenStreetMap contributors, OpenFreeMap · MapLibre GL JS (BSD-3-Clause)\n" : "Map: MapLibre GL JS (BSD-3-Clause); its data is credited on the map\n"
+  }
+
   @State private var signOut = false
   @State private var deleteAccount = false
   @State private var touchError: String?
@@ -99,7 +105,7 @@ struct GeneralSettings: View {
       Text("Cipherfilm \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")\(model.me?.server_version.map { " · server \($0)" } ?? "") · libsodium \(Sodium.version) · ONNX Runtime \(Vision.runtimeVersion)")
         .font(Typo.small).foregroundStyle(.tertiary)
       // the map's and the place names' sources ask to be named (OpenStreetMap: ODbL; GeoNames: CC BY 4.0)
-      Text("Map: © OpenStreetMap contributors, OpenFreeMap · MapLibre GL JS (BSD-3-Clause)\nPlace names: GeoNames (geonames.org), CC BY 4.0")
+      Text(mapCredit + "Place names: GeoNames (geonames.org), CC BY 4.0")
         .font(Typo.small).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
     }
     .padding(24)

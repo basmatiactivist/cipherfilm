@@ -146,8 +146,9 @@ export default function Account() {
         <List.Item title={t("Server version")} description={serverVersion ?? t("Unknown")} style={st.item} />
         <List.Item title={t("Privacy policy")} description={privacyUrl().replace("https://", "")}
           onPress={() => { expectAway(); Linking.openURL(privacyUrl()); }} style={st.item} />
-        {me?.map ? <List.Item title={t("Map")} description={t("Map data © OpenStreetMap contributors, OpenFreeMap. Place names: GeoNames, CC BY 4.0.")}
-          descriptionNumberOfLines={3} style={st.item} /> : null}
+        {/* the sources ask to be named: GeoNames for the place names (always used), OpenStreetMap for the map */}
+        <List.Item title={t("Credits")} description={[t("Place names: GeoNames, CC BY 4.0."), me?.map ? (mapProvider() === "OpenFreeMap" ? t("Map data © OpenStreetMap contributors, OpenFreeMap.") : t("Map data: see the credits on the map.")) : ""].filter(Boolean).join(" ")}
+          descriptionNumberOfLines={4} style={st.item} />
         <List.Item title={t("Report a problem")} description={t("Opens a form on GitHub")}
           onPress={() => setReport(true)} style={st.item} />
       </ScrollView>

@@ -32,7 +32,9 @@ Admin (trusted to administer, **not** to see content), regular users, other tail
 In a web app the server delivers the code that does the encryption. **Anyone who controls the server (or the HTTPS proxy in front of it, or can modify the container image) can serve a modified client that exfiltrates the password or keys when a user next logs in.** E2EE here protects against passive compromise (disk theft, backups, a snooping admin who only reads data), not against an *active* malicious server operator. Users must trust that whoever runs the server does not ship altered code.
 
 Mitigations (reduce, not remove):
-- Strict CSP: no inline scripts, no `eval`, no third-party origins except `connect-src` to Hugging Face (`huggingface.co`, `*.hf.co`), from which the search worker fetches the text model as data, checked by SHA-256, never as code; `'wasm-unsafe-eval'` only; `frame-ancestors 'none'`; `base-uri 'none'`.
+- Strict CSP: no inline scripts, no `eval`, no third-party origins except `connect-src` to Hugging Face (`huggingface.co`, `*.hf.co`), from which the search worker fetches the text model as data, checked by SHA-256, never as code, and to the map's
+  style hosts (OpenFreeMap and VersaTiles by default, or what the operator sets in `MAP_STYLE`, checked to be plain
+  https hosts), from which MapLibre loads map tiles, fonts and icons as data once the person turned the map on; `'wasm-unsafe-eval'` only; `frame-ancestors 'none'`; `base-uri 'none'`.
 - All assets self-hosted: no CDNs, external fonts, analytics or telemetry.
 - Few, pinned dependencies with lockfile + integrity hashes; builds are not yet reproducible and no bundle hash is published.
 - **Not implemented:** Subresource Integrity, service-worker pinning of the bundle hash and a published bundle hash. SRI on a same-origin script adds little against a compromised server, which serves the HTML too, so none of these would stop an active malicious operator; do not rely on the client to detect a swapped bundle.

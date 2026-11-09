@@ -157,4 +157,6 @@ export const deSearch: Record<string, string> = {
   "screenshots": "Screenshots",
   "\"{q}\"": "„{q}“",
   "named \"{q}\"": "Name enthält „{q}“",
+  "Hugging Face is a trademark of Hugging Face, Inc. Cipherfilm is not affiliated with or endorsed by Hugging Face.":
+    "Hugging Face ist eine Marke der Hugging Face, Inc. Cipherfilm steht in keiner Verbindung zu Hugging Face und wird nicht von ihr unterstützt.",
 };

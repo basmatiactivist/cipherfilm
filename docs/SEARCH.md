@@ -222,3 +222,5 @@ made-up entries, which could make a photo show up in a search where it doesn't b
 Account › Free up space lists photos and videos on the phone whose name and size match a finished item in the library
 (not in the trash). Optionally only older ones and only some folders. They go to Android's own trash
 (`MediaStore.createTrashRequest`, restorable for 30 days) after the system's confirmation dialog.
+
+Hugging Face is a trademark of Hugging Face, Inc. Cipherfilm is not affiliated with or endorsed by Hugging Face.

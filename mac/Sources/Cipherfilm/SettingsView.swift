@@ -156,7 +156,7 @@ struct SearchSettings: View {
         }))
           .disabled(!unlocked)
         // where the models come from, said before anything is downloaded (docs/MODELS.md)
-        Text("Downloaded once from Hugging Face. Hugging Face sees this Mac's IP address, nothing of your photos.")
+        Text("Downloaded once from Hugging Face. Hugging Face sees this Mac's IP address, nothing of your photos. Hugging Face is a trademark of Hugging Face, Inc. Cipherfilm is not affiliated with or endorsed by Hugging Face.")
           .font(Typo.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         Toggle("Group faces into people", isOn: $model.settings.faces).disabled(!unlocked || !model.settings.search)
         Toggle("Also while on battery", isOn: $model.settings.indexOnBattery).disabled(!model.settings.search)

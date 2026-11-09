@@ -330,7 +330,7 @@ function SearchPanel() {
       ) : (
         <p>{n === 1 ? "1 photo" : `${n} photos`} can be found by what is in them. Combine with a date or a name, like “beach 2023” or “Anna cake”.{n === 0 && " Your Android or Mac app is still indexing them with the model you chose."} Runs in this browser; your search words never leave it. Downloads {Math.round(TEXT_MODELS[family].size / 1e6)} MB once from Hugging Face.</p>
       )}
-      {indexChecked() && n + other > 0 && <p class="hint">Hugging Face sees this browser's IP address, nothing of your photos.</p>}
+      {indexChecked() && n + other > 0 && <p class="hint">Hugging Face sees this browser's IP address, nothing of your photos. Hugging Face is a trademark of Hugging Face, Inc. Cipherfilm is not affiliated with or endorsed by Hugging Face.</p>}
       {allowed && explicit !== null && (
         <>
           <label class="check">

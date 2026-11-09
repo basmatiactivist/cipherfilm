@@ -89,3 +89,5 @@ MobileCLIP: Vasu et al., "MobileCLIP: Fast Image-Text Models through Multi-Modal
 (CVPR 2023); Schuhmann et al., "LAION-5B" (NeurIPS 2022). YuNet: Wu, Peng, Yu, "YuNet: A Tiny Millisecond-level Face
 Detector" (2023). SFace: Zhong et al., "SFace: Sigmoid-Constrained Hypersphere Loss for Robust Face Recognition"
 (2021). ONNX export of the LAION model: the Immich project. CLIP: Radford et al. (OpenAI, 2021).
+
+Hugging Face is a trademark of Hugging Face, Inc. Cipherfilm is not affiliated with or endorsed by Hugging Face.

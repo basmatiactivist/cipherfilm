@@ -51,6 +51,8 @@ from where it is built.
 - Android: a video whose file says "no date" (MP4 date 0, written by some apps and tools) is no longer filed under
   January 1, 1904; it gets the upload time, like a photo without a date.
 - Docs: the threat model says the search models come from Hugging Face.
+- Apps, README and store texts: Hugging Face is named as the trademark of Hugging Face, Inc., with whom Cipherfilm
+  is not affiliated.
 
 ## [2.4.1] - 2026-11-08
 

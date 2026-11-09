@@ -47,3 +47,5 @@ Betreibt schon jemand einen Cipherfilm-Server für Familie oder Freunde, bitten 
 
 So funktioniert die Verschlüsselung und das sieht der Server trotzdem: https://cipherfilm.app/de
 Fragen: contact@cipherfilm.app
+
+Hugging Face ist eine Marke der Hugging Face, Inc. Cipherfilm steht in keiner Verbindung zu Hugging Face und wird nicht von ihr unterstützt.

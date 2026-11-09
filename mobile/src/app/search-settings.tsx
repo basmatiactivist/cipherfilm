@@ -201,6 +201,9 @@ export default function SearchSettingsScreen() {
         <Text variant="bodySmall" style={[st.hint, { color: th.colors.onSurfaceVariant, marginTop: 12 }]}>
           {t("Runs on this phone with open models (MobileCLIP for content, YuNet and SFace for faces). Results are encrypted before they are stored and shared with your other devices. The server never learns what your photos show or who is in them. Photos only on the server are indexed while the app is open and unlocked.")}
         </Text>
+        <Text variant="bodySmall" style={[st.hint, { color: th.colors.onSurfaceVariant, marginTop: 8 }]}>
+          {t("Hugging Face is a trademark of Hugging Face, Inc. Cipherfilm is not affiliated with or endorsed by Hugging Face.")}
+        </Text>
       </ScrollView>
       <Portal>
         <Dialog visible={choose} onDismiss={() => setChoose(false)}>

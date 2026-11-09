@@ -47,3 +47,5 @@ If someone already runs a Cipherfilm server for your family or friends, ask them
 
 How the encryption works and what the server can still see: https://cipherfilm.app
 Questions: contact@cipherfilm.app
+
+Hugging Face is a trademark of Hugging Face, Inc. Cipherfilm is not affiliated with or endorsed by Hugging Face.

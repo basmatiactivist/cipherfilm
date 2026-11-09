@@ -204,7 +204,7 @@ struct AgentQuestion: View {
         Toggle(isOn: $search) {
           VStack(alignment: .leading, spacing: 2) {
             Text("Search what and who is in your photos").font(Typo.label)
-            Text(model.search.downloadSize(explicit ? .laion : .mobileclip, faces: model.settings.faces).map { "Runs on this Mac. Downloads \($0) once from Hugging Face. Hugging Face sees this Mac's IP address, nothing of your photos." } ?? "Runs on this Mac. The models are already here.").font(Typo.caption).foregroundStyle(Ink.muted)
+            Text(model.search.downloadSize(explicit ? .laion : .mobileclip, faces: model.settings.faces).map { "Runs on this Mac. Downloads \($0) once from Hugging Face. Hugging Face sees this Mac's IP address, nothing of your photos. Hugging Face is a trademark of Hugging Face, Inc. Cipherfilm is not affiliated with or endorsed by Hugging Face." } ?? "Runs on this Mac. The models are already here.").font(Typo.caption).foregroundStyle(Ink.muted)
           }
         }.toggleStyle(.checkbox)
         // only for people an admin allowed explicit search: which model, before anything is downloaded

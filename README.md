@@ -179,6 +179,11 @@ make prod-config # validate the production compose files
 Contributions are welcome: [CONTRIBUTING.md](CONTRIBUTING.md). Please report vulnerabilities privately, as described
 in [SECURITY.md](SECURITY.md).
 
+## Trademarks
+
+Hugging Face is a trademark of Hugging Face, Inc. Cipherfilm is not affiliated with or endorsed by Hugging Face. Search models are downloaded from Hugging Face's
+servers under their own licenses ([docs/MODELS.md](docs/MODELS.md)).
+
 ## License
 
 [GNU Affero General Public License v3.0](LICENSE). If you run a modified version as a service, you must offer its

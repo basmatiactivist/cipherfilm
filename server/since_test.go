@@ -446,3 +446,66 @@ func TestSinceMigratesAnOlderDatabase(t *testing.T) {
 		t.Fatalf("a change after the migration: rev %d, account %d", rev, urev)
 	}
 }
+
+// A ?since page is cut by its byte budget while the rows are read, and the cut never skips a change: removals after
+// the last item read wait for the next page.
+func TestSinceByteBudgetCutsWhileReading(t *testing.T) {
+	e := newEnv(t)
+	admin, _ := e.setupAdmin("admin@x.org")
+	var ids []string
+	for range 9 {
+		ids = append(ids, e.readyItem(admin))
+	}
+	cur := admin.cursorOf("/api/items")
+	// changes: favorites (items), a purge in between (removal), more favorites, another purge at the end
+	admin.do("POST", "/api/items/favorite", map[string]any{"item_ids": ids[:3], "favorite": true}, true)
+	admin.do("POST", "/api/items/trash", map[string]any{"item_ids": ids[3:4]}, true)
+	admin.do("POST", "/api/trash/purge", map[string]any{"item_ids": ids[3:4]}, true)
+	admin.do("POST", "/api/items/favorite", map[string]any{"item_ids": ids[4:8], "favorite": true}, true)
+	admin.do("POST", "/api/items/trash", map[string]any{"item_ids": ids[8:]}, true)
+	admin.do("POST", "/api/trash/purge", map[string]any{"item_ids": ids[8:]}, true)
+	var one int
+	e.app.db.QueryRow(`SELECT length(wrapped_item_key)+length(meta_enc) FROM items WHERE id=?`, ids[0]).Scan(&one)
+	defer func(n int) { pageBytes = n }(pageBytes)
+	pageBytes = 2*one + 1 // three items per page at most
+	have := map[string]bool{}
+	for _, id := range ids {
+		have[id] = true
+	}
+	favs := map[string]bool{}
+	for pages := 0; ; pages++ {
+		if pages > 20 {
+			t.Fatal("the pages don't end")
+		}
+		r := admin.since("/api/items", cur)
+		if len(r.items) > 3 {
+			t.Fatalf("page of %d items over the budget", len(r.items))
+		}
+		for _, x := range r.raw["items"].([]any) {
+			m := x.(map[string]any)
+			have[m["id"].(string)] = true
+			if m["favorite"] == true {
+				favs[m["id"].(string)] = true
+			}
+		}
+		for _, id := range r.removed {
+			delete(have, id)
+		}
+		cur = r.cursor
+		if !r.more {
+			break
+		}
+	}
+	for i, id := range ids {
+		gone := i == 3 || i == 8
+		if have[id] == gone {
+			t.Fatalf("item %d: present %v after paging", i, have[id])
+		}
+		if fav := i < 3 || (i >= 4 && i < 8); fav != favs[id] {
+			t.Fatalf("item %d: favorite change %v, want %v", i, favs[id], fav)
+		}
+	}
+	if r := admin.since("/api/items", cur); len(r.items)+len(r.removed) != 0 || r.more {
+		t.Fatalf("after the last page: %+v", r)
+	}
+}

@@ -172,7 +172,9 @@ func (a *App) listSince(w http.ResponseWriter, r *http.Request, u *user, trash b
 		item map[string]any // nil: removed from this list
 	}
 	var changed []change
-	for rows.Next() {
+	// read only as many full rows as one page can carry: the byte budget applies while reading, not after
+	held, cut := 0, int64(-1) // cut: rev of the last row read when the budget ended the reading
+	for held < pageBytes && rows.Next() {
 		var rev, size, count, created int64
 		var id, kind, key, meta string
 		var th, pv, fav bool
@@ -187,15 +189,23 @@ func (a *App) listSince(w http.ResponseWriter, r *http.Request, u *user, trash b
 				c.item["trashed_at"] = trashed.Int64
 				c.item["purge_at"] = trashed.Int64 + int64(trashRetention.Seconds())
 			}
+			held += len(key) + len(meta)
 		}
 		changed = append(changed, c)
+		if held >= pageBytes {
+			cut = rev
+		}
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		fail(w, 500, "server error")
 		return
 	}
-	trows, err := a.db.Query(`SELECT rev,item_id FROM item_tombstones WHERE user_id=? AND rev>? AND rev<=? ORDER BY rev LIMIT ?`, u.ID, since, st.rev, listPage+1)
+	upto := st.rev
+	if cut >= 0 {
+		upto = cut // removals after the last row read wait for the next page, behind the items read up to there
+	}
+	trows, err := a.db.Query(`SELECT rev,item_id FROM item_tombstones WHERE user_id=? AND rev>? AND rev<=? ORDER BY rev LIMIT ?`, u.ID, since, upto, listPage+1)
 	if err != nil {
 		fail(w, 500, "server error")
 		return
@@ -234,6 +244,9 @@ func (a *App) listSince(w http.ResponseWriter, r *http.Request, u *user, trash b
 			removed = append(removed, c.id)
 		}
 		last = c.rev
+	}
+	if cut >= 0 && !more && last < st.rev {
+		more = true // everything up to the cut went out; the rest comes with the next page
 	}
 	out["items"], out["removed"], out["more"] = items, removed, more
 	if more {

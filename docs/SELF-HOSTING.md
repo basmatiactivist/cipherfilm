@@ -91,6 +91,11 @@ yourself (message, in person). It works once and expires after 7 days. They choo
 their keys and shows their recovery key. The admin area also lets you disable, enable or delete accounts, see each
 person's storage and change their limit (default 20 GB; the admin has no limit).
 
+Storage limits count bytes. Each photo also takes a few files on disk (a folder, its parts, a thumbnail and a preview),
+and every item is charged at least about 4 KB per file for them. On a filesystem with a fixed number of files (ext4
+makes one per 16 KB of disk by default, see `df -i`), keep the limits you hand out together well below a quarter of
+the disk, so accounts can't run it out of files before it runs out of space.
+
 ## Backup and restore
 
 Back up with any tool you like (restic, Borg, a volume snapshot, …). Before each run, write a consistent

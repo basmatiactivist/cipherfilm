@@ -82,7 +82,7 @@ jobs:
           ditto -c -k --keepParent "$APP" "../dist/cipherfilm-mac-$v.zip"
       - name: Checksum for the release job
         id: sums
-        run: cd dist && echo "sums=$(shasum -a 256 -- cipherfilm-mac-*.zip | base64 | tr -d '\n')" >> "$GITHUB_OUTPUT"
+        run: cd ../dist && echo "sums=$(shasum -a 256 -- cipherfilm-mac-*.zip | base64 | tr -d '\n')" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mac-app

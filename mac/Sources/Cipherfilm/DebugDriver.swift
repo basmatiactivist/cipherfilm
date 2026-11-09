@@ -3,6 +3,7 @@
 //   CF_AUTOTEST=1 CF_TEST_CA=<root.crt> CF_TEST_SERVER=https://localhost:8443 CF_TEST_EMAIL=… CF_TEST_PASSWORD=…
 //   CF_TEST_DIR=<scratch folder with files to upload> CF_SNAPSHOTS=<folder> [CF_APPEARANCE=dark]
 // CF_MAP=1: only the map's checks (an account with located photos; nothing is changed on the server).
+// CF_SIGNIN_ONLY=1: signs in and stops there, the app stays open.
 // Everything it makes in CF_TEST_DIR (copies, exports of the whole library, watched folders) is deleted at the start
 // and the end of a run; only upload/ stays. CF_KEEP=1 keeps the last run's.
 #if DEBUG
@@ -70,6 +71,8 @@ enum DebugDriver {
       do { try await m.unlock(password: env["CF_TEST_PASSWORD"]!) } catch { check(false, "unlock: \(error)") }
     }
     check(m.phase == .unlocked, "signed in and unlocked")
+    // CF_SIGNIN_ONLY=1: only signs in and leaves the app open as it is, for trying it by hand against the test server
+    if env["CF_SIGNIN_ONLY"] == "1" { log("DONE signed in"); return }
     m.agent.askNow = false
     m.settings.agentAsked = true
     m.settings.searchAsked = true

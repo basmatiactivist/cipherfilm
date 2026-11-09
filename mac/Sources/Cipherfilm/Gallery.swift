@@ -327,7 +327,8 @@ enum Saver {
       p.nameFieldStringValue = it.name.isEmpty ? "photo" : it.name
       p.canCreateDirectories = true
       guard p.runModal() == .OK, let url = p.url else { return }
-      Task {
+      Outbox.saveTask?.cancel()
+      Outbox.saveTask = Task {
         model.working = "Saving \(url.lastPathComponent)…"
         defer { model.working = nil }
         do {
@@ -343,11 +344,14 @@ enum Saver {
       p.canChooseDirectories = true; p.canChooseFiles = false; p.canCreateDirectories = true; p.prompt = "Save Here"
       p.message = "Choose a folder for the \(items.count) originals."
       guard p.runModal() == .OK, let dir = p.url else { return }
-      Task {
+      Outbox.saveTask?.cancel()
+      Outbox.saveTask = Task {
         var taken = Set<String>()
         var saved: [URL] = []
         var failed: [String] = []
         for (n, it) in items.enumerated() {
+          // a lock or sign-out stops it (Outbox.cancel): nothing more is decrypted
+          guard !Task.isCancelled, vault.isOpen else { break }
           model.working = "Saving \(n + 1) of \(items.count)…"
           // every candidate is one clean path component, the numbered ones too
           let first = FileName.of(it)

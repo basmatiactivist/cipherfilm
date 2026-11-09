@@ -10,11 +10,13 @@ enum Outbox {
 
   /** The running Share…, stopped at lock and sign-out (cancel()) so it decrypts nothing after. */
   @MainActor static var shareTask: Task<Void, Never>?
+  /** The running Save…, stopped the same way. */
+  @MainActor static var saveTask: Task<Void, Never>?
 
   static func clear() { try? FileManager.default.removeItem(at: dir) }
 
   /** Lock or sign-out: a Share… still preparing stops, and the folder goes (AppModel.wipe). */
-  @MainActor static func cancel() { shareTask?.cancel(); shareTask = nil }
+  @MainActor static func cancel() { shareTask?.cancel(); shareTask = nil; saveTask?.cancel(); saveTask = nil }
 
   static func sweep() {
     guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.creationDateKey]) else { return }

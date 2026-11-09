@@ -5,7 +5,9 @@ name: Dependabot
 # is unknown, are left open with a note: they can change behaviour (for the crypto libraries even the data format) and
 # are reviewed by hand. The decision is made again for every new commit on the pull request: a grouped update that
 # Dependabot refreshes and that now holds a major jump loses the auto-merge an earlier minor version armed. New
-# versions only arrive after a cooldown (.github/dependabot.yml).
+# versions only arrive after a cooldown (.github/dependabot.yml). An update that touches a crypto or storage library
+# (libsodium and its bindings, x/crypto, SQLite) never merges by itself either, however small the version step: for
+# 0.x versions every step counts as "minor", and these define the encryption and the data format (docs/CRYPTO.md).
 #
 # This uses the plain pull_request trigger, as GitHub documents it for Dependabot: the job runs with the pull
 # request's own token and runs none of its code. Auto-merge needs "Allow auto-merge" and the branch rule with the
@@ -29,20 +31,31 @@ jobs:
     steps:
       - id: meta
         uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+      # a group that contains a crypto or storage library waits for a person, whatever else it holds
+      - id: crypto
+        env: { NAMES: "${{ steps.meta.outputs.dependency-names }}" }
+        run: |
+          if printf '%s\n' "$NAMES" | tr ',' '\n' | sed 's/^ *//; s/ *$//' \
+            | grep -qiE '^(libsodium(-wrappers(-sumo)?)?|@types/libsodium-wrappers(-sumo)?|golang\.org/x/crypto|modernc\.org/sqlite|net\.java\.dev\.jna:jna|(.*/)?swift-sodium)$'; then
+            echo "touches=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "touches=false" >> "$GITHUB_OUTPUT"
+          fi
       # only what is known to be a minor or patch update merges by itself; anything else (major, a version Dependabot
       # can't classify, or no answer at all because the step above failed) waits for a person
       - name: Auto-merge minor and patch updates once the required checks pass
-        if: contains(fromJSON('["version-update:semver-minor","version-update:semver-patch"]'), steps.meta.outputs.update-type)
+        if: contains(fromJSON('["version-update:semver-minor","version-update:semver-patch"]'), steps.meta.outputs.update-type) && steps.crypto.outputs.touches == 'false'
         env: { GH_TOKEN: "${{ github.token }}", PR: "${{ github.event.pull_request.html_url }}" }
         run: |
           gh pr edit "$PR" --add-label automerge || echo "no automerge label in this repository"  # a label is only a marker
           gh pr merge "$PR" --auto --squash --delete-branch || echo "auto-merge is not enabled for this repository yet"
-      - name: Leave major and unclassified updates for a person
-        if: always() && !contains(fromJSON('["version-update:semver-minor","version-update:semver-patch"]'), steps.meta.outputs.update-type)
-        env: { GH_TOKEN: "${{ github.token }}", PR: "${{ github.event.pull_request.html_url }}", KIND: "${{ steps.meta.outputs.update-type }}" }
+      - name: Leave major, unclassified and crypto updates for a person
+        if: always() && (!contains(fromJSON('["version-update:semver-minor","version-update:semver-patch"]'), steps.meta.outputs.update-type) || steps.crypto.outputs.touches != 'false')
+        env: { GH_TOKEN: "${{ github.token }}", PR: "${{ github.event.pull_request.html_url }}", KIND: "${{ steps.meta.outputs.update-type }}", CRYPTO: "${{ steps.crypto.outputs.touches }}" }
         run: |
           # auto-merge stays on a pull request until it is turned off: an earlier run may have armed it
           gh pr merge "$PR" --disable-auto || echo "auto-merge was not on"
           gh pr edit "$PR" --remove-label automerge || true
           what="Major version update"; [ "$KIND" = version-update:semver-major ] || what="Update of a kind Dependabot couldn't classify (${KIND:-unknown})"
+          [ "$CRYPTO" != true ] || what="Update of a crypto or storage library (libsodium, x/crypto, JNA, SQLite)"
           gh pr comment "$PR" --body "$what: not merged automatically. Read the changelogs, and for libsodium, x/crypto or sqlite check docs/CRYPTO.md and the test vectors before merging."

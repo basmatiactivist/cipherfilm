@@ -478,3 +478,10 @@ kbd { display: inline-block; padding: 1px 7px; font: inherit; font-size: var(--t
 
 .minimap { position: relative; width: 100%; height: 180px; margin-top: var(--space-2); border-radius: var(--radius-control); overflow: hidden; border: 1px solid var(--rule); }
 .mappin { width: 18px; height: 18px; border-radius: 50%; background: var(--teal); border: 3px solid var(--card); box-shadow: 0 1px 6px var(--shade); }
+/* MapLibre's own controls in the app's colours (white by default, glaring on the dark map) */
+.maplibregl-ctrl-group, .maplibregl-ctrl-attrib.maplibregl-compact, .maplibregl-ctrl-attrib { background: var(--card) !important; color: var(--muted); }
+.maplibregl-ctrl-group button + button { border-top-color: var(--rule) !important; }
+.maplibregl-ctrl-attrib a { color: var(--muted); }
+@media (prefers-color-scheme: dark) {
+  .maplibregl-ctrl-group button .maplibregl-ctrl-icon, .maplibregl-ctrl-attrib-button { filter: invert(1) hue-rotate(180deg); }
+}

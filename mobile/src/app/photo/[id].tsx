@@ -26,7 +26,7 @@ import { locale, t } from "../../i18n";
 import { Camera, Map as MapView, ViewAnnotation } from "@maplibre/maplibre-react-native";
 import { coords, placeName } from "../../places";
 import { useSession } from "../../session";
-import { useMapOn } from "../../mapConsent";
+import { mapCacheReady, useMapOn } from "../../mapConsent";
 
 const fmtWhen = (ms: number) => new Intl.DateTimeFormat(locale(), { dateStyle: "full", timeStyle: "short" }).format(new Date(ms));
 const one = (n: number) => n.toLocaleString(locale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -468,7 +468,9 @@ function MiniMap({ lat, lon }: { lat: number; lon: number }) {
   const all = useSession().me?.map;
   const conf = on ? all : undefined; // nothing is loaded before the person turned the map on
   const [at, setAt] = useState(0);
-  if (!conf) return null;
+  const [cacheOk, setCacheOk] = useState(false); // an earlier run's map cache is gone before the map shows
+  useEffect(() => { if (conf) mapCacheReady().then(() => setCacheOk(true)); }, [!!conf]);
+  if (!conf || !cacheOk) return null;
   const styles = scheme === "dark" || th.dark ? conf.dark : conf.light;
   return (
     <View style={[st.minimap, { borderColor: th.colors.outlineVariant }]} accessible accessibilityLabel={t("Where this photo was taken")}>

@@ -14,7 +14,7 @@ import { Gallery } from "../Gallery";
 import { refreshLibrary, useLibrary } from "../libraryStore";
 import { coords, placeName } from "../places";
 import { useSession } from "../session";
-import { mapPrivacyUrl, mapProviderLong, setMapOn, useMapOn } from "../mapConsent";
+import { mapCacheReady, mapPrivacyUrl, mapProviderLong, setMapOn, useMapOn } from "../mapConsent";
 import { expectAway } from "../autolock";
 import { Icon } from "../icons";
 import { useAppTheme } from "../ui";
@@ -37,6 +37,8 @@ export default function MapScreen() {
   const scheme = useColorScheme();
   const conf = useSession().me?.map;
   const on = useMapOn();
+  const [cacheOk, setCacheOk] = useState(false); // an earlier run's map cache is gone before the map shows
+  useEffect(() => { if (on) mapCacheReady().then(() => setCacheOk(true)); }, [on]);
   const { items } = useLibrary();
   useEffect(() => { if (!items) refreshLibrary(); }, []);
   const located = useMemo(() => (items ?? []).flatMap((it) => { const c = coords(it); return c ? [{ it, ...c }] : []; }), [items]);
@@ -145,6 +147,7 @@ export default function MapScreen() {
         </View>
       ) : (
         <View style={{ flex: 1, marginBottom: NAV_HEIGHT + inset.bottom }}>
+          {cacheOk && (
           <MapView ref={map} style={StyleSheet.absoluteFill} mapStyle={styles[styleAt]} logo={false} compass={false} touchRotate={false} touchPitch={false}
             attribution attributionPosition={{ bottom: 8, right: 8 }}
             onDidFailLoadingMap={() => { if (styleAt + 1 < styles.length) setStyleAt(styleAt + 1); else setFailed(true); }}
@@ -174,6 +177,7 @@ export default function MapScreen() {
               </ViewAnnotation>
             ))}
           </MapView>
+          )}
           <View style={[st.bar, { backgroundColor: th.colors.surface, borderColor: th.colors.outlineVariant }]}>
             <Text variant="labelLarge">{located.length === 0 ? t("No photos with a location yet") : tn(located.length, "{n} photo on the map", "{n} photos on the map")}</Text>
             {located.length > 0 && <Button compact mode="contained-tonal" onPress={inView}>{t("Photos in this area")}</Button>}

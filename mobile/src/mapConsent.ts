@@ -3,7 +3,8 @@
 import { useSyncExternalStore } from "react";
 import * as SecureStore from "expo-secure-store";
 import { privacyUrl } from "./store";
-import { session } from "./session";
+import { onWipe, session } from "./session";
+import { OfflineManager } from "@maplibre/maplibre-react-native";
 import { t } from "./i18n";
 import { mapProviderOf } from "@places/mapHosts";
 
@@ -29,6 +30,7 @@ export async function setMapOn(value: boolean) {
   if (value) await SecureStore.setItemAsync(name(id), "1"); else await SecureStore.deleteItemAsync(name(id)).catch(() => {});
   on = { userId: id, value };
   changed();
+  if (!value) clearMapCache();
 }
 
 /** Whether the map is on for the signed-in account; false until it was read. */
@@ -52,3 +54,24 @@ export function mapProviderLong(): string {
 
 /** The privacy policy's part about the map. */
 export const mapPrivacyUrl = () => `${privacyUrl()}#map`;
+
+// MapLibre keeps the map images it loaded in a cache in the app's storage, which tells where the map was looked at.
+// It goes when the app locks or signs out and when the map is turned off, and once per start before the first map
+// shows (for an app that was closed while unlocked). Nothing calls into MapLibre before a map was shown.
+let cacheChecked: Promise<void> | null = null;
+let shown = false;
+const clearCache = () => OfflineManager.clearAmbientCache().catch(() => {});
+
+/** Before a map shows: the cache from an earlier run is gone. */
+export function mapCacheReady(): Promise<void> {
+  shown = true;
+  cacheChecked ??= clearCache();
+  return cacheChecked;
+}
+
+/** After the map was on screen: the cache is cleared (lock, sign-out, map turned off). */
+export function clearMapCache() {
+  if (shown) clearCache();
+}
+
+onWipe(clearMapCache);

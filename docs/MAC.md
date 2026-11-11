@@ -64,6 +64,16 @@ build notes: `mac/README.md`.
   report, and the activity log. Deleting, disabling, role changes and turning off two-step sign-in ask first. The
   server checks every request (`CipherfilmCore/Admin.swift` sends exactly the web's).
 
+## Two-step sign-in
+
+Settings › Security turns on two-step sign-in with an authenticator app ("Open in Passwords or Authenticator App"
+hands the account to macOS Passwords or another app registered for `otpauth:`; the key and recovery codes are copied as
+concealed and cleared after a minute) or a passkey, lists the passkeys and removes them. A Mac app can only use
+passkeys of web names fixed when Apple signs it (Associated Domains), which can't name every self-hosted server, and
+the hardware-key provider of AuthenticationServices was not used for the same reason; so passkeys are made and used in
+the default browser: the app opens the server's `/passkey` page in a sign-in window (`ASWebAuthenticationSession`) and
+takes the answer back. That works with iCloud Keychain, password managers and security keys alike.
+
 ## Working with the window closed
 
 After the first unlock the app asks whether to stay in the menu bar and open at login (macOS's own login items,

@@ -161,6 +161,7 @@ var demoPublic = map[string]string{
 	"POST /api/setup":                  "only before the first account exists",
 	"POST /api/auth/login":             "signing in is the point",
 	"POST /api/auth/login/2fa":         "needs a pending token from a password step; a demo account never has two-step sign-in",
+	"POST /api/auth/login/2fa/passkey": "needs a pending token from a password step, too",
 	"POST /api/auth/recover/start":     "refused for demo addresses (TestDemoAccountReadsAndSearchesButChangesNothing)",
 	"POST /api/auth/recover/finish":    "needs a ticket from recover/start",
 	"POST /api/invites/{token}/accept": "makes a new account, never changes one",

@@ -10,10 +10,14 @@ public struct APIError: Error, LocalizedError, Sendable {
   public let code: String?
   /** the token of a sign-in waiting for its two-step code ("two_factor_required"); nothing else carries one */
   public let pending: String?
+  /** with a pending token: whether the account has an authenticator app and a passkey for this server (an older
+   *  server says neither) */
+  public let totp: Bool?
+  public let passkey: Bool?
   public var errorDescription: String? { message }
   public static let offline = "Can't connect to the server. Check your connection and try again."
-  public init(status: Int, message: String, code: String? = nil, pending: String? = nil) {
-    self.status = status; self.message = message; self.code = code; self.pending = pending
+  public init(status: Int, message: String, code: String? = nil, pending: String? = nil, totp: Bool? = nil, passkey: Bool? = nil) {
+    self.status = status; self.message = message; self.code = code; self.pending = pending; self.totp = totp; self.passkey = passkey
   }
 }
 
@@ -229,7 +233,8 @@ public final class API: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any]
     // a body that isn't the server's JSON (a proxy's error page, or a server too old for this request) gets the status
     let fb = obj == nil ? "The server answered \(status)\(status == 404 ? " (not found; the server may be older than this app)" : status == 502 || status == 504 ? " (the server behind the proxy isn't answering)" : "")." : fallback
-    return APIError(status: status, message: Self.sentence(obj?["error"] as? String ?? fb), code: obj?["code"] as? String, pending: obj?["pending"] as? String)
+    return APIError(status: status, message: Self.sentence(obj?["error"] as? String ?? fb), code: obj?["code"] as? String, pending: obj?["pending"] as? String,
+                    totp: obj?["totp"] as? Bool, passkey: obj?["passkey"] as? Bool)
   }
 
   /** A JSON request; body is encoded with JSONSerialization or Encodable. */
@@ -505,13 +510,34 @@ public enum Account {
   /** The second step of a sign-in: the code from the authenticator app or a recovery code. A wrong code may be tried
    *  again with the same step; an expired one (APIError code "two_factor_expired") needs the password again. */
   public static func finish(api: API, step: CodeStep, code: String) async throws -> (Me, Data) {
+    try await finish(api: api, step: step, second: ["code": TwoFactor.clean(code)])
+  }
+
+  /** The challenge for a passkey (server/passkeys.go), bound to this sign-in: the options for the browser. */
+  public static func passkeyChallenge(api: API, step: CodeStep) async throws -> Data {
+    guard step.key != nil else { throw CodeStep.expiredError }
+    do {
+      return try await Passkeys.options(try await api.json("POST", "/api/auth/login/2fa/passkey", body: ["pending": step.pending]))
+    } catch let err as APIError where err.code == "two_factor_expired" {
+      step.abandon(); throw CodeStep.expiredError
+    }
+  }
+
+  /** The same step with a passkey's answer (JSON) to that challenge. */
+  public static func finish(api: API, step: CodeStep, passkey answer: Data) async throws -> (Me, Data) {
+    guard let obj = try? JSONSerialization.jsonObject(with: answer) as? [String: Any] else { throw Passkeys.noAnswer }
+    return try await finish(api: api, step: step, second: ["passkey": obj])
+  }
+
+  private static func finish(api: API, step: CodeStep, second: [String: Any]) async throws -> (Me, Data) {
     guard let kek = step.key else { throw CodeStep.expiredError }
     let body: Data
     do {
-      body = try await api.json("POST", "/api/auth/login/2fa", body: ["pending": step.pending, "code": TwoFactor.clean(code)])
+      body = try await api.json("POST", "/api/auth/login/2fa", body: second.merging(["pending": step.pending]) { a, _ in a })
     } catch let err as APIError {
       if err.code == "two_factor_expired" { step.abandon(); throw CodeStep.expiredError }
       if err.code == "wrong_code" { throw APIError(status: err.status, message: TwoFactor.wrongCode, code: err.code) }
+      if err.code == "wrong_passkey" { throw APIError(status: err.status, message: Passkeys.wrongPasskey, code: err.code) }
       throw err
     }
     let me = try JSONDecoder().decode(Me.self, from: body)

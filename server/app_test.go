@@ -53,6 +53,7 @@ type client struct {
 	e    *env
 	c    *http.Client
 	csrf string
+	host string // the name the requests reach the server by (Host), when not the test server's address
 }
 
 func (e *env) client() *client {
@@ -69,6 +70,9 @@ func (c *client) do(method, path string, body any, csrf bool) (int, map[string]a
 		rd = bytes.NewReader(b)
 	}
 	req, _ := http.NewRequest(method, c.e.srv.URL+path, rd)
+	if c.host != "" {
+		req.Host = c.host
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

@@ -156,6 +156,15 @@ class CfNativeModule : Module() {
       android.webkit.CookieManager.getInstance().apply { removeAllCookies(null); flush() }
     }
 
+    // ---- passkeys (Credential Manager) and secrets copied on purpose (Passkeys.kt) ----
+    Function("passkeysSupported") { Passkeys.supported() }
+    AsyncFunction("passkeyCreate") Coroutine { options: String -> Passkeys.create(appContext.currentActivity, options) }
+    AsyncFunction("passkeyGet") Coroutine { options: String -> Passkeys.get(appContext.currentActivity, options) }
+    Function("copySecret") { label: String, text: String ->
+      appContext.reactContext?.let { SecretClip.copy(it.applicationContext, label, text) }
+      Unit
+    }
+
     // ---- search on the phone (Vision.kt, SearchIndex.kt, Models.kt) ----
     // the long ones run on their own threads (Lanes.kt), not on the one every module's AsyncFunctions share
     AsyncFunction("downloadModel") Coroutine { url: String, path: String, sha256: String, size: Double ->

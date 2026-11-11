@@ -37,6 +37,7 @@ func (a *App) routes() http.Handler {
 	a.thumbRoutes(m)
 	a.eventRoutes(m)
 	a.twoFactorRoutes(m)
+	a.passkeyRoutes(m)
 	a.noticeRoutes(m)
 	m.HandleFunc("GET /api/admin/users", a.auth(true, a.adminListUsers))
 	m.HandleFunc("DELETE /api/admin/invites/{id}", a.auth(true, a.adminRevokeInvite))
@@ -227,7 +228,7 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 	at.success()
 	// two-step sign-in: no session and none of the account's keys yet, only a token for the code step (twofactor.go)
 	if u.twoFactor() {
-		a.startPending(w, u)
+		a.startPending(w, r, u)
 		return
 	}
 	ss, err := a.startSession(w, r, u.ID, u.AuthHash)

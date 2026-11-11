@@ -106,7 +106,7 @@ func forgetEmail(x interface {
 // audit records an administrative event: who did what to whom. Metadata only, never content.
 // selfService matches the entries people write about their own devices. They are kept, and shown, apart from the
 // administrative ones, so however many of them someone writes, they never push an admin's actions out of the log.
-const selfService = `action IN ('signed out a device','signed out other devices','turned on two-step sign-in','turned off two-step sign-in','made new recovery codes')`
+const selfService = `action IN ('signed out a device','signed out other devices','turned on two-step sign-in','turned off two-step sign-in','made new recovery codes','added a passkey','removed a passkey','added an authenticator app','removed the authenticator app')`
 
 func (a *App) audit(actor, action, target, detail string) {
 	a.db.Exec(`INSERT INTO audit_log(at,actor,action,target,detail) VALUES (?,?,?,?,?)`, a.now().Unix(), actor, action, target, detail)

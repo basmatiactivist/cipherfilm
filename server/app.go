@@ -289,7 +289,10 @@ func (a *App) auth(admin bool, next func(http.ResponseWriter, *http.Request, *us
 			fail(w, http.StatusUnauthorized, "not signed in")
 			return
 		}
-		u, s, err := a.lookupSession(c.Value)
+		// a phone's periodic background check (the Android app's notice check, mobile/src/noticeCheck.ts) is not the
+		// person using the device: it neither keeps the session from ending when idle nor shows the device as active
+		quiet := r.Method == http.MethodGet && r.Header.Get("X-CF-Background") == "1"
+		u, s, err := a.lookupSession(c.Value, !quiet)
 		if err != nil {
 			if a.revoked(c.Value) {
 				w.Header().Set("X-CF-Session", "revoked")
@@ -329,7 +332,8 @@ func (a *App) auth(admin bool, next func(http.ResponseWriter, *http.Request, *us
 	}
 }
 
-func (a *App) lookupSession(token string) (*user, *session, error) {
+// lookupSession finds the session of a cookie; touch counts the request as activity (last_seen, the idle timeout).
+func (a *App) lookupSession(token string, touch bool) (*user, *session, error) {
 	h := sha256hex(token)
 	now := a.now().Unix()
 	var s session
@@ -350,7 +354,7 @@ func (a *App) lookupSession(token string) (*user, *session, error) {
 		return nil, nil, errors.New("inactive")
 	}
 	// at most once a minute: a write (and its fsync) for every thumbnail made browsing slow
-	if now-last >= 60 {
+	if touch && now-last >= 60 {
 		next := min(now+int64(sessionIdle.Seconds()), created+int64(sessionAbs.Seconds()))
 		a.db.Exec(`UPDATE sessions SET last_seen=?, expires_at=? WHERE id_hash=?`, now, next, h)
 		s.renewed = next > exp

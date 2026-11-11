@@ -8,6 +8,9 @@ version into the GitHub release notes, so a release cannot be published without 
 ## [Unreleased]
 
 ### Added
+- Android and Mac: the admin area is in the apps too (Account › Administration on Android, Settings › Administration
+  on the Mac): people and their usage, invites to share, storage limits, roles, disabling and deleting accounts,
+  turning off someone's two-step sign-in, explicit search, the server's state and the activity log.
 - Server: a ready-made private setup in your tailnet (Tailscale, your own name, Kopia backups, optional Portainer)
   in `deploy/tailnet`, the same one the project's own server runs; guide in docs/TAILNET.md.
 - Android: Account › "Allow screenshots" lets this phone take screenshots and screen recordings of the app and show

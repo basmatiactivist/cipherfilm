@@ -17,6 +17,7 @@ import { CHOICES, away, expectAway, setAutoLock, useAutoLock } from "../autolock
 import { privacyUrl } from "../store";
 import { mapProvider, setMapOn, useMapOn } from "../mapConsent";
 import { reportUrl, summary, thisPhone } from "../report";
+import { isAdmin } from "../admin";
 import { text } from "../tokens";
 import { busyIcon } from "../Loader";
 import { locale, t } from "../i18n";
@@ -120,6 +121,8 @@ export default function Account() {
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="phone" color={th.colors.primary} /></View>} onPress={() => router.push("/devices")} style={st.item} />
         {me?.demo ? null : <List.Item title={t("Two-step sign-in")} description={me?.two_factor ? t("On: a new sign-in also needs a code") : t("Off: ask for a code from an authenticator app too")}
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="key" color={th.colors.primary} /></View>} onPress={() => router.push("/two-step")} style={st.item} />}
+        {isAdmin(me) ? <List.Item title={t("Administration")} description={t("People, invites, storage limits and the server")}
+          descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="shield" color={th.colors.primary} /></View>} onPress={() => router.push("/admin")} style={st.item} /> : null}
         <List.Item title={t("Free up space")} description={t("Remove photos from this phone that are already in Cipherfilm")}
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="phone" color={th.colors.primary} /></View>} onPress={() => router.push("/free-space")} style={st.item} />
         <List.Item title={t("Duplicates and similar photos")} description={t("Find photos that are there twice or look nearly the same")}
@@ -155,7 +158,7 @@ export default function Account() {
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="trash" color={th.colors.error} /></View>} onPress={() => setDel("warn")} style={st.item} />}
         <Divider />
         <Text variant="bodySmall" style={[st.block, { color: th.colors.onSurfaceVariant }]}>
-          {t("Photos are encrypted on this phone before upload. The server only stores encrypted data. Change your password, invite people and make a new recovery key in Cipherfilm in the browser.")}
+          {t("Photos are encrypted on this phone before upload. The server only stores encrypted data. Change your password and make a new recovery key in Cipherfilm in the browser.")}
         </Text>
         <Divider />
         <List.Subheader>{t("About")}</List.Subheader>

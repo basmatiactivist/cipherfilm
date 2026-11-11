@@ -8,7 +8,8 @@ import { open, LABEL } from "@crypto/wrap";
 import type { KdfParams } from "@crypto/kdf";
 import { api, ApiError, remote, setCsrf, setServer, whenRevoked, whenSessionEnds } from "./api";
 import { t } from "./i18n";
-import { codeProblem, pendingToken } from "./twoStep";
+import { codeProblem, methods, pendingToken } from "./twoStep";
+import { getPasskey } from "./passkeys";
 
 export interface Me {
   user: { id: string; email: string; role: "admin" | "user"; nsfw?: boolean };
@@ -193,8 +194,13 @@ export async function forgetServer() {
  *  code (from the authenticator app, or a recovery code). It holds the key derived from the password until the code
  *  is accepted or the person starts over; nothing of the account (session, keys) is on the phone before that. */
 export interface CodeStep {
+  /** Which second steps the account has: an authenticator app, a passkey for this server (an older server: the app). */
+  totp: boolean;
+  passkey: boolean;
   /** Sends the code; signs in when it is right. Throws CodeExpired when the password is needed again. */
   finish(code: string): Promise<void>;
+  /** The same with a passkey: Android asks for it, the server checks its answer to this sign-in's challenge. */
+  usePasskey(): Promise<void>;
   /** Starting over: the key derived from the password is overwritten. */
   cancel(): void;
 }
@@ -212,24 +218,42 @@ async function signedIn(s: Awaited<ReturnType<typeof getSodium>>, e: string, kek
   set({ biometric: (await SecureStore.getItemAsync(bioName(me.user.id))) === "1" });
 }
 
-function codeStep(s: Awaited<ReturnType<typeof getSodium>>, e: string, kek: Uint8Array, pending: string): CodeStep {
+function codeStep(s: Awaited<ReturnType<typeof getSodium>>, e: string, kek: Uint8Array, pending: string, has: { totp: boolean; passkey: boolean }): CodeStep {
   let open = true;
   const cancel = () => { if (open) { open = false; s.memzero(kek); } };
+  const expired = () => new CodeExpired(t("This sign-in expired. Enter your password again."));
+  const send = async (second: { code: string } | { passkey: Record<string, unknown> }, wrong: string) => {
+    let me: Me;
+    try {
+      me = await api<Me>("POST", "/api/auth/login/2fa", { pending, ...second });
+    } catch (err) {
+      const why = codeProblem(err);
+      if (why === "expired") { cancel(); throw expired(); }
+      if (why === "wrong") throw new Error(wrong);
+      throw err;
+    }
+    open = false;
+    await signedIn(s, e, kek, me);
+  };
   return {
+    ...has,
     cancel,
     async finish(code: string) {
-      if (!open) throw new CodeExpired(t("This sign-in expired. Enter your password again."));
-      let me: Me;
+      if (!open) throw expired();
+      await send({ code }, t("That code isn't right. Try again."));
+    },
+    async usePasskey() {
+      if (!open) throw expired();
+      let options: Record<string, unknown>;
       try {
-        me = await api<Me>("POST", "/api/auth/login/2fa", { pending, code });
+        ({ options } = await api<{ options: Record<string, unknown> }>("POST", "/api/auth/login/2fa/passkey", { pending }));
       } catch (err) {
-        const why = codeProblem(err);
-        if (why === "expired") { cancel(); throw new CodeExpired(t("This sign-in expired. Enter your password again.")); }
-        if (why === "wrong") throw new Error(t("That code isn't right. Try again."));
+        if (codeProblem(err) === "expired") { cancel(); throw expired(); }
         throw err;
       }
-      open = false;
-      await signedIn(s, e, kek, me);
+      const passkey = await getPasskey(options);
+      if (!open) throw expired();
+      await send({ passkey }, t("That passkey wasn't accepted. Try again, or use a code."));
     },
   };
 }
@@ -248,7 +272,7 @@ export async function login(email: string, password: string): Promise<CodeStep |
   } catch (err) {
     const pending = pendingToken(err);
     if (!pending) { s.memzero(kek); throw err; }
-    return codeStep(s, e, kek, pending);
+    return codeStep(s, e, kek, pending, methods(err));
   }
   await signedIn(s, e, kek, me);
   return null;

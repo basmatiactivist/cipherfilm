@@ -84,6 +84,13 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   /** Forgets the session cookie (sign-out). */
   clearCookies(): void;
 
+  // passkeys (Passkeys.kt): Credential Manager, Android 14 and newer; JSON in (the server's options), JSON out
+  passkeysSupported(): boolean;
+  passkeyCreate(optionsJson: string): Promise<string>;
+  passkeyGet(optionsJson: string): Promise<string>;
+  /** A secret the person copies on purpose (setup key, recovery codes): marked sensitive, cleared after a minute. */
+  copySecret(label: string, text: string): void;
+
   // search on the phone, see android/.../Vision.kt, SearchIndex.kt, Models.kt
   downloadModel(url: string, path: string, sha256: string, size: number): Promise<boolean>;
   checkModel(path: string, sha256: string): Promise<boolean>;

@@ -26,6 +26,16 @@ describe("decrypted pictures stay off the disk", () => {
   it("nothing decrypted is put on the clipboard", () => {
     for (const { p, text } of files) expect(text, p).not.toMatch(/Clipboard|expo-clipboard/);
   });
+
+  // The one exception, on purpose and on a tap: the authenticator key while two-step sign-in is set up and the
+  // recovery codes shown once, which belong in a password manager. Neither is library content. CfNative.copySecret
+  // (Passkeys.kt) marks them sensitive (not in Android 13's copy preview) and clears them after a minute.
+  it("only the two-step sign-in screen copies, and only its secrets", () => {
+    const users = files.filter(({ text }) => /\bcopySecret\(/.test(text)).map(({ p }) => p);
+    expect(users).toEqual(["./app/two-step.tsx"]);
+    const calls = [...files.find(({ p }) => p === "./app/two-step.tsx")!.text.matchAll(/copySecret\(t\("([^"]+)"\), ([\w.]+)\)/g)].map((m) => `${m[1]}: ${m[2]}`);
+    expect(calls).toEqual(["Authenticator key: setup.secret", "Recovery codes: all"]);
+  });
 });
 
 describe("Android backup", () => {

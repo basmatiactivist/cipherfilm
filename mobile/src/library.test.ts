@@ -10,6 +10,7 @@ const st = vi.hoisted(() => ({
   decrypted: [] as string[],
   keyed: [] as string[],
   master: new Uint8Array(32),
+  forgot: [] as string[],
 }));
 vi.mock("expo-file-system", () => {
   const pathOf = (p: unknown) => (typeof p === "string" ? p : (p as { uri: string }).uri);
@@ -27,11 +28,12 @@ vi.mock("expo-file-system", () => {
     get parentDirectory() { return new Directory(this.uri.slice(0, this.uri.lastIndexOf("/")), ""); }
     async text() { return st.files.get(this.uri)!; }
     async write(v: string) { st.files.set(this.uri, v); }
+    delete() { st.files.delete(this.uri); }
   }
   return { Directory, File, Paths: { cache: "/cache" } };
 });
 vi.mock("../modules/cf-native/src/CfNativeModule", () => ({
-  default: { thumbsSetup: () => {}, thumbKeys: (ids: string[]) => { st.keyed.push(...ids); }, thumbsPrefetch: () => {} },
+  default: { thumbsSetup: () => {}, thumbKeys: (ids: string[]) => { st.keyed.push(...ids); }, thumbsPrefetch: () => {}, thumbsForget: (ids: string[]) => { st.forgot.push(...ids); } },
 }));
 vi.mock("./api", () => ({
   api: async (_m: string, p: string) => { st.asked.push(p); if (!st.answers[p]) throw new Error("unexpected " + p); return structuredClone(st.answers[p]); },
@@ -63,7 +65,7 @@ describe("the library on the phone", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.useRealTimers();
-    Object.assign(st, { files: new Map(), answers: {}, asked: [], decrypted: [], keyed: [] });
+    Object.assign(st, { files: new Map(), answers: {}, asked: [], decrypted: [], keyed: [], forgot: [] });
   });
 
   it("after the whole list, a live update fetches and decrypts only what changed", async () => {
@@ -86,6 +88,26 @@ describe("the library on the phone", () => {
     // nothing new: the same array back (the store redoes nothing then)
     st.answers["/api/items?since=e.8"] = { items: [], removed: [], cursor: "e.8", more: false };
     expect(await lib.loadLibrary()).toBe(after);
+  });
+
+  it("checks an edit like the rest, and drops the pictures kept here when another device made new ones", async () => {
+    const lib = await import("./library");
+    const meta = (extra: object) => JSON.stringify({ name: "a.jpg", mime: "image/jpeg", size: 10, lastModified: 0, capture_ts: 1, ...extra });
+    st.answers["/api/items"] = { items: [rec(A, 1, { meta_enc: meta({ edit: { rot: 45, crop: "x" }, orig: { gps: "far" } }) })], next: "", cursor: "e.1" };
+    const first = await lib.loadLibrary();
+    expect(first[0].meta).not.toHaveProperty("edit"); // nonsense from some device: dropped
+    expect(first[0].meta).not.toHaveProperty("orig");
+    st.files.set(`/cache/cf-ct/alice/thumb-${A}`, "old");
+    st.answers["/api/items?since=e.1"] = { items: [rec(A, 1, { meta_enc: meta({ edit: { rot: 90, v: "n1" }, capture_ts: 1.6 }) })], removed: [], cursor: "e.2", more: false };
+    const after = await lib.loadLibrary();
+    expect(after[0].meta!.edit).toEqual({ rot: 90, v: "n1" });
+    expect(after[0].meta!.capture_ts).toBe(2);
+    expect(st.forgot).toEqual([A]); // the native thumbnails load the new one
+    expect(st.files.has(`/cache/cf-ct/alice/thumb-${A}`)).toBe(false); // and the encrypted copy kept here goes
+    // a change that leaves the picture as it is (a new date) keeps them
+    st.answers["/api/items?since=e.2"] = { items: [rec(A, 1, { meta_enc: meta({ edit: { rot: 90, v: "n1" }, capture_ts: 5 }) })], removed: [], cursor: "e.3", more: false };
+    await lib.loadLibrary();
+    expect(st.forgot).toEqual([A]);
   });
 
   it("an item's kind comes from its encrypted metadata, never from the server's plain field", async () => {

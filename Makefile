@@ -14,7 +14,7 @@ tokens-check: ## fail if a generated token file is out of date or a contrast pai
 test-server:
 	docker run --rm -v gocache:/go/pkg/mod -v "$(CURDIR)/server:/src" -w /src golang:1.27-alpine sh -c 'mkdir -p static && go vet ./... && go test ./...'
 test-web:
-	docker run --rm -v "$(CURDIR)/web:/web" -v /web/node_modules -v "$(CURDIR)/server/models.json:/server/models.json:ro" -w /web node:26-alpine sh -c 'npm ci --silent && npm run build --silent && npm test --silent'
+	docker run --rm -v "$(CURDIR)/web:/web" -v /web/node_modules -v "$(CURDIR)/server/models.json:/server/models.json:ro" -v "$(CURDIR)/server/explicit-filter.json:/server/explicit-filter.json:ro" -v "$(CURDIR)/tools/decrypt/testdata:/tools/decrypt/testdata:ro" -w /web node:26-alpine sh -c 'npm ci --silent && npm run build --silent && npm test --silent'
 lock:      ## regenerate web/package-lock.json
 	docker run --rm -v "$(CURDIR)/web:/web" -w /web node:26-alpine npm install --package-lock-only
 # Playwright's browser image in compose.e2e.yaml follows the npm package, so Dependabot bumps one version, not two

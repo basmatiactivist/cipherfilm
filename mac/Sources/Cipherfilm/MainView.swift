@@ -476,6 +476,16 @@ struct SearchResults: View {
   /** how many of the ranked results are shown: a page of 200, then more as the end comes into view */
   @State private var shown = 200
 
+  /** Why nothing was found, and what helps: photos another device hasn't indexed yet are said (docs/SEARCH.md). */
+  private var emptyText: String {
+    guard model.settings.search else { return "Search covers names, dates and cameras. Turn on search in Settings to find what and who is in your photos." }
+    let s = model.search
+    if !s.indexes && s.phase == .ready && s.waiting > 0 {
+      return "\(s.waiting) \(s.waiting == 1 ? "photo or video isn't" : "photos and videos aren't") indexed yet by the device that indexes your photos. To index them on this Mac instead, go to Settings › Search & People."
+    }
+    return "Try what is in the photo (“dog on the beach”), a name, a year or a month."
+  }
+
   var body: some View {
     VStack(spacing: 0) {
       PageTitle(title: "Search", subtitle: result.map { r in r.items.isEmpty ? "Nothing found" : (r.ranked ? "Best matches first" : "\(r.items.count) found") + (r.how.isEmpty ? "" : " · " + r.how.joined(separator: " · ")) } ?? "Searching…")
@@ -487,7 +497,7 @@ struct SearchResults: View {
       if let r = result {
         if r.items.isEmpty {
           Spacer()
-          EmptyState(icon: "magnifyingglass", title: "Nothing found", text: model.settings.search ? "Try what is in the photo (“dog on the beach”), a name, a year or a month." : "Search covers names, dates and cameras. Turn on search in Settings to find what and who is in your photos.")
+          EmptyState(icon: "magnifyingglass", title: "Nothing found", text: emptyText)
           Spacer()
         } else {
           PhotoGrid(items: Array(r.items.prefix(shown)), grouping: .none, selection: selection,

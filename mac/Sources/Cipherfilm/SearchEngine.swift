@@ -41,6 +41,9 @@ final class SearchEngine {
   /** whether this Mac computes the index; otherwise another device does and this one only reads it (and keeps only
    *  the text model, to turn search words into a vector) */
   private(set) var indexes = true
+  /** while this Mac only reads: the photos and videos still without an entry from the indexing device (0 while it
+   *  indexes itself) */
+  private(set) var waiting = 0
   /** what the run is doing, for an error message ("Fetching the index from the server: …") */
   private var step = ""
   private var pending: [Item] = []
@@ -81,7 +84,7 @@ final class SearchEngine {
       index.clear(); tags = [:]; runVault = nil; people = PeopleDoc(); peopleVersion = 0; peopleLoaded = false; groupsAt = -1; groups = []
       version += 1
     }
-    phase = .off; done = 0; total = 0; message = nil; skipped = []
+    phase = .off; done = 0; total = 0; waiting = 0; message = nil; skipped = []
   }
 
   private func live(_ v: Vault) -> Bool { !Task.isCancelled && runVault === v && v.isOpen }
@@ -386,11 +389,13 @@ final class SearchEngine {
     guard indexes else {
       total = items.filter { $0.kind != .other && !$0.broken }.count
       done = min(total, items.filter { Models.good(tags[$0.id], faces: runFaces, clip: clip) }.count)
+      // any entry of the model counts: whether the indexing device looks for faces is its own setting
+      waiting = Models.waiting(items, tags: tags, faces: false, clip: clip)
       return
     }
+    waiting = 0
     let queued = Set(pending.map(\.id)).union(inFlight).union(skipped)
-    let todo = items.filter { !$0.broken && $0.itemKey != nil && $0.kind != .other && ($0.hasPreview || $0.hasThumb) && !queued.contains($0.id)
-      && !Models.good(tags[$0.id], faces: runFaces, clip: clip) }
+    let todo = items.filter { Models.indexable($0) && !queued.contains($0.id) && !Models.good(tags[$0.id], faces: runFaces, clip: clip) }
     pending += todo
     total = items.filter { $0.kind != .other && !$0.broken }.count
     done = min(total, max(0, total - pending.count - inFlight.count))

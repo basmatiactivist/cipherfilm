@@ -61,6 +61,16 @@ public enum Models {
   /** Whether an entry is up to date: made with this model, and with faces when faces are wanted. */
   public static func good(_ tag: String?, faces: Bool, clip: ClipModel = .clip) -> Bool { faces ? tag == clip.tag : clip.owns(tag) }
 
+  /** Whether the indexing device makes an entry for an item: a photo or video that decrypted and has a picture. */
+  public static func indexable(_ it: Item) -> Bool { !it.broken && it.itemKey != nil && it.kind != .other && (it.hasPreview || it.hasThumb) }
+
+  /** On a device that only reads the index: how many photos and videos still wait for the indexing device (no
+   *  up-to-date entry yet). Shown with "Index on This Mac Instead", for when that device stopped indexing (it waits
+   *  for its own OK to download the models after an update, or is gone; docs/SEARCH.md "One device indexes"). */
+  public static func waiting(_ items: [Item], tags: [String: String], faces: Bool, clip: ClipModel = .clip) -> Int {
+    items.filter { indexable($0) && !good(tags[$0.id], faces: faces, clip: clip) }.count
+  }
+
   /** reader: a device that only reads the index (another one computes it) needs just the text model and the tokenizer. */
   public static func needed(faces: Bool, clip: ClipModel = .clip, reader: Bool = false) -> [ModelFile] {
     if reader { return [clip.text, tokenizer] }

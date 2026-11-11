@@ -905,3 +905,53 @@ func TestUnfinishedPasswordStepIsNoticed(t *testing.T) {
 		t.Fatalf("pushed-out sign-ins: %d notices, want 1", n)
 	}
 }
+
+// The Android app checks for notices in the background (mobile/src/noticeCheck.ts) with X-CF-Background: such a GET
+// gets the same answer, but doesn't count as using the device: the session's last activity and idle end stay.
+func TestBackgroundCheckIsNotActivity(t *testing.T) {
+	e := newEnv(t)
+	clk := e.pinClock()
+	admin, ab := e.setupAdmin("admin@x.org")
+	clk.tick(time.Second)
+	e.login("admin@x.org", ab)
+	seen := func() (last, exp int64) {
+		t.Helper()
+		e.app.db.QueryRow(`SELECT last_seen, expires_at FROM sessions ORDER BY created_at LIMIT 1`).Scan(&last, &exp)
+		return
+	}
+	last0, exp0 := seen()
+	clk.tick(10 * time.Minute)
+	get := func(path string, background bool) (int, map[string]any) {
+		t.Helper()
+		req, _ := http.NewRequest("GET", e.srv.URL+path, nil)
+		if background {
+			req.Header.Set("X-CF-Background", "1")
+		}
+		resp, err := admin.c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var out map[string]any
+		json.NewDecoder(resp.Body).Decode(&out)
+		return resp.StatusCode, out
+	}
+	code, out := get("/api/me/notices", true)
+	if code != 200 || len(out["notices"].([]any)) != 1 {
+		t.Fatalf("background check: %d %v", code, out)
+	}
+	if last, exp := seen(); last != last0 || exp != exp0 {
+		t.Fatalf("background check counted as activity: %d/%d -> %d/%d", last0, exp0, last, exp)
+	}
+	// only a GET: a write is always the person (and still needs its CSRF token)
+	if code, _ := admin.do("POST", "/api/me/notices/1/dismiss", nil, false); code != 403 {
+		t.Fatalf("dismiss without token: %d", code)
+	}
+	// the same request without the header is activity, as before
+	if code, _ := get("/api/me/notices", false); code != 200 {
+		t.Fatalf("check: %d", code)
+	}
+	if last, exp := seen(); last == last0 || exp <= exp0 {
+		t.Fatalf("a normal request isn't activity: %d/%d -> %d/%d", last0, exp0, last, exp)
+	}
+}

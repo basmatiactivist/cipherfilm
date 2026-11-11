@@ -5,6 +5,7 @@ import * as auth from "./auth";
 import { mem } from "./state";
 import { mapProvider, PRIVACY_URL, setMapOn, useMapOn } from "./map/consent";
 import { setMemoriesOn, useMemoriesOn } from "./memories/setting";
+import { browserAlertsPossible, setBrowserAlerts, useBrowserAlerts } from "./noticeAlerts";
 import { Loader, Loading } from "./loader";
 import { BackupReport, backupState } from "./backup";
 import { explicitChosen, indexChecked, loadPeople, refreshIndex, searchFamily, setExplicit } from "./people/people";
@@ -447,8 +448,26 @@ function DevicesPanel({ open }: { open?: boolean }) {
         </div>
       ) : <button class="btn secondary" onClick={() => setAsk("others")}>Sign out all other devices…</button>)}
       <p class="hint">Search: one device indexes your photos and stores the index encrypted; the others use it. To change which one, open Search and people in that app and choose “Index here”.</p>
+      <BrowserAlerts />
       <ErrorLine text={error} />
     </Acc>
+  );
+}
+
+/** Notices as this browser's notifications while the tab is hidden (noticeAlerts.ts): off unless turned on here. */
+function BrowserAlerts() {
+  const on = useBrowserAlerts();
+  const [refused, setRefused] = useState(false);
+  if (!on && !browserAlertsPossible()) return <p class="hint">This browser doesn't allow notifications from Cipherfilm. The banner still shows a new sign-in when you come back.</p>;
+  return (
+    <>
+      <label class="check"><input type="checkbox" checked={on} onChange={async (e) => {
+        const want = (e.target as HTMLInputElement).checked;
+        setRefused(want && !(await setBrowserAlerts(want))); // the browser's own question, on this click
+        if (!want) await setBrowserAlerts(false);
+      }} /> Notify me in this browser about a new sign-in while this tab is in the background</label>
+      <p class="hint">{refused ? "The browser didn't allow notifications." : "Only while this tab is open. The notification's title says only “New sign-in to Cipherfilm”; the text names the device and the time, as the banner does."}</p>
+    </>
   );
 }
 

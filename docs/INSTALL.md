@@ -54,6 +54,15 @@ File: `cipherfilm-android-X.Y.Z.apk`.
 Account (in the app) shows the app's and the server's version, sets fingerprint unlock and when the app locks itself
 (immediately, or after 1, 5 or 15 minutes away; optionally also when the screen turns off), and has Delete account.
 
+**Security notifications:** when your account is signed in somewhere else (or two-step sign-in is turned off for it),
+the phone shows a notification, also with Cipherfilm closed. There is no push service: the app asks your server about
+every 15 minutes in the background, when Android lets it run (it keeps doing so after the app is swiped away from the
+recent apps and after a restart; not after **Force stop**, until the app is opened again). Each one comes once, and
+the lock screen only says "New sign-in to Cipherfilm". Allow notifications when the app asks (or under Account ›
+Devices); Account › Security notifications turns them off. Phones with strict battery rules can hold the check back
+for hours: on OPPO, OnePlus and realme (ColorOS) allow Cipherfilm **Auto launch** and, under **Battery**, **Allow
+background activity**; on Xiaomi set **Battery saver** to **No restrictions**.
+
 **Updates:** download the APK of the newer release and install it over the app.
 
 ### With Obtainium (updates on their own)

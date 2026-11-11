@@ -17,6 +17,11 @@ version into the GitHub release notes, so a release cannot be published without 
   in `deploy/tailnet`, the same one the project's own server runs; guide in docs/TAILNET.md.
 - Android: Account › "Allow screenshots" lets this phone take screenshots and screen recordings of the app and show
   it in the recent apps. Off by default, so the app stays blocked as before; the change applies at once.
+- Android and Mac: a new sign-in to your account (and the other security notices) also arrives as a notification
+  while the app is closed or in the background, at most once each; the lock screen shows only "New sign-in to
+  Cipherfilm". No push service is used: the app asks your server itself (Android about every 15 minutes). On by
+  default; Account › Security notifications (Android) and Settings › Security (Mac) turn it off. The web app can do
+  the same while its tab is open in the background, if you turn it on under Account › Devices.
 ### Fixed
 - Android: the search index kept on the phone (both the standard and the explicit model's) was deleted with the
   cleanup of cached pictures after every library load, so search had to fetch and open the whole index again at each

@@ -17,6 +17,7 @@ import { useAction } from "../useAction";
 import { cleanCode, codeReady, groupSecret } from "../twoStep";
 import { text } from "../tokens";
 import { t, tn } from "../i18n";
+import { NoticeAlertsHint } from "../NoticeAlertsSetting";
 
 interface Status { enabled: boolean; recovery_codes_left: number; available: boolean }
 interface Setup { secret: string; uri: string }
@@ -83,6 +84,8 @@ export default function TwoStep() {
                 <Text variant="bodyMedium" style={{ marginTop: 12, color: status.recovery_codes_left < 3 ? th.colors.error : th.colors.onSurfaceVariant }}>
                   {tn(status.recovery_codes_left, "{n} recovery code left", "{n} recovery codes left")}
                 </Text>
+                {/* a sign-in with a stolen password is told by notifications too: why and how to allow them */}
+                <View style={{ marginTop: 12, marginHorizontal: -16 }}><NoticeAlertsHint /></View>
               </>
             ) : (
               <Text variant="bodyMedium">{t("Off. Turn it on, and a new sign-in also needs a code from an authenticator app on your phone, so a stolen password alone isn't enough.")}</Text>

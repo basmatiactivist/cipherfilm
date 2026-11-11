@@ -73,4 +73,18 @@ export const deSecurity: Record<string, string> = {
   "an unknown device": "ein unbekanntes Gerät",
   "Review devices": "Geräte prüfen",
   "Dismiss": "Ausblenden",
+  // notices as notifications (noticeCheck.ts, NoticeAlertsSetting.tsx)
+  "Security notifications": "Sicherheitsbenachrichtigungen",
+  "Off: you see new sign-ins only when you open Cipherfilm": "Aus: Neue Anmeldungen sehen Sie nur, wenn Sie Cipherfilm öffnen",
+  "A notification when your account is signed in somewhere else, also while Cipherfilm is closed":
+    "Eine Benachrichtigung, wenn Ihr Konto anderswo angemeldet wird, auch wenn Cipherfilm geschlossen ist",
+  "On, but Android doesn't allow Cipherfilm's notifications yet": "An, aber Android erlaubt die Benachrichtigungen von Cipherfilm noch nicht",
+  "Allow notifications": "Benachrichtigungen erlauben",
+  "Allow notifications, and this phone tells you when your account is signed in on another device, even while Cipherfilm is closed. The lock screen only says \"New sign-in to Cipherfilm\".":
+    "Erlauben Sie Benachrichtigungen, dann meldet dieses Telefon, wenn Ihr Konto auf einem anderen Gerät angemeldet wird, auch wenn Cipherfilm geschlossen ist. Der Sperrbildschirm zeigt nur „Neue Anmeldung bei Cipherfilm“.",
+  "New sign-in": "Neue Anmeldung",
+  "Two-step sign-in turned off": "Anmeldung in zwei Schritten ausgeschaltet",
+  "Unfinished sign-in": "Nicht abgeschlossene Anmeldung",
+  "New sign-in to Cipherfilm": "Neue Anmeldung bei Cipherfilm",
+  "Security notice from Cipherfilm": "Sicherheitshinweis von Cipherfilm",
 };

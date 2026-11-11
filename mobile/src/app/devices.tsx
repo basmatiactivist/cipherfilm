@@ -12,6 +12,7 @@ import { Icon } from "../icons";
 import { busyIcon } from "../Loader";
 import { useAction } from "../useAction";
 import { lastActive } from "../notices";
+import { NoticeAlertsHint } from "../NoticeAlertsSetting";
 import { text } from "../tokens";
 import { locale, t, tn } from "../i18n";
 
@@ -47,6 +48,7 @@ export default function Devices() {
           <Text variant="bodyMedium" style={{ color: th.colors.onSurfaceVariant }}>{t("Where you're signed in. Sign out a device that is lost or isn't yours.")}</Text>
           <Problem>{page.error}</Problem>
         </View>
+        <NoticeAlertsHint />
         <Divider />
         {(list ?? []).map((d) => (
           <List.Item key={d.id} title={d.device || t("Unknown device")} titleNumberOfLines={2} descriptionNumberOfLines={3}

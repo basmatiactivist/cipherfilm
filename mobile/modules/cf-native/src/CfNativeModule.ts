@@ -73,6 +73,13 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   openAppSettings(): void;
   backupNotify(title: string, text: string, progress: number, ongoing: boolean): void;
   backupNotifyCancel(): void;
+  // account notices as notifications (Notices.kt, src/noticeCheck.ts)
+  /** Android allows them: the app's notifications and the Security channel are on */
+  noticesAllowed(): boolean;
+  /** Shows a notice's notification (the lock screen shows only publicTitle); false when Android doesn't allow it. */
+  noticeShow(id: number, title: string, text: string, publicTitle: string): boolean;
+  noticeCancel(id: number): void;
+  noticeCancelAll(): void;
   /** Keeps the app running while uploads go on (a foreground service with the notification); false if Android
    *  doesn't allow it right now. Each keepRunning(holder) needs its letGo(holder). */
   keepRunning(holder: string, title: string, text: string): boolean;

@@ -81,6 +81,12 @@ What needs what:
 | Watched folders | the session (cookie) and the account's public key, pinned when turned on | keeps working |
 | Continuous export | the master key (it decrypts) | waits for unlock |
 | Search indexing | the master key (it decrypts previews) | waits for unlock; files from watched folders are indexed from the file at upload |
+| Security notifications | the session (cookie); notices aren't encrypted | checked every 5 minutes (live updates while unlocked) |
+
+A new sign-in to your account elsewhere (and the other security notices) shows as a macOS notification while the
+window isn't in front, each once; the banner shows it otherwise. The title says only what happened ("New sign-in to
+Cipherfilm"); the text names the device and the time, and macOS hides it where it hides previews. A click opens
+Settings › Security, which also turns them off. There is no push service: nothing arrives while the app isn't running.
 
 After a restart (or Open at Login) the library is locked until you unlock it once. There is deliberately no
 "remember the password"; with Touch ID unlock that is one touch.

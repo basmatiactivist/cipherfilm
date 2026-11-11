@@ -235,8 +235,10 @@ public final class API: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
   /** A JSON request; body is encoded with JSONSerialization or Encodable. */
   @discardableResult
   /** timeout: how long the answer may pause (not its whole time); a minute, since a tailnet relay that a model download
-   *  fills may hold a small request back for a while. */
-  public func json(_ method: String, _ path: String, body: Any? = nil, timeout: TimeInterval = 60) async throws -> Data {
+   *  fills may hold a small request back for a while. background: a periodic check while nobody uses the app (the
+   *  notices while locked): the server doesn't count the GET as using this Mac (X-CF-Background), so it neither keeps
+   *  the session from ending nor shows the Mac as active. */
+  public func json(_ method: String, _ path: String, body: Any? = nil, timeout: TimeInterval = 60, background: Bool = false) async throws -> Data {
     var r = URLRequest(url: url(path), timeoutInterval: timeout)
     r.httpMethod = method
     r.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -245,6 +247,7 @@ public final class API: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
       r.httpBody = try (body as? Data) ?? JSONSerialization.data(withJSONObject: body, options: [.withoutEscapingSlashes])
     }
     if method != "GET", !csrf.isEmpty { r.setValue(csrf, forHTTPHeaderField: "X-CSRF-Token") }
+    if method == "GET", background { r.setValue("1", forHTTPHeaderField: "X-CF-Background") }
     let (d, h) = try await send(r)
     guard (200..<300).contains(h.statusCode) else {
       ended(h, path)

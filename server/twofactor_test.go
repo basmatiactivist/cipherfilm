@@ -783,3 +783,26 @@ func TestDismissedNoticesArePrunedFirst(t *testing.T) {
 		t.Fatal("a shown notice went before a dismissed one")
 	}
 }
+
+// The setup's confirming code is read as typed, like the code at sign-in ("123 456", "123-456"); new recovery codes
+// are in the activity log like the other changes to two-step sign-in.
+func TestTwoFactorSetupCodeAsTypedAndNewCodesLogged(t *testing.T) {
+	e := newEnv(t)
+	clk := e.pinClock()
+	admin, ab := e.setupAdmin("admin@x.org")
+	_, out := admin.do("POST", "/api/me/2fa/setup", map[string]any{"current_auth": ab["auth"]}, true)
+	secret := out["secret"].(string)
+	c := codeAt(t, secret, clk.at)
+	if code, out := admin.do("POST", "/api/me/2fa/enable", map[string]any{"code": " " + c[:3] + " - " + c[3:]}, true); code != 200 {
+		t.Fatalf("enable with a spaced code: %d %v", code, out)
+	}
+	clk.tick(30 * time.Second)
+	if code, out := admin.do("POST", "/api/me/2fa/recovery-codes", map[string]any{"current_auth": ab["auth"], "code": codeAt(t, secret, clk.at)}, true); code != 200 {
+		t.Fatalf("new codes: %d %v", code, out)
+	}
+	var n int
+	e.app.db.QueryRow(`SELECT COUNT(*) FROM audit_log WHERE action LIKE '%recovery codes%'`).Scan(&n)
+	if n != 1 {
+		t.Fatalf("new recovery codes logged %d times", n)
+	}
+}

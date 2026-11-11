@@ -190,8 +190,13 @@ func (a *App) replaceCodes(tx *sql.Tx, userID string, codes []string) error {
 // useCode checks a second-step code and uses it up: a TOTP code moves totp_last forward (so it, and every older one,
 // is refused from then on), a recovery code is deleted. Both happen atomically in the database, so two requests with
 // the same code cannot both pass.
+// asTyped strips what people type around a code: spaces and dashes ("123 456", "abcd-efgh-...").
+func asTyped(code string) string {
+	return strings.NewReplacer(" ", "", "-", "").Replace(strings.TrimSpace(code))
+}
+
 func (a *App) useCode(u *user, code string) bool {
-	c := strings.NewReplacer(" ", "", "-", "").Replace(strings.TrimSpace(code))
+	c := asTyped(code)
 	if digitsOnly(c, totpDigits) {
 		secret, err := a.openTOTP(u.ID, "on", u.TOTPSecret)
 		if err != nil {
@@ -515,7 +520,7 @@ func (a *App) twoFactorEnable(w http.ResponseWriter, r *http.Request, u *user, s
 		return
 	}
 	defer clear(secret)
-	step, good := totpMatch(secret, strings.TrimSpace(req.Code), a.now())
+	step, good := totpMatch(secret, asTyped(req.Code), a.now())
 	if !good {
 		writeJSON(w, 403, map[string]string{"error": "that code isn't right", "code": "wrong_code"})
 		return
@@ -627,6 +632,7 @@ func (a *App) twoFactorNewCodes(w http.ResponseWriter, r *http.Request, u *user,
 		fail(w, 500, "server error")
 		return
 	}
+	a.audit(u.Email, "made new recovery codes", u.Email, "")
 	writeJSON(w, 200, map[string]any{"recovery_codes": codes})
 }
 

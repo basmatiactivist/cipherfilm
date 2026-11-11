@@ -572,6 +572,7 @@ function describe(a: AuditEntry, myEmail: string): { icon: IconName; text: any; 
     case "two-step sign-in turned off": return { icon: "key", text: <>{who} turned off two-step sign-in for {t}</>, warn: true };
     case "turned on two-step sign-in": return { icon: "key", text: <>{who} turned on two-step sign-in</> };
     case "turned off two-step sign-in": return { icon: "key", text: <>{who} turned off two-step sign-in</> };
+    case "made new recovery codes": return { icon: "key", text: <>{who} made new recovery codes for two-step sign-in</> };
     case "signed out every device": return { icon: "logout", text: <>{who} signed out every device of {t}{a.detail ? ", and they delete what they keep" : ""}</>, warn: !!a.detail };
   }
   return { icon: "info", text: <>{who} {a.action}{a.target ? <> · {t}</> : null}{a.detail ? <span class="small"> ({a.detail})</span> : null}</> };

@@ -15,10 +15,10 @@ import (
 func TestDemoGetsNoModelsAndModelsAreFewAtOnce(t *testing.T) {
 	fakeModelHost(t)
 	_, _, demo, bob, _ := demoEnv(t)
-	if code, _ := demo.model("mobileclip-s2-text.onnx"); code != 404 {
+	if code, _ := demo.model("clip-b32-text.onnx"); code != 404 {
 		t.Fatalf("demo model: %d", code)
 	}
-	if code, body := bob.model("mobileclip-s2-text.onnx"); code != 200 || body != "mobileclip-s2-text.onnx bytes" {
+	if code, body := bob.model("clip-b32-text.onnx"); code != 200 || body != "clip-b32-text.onnx bytes" {
 		t.Fatalf("bob model: %d %q", code, body)
 	}
 	for i := 0; i < cap(modelSlots); i++ {
@@ -29,7 +29,7 @@ func TestDemoGetsNoModelsAndModelsAreFewAtOnce(t *testing.T) {
 			<-modelSlots
 		}
 	})
-	if code, _ := bob.model("mobileclip-s2-text.onnx"); code != 503 {
+	if code, _ := bob.model("clip-b32-text.onnx"); code != 503 {
 		t.Fatalf("with every slot taken: %d", code)
 	}
 }

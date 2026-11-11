@@ -212,7 +212,7 @@ func migrate(db *sql.DB) error {
 		}
 	}
 	urows.Close()
-	// users.nsfw: the admin allows this person search of explicit content (an extra model in the apps); off by default
+	// users.nsfw: the admin allows this person search of explicit content (search results unfiltered); off by default
 	for _, col := range []string{"last_login_at", "nsfw"} {
 		if !userCols[col] {
 			if _, err := db.Exec(`ALTER TABLE users ADD COLUMN ` + col + ` INTEGER NOT NULL DEFAULT 0`); err != nil {
@@ -283,8 +283,8 @@ func migrate(db *sql.DB) error {
 	if err := migrateNotices(db); err != nil {
 		return err
 	}
-	// item_index.model: one entry per item and model family, so entries of the standard and the explicit model don't
-	// overwrite each other (before 1.9.0 an item had one entry; those keep the family '' and are read as either)
+	// item_index.model: one entry per item and model family, so entries of two models didn't overwrite each other
+	// (before 1.9.0 an item had one entry; those keep the family ''). Now only LAION's are written (index.go).
 	icols, err := tableCols(db, "item_index")
 	if err != nil {
 		return err

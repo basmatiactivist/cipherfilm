@@ -27,11 +27,16 @@ const (
 
 var modelNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 
-// The per-account documents and index model families the apps use. Anything else is refused, so an account cannot
-// pile up rows under names of its own; both stores also count toward the storage limit (usedBytesSQL).
-var (
-	blobNames     = map[string]bool{"people": true}
-	indexFamilies = map[string]bool{"": true, "mcs2": true, "laionb32": true}
+// The per-account documents the apps use. Anything else is refused, so an account cannot pile up rows under names of
+// its own; both stores also count toward the storage limit (usedBytesSQL).
+var blobNames = map[string]bool{"people": true}
+
+// The index has one model family for everyone: LAION's OpenCLIP ViT-B/32 (docs/SEARCH.md, docs/MODELS.md). Entries of
+// MobileCLIP S2 ("mcs2", and those from before 1.9.0 without a tag, which were MobileCLIP's too) are no longer written:
+// its license doesn't allow it. They stay readable until the indexing device has made the new ones, and go then.
+const (
+	indexFamily  = "laionb32"
+	legacyFamily = "mcs2"
 )
 
 func (a *App) indexRoutes(m *http.ServeMux) {
@@ -92,7 +97,7 @@ func (a *App) putIndex(w http.ResponseWriter, r *http.Request, u *user, s *sessi
 	}
 	var req struct {
 		DataEnc string `json:"data_enc"`
-		// the entry's model tag, sent by apps that know explicit search (the entry itself is sealed)
+		// the entry's model tag (the entry itself is sealed)
 		Model string `json:"model"`
 	}
 	bodyDeadline(w, jsonReadTime)
@@ -103,10 +108,19 @@ func (a *App) putIndex(w http.ResponseWriter, r *http.Request, u *user, s *sessi
 		fail(w, 400, "invalid request")
 		return
 	}
-	// Where explicit search is allowed, two models may be in use: an app from before it would take the other model's
-	// entries for outdated and overwrite them, back and forth. Only apps that say which model they used may write.
-	if u.NSFW && req.Model == "" {
-		fail(w, 409, "update the app to keep searching your photos")
+	// An older app that still computes MobileCLIP's entries (or, before 1.9.0, untagged ones) may no longer
+	// write them. It is told, as when another device indexes, to stop indexing, so it doesn't run its model on every
+	// photo only to be refused; and if it was the indexing device, it no longer is, so an updated device of the person
+	// takes over at its next start (docs/SEARCH.md, "One model").
+	if fam := modelFamily(req.Model); fam != indexFamily {
+		if fam != legacyFamily && fam != "" {
+			fail(w, 400, "invalid request")
+			return
+		}
+		if u.Indexer == s.Pub {
+			a.db.Exec(`UPDATE users SET indexer='' WHERE id=? AND indexer=?`, u.ID, s.Pub)
+		}
+		writeJSON(w, 409, map[string]string{"error": "update the app to keep searching your photos", "code": "not_indexer"})
 		return
 	}
 	// one device indexes, the others read (sessions.go); the first that indexes becomes that device
@@ -114,14 +128,10 @@ func (a *App) putIndex(w http.ResponseWriter, r *http.Request, u *user, s *sessi
 		writeJSON(w, 409, map[string]string{"error": "another device indexes your photos", "code": "not_indexer"})
 		return
 	}
-	fam := modelFamily(req.Model)
-	if !indexFamilies[fam] {
-		fail(w, 400, "invalid request")
-		return
-	}
-	// the entry costs storage like a file; replacing one costs only the difference
+	// the entry costs storage like a file; replacing one (and the item's MobileCLIP entry, which goes) costs only the
+	// difference
 	var prev int64
-	a.db.QueryRow(`SELECT COALESCE(SUM(LENGTH(data_enc)),0) FROM item_index WHERE item_id=? AND model IN (?,'')`, it.ID, fam).Scan(&prev)
+	a.db.QueryRow(`SELECT COALESCE(SUM(LENGTH(data_enc)),0) FROM item_index WHERE item_id=?`, it.ID).Scan(&prev)
 	release, ok := a.reserveBytes(u.ID, int64(len(req.DataEnc))-prev)
 	if !ok {
 		fail(w, 413, "this would go over your storage limit")
@@ -135,15 +145,14 @@ func (a *App) putIndex(w http.ResponseWriter, r *http.Request, u *user, s *sessi
 	}
 	defer tx.Rollback()
 	if _, err = tx.Exec(`INSERT INTO item_index(item_id,user_id,model,data_enc,updated_at) VALUES(?,?,?,?,?)
-		ON CONFLICT(item_id,model) DO UPDATE SET data_enc=excluded.data_enc, updated_at=excluded.updated_at`, it.ID, u.ID, fam, req.DataEnc, a.now().UnixMilli()); err != nil {
+		ON CONFLICT(item_id,model) DO UPDATE SET data_enc=excluded.data_enc, updated_at=excluded.updated_at`, it.ID, u.ID, indexFamily, req.DataEnc, a.now().UnixMilli()); err != nil {
 		fail(w, 500, "server error")
 		return
 	}
-	if fam != "" { // an entry from before 1.9.0 for this item is replaced by this one
-		if _, err = tx.Exec(`DELETE FROM item_index WHERE item_id=? AND model=''`, it.ID); err != nil {
-			fail(w, 500, "server error")
-			return
-		}
+	// the item's MobileCLIP entry (or one from before 1.9.0) is replaced by this one
+	if _, err = tx.Exec(`DELETE FROM item_index WHERE item_id=? AND model<>?`, it.ID, indexFamily); err != nil {
+		fail(w, 500, "server error")
+		return
 	}
 	if tx.Commit() != nil {
 		fail(w, 500, "server error")
@@ -187,7 +196,8 @@ func (a *App) listIndex(w http.ResponseWriter, r *http.Request, u *user, s *sess
 		}
 		since, after = n, id
 	}
-	// ?model=family: only that model's entries (and those from before 1.9.0, of either); without it all of them
+	// ?model=family: only that model's entries (MobileCLIP's with those from before 1.9.0, which were MobileCLIP's
+	// too); without it all of them
 	fam, all := r.URL.Query().Get("model"), 1
 	if fam != "" {
 		if modelFamily(fam) != fam {
@@ -196,14 +206,15 @@ func (a *App) listIndex(w http.ResponseWriter, r *http.Request, u *user, s *sess
 		}
 		all = 0
 	}
+	legacy := fam == legacyFamily
 	var rows *sql.Rows
 	var err error
 	if after != "" {
-		rows, err = a.db.QueryContext(r.Context(), `SELECT item_id,data_enc,updated_at FROM item_index WHERE user_id=? AND (?=1 OR model IN (?,''))
-			AND (updated_at > ? OR (updated_at = ? AND item_id > ?)) ORDER BY updated_at, item_id LIMIT ?`, u.ID, all, fam, since, since, after, indexPage)
+		rows, err = a.db.QueryContext(r.Context(), `SELECT item_id,data_enc,updated_at FROM item_index WHERE user_id=? AND (?=1 OR model=? OR (? AND model=''))
+			AND (updated_at > ? OR (updated_at = ? AND item_id > ?)) ORDER BY updated_at, item_id LIMIT ?`, u.ID, all, fam, legacy, since, since, after, indexPage)
 	} else {
-		rows, err = a.db.QueryContext(r.Context(), `SELECT item_id,data_enc,updated_at FROM item_index WHERE user_id=? AND (?=1 OR model IN (?,'')) AND updated_at >= ?
-			ORDER BY updated_at, item_id LIMIT ?`, u.ID, all, fam, since, indexPage)
+		rows, err = a.db.QueryContext(r.Context(), `SELECT item_id,data_enc,updated_at FROM item_index WHERE user_id=? AND (?=1 OR model=? OR (? AND model='')) AND updated_at >= ?
+			ORDER BY updated_at, item_id LIMIT ?`, u.ID, all, fam, legacy, since, indexPage)
 	}
 	if err != nil {
 		fail(w, 500, "server error")
@@ -233,21 +244,27 @@ func (a *App) listIndex(w http.ResponseWriter, r *http.Request, u *user, s *sess
 	// (another device switched models with an app that dropped them) and fetches everything again.
 	if after == "" {
 		var n int64
-		a.db.QueryRow(`SELECT COUNT(*) FROM item_index WHERE user_id=? AND (?=1 OR model IN (?,''))`, u.ID, all, fam).Scan(&n)
+		a.db.QueryRow(`SELECT COUNT(*) FROM item_index WHERE user_id=? AND (?=1 OR model=? OR (? AND model=''))`, u.ID, all, fam, legacy).Scan(&n)
 		res["count"] = n
 	}
 	writeJSON(w, 200, res)
 }
 
 // clearIndex removes the whole index and the people list, when search is turned off with "also delete"; with
-// ?model=family only that model's entries (the other model's, after the person switched).
+// ?model=mcs2 only MobileCLIP's entries left over (with those from before 1.9.0), once the indexing device has made the
+// new ones. The index itself never goes this way: older apps asked to delete LAION's entries when explicit
+// search was turned off, and LAION's are now everyone's index.
 func (a *App) clearIndex(w http.ResponseWriter, r *http.Request, u *user, s *session) {
 	if fam := r.URL.Query().Get("model"); fam != "" {
 		if modelFamily(fam) != fam {
 			fail(w, 400, "invalid request")
 			return
 		}
-		a.db.Exec(`DELETE FROM item_index WHERE user_id=? AND model=?`, u.ID, fam)
+		if fam == indexFamily {
+			fail(w, 409, "update the app: the index is shared by all your devices")
+			return
+		}
+		a.db.Exec(`DELETE FROM item_index WHERE user_id=? AND (model=? OR (?=? AND model=''))`, u.ID, fam, fam, legacyFamily)
 		a.changed(u.ID, tIndex)
 		writeJSON(w, 200, map[string]bool{"ok": true})
 		return
@@ -337,6 +354,13 @@ func (a *App) deleteUserBlob(w http.ResponseWriter, r *http.Request, u *user, s 
 //go:embed models.json
 var modelsJSON []byte
 
+// Names older apps ask for, now the same files under neutral names (the explicit-search model became everyone's
+// search model). MobileCLIP's files are no longer served at all (docs/MODELS.md).
+var legacyModelNames = map[string]string{
+	"nsfw-laion-b32-vision.onnx": "clip-b32-vision.onnx",
+	"nsfw-laion-b32-text.onnx":   "clip-b32-text.onnx",
+}
+
 var modelURLs = func() map[string]string {
 	var list []struct{ Name, URL string }
 	if err := json.Unmarshal(modelsJSON, &list); err != nil {
@@ -352,15 +376,17 @@ var modelURLs = func() map[string]string {
 	return m
 }()
 
-// getModel sends apps that still ask the server (2.1.x) to the file's pinned Hugging Face URL. Same rules as when
-// the server had the files: signed-in people only, the explicit model only for people allowed it, so the answer
-// doesn't tell anyone else it exists. The app checks the SHA-256 built into it, wherever the bytes came from.
+// getModel passes the file at its pinned Hugging Face URL through to apps that still ask the server (2.1.x), for
+// signed-in people. The app checks the SHA-256 built into it, wherever the bytes came from.
 func (a *App) getModel(w http.ResponseWriter, r *http.Request, u *user, _ *session) {
 	name := r.PathValue("name")
+	if n, ok := legacyModelNames[name]; ok {
+		name = n
+	}
 	url, ok := modelURLs[name]
-	// the explicit-search model goes only to people the admin allowed it (off by default); never to a public demo
-	// login: its password is published, and each request makes this server fetch and send up to 143 MB
-	if !ok || (strings.HasPrefix(name, "nsfw-") && !u.NSFW) || a.isDemo(u) {
+	// never to a public demo login: its password is published, and each request makes this server fetch and send up
+	// to 352 MB
+	if !ok || a.isDemo(u) {
 		fail(w, 404, "not found")
 		return
 	}
@@ -396,7 +422,7 @@ func (a *App) getModel(w http.ResponseWriter, r *http.Request, u *user, _ *sessi
 	}
 	h := w.Header()
 	h.Set("Content-Type", "application/octet-stream")
-	h.Set("Cache-Control", "private, no-store") // per person: the explicit model's permission can change
+	h.Set("Cache-Control", "private, no-store")
 	for _, k := range []string{"Content-Length", "Content-Range", "Accept-Ranges"} {
 		if v := resp.Header.Get(k); v != "" {
 			h.Set(k, v)

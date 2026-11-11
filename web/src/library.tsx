@@ -6,7 +6,9 @@ import { mem } from "./state";
 import { uploadQueue } from "./upqueue";
 import { haystack, matches, splitQuery } from "./search";
 import { contentSearch, vectorCount } from "./search/content";
-import { TEXT_MODELS } from "./search/rank";
+import { agreeModels, askedLater, askLater, NeedsConsent, useModelConsent } from "./search/consent";
+import { ModelConsent } from "./search/consentui";
+import { TEXT_MODELS, type Family } from "./search/rank";
 import { downloadItems, downloadOriginal } from "./downloads";
 import { prefetchThumbs } from "./cache";
 import { Album, addToAlbum, createAlbum, deleteAlbum, loadAlbums, removeFromAlbum, renameAlbum } from "./albums";
@@ -361,12 +363,14 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   // what is in the photos: the words that aren't a date, a kind or a name go to the text model (search/content.ts),
   // over the image vectors the Android and Mac apps stored; asked a moment after typing stops
   const split = useMemo(() => splitQuery(q, personNames), [q, personNames]);
-  const [content, setContent] = useState<{ q: string; ids: string[] | null; status: string }>({ q: "", ids: null, status: "" });
+  // need: the model isn't here and the person wasn't asked yet (search/consent.ts): the question shows, nothing is fetched
+  const [content, setContent] = useState<{ q: string; ids: string[] | null; status: string; need?: Family }>({ q: "", ids: null, status: "" });
   const family = searchFamily();
   const searchable = items ? vectorCount(family) : 0;
+  const consentTick = useModelConsent();
   useEffect(() => {
     const cq = split.content;
-    if (cq.length < 2 || !searchable) { setContent({ q: cq, ids: null, status: "" }); return; }
+    if (cq.length < 2 || !searchable || askedLater(family)) { setContent({ q: cq, ids: null, status: "" }); return; }
     let alive = true;
     const size = TEXT_MODELS[family].size;
     const t = setTimeout(() => {
@@ -374,10 +378,11 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
       contentSearch(cq, family, (done, total) => {
         if (alive && done < total) setContent((c) => ({ ...c, status: `Downloading the search model: ${Math.round(done / 1e6)} of ${Math.round(total / 1e6)} MB…` }));
       }).then((hits) => alive && setContent({ q: cq, ids: hits.map((h) => h.id), status: "" }),
-        (e) => alive && setContent({ q: cq, ids: null, status: `Couldn't search photo content. ${e instanceof Error ? e.message : "Try again."}` }));
+        (e) => alive && setContent(e instanceof NeedsConsent ? { q: cq, ids: null, status: "", need: e.family }
+          : { q: cq, ids: null, status: `Couldn't search photo content. ${e instanceof Error ? e.message : "Try again."}` }));
     }, size > 1e8 ? 400 : 250);
     return () => { alive = false; clearTimeout(t); };
-  }, [split.content, family, searchable > 0]);
+  }, [split.content, family, searchable > 0, consentTick]);
   // ranked like Immich (docs/SEARCH.md): every photo the model indexed, best match first, page by page
   const ranked = content.q === split.content && split.content ? content.ids : null;
   const PAGE = 200;
@@ -677,6 +682,9 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
                 </section>
               )}
               {q && content.status && <Loading inline={timelineItems.length > 0} label={content.status} />}
+              {q && content.need && content.q === split.content && !askedLater(content.need) && (
+                <ModelConsent family={content.need} onYes={() => agreeModels(content.need!)} onLater={() => askLater(content.need!)} />
+              )}
               {q && items && items.length > 0 && timelineItems.length === 0 && !content.status && <p class="small">Nothing matches “{searched.trim()}”. Search covers file names, dates (2023, March, 14.03.2023), cameras, albums and people{searchable ? ", and what's in your photos" : ""}.{!searchable && " To search by what's in photos (dog, beach), turn on search in the Android or Mac app."}</p>}
               {!q && <MemoriesRow memories={memories} onOpen={openMemory} />}
               {items && items.length > 0 && albums.length > 0 && !selectMode && !q && <p class="small hint desktoponly">Tip: drag photos onto an album to file them.</p>}

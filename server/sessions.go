@@ -51,6 +51,8 @@ func deviceName(r *http.Request) string {
 		return browser + " on " + os
 	case browser != "":
 		return browser
+	case strings.HasPrefix(ua, "cipherfilm-upload/"):
+		return "Upload tool"
 	case strings.HasPrefix(ua, "okhttp/"):
 		return "Android app"
 	case strings.Contains(ua, "CFNetwork"):

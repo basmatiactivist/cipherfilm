@@ -142,6 +142,42 @@ func (a *App) openTOTP(userID, slot, stored string) ([]byte, error) {
 	return g.Open(nil, b[:g.NonceSize()], b[g.NonceSize():], []byte("totp|"+slot+"|"+userID))
 }
 
+// totpSetupTTL is how long an authenticator setup can be finished with a code.
+const totpSetupTTL = 15 * time.Minute
+
+var errSetupGone = errors.New("setup expired")
+
+// sealPending encrypts an authenticator setup for users.totp_pending: the secret, when it was made, and whether a
+// second step was checked for it (made while two-step sign-in was on). The slot is "pending.2", so a setup stored in
+// the older form (the secret alone) doesn't open and has to be started again.
+func (a *App) sealPending(userID string, secret []byte, checked bool, at time.Time) string {
+	b := make([]byte, 9+len(secret))
+	defer clear(b)
+	if checked {
+		b[0] = 1
+	}
+	binary.BigEndian.PutUint64(b[1:9], uint64(at.Unix()))
+	copy(b[9:], secret)
+	return a.sealTOTP(userID, "pending.2", b)
+}
+
+// openPending opens a setup sealed by sealPending; errSetupGone once it is older than totpSetupTTL.
+func (a *App) openPending(userID, stored string, now time.Time) (secret []byte, checked bool, err error) {
+	b, err := a.openTOTP(userID, "pending.2", stored)
+	if err != nil {
+		return nil, false, err
+	}
+	defer clear(b)
+	if len(b) < 9+16 || b[0] > 1 {
+		return nil, false, errors.New("bad setup")
+	}
+	at := time.Unix(int64(binary.BigEndian.Uint64(b[1:9])), 0)
+	if now.Sub(at) > totpSetupTTL || at.After(now.Add(time.Minute)) {
+		return nil, false, errSetupGone
+	}
+	return append([]byte(nil), b[9:]...), b[0] == 1, nil
+}
+
 // ---- recovery codes ----
 
 func newRecoveryCodes() []string {
@@ -588,14 +624,16 @@ func (a *App) twoFactorSetup(w http.ResponseWriter, r *http.Request, u *user, s 
 		fail(w, http.StatusConflict, "two-step sign-in is already on")
 		return
 	}
-	// two-step sign-in already on with a passkey: adding an authenticator app needs a second step too
-	if u.twoFactor() && !a.secondFactor(w, r, u, s, req) {
+	// two-step sign-in already on with a passkey: adding an authenticator app needs a second step too. The setup
+	// records whether it was checked: one made without (while two-step sign-in was off) can't be finished once it is on.
+	checked := u.twoFactor()
+	if checked && !a.secondFactor(w, r, u, s, req) {
 		return
 	}
 	secret := randBytes(20) // 160 bits, as RFC 4226 recommends
 	defer clear(secret)
 	res, err := a.db.Exec(`UPDATE users SET totp_pending=? WHERE id=? AND totp_secret='' AND auth_hash=? AND status='active'`,
-		a.sealTOTP(u.ID, "pending", secret), u.ID, u.AuthHash)
+		a.sealPending(u.ID, secret, checked, a.now()), u.ID, u.AuthHash)
 	if rowsAffected(res, err) != 1 {
 		fail(w, http.StatusConflict, "your account changed meanwhile; try again")
 		return
@@ -610,7 +648,9 @@ type codeReq struct {
 
 // twoFactorEnable turns the authenticator app on once a code from the new secret is right. If it is the account's first
 // second step, it returns the recovery codes: the only time they are shown (with a passkey already there, the account
-// keeps the codes it has).
+// keeps the codes it has). A setup is good for totpSetupTTL; one begun while two-step sign-in was off can't be
+// finished once a passkey turned it on (that would add a second step without one), and adding a passkey or changing
+// the password drops it anyway.
 func (a *App) twoFactorEnable(w http.ResponseWriter, r *http.Request, u *user, s *session) {
 	if a.isDemo(u) {
 		fail(w, 403, demoRefused)
@@ -628,17 +668,21 @@ func (a *App) twoFactorEnable(w http.ResponseWriter, r *http.Request, u *user, s
 		fail(w, http.StatusConflict, "start the setup again")
 		return
 	}
-	at, ok := reserve(a.codeSlots(u.ID)...)
-	if !ok {
-		fail(w, 429, "too many attempts, try later")
-		return
-	}
-	secret, err := a.openTOTP(u.ID, "pending", u.TOTPPending)
+	secret, checked, err := a.openPending(u.ID, u.TOTPPending, a.now())
 	if err != nil {
 		fail(w, http.StatusConflict, "start the setup again")
 		return
 	}
 	defer clear(secret)
+	if u.twoFactor() && !checked {
+		fail(w, http.StatusConflict, "start the setup again")
+		return
+	}
+	at, ok := reserve(a.codeSlots(u.ID)...)
+	if !ok {
+		fail(w, 429, "too many attempts, try later")
+		return
+	}
 	step, good := totpMatch(secret, asTyped(req.Code), a.now())
 	if !good {
 		writeJSON(w, 403, map[string]string{"error": "that code isn't right", "code": "wrong_code"})
@@ -651,8 +695,10 @@ func (a *App) twoFactorEnable(w http.ResponseWriter, r *http.Request, u *user, s
 		return
 	}
 	defer tx.Rollback()
-	res, err := tx.Exec(`UPDATE users SET totp_secret=?, totp_pending='', totp_last=? WHERE id=? AND totp_pending=? AND totp_secret='' AND status='active'`,
-		a.sealTOTP(u.ID, "on", secret), step, u.ID, u.TOTPPending)
+	// and only if no passkey came meanwhile, unless the setup was checked with a second step
+	res, err := tx.Exec(`UPDATE users SET totp_secret=?, totp_pending='', totp_last=? WHERE id=? AND totp_pending=? AND totp_secret='' AND status='active'
+		AND (? OR NOT EXISTS (SELECT 1 FROM passkeys WHERE user_id=users.id))`,
+		a.sealTOTP(u.ID, "on", secret), step, u.ID, u.TOTPPending, checked)
 	if rowsAffected(res, err) != 1 {
 		fail(w, http.StatusConflict, "start the setup again")
 		return
@@ -743,11 +789,12 @@ func (a *App) turnOff(ctx context.Context, userID, secret string) bool {
 // twoFactorRemoveTOTP removes the authenticator app and keeps the passkeys; without a passkey it is the same as
 // turning two-step sign-in off.
 func (a *App) twoFactorRemoveTOTP(w http.ResponseWriter, r *http.Request, u *user, s *session) {
-	if !a.proofAndCode(w, r, u, s, "2fa-off") {
-		return
-	}
+	// before the second step is checked, so a recovery code isn't used up for nothing
 	if u.TOTPSecret == "" {
 		fail(w, http.StatusConflict, "no authenticator app is set up")
+		return
+	}
+	if !a.proofAndCode(w, r, u, s, "2fa-off") {
 		return
 	}
 	tx, err := a.db.BeginTx(r.Context(), nil)

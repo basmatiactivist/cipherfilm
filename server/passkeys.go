@@ -275,7 +275,9 @@ type waChallenge struct {
 	rpID     string
 	userID   string
 	authHash string // the password it was begun under (registration)
-	expires  time.Time
+	// twoFactorAtBegin: two-step sign-in was on when the registration began, so a second step was checked for it
+	twoFactorAtBegin bool
+	expires          time.Time
 }
 
 // challengeStore keeps one open ceremony per signed-in session (keyed by the session's hash); taking it uses it up.
@@ -533,7 +535,7 @@ func (a *App) passkeyRegisterBegin(w http.ResponseWriter, r *http.Request, u *us
 		fail(w, 500, "server error")
 		return
 	}
-	a.waReg.put(s.IDHash, &waChallenge{sd: *sd, rpID: rp.Config.RPID, userID: u.ID, authHash: u.AuthHash, expires: a.now().Add(waTTL)}, a.now())
+	a.waReg.put(s.IDHash, &waChallenge{sd: *sd, rpID: rp.Config.RPID, userID: u.ID, authHash: u.AuthHash, twoFactorAtBegin: u.twoFactor(), expires: a.now().Add(waTTL)}, a.now())
 	writeJSON(w, 200, map[string]any{"options": opts.Response})
 }
 
@@ -604,6 +606,12 @@ func (a *App) passkeyRegisterFinish(w http.ResponseWriter, r *http.Request, u *u
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "start adding the passkey again", "code": "passkey_expired"})
 		return
 	}
+	// begun while two-step sign-in was off (no second step checked), and it is on now: this would add a second step
+	// without one
+	if !ch.twoFactorAtBegin && (wasOn != 0 || count > 0) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "start adding the passkey again", "code": "passkey_expired"})
+		return
+	}
 	if count >= passkeyMax {
 		fail(w, http.StatusConflict, fmt.Sprintf("an account can have at most %d passkeys", passkeyMax))
 		return
@@ -616,6 +624,11 @@ func (a *App) passkeyRegisterFinish(w http.ResponseWriter, r *http.Request, u *u
 			fail(w, http.StatusConflict, "this passkey is already added")
 			return
 		}
+		fail(w, 500, "server error")
+		return
+	}
+	// an authenticator setup still open is dropped: it was begun under other conditions (see twoFactorEnable)
+	if _, err := tx.Exec(`UPDATE users SET totp_pending='' WHERE id=?`, u.ID); err != nil {
 		fail(w, 500, "server error")
 		return
 	}
@@ -735,7 +748,10 @@ func (a *App) removePasskey(r *http.Request, userID, id string) (off bool, err e
 		return false, err
 	}
 	if on == 0 {
+		// two-step sign-in is off now: pending sign-ins and the session challenges begun under it go
 		a.pending.dropUser(userID, a.now())
+		a.waProof.dropUser(userID)
+		a.waReg.dropUser(userID)
 	}
 	return on == 0, nil
 }

@@ -301,7 +301,7 @@ func (a *App) changePassword(w http.ResponseWriter, r *http.Request, u *user, s 
 	defer tx.Rollback()
 	// only if the password is still the one just checked: when two devices change it at the same moment, the second
 	// would otherwise overwrite the first and leave a password that neither person typed last
-	res, err := tx.Exec(`UPDATE users SET kdf=?, auth_hash=?, wrapped_master_pw=? WHERE id=? AND auth_hash=? AND status='active'`, req.NewKDF.json(), ah, req.NewWrappedMasterPW, u.ID, u.AuthHash)
+	res, err := tx.Exec(`UPDATE users SET kdf=?, auth_hash=?, wrapped_master_pw=?, totp_pending='' WHERE id=? AND auth_hash=? AND status='active'`, req.NewKDF.json(), ah, req.NewWrappedMasterPW, u.ID, u.AuthHash)
 	if err != nil {
 		fail(w, 500, "server error")
 		return
@@ -578,7 +578,7 @@ func (a *App) recoverFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	res, err := tx.Exec(`UPDATE users SET kdf=?, auth_hash=?, wrapped_master_pw=?, wrapped_master_recovery=?, recovery_hash=? WHERE id=? AND recovery_hash=? AND status='active'`,
+	res, err := tx.Exec(`UPDATE users SET kdf=?, auth_hash=?, wrapped_master_pw=?, wrapped_master_recovery=?, recovery_hash=?, totp_pending='' WHERE id=? AND recovery_hash=? AND status='active'`,
 		req.NewKDF.json(), ah, req.NewWrappedMasterPW, req.NewWrappedMasterRec, rh, t.userID, t.recHash)
 	if err != nil {
 		fail(w, 500, "server error")

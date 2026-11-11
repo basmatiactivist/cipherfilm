@@ -1,9 +1,10 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Keyboard } from "react-native";
 import { router } from "expo-router";
 import { Button, Dialog, Portal, Text } from "react-native-paper";
 import { Column, Field, type FieldHandle, Lead, Problem, Screen, Title, useAppTheme } from "../ui";
-import { declineBiometric, enableBiometric, login, offerBiometric, useSession } from "../session";
+import { CodeExpired, type CodeStep, declineBiometric, enableBiometric, login, offerBiometric, useSession } from "../session";
+import { cleanCode, codeReady } from "../twoStep";
 import { useAction } from "../useAction";
 import { away } from "../autolock";
 import { busyIcon } from "../Loader";
@@ -17,14 +18,64 @@ export default function SignIn() {
   const [password, setPassword] = useState("");
   const [offerBio, setOfferBio] = useState(false);
   const { busy, error, run, setError } = useAction();
+  // two-step sign-in: the password was right, a code comes next
+  const [step, setStep] = useState<CodeStep | null>(null);
+  const [code, setCode] = useState("");
+  const [recovery, setRecovery] = useState(false);
+  // leaving the screen mid-way: the key derived from the password goes
+  const stepRef = useRef<CodeStep | null>(null);
+  stepRef.current = step;
+  useEffect(() => () => stepRef.current?.cancel(), []);
   const done = () => router.replace("/library");
-  const go = () => run(async () => {
-    Keyboard.dismiss();
-    await login(email, password);
+  const signedIn = async () => {
     setPassword("");
     if (await offerBiometric()) setOfferBio(true);
     else done();
+  };
+  const go = () => run(async () => {
+    Keyboard.dismiss();
+    const next = await login(email, password);
+    if (next) { setPassword(""); setCode(""); setRecovery(false); setStep(next); return; }
+    await signedIn();
   });
+  const startOver = () => { step?.cancel(); setStep(null); setCode(""); setRecovery(false); setError(undefined); };
+  const send = () => run(async () => {
+    if (!step) return;
+    Keyboard.dismiss();
+    try {
+      await step.finish(code);
+    } catch (e) {
+      setCode("");
+      if (e instanceof CodeExpired) { setStep(null); setRecovery(false); }
+      throw e;
+    }
+    setStep(null);
+    await signedIn();
+  });
+  if (step) {
+    return (
+      <Screen form>
+        <Column>
+          <Title>{t("Two-step sign-in")}</Title>
+          <Lead>{recovery ? t("Enter one of your recovery codes. Each one works once.") : t("Enter the 6-digit code from your authenticator app.")}</Lead>
+          <Problem>{error}</Problem>
+          {recovery ? (
+            <Field key="recovery" label={t("Recovery code")} value={code} onChangeText={(v) => setCode(cleanCode(v, true))} autoCapitalize="none" autoFocus
+              returnKeyType="go" onSubmitEditing={() => { if (codeReady(code, true)) send(); }} hint={busy ? t("Checking…") : undefined} />
+          ) : (
+            <Field key="totp" label={t("Code")} value={code} onChangeText={(v) => setCode(cleanCode(v, false))} keyboardType="number-pad" textContentType="oneTimeCode"
+              autoComplete="one-time-code" maxLength={6} autoFocus returnKeyType="go" onSubmitEditing={() => { if (codeReady(code, false)) send(); }}
+              hint={busy ? t("Checking…") : undefined} />
+          )}
+          <Button mode="contained" onPress={send} icon={busy ? busyIcon : undefined} disabled={busy || !codeReady(code, recovery)} contentStyle={{ height: 48 }}>{t("Sign in")}</Button>
+          <Button mode="text" onPress={() => { setRecovery(!recovery); setCode(""); setError(undefined); }} disabled={busy} style={{ marginTop: 8 }}>
+            {recovery ? t("Use the authenticator app") : t("Use a recovery code")}
+          </Button>
+          <Button mode="text" onPress={startOver} disabled={busy}>{t("Start over")}</Button>
+        </Column>
+      </Screen>
+    );
+  }
   return (
     <Screen form>
       <Column>

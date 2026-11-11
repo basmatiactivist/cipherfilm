@@ -1,0 +1,80 @@
+// Two-step sign-in, devices and notices: the answers of server/twofactor.go and server/notices.go as the app reads them.
+import Foundation
+import Testing
+@testable import CipherfilmCore
+
+@Suite struct TwoFactorTests {
+  @Test func passwordAnswerBecomesACodeStep() {
+    let kek = Data(repeating: 7, count: 32)
+    let e = APIError(status: 401, message: "x", code: "two_factor_required", pending: "tok")
+    let step = CodeStep(e, email: "a@x.org", kek: kek, now: Date(timeIntervalSince1970: 1000))
+    #expect(step != nil)
+    #expect(step?.pending == "tok")
+    #expect(step?.email == "a@x.org")
+    #expect(step?.expires == Date(timeIntervalSince1970: 1300))
+    #expect(step?.key == kek)
+    // the key is forgotten once the step ends
+    step?.abandon()
+    #expect(step?.abandoned == true)
+    #expect(step?.key == nil)
+    // anything else is no code step: a wrong password stays an error
+    #expect(CodeStep(APIError(status: 401, message: "wrong e-mail or password"), email: "a@x.org", kek: kek) == nil)
+    #expect(CodeStep(APIError(status: 401, message: "x", code: "two_factor_required"), email: "a@x.org", kek: kek) == nil)
+  }
+
+  @Test func meReadsTwoFactor() throws {
+    let json = """
+    {"user":{"id":"0123456789abcdef0123456789abcdef","email":"a@x.org","role":"user"},"csrf":"c","kdf":{"alg":"argon2id13","v":1,"ops":3,"mem":67108864,"salt":"AAAAAAAAAAAAAAAAAAAAAA"},
+     "wrapped_master_pw":"x","wrapped_privkey":"x","pubkey":"x","two_factor":true}
+    """
+    #expect(try JSONDecoder().decode(Me.self, from: Data(json.utf8)).two_factor == true)
+    let old = json.replacingOccurrences(of: ",\"two_factor\":true", with: "")
+    #expect(try JSONDecoder().decode(Me.self, from: Data(old.utf8)).two_factor == nil)
+  }
+
+  @Test func codesAsTyped() {
+    #expect(TwoFactor.ready("123456", recovery: false))
+    #expect(TwoFactor.ready(" 123 456 ", recovery: false))
+    #expect(!TwoFactor.ready("12345", recovery: false))
+    #expect(!TwoFactor.ready("12345a", recovery: false))
+    #expect(TwoFactor.ready("abcd-efgh-jkmn-pq12", recovery: true))
+    #expect(TwoFactor.ready("ABCD EFGH JKMN PQ12", recovery: true))
+    #expect(!TwoFactor.ready("abcd-efgh-jkmn-pq1", recovery: true))
+    #expect(!TwoFactor.ready("abcd-efgh-jkmn-pq1!", recovery: true))
+    #expect(TwoFactor.clean("ab cd-ef") == "abcdef")
+    #expect(TwoFactor.grouped("JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP") == "JBSW Y3DP EHPK 3PXP JBSW Y3DP EHPK 3PXP")
+    #expect(TwoFactor.grouped("ABCDEF") == "ABCD EF")
+  }
+
+  @Test func statusAndSetupDecode() throws {
+    let s = try JSONDecoder().decode(TwoFactor.Status.self, from: Data(#"{"enabled":true,"recovery_codes_left":9,"available":true}"#.utf8))
+    #expect(s == TwoFactor.Status(enabled: true, recovery_codes_left: 9, available: true))
+    let u = try JSONDecoder().decode(TwoFactor.Setup.self, from: Data(#"{"secret":"ABC","uri":"otpauth://totp/x","algorithm":"SHA1","digits":6,"period":30}"#.utf8))
+    #expect(u.uri == "otpauth://totp/x")
+  }
+
+  @Test func devicesDecode() throws {
+    let d = try JSONDecoder().decode(Device.self, from: Data(#"{"id":"0123456789abcdef01234567","device":"","created_at":1,"last_seen":2,"current":true,"indexer":false}"#.utf8))
+    #expect(d.name == "Unknown device")
+    #expect(d.current)
+  }
+
+  @Test func noticesShownAndWorded() {
+    let list = [
+      Notice(id: 1, kind: "sign_in", device: "Pixel 8 (Android app)", at: 100),
+      Notice(id: 3, kind: "something_new", device: "", at: 300),
+      Notice(id: 2, kind: "2fa_reset", device: "", at: 200),
+    ]
+    let shown = Notice.shown(list)
+    #expect(shown.map(\.id) == [2, 1]) // unknown kinds left out, newest first
+    #expect(shown[1].text(time: "Nov 11, 10:00") == "New sign-in: Pixel 8 (Android app), Nov 11, 10:00. Not you? Review devices.")
+    #expect(shown[1].reviewDevices)
+    #expect(shown[0].text(time: "Nov 11") == "An administrator turned off two-step sign-in for your account (Nov 11). Turn it on again in Settings.")
+    #expect(!shown[0].reviewDevices)
+    #expect(Notice(id: 4, kind: "sign_in", device: "", at: 0).text(time: "t").contains("an unknown device"))
+  }
+
+  @Test func liveKnowsNotices() {
+    #expect(LiveSignal(SSEvent(event: "changed", data: #"{"v":5,"what":["notices"]}"#)) == .changed(v: 5, what: [.notices]))
+  }
+}

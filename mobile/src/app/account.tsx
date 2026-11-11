@@ -112,6 +112,10 @@ export default function Account() {
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="cloud" color={th.colors.primary} /></View>} onPress={() => router.push("/backup")} style={st.item} />
         <List.Item title={t("Search and people")} description={t("Find photos by what and who is in them")}
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="search" color={th.colors.primary} /></View>} onPress={() => router.push("/search-settings")} style={st.item} />
+        <List.Item title={t("Devices")} description={t("Where you're signed in")}
+          descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="phone" color={th.colors.primary} /></View>} onPress={() => router.push("/devices")} style={st.item} />
+        {me?.demo ? null : <List.Item title={t("Two-step sign-in")} description={me?.two_factor ? t("On: a new sign-in also needs a code") : t("Off: ask for a code from an authenticator app too")}
+          descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="key" color={th.colors.primary} /></View>} onPress={() => router.push("/two-step")} style={st.item} />}
         <List.Item title={t("Free up space")} description={t("Remove photos from this phone that are already in Cipherfilm")}
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="phone" color={th.colors.primary} /></View>} onPress={() => router.push("/free-space")} style={st.item} />
         {me?.map ? <SwitchItem title={t("Map")} description={t("Your photos on a map. Map images from {who}.", { who: mapProvider() || t("the map server") })}

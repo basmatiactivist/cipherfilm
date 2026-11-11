@@ -22,6 +22,12 @@ version into the GitHub release notes, so a release cannot be published without 
 ### Changed
 - Albums update incrementally on every platform: after the first load, a change fetches only the albums that changed
   and which were deleted (`GET /api/albums?since=`), not every album again.
+- Two-step sign-in: turn on codes from an authenticator app under Account (web, Android, Mac); a new sign-in then
+  asks for a code or one of ten one-time recovery codes. Unlocking a device that is already signed in doesn't. An
+  admin can turn it off for someone who lost their phone (Admin › Users, or `reset-2fa` on the server).
+- Devices under Account on Android and the Mac too (the web had it): see where you're signed in and sign out one or
+  all other devices. Your other devices show a notice when a new one signs in, and when an admin turned off two-step
+  sign-in.
 
 ## [2.6.1] - 2026-11-10
 

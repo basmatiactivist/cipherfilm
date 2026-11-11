@@ -112,6 +112,7 @@ final class AppModel {
       throw APIError(status: -1, message: "That address isn't a Cipherfilm server.")
     }
     a.invalidate()
+    startOver()
     wipe(ended: true)
     UserDefaults.standard.set(url.absoluteString, forKey: "server")
     use(server: url)
@@ -121,16 +122,67 @@ final class AppModel {
   }
 
   func forgetServer() {
+    startOver()
     wipe(ended: true)
     UserDefaults.standard.removeObject(forKey: "server")
     api?.invalidate(); api = nil; server = nil; me = nil
     phase = .noServer
   }
 
+  /** A sign-in waiting for its two-step code (the sign-in page then asks for it). */
+  var codeStep: CodeStep?
+
   func login(email: String, password: String) async throws {
     guard let api else { return }
-    let (me, master) = try await Account.login(api: api, email: email, password: password)
-    adopt(me, master: master)
+    codeStep?.abandon(); codeStep = nil
+    switch try await Account.login(api: api, email: email, password: password) {
+    case .done(let me, let master): adopt(me, master: master)
+    case .code(let step): codeStep = step
+    }
+  }
+
+  /** The code step: a wrong code may be tried again; an expired sign-in goes back to the password. */
+  func finishSignIn(code: String) async throws {
+    guard let api, let step = codeStep else { return }
+    do {
+      let (me, master) = try await Account.finish(api: api, step: step, code: code)
+      codeStep = nil
+      adopt(me, master: master)
+    } catch let e as APIError where e.code == "two_factor_expired" {
+      codeStep = nil
+      throw e
+    }
+  }
+
+  /** Back to the password: the key the password made is forgotten. */
+  func startOver() {
+    codeStep?.abandon()
+    codeStep = nil
+  }
+
+  // ---- notices (a new sign-in elsewhere, two-step sign-in turned off by an admin) ----
+
+  var notices: [Notice] = []
+  /** the Settings tab to show (the banner's "Review devices" opens Security) */
+  var settingsTab = "general"
+
+  func loadNotices() async {
+    guard let api, phase == .unlocked else { return }
+    if let l = try? await Notice.load(api: api), phase == .unlocked { notices = l }
+  }
+
+  func dismiss(_ n: Notice) {
+    notices.removeAll { $0.id == n.id }
+    guard let api else { return }
+    Task { try? await Notice.dismiss(api: api, id: n.id) }
+  }
+
+  /** Fetches the account again (two-step sign-in turned on or off here). */
+  func refreshMe() async {
+    guard let api, let old = me, let fresh = try? JSONDecoder().decode(Me.self, from: try await api.json("GET", "/api/me")),
+          fresh.user.id == old.user.id else { return }
+    api.csrf = fresh.csrf
+    me = fresh
   }
 
   /** Touch ID unlock is set up on this Mac for the signed-in account. */
@@ -183,6 +235,7 @@ final class AppModel {
       restoreUploads()
       every(120)
       startLive(api, vault!)
+      Task { await loadNotices() }
       agent.unlocked()
     } else {
       phase = .locked
@@ -297,7 +350,7 @@ final class AppModel {
     images.clear()
     PlaceBook.forget()
     Outbox.clear()
-    items = []; byId = [:]; albums = []; trash = []
+    items = []; byId = [:]; albums = []; trash = []; notices = []
     if ended { watcher.stop(forget: true); uploads = []; uploadsOwner = nil; uploadsPaused = false; Inbox.clear() }
   }
 
@@ -469,6 +522,7 @@ final class AppModel {
     if !what.isDisjoint(with: [.items, .albums]) && uploading == 0 { await refresh(quiet: true) }
     if what.contains(.trash) { await loadTrash(quiet: true) }
     if what.contains(.people) { search.peopleChangedElsewhere() }
+    if what.contains(.notices) { await loadNotices() }
     liveTook = Date().timeIntervalSince(began)
     liveLast = Date()
     liveFlush = nil

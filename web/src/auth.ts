@@ -123,10 +123,16 @@ async function createChecked(acc: NewAccount, email: string, password: string, s
   try {
     await send();
   } catch (e) {
+    let step: CodeStep | null;
     try {
-      await login(email, password);
+      step = await login(email, password);
     } catch {
       throw e;
+    }
+    // a new account has no two-step sign-in: one that asks for a code was there before
+    if (step) {
+      step.cancel();
+      throw new Error("This account already exists. Sign in with your password, then make a new recovery key under Account.");
     }
     const s = await getSodium();
     if (!mem.masterKey || s.memcmp(mem.masterKey, acc.masterKey) !== true) {
@@ -159,15 +165,88 @@ export async function acceptInvite(token: string, email: string, password: strin
   });
 }
 
-export async function login(email: string, password: string): Promise<void> {
+/** The second step of a sign-in to an account with two-step sign-in: the password was right, and the server wants a
+ *  code from the authenticator app (or a recovery code) before it hands out a session or any of the account's keys.
+ *  It holds the key derived from the password until the code is accepted or the person starts over. */
+export interface CodeStep {
+  /** Sends the code and signs in when it is right. A wrong code throws and the step stays; CodeExpired means the
+   *  password is needed again (too old, too many wrong codes, the password changed). */
+  finish(code: string): Promise<void>;
+  /** Starting over: the key derived from the password is overwritten. */
+  cancel(): void;
+}
+
+export class CodeExpired extends Error {}
+
+/** The pending token of a password step that needs a code, or "" (any other failure). */
+export function pendingToken(e: unknown): string {
+  return e instanceof ApiError && e.status === 401 && e.code === "two_factor_required" && typeof e.body?.pending === "string" ? e.body.pending : "";
+}
+
+/** What went wrong with a code: "wrong" (try again), "expired" (back to the password) or "other". */
+export function codeProblem(e: unknown): "wrong" | "expired" | "other" {
+  if (!(e instanceof ApiError) || e.status !== 401) return "other";
+  return e.code === "wrong_code" ? "wrong" : e.code === "two_factor_expired" ? "expired" : "other";
+}
+
+const EXPIRED = "This sign-in expired. Enter your password again.";
+
+function codeStep(s: Awaited<ReturnType<typeof getSodium>>, email: string, kek: Uint8Array, pending: string): CodeStep {
+  let open = true;
+  const cancel = () => { if (open) { open = false; s.memzero(kek); } };
+  return {
+    cancel,
+    async finish(code: string) {
+      if (!open) throw new CodeExpired(EXPIRED);
+      let me: Me;
+      try {
+        me = await api<Me>("POST", "/api/auth/login/2fa", { pending, code: code.trim() });
+      } catch (e) {
+        if (codeProblem(e) === "expired") { cancel(); throw new CodeExpired(EXPIRED); }
+        if (codeProblem(e) === "wrong") throw new Error("That code isn't right. Check the time on your phone and try the newest code.");
+        throw e;
+      }
+      open = false;
+      try { await signedIn(me, unlockMasterKey(s, email, kek, me.wrapped_master_pw)); } finally { s.memzero(kek); }
+    },
+  };
+}
+
+/** Signs in. Returns a code step when the account has two-step sign-in (null when signed in already). */
+export async function login(email: string, password: string): Promise<CodeStep | null> {
   const s = await getSodium();
   const e = normEmail(email);
   const kdf = await api<KdfParams>("GET", `/api/auth/params?email=${encodeURIComponent(e)}`);
   assertSaneKdf(kdf);
   clearPlayer(); // a different account may sign in on this browser: drop anything the Service Worker still holds
   const { auth, kek } = await loginProof(s, password, kdf);
-  const me = await api<Me>("POST", "/api/auth/login", { email: e, auth });
-  await signedIn(me, unlockMasterKey(s, e, kek, me.wrapped_master_pw));
+  let me: Me;
+  try {
+    me = await api<Me>("POST", "/api/auth/login", { email: e, auth });
+  } catch (err) {
+    const pending = pendingToken(err);
+    if (!pending) { s.memzero(kek); throw err; }
+    return codeStep(s, e, kek, pending);
+  }
+  try { await signedIn(me, unlockMasterKey(s, e, kek, me.wrapped_master_pw)); } finally { s.memzero(kek); }
+  return null;
+}
+
+/** The sign-in proof of the signed-in account's password, checked here first (a typo shows before anything is sent):
+ *  what changing two-step sign-in sends to the server. */
+export async function passwordProof(password: string): Promise<string> {
+  const s = await getSodium();
+  const me = mem.me!;
+  assertSaneKdf(me.kdf);
+  const { auth, kek } = await loginProof(s, password, me.kdf);
+  try {
+    s.memzero(unlockMasterKey(s, me.user.email, kek, me.wrapped_master_pw));
+  } catch {
+    throw new Error("That password isn't right.");
+  } finally {
+    s.memzero(kek);
+  }
+  return auth;
 }
 
 /** Session cookie is still valid after a reload; only the password is needed to rebuild the keys. */

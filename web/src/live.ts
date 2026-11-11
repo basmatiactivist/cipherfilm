@@ -2,8 +2,8 @@
 // on another device, a photo uploaded on the phone, an album renamed on the Mac, and the library loads again what
 // changed. A ping says only which lists changed (never what is in them); the lists come through the usual API.
 
-export type Topic = "items" | "trash" | "albums" | "people" | "index";
-export const ALL: Topic[] = ["items", "trash", "albums", "people", "index"];
+export type Topic = "items" | "trash" | "albums" | "people" | "index" | "notices";
+export const ALL: Topic[] = ["items", "trash", "albums", "people", "index", "notices"];
 const TOPICS = new Set<string>(ALL);
 
 interface Clock {

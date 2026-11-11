@@ -8,6 +8,7 @@ import { open, LABEL } from "@crypto/wrap";
 import type { KdfParams } from "@crypto/kdf";
 import { api, ApiError, remote, setCsrf, setServer, whenRevoked, whenSessionEnds } from "./api";
 import { t } from "./i18n";
+import { codeProblem, pendingToken } from "./twoStep";
 
 export interface Me {
   user: { id: string; email: string; role: "admin" | "user"; nsfw?: boolean };
@@ -25,6 +26,8 @@ export interface Me {
   demo?: boolean;
   /** the map tab's base map styles (light, dark: tried in order); absent when the server turned the map off */
   map?: { light: string[]; dark: string[] };
+  /** two-step sign-in is on: a new sign-in asks for a code after the password (older servers don't send it) */
+  two_factor?: boolean;
 }
 
 type Phase = "starting" | "noServer" | "signedOut" | "locked" | "unlocked";
@@ -186,18 +189,87 @@ export async function forgetServer() {
   set({ phase: "noServer", server: "", me: null, masterKey: null });
 }
 
-export async function login(email: string, password: string) {
+/** The second step of a sign-in to an account with two-step sign-in: the password was right, the server now wants a
+ *  code (from the authenticator app, or a recovery code). It holds the key derived from the password until the code
+ *  is accepted or the person starts over; nothing of the account (session, keys) is on the phone before that. */
+export interface CodeStep {
+  /** Sends the code; signs in when it is right. Throws CodeExpired when the password is needed again. */
+  finish(code: string): Promise<void>;
+  /** Starting over: the key derived from the password is overwritten. */
+  cancel(): void;
+}
+
+/** The sign-in waiting for a code ended (too old, too many wrong codes, the password changed): sign in again. */
+export class CodeExpired extends Error {}
+
+async function signedIn(s: Awaited<ReturnType<typeof getSodium>>, e: string, kek: Uint8Array, me: Me) {
+  handedOver(); // the cookie is this account's now
+  try {
+    adopt(me, unlockMasterKey(s, e, kek, me.wrapped_master_pw));
+  } finally {
+    s.memzero(kek);
+  }
+  set({ biometric: (await SecureStore.getItemAsync(bioName(me.user.id))) === "1" });
+}
+
+function codeStep(s: Awaited<ReturnType<typeof getSodium>>, e: string, kek: Uint8Array, pending: string): CodeStep {
+  let open = true;
+  const cancel = () => { if (open) { open = false; s.memzero(kek); } };
+  return {
+    cancel,
+    async finish(code: string) {
+      if (!open) throw new CodeExpired(t("This sign-in expired. Enter your password again."));
+      let me: Me;
+      try {
+        me = await api<Me>("POST", "/api/auth/login/2fa", { pending, code });
+      } catch (err) {
+        const why = codeProblem(err);
+        if (why === "expired") { cancel(); throw new CodeExpired(t("This sign-in expired. Enter your password again.")); }
+        if (why === "wrong") throw new Error(t("That code isn't right. Try again."));
+        throw err;
+      }
+      open = false;
+      await signedIn(s, e, kek, me);
+    },
+  };
+}
+
+/** Signs in; returns a code step when the account has two-step sign-in (null when already signed in). */
+export async function login(email: string, password: string): Promise<CodeStep | null> {
   const s = await getSodium();
   const e = normEmail(email);
   setServer(state.server); // the server shown on the sign-in screen, always
   const kdf = await api<KdfParams>("GET", `/api/auth/params?email=${encodeURIComponent(e)}`);
   assertSaneKdf(kdf);
   const { auth, kek } = await loginProof(s, password, kdf);
-  const me = await api<Me>("POST", "/api/auth/login", { email: e, auth });
-  handedOver(); // the cookie is this account's now
-  adopt(me, unlockMasterKey(s, e, kek, me.wrapped_master_pw));
-  s.memzero(kek);
-  set({ biometric: (await SecureStore.getItemAsync(bioName(me.user.id))) === "1" });
+  let me: Me;
+  try {
+    me = await api<Me>("POST", "/api/auth/login", { email: e, auth });
+  } catch (err) {
+    const pending = pendingToken(err);
+    if (!pending) { s.memzero(kek); throw err; }
+    return codeStep(s, e, kek, pending);
+  }
+  await signedIn(s, e, kek, me);
+  return null;
+}
+
+/** The sign-in proof for the signed-in account, after checking the password here first (a typo shows at once):
+ *  what changing two-step sign-in sends to the server. */
+export async function passwordProof(password: string): Promise<string> {
+  const s = await getSodium();
+  const me = state.me;
+  if (!me) throw new Error(t("Sign in first."));
+  assertSaneKdf(me.kdf);
+  const { auth, kek } = await loginProof(s, password, me.kdf);
+  try {
+    s.memzero(unlockMasterKey(s, me.user.email, kek, me.wrapped_master_pw));
+  } catch {
+    throw new Error(t("That password isn't right."));
+  } finally {
+    s.memzero(kek);
+  }
+  return auth;
 }
 
 /** After a reload the session cookie is still valid; only the password (or a fingerprint) is needed for the keys. */

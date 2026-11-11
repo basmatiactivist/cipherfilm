@@ -9,7 +9,7 @@ import (
 func (a *App) adminListUsers(w http.ResponseWriter, r *http.Request, u *user, s *session) {
 	rows, err := a.db.Query(`SELECT u.id,u.email,u.role,u.status,u.created_at,u.quota_bytes,
 		` + usedBytesSQL("u.id") + `,
-		(SELECT COUNT(*) FROM items i WHERE i.user_id=u.id AND i.state='ready'), u.last_login_at, u.nsfw
+		(SELECT COUNT(*) FROM items i WHERE i.user_id=u.id AND i.state='ready'), u.last_login_at, u.nsfw, u.totp_secret<>''
 		FROM users u ORDER BY u.created_at`)
 	if err != nil {
 		fail(w, 500, "server error")
@@ -20,14 +20,14 @@ func (a *App) adminListUsers(w http.ResponseWriter, r *http.Request, u *user, s 
 		ID, Email, Role, Status string
 		CreatedAt, LastLogin    int64
 		Quota, Used, Count      int64
-		NSFW                    bool
+		NSFW, TwoFactor         bool
 	}
 	out := []map[string]any{}
 	for rows.Next() {
 		var x row
-		if rows.Scan(&x.ID, &x.Email, &x.Role, &x.Status, &x.CreatedAt, &x.Quota, &x.Used, &x.Count, &x.LastLogin, &x.NSFW) == nil {
+		if rows.Scan(&x.ID, &x.Email, &x.Role, &x.Status, &x.CreatedAt, &x.Quota, &x.Used, &x.Count, &x.LastLogin, &x.NSFW, &x.TwoFactor) == nil {
 			// sizes and counts are metadata the server knows anyway; names, albums and content stay private
-			out = append(out, map[string]any{"id": x.ID, "email": x.Email, "role": x.Role, "status": x.Status, "created_at": x.CreatedAt, "quota_bytes": x.Quota, "used_bytes": x.Used, "item_count": x.Count, "last_login_at": x.LastLogin, "nsfw": x.NSFW})
+			out = append(out, map[string]any{"id": x.ID, "email": x.Email, "role": x.Role, "status": x.Status, "created_at": x.CreatedAt, "quota_bytes": x.Quota, "used_bytes": x.Used, "item_count": x.Count, "last_login_at": x.LastLogin, "nsfw": x.NSFW, "two_factor": x.TwoFactor})
 		}
 	}
 	inv, err := a.db.Query(`SELECT id,email,expires_at,quota_bytes FROM invites WHERE used_at IS NULL AND expires_at > ? ORDER BY created_at`, a.now().Unix())

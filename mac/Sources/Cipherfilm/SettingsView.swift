@@ -6,11 +6,13 @@ struct SettingsView: View {
   @Environment(AppModel.self) private var model
 
   var body: some View {
-    TabView {
-      GeneralSettings().tabItem { Label("General", systemImage: "gearshape") }
-      SearchSettings().tabItem { Label("Search & People", systemImage: "sparkle.magnifyingglass") }
-      ExportSettings().tabItem { Label("Export", systemImage: "folder") }
-      WatchSettings().tabItem { Label("Watched Folders", systemImage: "eye") }
+    @Bindable var model = model
+    TabView(selection: $model.settingsTab) {
+      GeneralSettings().tabItem { Label("General", systemImage: "gearshape") }.tag("general")
+      SecuritySettings().tabItem { Label("Security", systemImage: "lock.shield") }.tag("security")
+      SearchSettings().tabItem { Label("Search & People", systemImage: "sparkle.magnifyingglass") }.tag("search")
+      ExportSettings().tabItem { Label("Export", systemImage: "folder") }.tag("export")
+      WatchSettings().tabItem { Label("Watched Folders", systemImage: "eye") }.tag("watch")
     }
     .frame(width: 560)
     .tint(Ink.teal)

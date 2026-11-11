@@ -53,6 +53,7 @@ struct MainView: View {
         Ink.paper.ignoresSafeArea()
         Detail(nav: nav, selection: selection)
       }
+      .overlay(alignment: .top) { NoticeBanner() }
       .toolbar { toolbar }
       .searchable(text: $nav.query, placement: .toolbar, prompt: model.search.ready ? "Search: beach, Anna, 2023, videos…" : "Search by name, date or camera")
     }

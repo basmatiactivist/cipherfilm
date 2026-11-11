@@ -15,7 +15,7 @@ const DEVICE = `${String((Platform.constants as { Model?: string }).Model ?? "An
 
 export class ApiError extends Error {
   /** for logs: what the network layer said (a timeout, a refused connection), never shown as the message */
-  constructor(public status: number, message: string, public detail = "", public code = "") {
+  constructor(public status: number, message: string, public detail = "", public code = "", public body: unknown = null) {
     super(message);
   }
 }
@@ -82,7 +82,7 @@ export async function api<T = any>(method: string, path: string, body?: unknown,
   try { text = await res.text(); } catch (e) { if (res.ok) throw new ApiError(0, offline(), `${method} ${path.replace(/[0-9a-f]{32}/g, ":id")}: body ${why(e)}`); } finally { time.end(); }
   let data: any = null;
   try { data = text ? JSON.parse(text) : null; } catch { /* not JSON */ }
-  if (!res.ok) { ended(res, path, to); throw new ApiError(res.status, serverSays(data?.error) ?? t("Something went wrong."), "", data?.code ?? ""); }
+  if (!res.ok) { ended(res, path, to); throw new ApiError(res.status, serverSays(data?.error) ?? t("Something went wrong."), "", data?.code ?? "", data); }
   // a GET always answers with an object or a list; other methods may answer with nothing
   if ((text && data === null) || (method === "GET" && (data === null || typeof data !== "object"))) {
     throw new ApiError(0, offline(), `${method} ${path.replace(/[0-9a-f]{32}/g, ":id")}: ${res.status}, not a JSON answer`);

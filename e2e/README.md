@@ -19,6 +19,7 @@ repository is a usable credential.
 | `dave@example.org` | Photos, albums and 400 deliberately unreadable test items |
 | `erin@example.org` | A playable WebM, a broken video, long and emoji file names |
 | `frank@example.org` | One photo and a rotated recovery key |
+| `grace@example.org` | Two-step sign-in, turned on and then off again by the admin (`zzzzzzzztwostep.spec.ts`) |
 | `demo@example.org` | The read-only public demo login (`DEMO_ACCOUNTS` in `compose.e2e.yaml`); an empty library |
 
 Every `make e2e` run resets its stack. Never point the suite at an instance that holds real data.

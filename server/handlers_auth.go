@@ -36,6 +36,8 @@ func (a *App) routes() http.Handler {
 	a.sessionRoutes(m)
 	a.thumbRoutes(m)
 	a.eventRoutes(m)
+	a.twoFactorRoutes(m)
+	a.noticeRoutes(m)
 	m.HandleFunc("GET /api/admin/users", a.auth(true, a.adminListUsers))
 	m.HandleFunc("DELETE /api/admin/invites/{id}", a.auth(true, a.adminRevokeInvite))
 	m.HandleFunc("PATCH /api/admin/settings", a.auth(true, a.adminPatchSettings))
@@ -67,6 +69,7 @@ func (a *App) sessionBundle(u *user, s *session) map[string]any {
 		"wrapped_privkey":   u.WrappedPrivkey,
 		"pubkey":            u.Pubkey,
 		"server_version":    version, // shown in the apps' settings
+		"two_factor":        u.twoFactor(),
 	}
 	if a.mapConf != nil {
 		b["map"] = a.mapConf // the base map's styles; absent when the operator turned the map off
@@ -222,6 +225,11 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	at.success()
+	// two-step sign-in: no session and none of the account's keys yet, only a token for the code step (twofactor.go)
+	if u.twoFactor() {
+		a.startPending(w, u)
+		return
+	}
 	ss, err := a.startSession(w, r, u.ID, u.AuthHash)
 	if errors.Is(err, errCredentialsChanged) {
 		fail(w, 401, "wrong e-mail or password")
@@ -231,6 +239,7 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "server error")
 		return
 	}
+	a.noticeSignIn(u, ss, r)
 	writeJSON(w, 200, a.sessionBundle(u, ss))
 }
 
@@ -311,6 +320,7 @@ func (a *App) changePassword(w http.ResponseWriter, r *http.Request, u *user, s 
 	}
 	at.success()
 	a.revokeTickets(u.ID)
+	a.forgetCodeTries(u.ID)
 	a.live.recheck(u.ID) // the other devices' live-update streams end with their sessions
 	if nu, err := a.userByID(u.ID); err == nil {
 		a.setDevice(w, nu) // the old device cookie is bound to the old password hash
@@ -586,6 +596,7 @@ func (a *App) recoverFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.revokeTickets(t.userID)
+	a.forgetCodeTries(t.userID)
 	a.live.recheck(t.userID)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }

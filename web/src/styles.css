@@ -488,3 +488,13 @@ kbd { display: inline-block; padding: 1px 7px; font: inherit; font-size: var(--t
 .mapconsent { max-width: 560px; margin: var(--space-6) auto; display: grid; gap: var(--space-3); justify-items: start; }
 .mapconsent h2 { margin: 0; }
 .mapconsent p { margin: 0; }
+
+/* two-step sign-in (screens.tsx TwoFactorPanel) and notices (library.tsx) */
+.qr { display: block; width: 200px; height: 200px; margin: var(--space-3) 0; border: 1px solid var(--rule); border-radius: var(--radius-control); }
+.secret { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); }
+.secret code, .codes code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: var(--text-label); letter-spacing: 0.04em; overflow-wrap: anywhere; }
+.words.codes { grid-template-rows: repeat(10, auto); }
+@media (min-width: 560px) { .words.codes { grid-template-rows: repeat(5, auto); } }
+.noticebar { display: flex; align-items: center; gap: var(--space-3); margin: 0 0 var(--space-4); padding: var(--space-2) var(--space-2) var(--space-2) 14px; border: 1px solid var(--rule-strong); border-radius: var(--radius-control); background: var(--card); color: var(--ink); font-size: var(--text-label); }
+.noticebar > span { flex: 1; min-width: 0; text-wrap: pretty; }
+.noticebar > svg { flex: none; color: var(--teal-ink); }

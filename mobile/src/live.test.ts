@@ -81,7 +81,7 @@ describe("startLive", () => {
     expect(s.conns.length).toBe(2);
     s.last().send("event: ready\ndata: {\"v\":900}\n\n");
     await vi.advanceTimersByTimeAsync(0);
-    expect(changes).toEqual([["items", "trash", "albums", "people", "index"]]);
+    expect(changes).toEqual([["items", "trash", "albums", "people", "index", "notices"]]);
     expect(memory.v).toBe(900);
   });
 

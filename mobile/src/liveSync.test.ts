@@ -13,6 +13,7 @@ vi.mock("./libraryStore", () => ({
 }));
 vi.mock("./albumsStore", () => ({ albumsLoaded: () => st.albumsLoaded, refreshAlbums: async () => { st.calls.push("albums"); } }));
 vi.mock("./upload", () => ({ uploadsRunning: () => st.uploads, onUploadsIdle: (f: () => void) => { st.idle.push(f); } }));
+vi.mock("./noticesStore", () => ({ refreshNotices: async () => { st.calls.push("notices"); } }));
 vi.mock("./search/people", () => ({ peopleChanged: () => { st.calls.push("people"); } }));
 vi.mock("./search/engine", () => ({ startSearch: async () => { st.calls.push("search"); }, thisPhoneIndexes: () => st.indexes }));
 vi.mock("react-native", () => ({ AppState: { currentState: "active", addEventListener: () => ({ remove() {} }) } }));
@@ -34,6 +35,12 @@ describe("liveSync", () => {
     off();
     await m.sync(new Set(["trash"]));
     expect(trash).toHaveBeenCalledTimes(1);
+  });
+
+  it("loads the notices when they changed", async () => {
+    const m = await import("./liveSync");
+    await m.sync(new Set(["notices"]));
+    expect(st.calls).toEqual(["notices"]);
   });
 
   it("leaves alone what this phone hasn't loaded", async () => {

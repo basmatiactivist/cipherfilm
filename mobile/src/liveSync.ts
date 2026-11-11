@@ -7,6 +7,7 @@ import { albumsLoaded, refreshAlbums } from "./albumsStore";
 import { onUploadsIdle, uploadsRunning } from "./upload";
 import { peopleChanged } from "./search/people";
 import { startSearch, thisPhoneIndexes } from "./search/engine";
+import { refreshNotices } from "./noticesStore";
 
 const trashViews = new Set<() => void>();
 /** The trash screen, while it is open: called when the trash changed on another device. */
@@ -26,6 +27,7 @@ export async function sync(what: Set<Topic>) {
   if (what.has("albums") && albumsLoaded()) jobs.push(refreshAlbums({ quiet: true }));
   if (what.has("trash")) trashViews.forEach((f) => f());
   if (what.has("people")) peopleChanged();
+  if (what.has("notices")) jobs.push(refreshNotices().catch(() => {}));
   // the phone that indexes made those entries itself; a library refresh pulls them as well (libraryStore.ts)
   if (what.has("index") && !what.has("items") && !thisPhoneIndexes() && Date.now() - indexAt > INDEX_EVERY && libraryItems().length) {
     indexAt = Date.now();

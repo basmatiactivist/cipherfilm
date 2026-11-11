@@ -5,6 +5,12 @@ All notable changes to Cipherfilm are listed here. The format follows
 [Semantic Versioning](https://semver.org/). The release workflow copies the section of the tagged
 version into the GitHub release notes, so a release cannot be published without an entry here.
 
+## [Unreleased]
+
+### Added
+- Web and Android: "Duplicates and similar photos" finds photos uploaded more than once and bursts of nearly the same
+  shot, on your device, suggests which to keep and moves the rest to the trash (restorable for 30 days).
+
 ## [2.6.1] - 2026-11-10
 
 Photos and videos keep where they were taken, however they are uploaded, and what arrived without it gets it.

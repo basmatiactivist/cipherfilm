@@ -905,3 +905,69 @@ func TestUnfinishedPasswordStepIsNoticed(t *testing.T) {
 		t.Fatalf("pushed-out sign-ins: %d notices, want 1", n)
 	}
 }
+
+// A password step on an account with two-step sign-in never creates a session row, whatever happens to its pending
+// sign-in (wrong code, wrong recovery code, expired, worn out, pushed out, noticed as password_used); only a right
+// code does, exactly one. The device list (GET /api/me/sessions) is read from these rows.
+func TestPasswordStepNeverCreatesASession(t *testing.T) {
+	e := newEnv(t)
+	clk := e.pinClock()
+	admin, ab := e.setupAdmin("admin@x.org")
+	secret, _ := e.enable2FA(admin, ab)
+	clk.tick(30 * time.Second)
+	u, _ := e.app.userByEmail("admin@x.org")
+	rows := func() (n int) {
+		e.app.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE user_id=?`, u.ID).Scan(&n)
+		return
+	}
+	listed := func() int {
+		_, out := admin.do("GET", "/api/me/sessions", nil, false)
+		return len(out["sessions"].([]any))
+	}
+	before := rows()
+	if before != 1 || listed() != 1 {
+		t.Fatalf("start: %d rows, %d listed", before, listed())
+	}
+	check := func(what string) {
+		t.Helper()
+		if n := rows(); n != before {
+			t.Fatalf("%s: %d session rows, want %d", what, n, before)
+		}
+		if n := listed(); n != before {
+			t.Fatalf("%s: %d devices listed, want %d", what, n, before)
+		}
+	}
+
+	c := e.client()
+	p := e.passwordStep(c, "admin@x.org", ab)
+	check("password step")
+	c.post("/api/auth/login/2fa", map[string]any{"pending": p, "code": "000000"})
+	check("wrong code")
+	c.post("/api/auth/login/2fa", map[string]any{"pending": p, "code": "aaaa-bbbb-cccc-dddd"})
+	check("wrong recovery code")
+	for i := 0; i < pendingTries; i++ {
+		c.post("/api/auth/login/2fa", map[string]any{"pending": p, "code": "000000"})
+	}
+	check("worn out")
+	e.app.totpAcct.clear("2fa|" + u.ID)
+	for i := 0; i < pendingPer+1; i++ { // the oldest are pushed out
+		e.passwordStep(e.client(), "admin@x.org", ab)
+	}
+	check("pushed out")
+	clk.tick(pendingTTL + 3*time.Second) // expired; its password_used notice is shown now
+	e.app.pending.sweep(clk.at)
+	if k := shownKinds(t, admin); len(k) == 0 {
+		t.Fatal("no password_used notice")
+	}
+	check("expired and noticed")
+
+	// the right code: one session, and only one
+	c = e.client()
+	p = e.passwordStep(c, "admin@x.org", ab)
+	if r := c.post("/api/auth/login/2fa", map[string]any{"pending": p, "code": codeAt(t, secret, clk.at)}); r.code != 200 {
+		t.Fatalf("right code: %d %v", r.code, r.body)
+	}
+	if n := rows(); n != before+1 {
+		t.Fatalf("after the code: %d session rows, want %d", n, before+1)
+	}
+}

@@ -98,6 +98,9 @@ test.describe.serial("two-step sign-in", () => {
     await page.getByLabel(/I've saved these codes/).check();
     await page.getByRole("button", { name: "Done" }).click();
     await expect(page.getByText("10 of 10 recovery codes left")).toBeVisible();
+    // sign out: closing the browser alone leaves its session valid, and it would be a third device in the next test
+    await openMenuItem(page, "Sign out");
+    await expect(page.getByLabel("E-mail")).toBeVisible();
     await ctx.close();
   });
 
@@ -130,7 +133,7 @@ test.describe.serial("two-step sign-in", () => {
     const notice = first.page.locator(".noticebar");
     await expect(notice).toContainText("New sign-in", { timeout: 15_000 });
     await notice.getByRole("button", { name: "Review devices" }).click();
-    await expect(first.page.locator(".devices li")).toHaveCount(2);
+    await expect(first.page.locator(".devices li")).toHaveCount(2); // these two browsers; the password steps made none
     await first.page.locator(".noticebar").getByRole("button", { name: "Dismiss" }).click();
     await expect(first.page.locator(".noticebar")).toHaveCount(0);
     // dismissed for good: the server no longer lists it for this browser

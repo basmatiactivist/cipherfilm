@@ -218,3 +218,59 @@ func TestExplicitQuotaSurvivesARoleChangeInTheSameRequest(t *testing.T) {
 		t.Fatalf("explicit limit was overwritten: %d", q)
 	}
 }
+
+// The Android and Mac apps show Administration only to admins, but that is a hint: every admin request the apps make
+// is refused by the server for a regular user and for the public demo login, even one listed as an admin by mistake,
+// and refused requests change nothing.
+func TestEveryAdminRouteTheAppsUseRefusesNonAdmins(t *testing.T) {
+	e, admin, demo, bob, _ := demoEnv(t)
+	ids := map[string]string{}
+	_, out := admin.do("GET", "/api/admin/users", nil, false)
+	for _, u := range out["users"].([]any) {
+		m := u.(map[string]any)
+		ids[m["email"].(string)] = m["id"].(string)
+	}
+	// the demo login made an admin: still never administers
+	e.app.db.Exec(`UPDATE users SET role='admin' WHERE id=?`, ids["demo@x.org"])
+	admin.do("POST", "/api/admin/invites", map[string]any{"email": "open@x.org"}, true)
+	_, out = admin.do("GET", "/api/admin/users", nil, false)
+	inv := out["invites"].([]any)[0].(map[string]any)["id"].(string)
+	target := ids["bob@x.org"]
+	routes := [][3]any{
+		{"GET", "/api/admin/users", nil}, {"GET", "/api/admin/audit", nil}, {"GET", "/api/admin/status", nil},
+		{"POST", "/api/admin/invites", map[string]any{"email": "x@x.org"}},
+		{"DELETE", "/api/admin/invites/" + inv, nil},
+		{"PATCH", "/api/admin/settings", map[string]any{"default_quota_bytes": 1}},
+		{"PATCH", "/api/admin/users/" + ids["admin@x.org"], map[string]any{"status": "disabled"}},
+		{"PATCH", "/api/admin/users/" + ids["admin@x.org"], map[string]any{"role": "user"}},
+		{"PATCH", "/api/admin/users/" + target, map[string]any{"nsfw": true}},
+		{"PATCH", "/api/admin/users/" + target, map[string]any{"quota_bytes": 0}},
+		{"DELETE", "/api/admin/users/" + ids["admin@x.org"] + "/2fa", nil},
+		{"DELETE", "/api/admin/users/" + ids["admin@x.org"], nil},
+	}
+	for _, c := range []struct {
+		name string
+		cl   *client
+	}{{"regular user", bob}, {"demo listed as admin", demo}} {
+		for _, r := range routes {
+			code, _ := c.cl.do(r[0].(string), r[1].(string), r[2], true)
+			if code != 404 && code != 403 {
+				t.Errorf("%s: %s %s answered %d", c.name, r[0], r[1], code)
+			}
+		}
+	}
+	// nothing changed: the admin is still an active admin, bob's limit and the invite are as they were
+	_, out = admin.do("GET", "/api/admin/users", nil, false)
+	if len(out["invites"].([]any)) != 1 || out["default_quota_bytes"].(float64) == 1 {
+		t.Fatalf("a refused request changed something: %v", out)
+	}
+	for _, u := range out["users"].([]any) {
+		m := u.(map[string]any)
+		if m["email"] == "admin@x.org" && (m["role"] != "admin" || m["status"] != "active") {
+			t.Fatalf("admin changed: %v", m)
+		}
+		if m["email"] == "bob@x.org" && (m["nsfw"] != false || m["quota_bytes"].(float64) == 0) {
+			t.Fatalf("bob changed: %v", m)
+		}
+	}
+}

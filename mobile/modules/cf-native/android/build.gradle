@@ -28,7 +28,7 @@ dependencies {
   // the video player (CfVideoView, VideoVault.kt)
   implementation "androidx.media3:media3-exoplayer:1.11.1"
   implementation "androidx.media3:media3-ui:1.11.1"
-  // search on the phone: MobileCLIP, YuNet and SFace (Vision.kt)
+  // search on the phone: LAION's CLIP ViT-B/32, YuNet and SFace (Vision.kt)
   implementation "com.microsoft.onnxruntime:onnxruntime-android:1.31.1"
   // the backup starts when a new photo appears (NewMedia.kt), with the same JS task as expo-background-task's runs
   implementation "androidx.work:work-runtime-ktx:2.12.0"

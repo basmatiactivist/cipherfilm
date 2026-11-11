@@ -1,4 +1,4 @@
-// CLIP's byte-level BPE tokenizer (the one MobileCLIP uses), a port of mobile/src/search/tokenizer.ts: lowercase, split
+// CLIP's byte-level BPE tokenizer (the one LAION's ViT-B/32 uses), a port of mobile/src/search/tokenizer.ts: lowercase, split
 // into words, numbers and punctuation, then merge byte pairs in rank order. Context of 77: start, at most 75, end.
 import Foundation
 

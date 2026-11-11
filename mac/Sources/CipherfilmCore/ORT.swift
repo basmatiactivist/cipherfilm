@@ -1,5 +1,5 @@
-// A small Swift wrapper around ONNX Runtime's C API: one environment, CPU sessions in fp32 (MobileCLIP's activations
-// overflow in half precision), float and int64 tensors in, float tensors out.
+// A small Swift wrapper around ONNX Runtime's C API: one environment, CPU sessions in fp32 (as on the phone), float,
+// int32 and int64 tensors in, float tensors out.
 import Foundation
 import onnxruntime
 

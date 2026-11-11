@@ -187,6 +187,7 @@ export function describe(a: AuditEntry, myEmail: string): { icon: ActIcon; text:
     case "two-step sign-in turned off": return { icon: "key", text: t("{who} turned off two-step sign-in for {target}", v), warn: true };
     case "turned on two-step sign-in": return { icon: "key", text: t("{who} turned on two-step sign-in", { who }) };
     case "turned off two-step sign-in": return { icon: "key", text: t("{who} turned off two-step sign-in", { who }) };
+    case "made new recovery codes": return { icon: "key", text: t("{who} made new recovery codes", { who }) };
     case "signed out every device": return a.detail
       ? { icon: "logout", text: t("{who} signed out every device of {target}, and they delete what they keep", v), warn: true }
       : { icon: "logout", text: t("{who} signed out every device of {target}", v) };

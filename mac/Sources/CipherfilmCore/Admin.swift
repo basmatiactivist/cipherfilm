@@ -229,6 +229,7 @@ public enum Admin {
     case "two-step sign-in turned off": return ("key", "\(who) turned off two-step sign-in for \(t)", true)
     case "turned on two-step sign-in": return ("key", "\(who) turned on two-step sign-in", false)
     case "turned off two-step sign-in": return ("key", "\(who) turned off two-step sign-in", false)
+    case "made new recovery codes": return ("key", "\(who) made new recovery codes", false)
     case "signed out every device":
       return ("rectangle.portrait.and.arrow.right", "\(who) signed out every device of \(t)" + (a.detail.isEmpty ? "" : ", and they delete what they keep"), !a.detail.isEmpty)
     default:

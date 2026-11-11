@@ -17,7 +17,6 @@ import android.os.Build
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.view.HapticFeedbackConstants
-import android.view.WindowManager
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -73,28 +72,17 @@ class CfNativeModule : Module() {
   /** Output sizes are checked before the buffer is made, instead of relying on libsodium refusing them afterwards. */
   private fun bounded(v: Int, range: IntRange, what: String) { if (v !in range) throw SodiumFailed(what) }
 
-  /** No screenshots or screen recordings of the library, and the app switcher shows the icon, not the last screen. */
-  private fun protect(activity: Activity?) {
-    activity ?: return
-    if (BuildConfig.TEST_BUILD &&
-      runCatching { Class.forName("android.os.SystemProperties").getMethod("get", String::class.java).invoke(null, "debug.cipherfilm.shots") == "1" }.getOrDefault(false)) return
-    activity.runOnUiThread {
-      activity.window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-      if (Build.VERSION.SDK_INT >= 33) activity.setRecentsScreenshotEnabled(false)
-    }
-  }
-
   override fun definition() = ModuleDefinition {
     Name("CfNative")
 
     Events("onModelProgress", "onShake", "onLockDue")
 
     OnCreate {
-      protect(appContext.currentActivity)
+      ScreenGuard.apply(appContext.currentActivity)
       Shake.onShake = { sendEvent("onShake", emptyMap<String, Any>()) }
       AutoLock.onDue = { why -> sendEvent("onLockDue", mapOf("why" to why)) }
     }
-    OnActivityEntersForeground { protect(appContext.currentActivity); appContext.reactContext?.let { Shake.resume(it) } }
+    OnActivityEntersForeground { ScreenGuard.apply(appContext.currentActivity); appContext.reactContext?.let { Shake.resume(it) } }
     OnActivityEntersBackground { CfVideoView.pauseAll(); Shake.pause() }
     OnDestroy { files.cancel(); filePool.shutdown() }
 
@@ -103,6 +91,13 @@ class CfNativeModule : Module() {
     /** Closes the app and takes it out of the recent apps (after the JavaScript side has locked and wiped). */
     Function("closeApp") {
       appContext.currentActivity?.let { a -> a.runOnUiThread { a.finishAndRemoveTask() } }
+      Unit
+    }
+
+    // ---- screenshots and the recent-apps preview: blocked unless allowed in Account (ScreenGuard.kt) ----
+    Function("screenshotsAllowed") { appContext.reactContext?.let { ScreenGuard.allowed(it) } ?: false }
+    Function("allowScreenshots") { on: Boolean ->
+      appContext.reactContext?.let { ScreenGuard.set(it, appContext.currentActivity, on) }
       Unit
     }
 

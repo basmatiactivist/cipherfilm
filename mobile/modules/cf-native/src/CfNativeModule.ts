@@ -20,6 +20,10 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   // shake to lock and close (Shake.kt)
   shakeWatch(on: boolean): void;
   closeApp(): void;
+  // screenshots, screen recordings and the recent-apps preview (ScreenGuard.kt): blocked unless allowed; this
+  // phone's setting, applied to the window at once and at every launch before the first frame
+  screenshotsAllowed(): boolean;
+  allowScreenshots(on: boolean): void;
   // automatic lock (AutoLock.kt): onLockDue after lockAfter(ms), and at screen off while watchScreen(true)
   lockAfter(ms: number): void;
   lockCancel(): void;

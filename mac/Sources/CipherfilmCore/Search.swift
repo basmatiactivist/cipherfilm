@@ -64,6 +64,8 @@ public enum Models {
   ]
 
   public static func all(_ clip: ClipModel) -> [ModelFile] { [clip.vision, clip.text, tokenizer] + faceFiles }
+  /** Every file any setting can need. */
+  public static let every: [ModelFile] = all(.mobileclip) + [ClipModel.laion.vision, ClipModel.laion.text]
 
   /** MobileCLIP's tags, kept for callers and tests that predate the choice of model. */
   public static let tag = ClipModel.mobileclip.tag
@@ -97,6 +99,21 @@ public enum Models {
   }
 }
 
+/** The yes to download the models from Hugging Face (docs/MODELS.md): a third party, which sees this Mac's IP address,
+ *  so nothing is fetched from there before it. For the exact files (their SHA-256): explicit search's model, the face
+ *  models or a new model in a later release ask again. This Mac's (any account), kept next to the models, so deleting
+ *  them (turning search off) withdraws it. `at` is nil when the files were found already here (from before the question). */
+public struct ModelConsent: Codable, Equatable, Sendable {
+  public var at: Date?
+  public var sha: [String]
+}
+
+/** Thrown by ModelStore.download for files the person hasn't agreed to download; bytes: what they would be. */
+public struct NeedsConsent: Error, LocalizedError, Equatable {
+  public let bytes: Int64
+  public var errorDescription: String? { "Search needs your OK to download the models." }
+}
+
 /** Where the models live and whether they are there; a file is checked once per start. */
 public final class ModelStore: @unchecked Sendable {
   public let dir: URL
@@ -104,6 +121,57 @@ public final class ModelStore: @unchecked Sendable {
   private var checked = Set<String>()
 
   public init(dir: URL) { self.dir = dir }
+
+  // ---- the yes to download ----
+
+  private var consentURL: URL { dir.appendingPathComponent("consent.json") }
+
+  public func consent() -> ModelConsent? {
+    guard let d = try? Data(contentsOf: consentURL) else { return nil }
+    let dec = JSONDecoder(); dec.dateDecodingStrategy = .secondsSince1970
+    return try? dec.decode(ModelConsent.self, from: d)
+  }
+
+  private func save(_ c: ModelConsent?) {
+    guard let c else { try? FileManager.default.removeItem(at: consentURL); return }
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let enc = JSONEncoder(); enc.dateEncodingStrategy = .secondsSince1970
+    try? enc.encode(c).write(to: consentURL, options: .atomic)
+  }
+
+  private func onDisk(_ m: ModelFile) -> Bool {
+    lock.withLock { checked.contains(m.name) } || FileManager.default.fileExists(atPath: dir.appendingPathComponent(m.name).path)
+  }
+
+  /** What a download would fetch that the person hasn't agreed to; empty when nothing needs asking. (After `have`,
+   *  which removes a file with the wrong hash, a model update shows here as a missing file.) */
+  public func unagreed(faces: Bool, clip: ClipModel = .mobileclip, reader: Bool = false) -> [ModelFile] {
+    let sha = Set(consent()?.sha ?? [])
+    return Models.needed(faces: faces, clip: clip, reader: reader).filter { !onDisk($0) && !sha.contains($0.sha256) }
+  }
+
+  /** The yes: what these settings need may be downloaded. */
+  public func agree(faces: Bool, clip: ClipModel = .mobileclip, reader: Bool = false, now: Date = Date()) {
+    let old = consent()?.sha ?? []
+    let add = Models.needed(faces: faces, clip: clip, reader: reader).map(\.sha256).filter { !old.contains($0) }
+    save(ModelConsent(at: now, sha: old + add))
+  }
+
+  /** For Settings: when the models here were downloaded and how big they are; nil when there are none. Models from
+   *  before this question was asked count as agreed, dated by their files. */
+  public func downloaded() -> (at: Date?, bytes: Int64)? {
+    let fm = FileManager.default
+    let here = Models.every.filter { fm.fileExists(atPath: dir.appendingPathComponent($0.name).path) }
+    guard !here.isEmpty else { return nil }
+    var c = consent()
+    if c == nil || here.contains(where: { !c!.sha.contains($0.sha256) }) {
+      let times = here.compactMap { (try? fm.attributesOfItem(atPath: dir.appendingPathComponent($0.name).path)[.modificationDate]) as? Date }
+      let old = c?.sha ?? []
+      c = ModelConsent(at: c?.at ?? times.min(), sha: old + here.map(\.sha256).filter { !old.contains($0) })
+      save(c)
+    }
+    return (c?.at, here.reduce(0) { $0 + $1.size })
+  }
 
   public func missingBytes(faces: Bool, clip: ClipModel = .mobileclip, reader: Bool = false) -> Int64 {
     Models.needed(faces: faces, clip: clip, reader: reader).filter { !FileManager.default.fileExists(atPath: dir.appendingPathComponent($0.name).path) }.reduce(0) { $0 + $1.size }
@@ -130,6 +198,15 @@ public final class ModelStore: @unchecked Sendable {
   /** Downloads what is missing from Hugging Face, each file into "<name>.part" next to where it goes, so a drop (or a
    *  quit) resumes where it stopped; progress counts the bytes of all files together. */
   public func download(faces: Bool, clip: ClipModel = .mobileclip, reader: Bool = false, progress: @escaping @Sendable (Progress) -> Void) async throws {
+    // nothing goes to Hugging Face without the yes, whatever asked for it: a file already here with the right hash
+    // isn't downloaded and needs none
+    let sha = Set(consent()?.sha ?? [])
+    let ask = Models.needed(faces: faces, clip: clip, reader: reader).filter { m in
+      if lock.withLock({ checked.contains(m.name) }) || sha.contains(m.sha256) { return false }
+      let f = dir.appendingPathComponent(m.name)
+      return !(FileManager.default.fileExists(atPath: f.path) && Models.sha256(of: f) == m.sha256)
+    }
+    if !ask.isEmpty { throw NeedsConsent(bytes: ask.reduce(0) { $0 + $1.size }) }
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let list = Models.needed(faces: faces, clip: clip, reader: reader).filter { m in !lock.withLock { checked.contains(m.name) } && !(FileManager.default.fileExists(atPath: dir.appendingPathComponent(m.name).path) && Models.sha256(of: dir.appendingPathComponent(m.name)) == m.sha256) }
     let total = list.reduce(Int64(0)) { $0 + $1.size }
@@ -180,8 +257,15 @@ public final class ModelStore: @unchecked Sendable {
       try? FileManager.default.removeItem(at: dir.appendingPathComponent(m.name))
       try? FileManager.default.removeItem(at: dir.appendingPathComponent(m.name + ".part"))
     }
+    // what went is asked for again before it comes back
+    if var c = consent() {
+      let gone = Set(files.map(\.sha256))
+      let left = c.sha.filter { !gone.contains($0) }
+      if left.count != c.sha.count { c.sha = left; save(left.isEmpty ? nil : c) }
+    }
   }
 
+  /** Turning search off: the models go, and with them the yes to download them. */
   public func delete() {
     lock.withLock { checked = [] }
     try? FileManager.default.removeItem(at: dir)

@@ -13,14 +13,11 @@ export interface ConsentAsk { faces: boolean; clip: Clip; indexes: boolean }
 
 const mb = (n: number) => `${Math.max(1, Math.round(n / 1e6)).toLocaleString(locale())} MB`;
 
-/** Which models the download holds, in words: the content model, the face models. */
+/** Which models the download holds, in words, by what they are for (the files and sizes come from the shared list,
+ *  server/models.json, whichever model the account uses). */
 export function modelWords(a: ConsentAsk): string {
   const files = needed(a.faces, a.clip, a.indexes);
-  const content = a.clip === "laion-b32" ? t("LAION CLIP (explicit search)") : t("MobileCLIP (what is in your photos)");
-  const parts = [content];
-  if (files.some((m) => m.clip === "mobileclip-s2") && a.clip === "laion-b32") parts.push(t("MobileCLIP's image model"));
-  if (files.some((m) => m.faces)) parts.push(t("YuNet and SFace (faces)"));
-  return parts.join(", ");
+  return files.some((m) => m.faces) ? t("the search model and the face models") : t("the search model");
 }
 
 /** What the download fetches for these settings: the files not on this phone yet. */

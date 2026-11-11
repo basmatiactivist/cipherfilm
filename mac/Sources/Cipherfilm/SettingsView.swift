@@ -171,6 +171,18 @@ struct SearchSettings: View {
   @State private var explicitBusy = false
   @State private var indexer: SearchEngine.Device?
   @State private var takingOver = false
+  /** the question before a model download (ModelConsent.swift), and what to do after the yes */
+  @State private var consent: PendingConsent?
+  @State private var offAsk = false
+
+  struct PendingConsent: Identifiable { let ask: ModelConsentAsk; let then: () -> Void; var id: String { ask.id } }
+
+  /** Runs `then` at once when it downloads nothing new; otherwise after the person agreed to the download. */
+  private func withConsent(_ clip: ClipModel, faces: Bool, reader: Bool? = nil, then: @escaping () -> Void) {
+    guard let a = model.search.consentAsk(clip, faces: faces, reader: reader) else { then(); return }
+    // (from an alert's button: the sheet opens once the alert is gone)
+    DispatchQueue.main.async { consent = PendingConsent(ask: a, then: then) }
+  }
 
   var body: some View {
     @Bindable var model = model
@@ -179,13 +191,23 @@ struct SearchSettings: View {
       Section_(title: "Search and people", subtitle: "Runs on this Mac with open models (MobileCLIP, YuNet, SFace)\(size(.mobileclip).map { ", \($0)" } ?? ", already on this Mac"). Results are encrypted and stored on your server, shared with your other devices.") {
         Toggle("Search and people", isOn: Binding(get: { model.settings.search }, set: { on in
           // where explicit search is allowed, which model is asked first, so only that one is downloaded
-          if on && model.me?.user.nsfw == true { askModel = true } else { model.settings.search = on; model.settings.searchAsked = true }
+          if on && model.me?.user.nsfw == true { askModel = true }
+          else if on { withConsent(.mobileclip, faces: model.settings.faces) { model.settings.search = true; model.settings.searchAsked = true } }
+          // off: the models stay unless the person deletes them (asked when there are any)
+          else if model.search.models.downloaded() != nil { offAsk = true }
+          else { model.settings.search = false; model.settings.searchAsked = true }
         }))
           .disabled(!unlocked)
         // where the models come from, said before anything is downloaded (docs/MODELS.md)
-        Text("Downloaded once from Hugging Face. Hugging Face sees this Mac's IP address, nothing of your photos. Hugging Face is a trademark of Hugging Face, Inc. Cipherfilm is not affiliated with or endorsed by Hugging Face.")
+        if let d = model.search.models.downloaded() {
+          Text(d.at.map { "Models downloaded from Hugging Face on \($0.formatted(date: .abbreviated, time: .omitted)), \(ModelConsentSheet.mb(d.bytes))." } ?? "Models downloaded from Hugging Face, \(ModelConsentSheet.mb(d.bytes)).")
+            .font(Typo.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+        Text("Downloaded once from Hugging Face, after you agree. Hugging Face sees this Mac's IP address, nothing of your photos. Hugging Face is a trademark of Hugging Face, Inc. Cipherfilm is not affiliated with or endorsed by Hugging Face.")
           .font(Typo.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        Toggle("Group faces into people", isOn: $model.settings.faces).disabled(!unlocked || !model.settings.search)
+        Toggle("Group faces into people", isOn: Binding(get: { model.settings.faces }, set: { on in
+          if on && model.settings.search { withConsent(model.search.clip, faces: true) { model.settings.faces = true } } else { model.settings.faces = on }
+        })).disabled(!unlocked || !model.settings.search)
         Toggle("Also while on battery", isOn: $model.settings.indexOnBattery).disabled(!model.settings.search)
         if !unlocked { NeedsUnlock() }
       }
@@ -203,6 +225,7 @@ struct SearchSettings: View {
         let c = s.index.count
         Section_(title: "Status") {
           Text(status(s)).font(Typo.caption)
+          if s.phase == .consent { Button("Download…") { consent = PendingConsent(ask: s.pendingAsk(), then: {}) }.disabled(!unlocked) }
           Text("\(c.items) photos and videos indexed, \(c.faces) faces.").font(Typo.caption).foregroundStyle(.secondary)
         }
         // one device per account looks at the photos; the others read what it found (docs/SEARCH.md)
@@ -212,10 +235,12 @@ struct SearchSettings: View {
           } else {
             Text(indexedBy).font(Typo.caption)
             Button(takingOver ? "Switching…" : "Index on This Mac Instead") {
-              takingOver = true
-              Task {
-                do { if let api = model.api { try await model.search.indexHere(api: api) }; error = nil } catch { self.error = error.localizedDescription }
-                takingOver = false
+              withConsent(s.clip, faces: model.settings.faces, reader: false) {
+                takingOver = true
+                Task {
+                  do { if let api = model.api { try await model.search.indexHere(api: api) }; error = nil } catch { self.error = error.localizedDescription }
+                  takingOver = false
+                }
               }
             }
             .disabled(!unlocked || takingOver)
@@ -230,7 +255,7 @@ struct SearchSettings: View {
         }
       }
       Divider()
-      Section_(title: "Turn off and delete", subtitle: "Removes the models and index from this Mac. “Everywhere” also deletes the index and people names from the server.") {
+      Section_(title: "Turn off and delete", subtitle: "Removes the models and index from this Mac; turning search on again asks before downloading them. “Everywhere” also deletes the index and people names from the server.") {
         HStack {
           Button("Turn Off on This Mac") { Task { try? await model.search.forget(clearServer: false, api: model.api); model.settings.search = false } }
           Button("Delete Everywhere…") { confirm = true }.disabled(!unlocked)
@@ -247,9 +272,17 @@ struct SearchSettings: View {
       }
       Button("Cancel", role: .cancel) {}
     } message: { Text("People names are lost. Turning search on again starts over.") }
+    .sheet(item: $consent) { p in
+      ModelConsentSheet(ask: p.ask, yes: { consent = nil; model.search.agree(p.ask); p.then() }, later: { consent = nil })
+    }
+    .alert("Turn off search on this Mac?", isPresented: $offAsk) {
+      Button("Turn Off and Delete the Models") { Task { try? await model.search.forget(clearServer: false, api: model.api); model.settings.search = false; model.settings.searchAsked = true } }
+      Button("Turn Off, Keep the Models") { model.settings.search = false; model.settings.searchAsked = true }
+      Button("Cancel", role: .cancel) {}
+    } message: { Text("Deleting the models frees their space; turning search on again then asks before downloading them.") }
     .alert("Which search?", isPresented: $askModel) {
-      Button("Standard Search (MobileCLIP, \(size(.mobileclip) ?? "already on this Mac"))") { model.turnOnSearch(explicit: false) }
-      Button("Explicit Search (LAION, \(size(.laion) ?? "already on this Mac"))") { model.turnOnSearch(explicit: true) }
+      Button("Standard Search (MobileCLIP, \(size(.mobileclip) ?? "already on this Mac"))") { withConsent(.mobileclip, faces: model.settings.faces) { model.turnOnSearch(explicit: false) } }
+      Button("Explicit Search (LAION, \(size(.laion) ?? "already on this Mac"))") { withConsent(.laion, faces: model.settings.faces) { model.turnOnSearch(explicit: true) } }
       Button("Cancel", role: .cancel) {}
     } message: {
       Text("Explicit search also understands explicit content. It applies to all your devices. You can change it later here.")
@@ -257,11 +290,14 @@ struct SearchSettings: View {
     .alert(explicitAsk == true ? "Turn on explicit search?" : "Turn off explicit search?", isPresented: Binding(get: { explicitAsk != nil }, set: { if !$0 { explicitAsk = nil } })) {
       Button(explicitAsk == true ? "Turn On" : "Turn Off") {
         guard let want = explicitAsk else { return }
-        explicitBusy = true
-        Task {
-          do { try await model.search.setExplicit(want); error = nil } catch { self.error = error.localizedDescription }
-          explicitBusy = false
+        let go = {
+          explicitBusy = true
+          Task {
+            do { try await model.search.setExplicit(want); error = nil } catch { self.error = error.localizedDescription }
+            explicitBusy = false
+          }
         }
+        if want { withConsent(.laion, faces: model.settings.faces, then: go) } else { go() }
       }
       Button("Cancel", role: .cancel) {}
     } message: {
@@ -290,6 +326,7 @@ struct SearchSettings: View {
   private func status(_ s: SearchEngine) -> String {
     switch s.phase {
     case .off: return model.phase == .unlocked ? "Starting…" : "Waits until the library is unlocked."
+    case .consent: return "Waiting for your OK to download the models (\(ModelConsentSheet.mb(Int64(s.total))))."
     case .download: return s.downloadText
     case .loading: return "Loading the models…"
     case .indexing: return "Indexing \(s.done) of \(s.total)"

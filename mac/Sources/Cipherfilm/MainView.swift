@@ -281,6 +281,7 @@ struct NavItem: View {
 struct StatusCard: View {
   @Environment(AppModel.self) private var model
   @State private var showUploads = false
+  @State private var consent: ModelConsentAsk?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
@@ -304,6 +305,9 @@ struct StatusCard: View {
       if model.settings.search {
         let s = model.search
         switch s.phase {
+        case .consent:
+          Button { consent = s.pendingAsk() } label: { StatusLine(icon: "arrow.down.circle", text: "Search waits for your OK to download the models") }
+            .buttonStyle(TileButton(radius: 6)).help("See what is downloaded")
         case .download: StatusLine(icon: "arrow.down.circle", text: s.downloadText, fraction: s.total > 0 ? Double(s.done) / Double(s.total) : nil)
         case .loading: StatusLine(icon: "sparkle.magnifyingglass", text: "Starting search")
         case .indexing: StatusLine(icon: "sparkle.magnifyingglass", text: "Indexing \(s.done) of \(s.total)", fraction: s.total > 0 ? Double(s.done) / Double(s.total) : nil)
@@ -325,6 +329,7 @@ struct StatusCard: View {
     .background(RoundedRectangle(cornerRadius: Radius.card).fill(Ink.card))
     .overlay(RoundedRectangle(cornerRadius: Radius.card).strokeBorder(Ink.rule, lineWidth: 1))
     .popover(isPresented: $showUploads, arrowEdge: .trailing) { UploadsPanel().environment(model) }
+    .sheet(item: $consent) { a in ModelConsentSheet(ask: a, yes: { consent = nil; model.search.agree(a) }, later: { consent = nil }) }
   }
 }
 

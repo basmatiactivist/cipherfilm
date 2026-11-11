@@ -7,6 +7,10 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+### Note
+- Going back to an older server version is not supported once anyone has added a passkey: older servers don't know
+  passkeys, so an account with only passkeys would sign in with the password alone there (docs/RELEASING.md).
+
 ### Added
 - Web, Android, Mac: before the search models are downloaded from Hugging Face, the app asks: what, how big, from
   whom and what Hugging Face sees. Turning search off deletes them; the settings show when they were downloaded.

@@ -1,5 +1,5 @@
 import { Icon, IconName } from "./icons";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { api } from "./api";
 import * as auth from "./auth";
 import { mem } from "./state";
@@ -9,6 +9,7 @@ import { BackupReport, backupState } from "./backup";
 import { explicitChosen, indexChecked, loadPeople, refreshIndex, searchFamily, setExplicit } from "./people/people";
 import { vectorCount } from "./search/content";
 import { TEXT_MODELS } from "./search/rank";
+import * as tf from "./twofactor";
 import { Card, ErrorLine, Field, KeepButton, NewPasswordFields, Submit, VersionLine, fmtGB, passwordProblem, useAction } from "./components";
 
 type Nav = (to: string) => void;
@@ -142,7 +143,8 @@ export function Recover({ nav, onKeys }: { nav: Nav; onKeys: (k: auth.PendingKey
   );
 }
 
-export function Account() {
+/** open: the panel a notice led to ("devices" or "2fa"). */
+export function Account({ open }: { open?: string }) {
   const [kit, setKit] = useState<auth.PendingKey | null>(null);
   if (kit) return <RecoveryKey pending={kit} title="Save your new recovery key" replacing onDone={() => setKit(null)} />;
   return (
@@ -154,7 +156,8 @@ export function Account() {
       {/* the public demo login: one stranger must not lock out the next (the server refuses these anyway) */}
       {!mem.me!.demo && <RecoveryKeyPanel onNew={setKit} />}
       {!mem.me!.demo && <ChangePassword />}
-      {!mem.me!.demo && <DevicesPanel />}
+      {!mem.me!.demo && <TwoFactorPanel open={open === "2fa"} />}
+      {!mem.me!.demo && <DevicesPanel open={open === "devices"} />}
       <SearchPanel />
       {mem.me!.map && <MapPanel />}
       <StoragePanel />
@@ -236,6 +239,111 @@ function DeleteAccount() {
   );
 }
 
+/** Two-step sign-in: a code from an authenticator app at every new sign-in. Unlocking this browser again doesn't ask. */
+function TwoFactorPanel({ open }: { open?: boolean }) {
+  const [st, setSt] = useState<tf.TwoFactorStatus | null>(null);
+  // off: setup (password), qr (scan and confirm); on: off or new (password and a code); codes: new recovery codes shown
+  const [mode, setMode] = useState<"" | "setup" | "qr" | "off" | "new" | "codes">("");
+  const [pw, setPw] = useState("");
+  const [code, setCode] = useState("");
+  const [secret, setSecret] = useState<tf.TwoFactorSetup | null>(null);
+  const [codes, setCodes] = useState<string[]>([]);
+  const [saved, setSaved] = useState(false);
+  const [copied, setCopied] = useState("");
+  const { busy, error, setError, run } = useAction();
+  const load = () => tf.status().then((s) => { setSt(s); if (mem.me) mem.me.two_factor = s.enabled; }, () => {});
+  useEffect(() => { load(); }, []);
+  const reset = () => { setMode(""); setPw(""); setCode(""); setSecret(null); setError(""); setSaved(false); setCopied(""); };
+  const copy = (what: string, text: string) => navigator.clipboard.writeText(text).then(() => setCopied(what), () => setCopied(""));
+  const on = st?.enabled ?? !!mem.me!.two_factor;
+  if (st && !st.available) return null;
+  const email = mem.me!.user.email;
+
+  if (mode === "codes") {
+    return (
+      <Acc icon="key" title="Two-step sign-in" sub="Save your recovery codes" open>
+        <p>Each of these codes signs you in once instead of a code from your app, for when your phone is lost. <strong>They're shown only now.</strong></p>
+        <ol class="words codes" aria-label="Recovery codes">{codes.map((c) => <li key={c}><code>{c}</code></li>)}</ol>
+        <div class="row">
+          <button class="btn secondary" onClick={() => copy("codes", codes.join("\n"))}>{copied === "codes" ? "Copied" : "Copy"}</button>
+          <a class="btn secondary" download="cipherfilm-recovery-codes.txt" href={"data:text/plain;charset=utf-8," + encodeURIComponent(tf.codesFile(email, codes))}>Download</a>
+        </div>
+        <label class="check"><input type="checkbox" checked={saved} onChange={(e) => setSaved((e.target as HTMLInputElement).checked)} /> I've saved these codes somewhere safe</label>
+        <button class="btn" disabled={!saved} onClick={() => { setCodes([]); reset(); load(); }}>Done</button>
+      </Acc>
+    );
+  }
+  return (
+    <Acc icon="key" title="Two-step sign-in" sub={on ? "On: a code from your app at every new sign-in" : "Off"} open={open || mode !== "" || undefined}>
+      {!on && mode === "" && (
+        <>
+          <p>Ask for a 6-digit code from an authenticator app (such as Aegis, 2FAS or Google Authenticator) when you sign in on a new device or browser. Unlocking a device that is already signed in doesn't ask for it.</p>
+          <button class="btn secondary" onClick={() => setMode("setup")}>Turn on…</button>
+        </>
+      )}
+      {!on && mode === "setup" && (
+        <form onSubmit={(e) => { e.preventDefault(); run(async () => { setSecret(await tf.setup(await auth.passwordProof(pw))); setPw(""); setMode("qr"); }); }}>
+          <Field label="Your password" id="tf-password" type="password" value={pw} onInput={setPw} autocomplete="current-password" autofocus />
+          <ErrorLine text={error} />
+          <div class="row">
+            <Submit busy={busy} label="Continue" busyLabel="Checking…" />
+            <button type="button" class="btn secondary" onClick={reset}>Cancel</button>
+          </div>
+        </form>
+      )}
+      {!on && mode === "qr" && secret && (() => {
+        const qr = tf.qrFor(secret.uri);
+        return (
+          <form onSubmit={(e) => { e.preventDefault(); run(async () => { const c = await tf.enable(code); setCodes(c); setCode(""); setSecret(null); setMode("codes"); }); }}>
+            <p>Scan this code with your authenticator app, or type the key into it. Then enter the 6-digit code the app shows.</p>
+            {/* drawn here from the key: the key never goes to a QR service */}
+            <svg class="qr" viewBox={`0 0 ${qr.size} ${qr.size}`} role="img" aria-label="QR code for your authenticator app" shape-rendering="crispEdges">
+              <rect width={qr.size} height={qr.size} fill="#fff" />
+              <path d={qr.d} fill="#000" />
+            </svg>
+            <p class="secret"><span class="small">Key</span> <code>{tf.groupSecret(secret.secret)}</code> <button type="button" class="link" onClick={() => copy("key", secret.secret)}>{copied === "key" ? "Copied" : "Copy"}</button></p>
+            <Field label="Code from the app" id="tf-code" value={code} onInput={setCode} autocomplete="one-time-code" inputmode="numeric" pattern="[0-9 ]*" maxLength={7} autofocus />
+            <ErrorLine text={error} />
+            <div class="row">
+              <Submit busy={busy} label="Turn on" busyLabel="Checking…" />
+              <button type="button" class="btn secondary" onClick={reset}>Cancel</button>
+            </div>
+          </form>
+        );
+      })()}
+      {on && mode === "" && (
+        <>
+          <p>A new sign-in asks for a code from your authenticator app. {st ? `${st.recovery_codes_left} of 10 recovery codes left.` : ""}</p>
+          {st && st.recovery_codes_left <= 2 && <p class="warning small">Few recovery codes left. Make new ones so you aren't locked out if you lose your phone.</p>}
+          <div class="row">
+            <button class="btn secondary" onClick={() => setMode("new")}>New recovery codes…</button>
+            <button class="btn secondary warn" onClick={() => setMode("off")}>Turn off…</button>
+          </div>
+        </>
+      )}
+      {on && (mode === "off" || mode === "new") && (
+        <form onSubmit={(e) => {
+          e.preventDefault();
+          run(async () => {
+            const proof = await auth.passwordProof(pw);
+            if (mode === "off") { await tf.disable(proof, code); reset(); load(); return; }
+            setCodes(await tf.newCodes(proof, code)); setPw(""); setCode(""); setMode("codes");
+          });
+        }}>
+          <p>{mode === "off" ? "Turning it off means your password alone signs in again." : "Your old recovery codes stop working."}</p>
+          <Field label="Your password" id="tf-password" type="password" value={pw} onInput={setPw} autocomplete="current-password" autofocus />
+          <Field label="Code from your app, or a recovery code" id="tf-code" value={code} onInput={setCode} autocomplete="one-time-code" />
+          <ErrorLine text={error} />
+          <div class="row">
+            <Submit busy={busy} label={mode === "off" ? "Turn off" : "Make new codes"} busyLabel="Checking…" danger={mode === "off"} />
+            <button type="button" class="btn secondary" onClick={reset}>Cancel</button>
+          </div>
+        </form>
+      )}
+    </Acc>
+  );
+}
+
 function RecoveryKeyPanel({ onNew }: { onNew: (k: auth.PendingKey) => void }) {
   const [open, setOpen] = useState(false);
   const [cur, setCur] = useState("");
@@ -284,7 +392,7 @@ const seenAgo = (sec: number) => {
 
 /** Every device signed in to this account (docs/SEARCH.md "Devices"): sign out one that is lost or not yours. It
  *  deletes what it keeps of the library the next time it reaches the server. */
-function DevicesPanel() {
+function DevicesPanel({ open }: { open?: boolean }) {
   const [list, setList] = useState<Device[] | null>(null);
   const [ask, setAsk] = useState<Device | "others" | null>(null);
   const { busy, error, run } = useAction();
@@ -292,7 +400,7 @@ function DevicesPanel() {
   useEffect(() => { load(); }, []);
   const others = list?.filter((d) => !d.current).length ?? 0;
   return (
-    <Acc icon="shield" title="Devices" sub="Where you're signed in">
+    <Acc icon="shield" title="Devices" sub="Where you're signed in" open={open}>
       {!list ? <Loading inline label="Checking…" /> : (
         <ul class="devices">
           {list.map((d) => (
@@ -367,9 +475,12 @@ function SearchPanel() {
   );
 }
 
-function Acc(p: { icon: IconName; title: string; sub: string; children: any }) {
+function Acc(p: { icon: IconName; title: string; sub: string; children: any; open?: boolean }) {
+  // opened (and shown) when a notice led here ("Review devices")
+  const ref = useRef<HTMLDetailsElement>(null);
+  useEffect(() => { if (p.open) ref.current?.scrollIntoView({ block: "start" }); }, [p.open]);
   return (
-    <details class="acc">
+    <details class="acc" ref={ref} open={p.open || undefined}>
       <summary>
         <span class="accicon"><Icon name={p.icon} size={22} /></span>
         <span class="acctext"><strong>{p.title}</strong><span>{p.sub}</span></span>
@@ -380,7 +491,7 @@ function Acc(p: { icon: IconName; title: string; sub: string; children: any }) {
   );
 }
 
-interface AdminUser { id: string; email: string; role: string; status: string; created_at: number; last_login_at: number; quota_bytes: number; used_bytes: number; item_count: number; nsfw: boolean }
+interface AdminUser { id: string; email: string; role: string; status: string; created_at: number; last_login_at: number; quota_bytes: number; used_bytes: number; item_count: number; nsfw: boolean; two_factor?: boolean }
 
 
 function Storage({ u, onSaved }: { u: AdminUser; onSaved: () => void }) {
@@ -443,6 +554,9 @@ function describe(a: AuditEntry, myEmail: string): { icon: IconName; text: any; 
     case "default limit changed": return { icon: "cloud", text: <>{who} set the default storage limit to {size(a.detail)}</> };
     case "signed out a device": return { icon: "logout", text: <>{who} signed out {a.detail ? <strong>{a.detail}</strong> : "a device"}</> };
     case "signed out other devices": return { icon: "logout", text: <>{who} signed out all other devices</> };
+    case "two-step sign-in turned off": return { icon: "key", text: <>{who} turned off two-step sign-in for {t}</>, warn: true };
+    case "turned on two-step sign-in": return { icon: "key", text: <>{who} turned on two-step sign-in</> };
+    case "turned off two-step sign-in": return { icon: "key", text: <>{who} turned off two-step sign-in</> };
     case "signed out every device": return { icon: "logout", text: <>{who} signed out every device of {t}{a.detail ? ", and they delete what they keep" : ""}</>, warn: !!a.detail };
   }
   return { icon: "info", text: <>{who} {a.action}{a.target ? <> · {t}</> : null}{a.detail ? <span class="small"> ({a.detail})</span> : null}</> };
@@ -460,6 +574,7 @@ export function Admin({ section }: { section: "users" | "defaults" | "server" | 
   const [email, setEmail] = useState("");
   const [link, setLink] = useState<{ url: string; email: string; exp: number } | null>(null);
   const [confirm, setConfirm] = useState<string | null>(null);
+  const [confirm2fa, setConfirm2fa] = useState<string | null>(null);
   const [inviteGb, setInviteGb] = useState("");
   const [defaultQuota, setDefaultQuota] = useState(0);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
@@ -537,7 +652,7 @@ export function Admin({ section }: { section: "users" | "defaults" | "server" | 
               <span class="avatar" aria-hidden="true">{u.email.slice(0, 1).toUpperCase()}</span>
               <div class="pmain">
                 <strong class="email">{u.email}</strong>
-                <span class="pmeta"><span class={"pill " + u.role}>{u.role}</span><span class={"pill " + u.status}>{u.status}</span>{u.nsfw && <span class="pill">explicit search</span>}<span class="small">{ago(u.last_login_at)}</span></span>
+                <span class="pmeta"><span class={"pill " + u.role}>{u.role}</span><span class={"pill " + u.status}>{u.status}</span>{u.nsfw && <span class="pill">explicit search</span>}{u.two_factor && <span class="pill">two-step sign-in</span>}<span class="small">{ago(u.last_login_at)}</span></span>
                 <Storage u={u} onSaved={changed} />
               </div>
               <div class="pactions">
@@ -548,6 +663,16 @@ export function Admin({ section }: { section: "users" | "defaults" | "server" | 
                     <Icon name="search" size={18} />{u.nsfw ? "Turn off explicit search" : "Allow explicit search"}<span class="sr"> for {u.email}</span>
                   </button>
                 )}
+                {/* for someone who lost their phone and their recovery codes; they're told on their devices */}
+                {u.id !== me && u.two_factor && confirm !== u.id && (confirm2fa === u.id ? (
+                  <>
+                    <span class="small">Turn off two-step sign-in for {u.email}? Their password alone signs in until they turn it on again. Do this only when you're sure it's them asking.</span>
+                    <button class="btn danger small" onClick={() => act(async () => { await api("DELETE", `/api/admin/users/${u.id}/2fa`); setConfirm2fa(null); })}>Turn off</button>
+                    <KeepButton label="Cancel" onClick={() => setConfirm2fa(null)} />
+                  </>
+                ) : (
+                  <button class="btn secondary small" onClick={() => { setConfirm(null); setConfirm2fa(u.id); }}><Icon name="key" size={18} />Turn off two-step sign-in…<span class="sr"> for {u.email}</span></button>
+                ))}
                 {u.id !== me && (confirm === u.id ? (
                     <>
                       <span class="small">Delete {u.email} and everything they stored?</span>
@@ -558,7 +683,7 @@ export function Admin({ section }: { section: "users" | "defaults" | "server" | 
                     <>
                       <button class="btn secondary small" onClick={() => act(() => api("PATCH", `/api/admin/users/${u.id}`, { status: u.status === "active" ? "disabled" : "active" }))}><Icon name={u.status === "active" ? "slash" : "check"} size={18} />{u.status === "active" ? "Disable" : "Enable"}</button>
                       <button class="btn secondary small" onClick={() => act(() => api("PATCH", `/api/admin/users/${u.id}`, { role: u.role === "admin" ? "user" : "admin" }))}><Icon name="shield" size={18} />{u.role === "admin" ? "Make regular user" : "Make admin"}</button>
-                      <button class="btn secondary small warn" onClick={() => setConfirm(u.id)}><Icon name="trash" size={18} />Delete…</button>
+                      <button class="btn secondary small warn" onClick={() => { setConfirm2fa(null); setConfirm(u.id); }}><Icon name="trash" size={18} />Delete…</button>
                     </>
                   ))}
               </div>

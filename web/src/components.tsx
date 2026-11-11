@@ -26,6 +26,8 @@ export function useAction() {
 export function Field(p: {
   label: string; id: string; type?: string; value: string; onInput: (v: string) => void;
   autocomplete?: string; hint?: string; readOnly?: boolean; required?: boolean; autofocus?: boolean; minLength?: number;
+  /** "numeric" brings up the number pad on a phone (a sign-in code) */
+  inputmode?: "numeric" | "text"; maxLength?: number; pattern?: string;
 }) {
   // the autofocus attribute only works on page load; a field that appears later (rename, a step of a form) is focused here
   const ref = useRef<HTMLInputElement>(null);
@@ -36,6 +38,7 @@ export function Field(p: {
       <input
         ref={ref} id={p.id} name={p.id} type={(p.type ?? "text") as "text"} value={p.value} required={p.required ?? true}
         autocomplete={p.autocomplete} readOnly={p.readOnly} autofocus={p.autofocus} minLength={p.minLength}
+        inputMode={p.inputmode} maxLength={p.maxLength} pattern={p.pattern}
         aria-describedby={p.hint ? p.id + "-hint" : undefined}
         onInput={(e) => p.onInput((e.target as HTMLInputElement).value)}
         autocapitalize="none" spellcheck={false}

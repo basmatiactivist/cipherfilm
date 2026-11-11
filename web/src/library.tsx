@@ -19,6 +19,7 @@ import { Icon, IconName, Logo } from "./icons";
 import { checkSession, loadUsage } from "./auth";
 import { hasIndex, loadPeople, refreshIndex, searchFamily, usePeople } from "./people/people";
 import { coalesce, startLive } from "./live";
+import { dismissNotice, loadNotices, noticeText, type Notice } from "./notices";
 import { lazy } from "./lazy";
 import { Loading } from "./loader";
 
@@ -33,7 +34,7 @@ const Admin = lazy(() => import("./screens").then((m) => m.Admin));
 
 interface Job { key: number; owner: string; name: string; file: File; done: number; total: number; state: "queued" | "working" | "done" | "error"; error?: string; retryable?: boolean; stop: { cancelled: boolean } }
 type View = { n: "timeline" } | { n: "favorites" } | { n: "albums" } | { n: "album"; id: string } | { n: "people" } | { n: "person"; key: string; cover?: string } | { n: "map" } | { n: "trash" };
-type Page = View | { n: "account" } | { n: "admin" };
+type Page = View | { n: "account"; open?: string } | { n: "admin" };
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : "Something went wrong.");
 const isMedia = (f: File) => f.type.startsWith("image/") || f.type.startsWith("video/") || /\.(heic|heif)$/i.test(f.name);
@@ -96,6 +97,16 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const refreshAlbums = () => loadAlbums().then(setAlbums, (e) => setError(msg(e))).finally(() => setAlbumsLoaded(true));
   const refreshTrash = () => loadTrash().then((r) => { setTrash(r.items); setRetention(r.retentionDays); }, (e) => setError(msg(e)));
   const refreshUsage = () => loadUsage().then(setUsage, () => {});
+  // a new sign-in elsewhere, or an admin turning off two-step sign-in (notices.ts): shown once, on every device
+  const [notices, setNotices] = useState<Notice[]>([]);
+  const dismissed = useRef(new Set<number>());
+  const refreshNotices = () => (demo ? Promise.resolve() : loadNotices(dismissed.current).then(setNotices, () => {}));
+  useEffect(() => { refreshNotices(); }, []);
+  const dismiss = (n: Notice) => {
+    dismissed.current.add(n.id);
+    setNotices((l) => l.filter((x) => x.id !== n.id));
+    dismissNotice(n.id).catch(() => {}); // sent again at the next load if it didn't arrive (loadNotices)
+  };
   useEffect(() => { refreshItems(); refreshAlbums(); refreshTrash(); refreshUsage(); }, []);
   // while the map is on: videos uploaded before their location was read get it now (map/relocate.ts, loaded only then)
   const mapIsOn = useMapOn();
@@ -114,6 +125,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
       if (what.has("albums")) jobs.push(refreshAlbums());
       if (what.has("people")) jobs.push(loadPeople().catch(() => {}));
       if (what.has("index")) jobs.push(refreshIndex(true).catch(() => {}));
+      if (what.has("notices")) jobs.push(refreshNotices());
       await Promise.all(jobs);
     });
     const stop = startLive({ onChange: (what) => sync.ping(what), probe: checkSession }); // the same account and session, or back to sign-in
@@ -582,6 +594,19 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
 
         <main id="main" tabIndex={-1} class="content">
           {demo && <p class="demonote" role="note">Public demo · read-only · resets every hour</p>}
+          {notices[0] && (() => {
+            const n = notices[0];
+            return (
+              <div class="noticebar" role="status">
+                <Icon name={n.kind === "sign_in" ? "shield" : "key"} size={20} />
+                <span>
+                  {noticeText(n)}{" "}
+                  <button class="link" onClick={() => go({ n: "account", open: n.kind === "sign_in" ? "devices" : "2fa" })}>{n.kind === "sign_in" ? "Review devices" : "Open Account"}</button>
+                </span>
+                <button class="iconbtn tiny" aria-label="Dismiss" onClick={() => dismiss(n)}><Icon name="x" size={16} /></button>
+              </div>
+            );
+          })()}
           <div class="pagehead">
             {page.n === "album" && <button class="iconbtn" onClick={() => go({ n: "albums" })} aria-label="All albums"><Icon name="back" /></button>}
             {page.n === "person" && <button class="iconbtn" onClick={() => go({ n: "people" })} aria-label="All people"><Icon name="back" /></button>}
@@ -614,7 +639,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
             </p>
           )}
 
-          {page.n === "account" && <Account />}
+          {page.n === "account" && <Account open={page.open} />}
           {page.n === "admin" && <Admin section={adminSection} />}
 
           {view.n === "timeline" && (

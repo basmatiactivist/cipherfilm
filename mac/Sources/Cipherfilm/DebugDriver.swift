@@ -27,6 +27,23 @@ enum DebugDriver {
     return false
   }
 
+  /** "Index on This Mac Instead" as the person does it: the role first, then the question for the image models (a Mac
+   *  that only read deleted them, and with them the yes to download them: docs/MODELS.md), the yes, and the indexing.
+   *  Settings asks before it calls indexHere; asked afterwards, the run waits in .consent until the yes, the same gate.
+   *  Returns whether it asked (the image models weren't here). */
+  @discardableResult
+  static func takeOverIndexing(_ api: API) async throws -> Bool {
+    let m = AppModel.shared
+    try await m.search.indexHere(api: api)
+    _ = await wait("taking over: the run starts", timeout: 120) { m.search.phase != .off && m.search.phase != .loading }
+    let asked = m.search.phase == .consent
+    if asked { m.search.agree(m.search.pendingAsk()) }
+    if !(await wait("indexing here again", timeout: 1200) { m.search.indexes && m.search.phase == .ready }) {
+      log("  search phase \(m.search.phase), indexes \(m.search.indexes), \(m.search.message ?? "-"), indexer \(m.me?.indexer ?? "-") (this Mac \(m.me?.session_id ?? "-"))")
+    }
+    return asked
+  }
+
   static func snapshot(_ name: String) {
     guard let dir = env["CF_SNAPSHOTS"], let w = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil && $0.frame.width > 500 }), let v = w.contentView else { return }
     guard let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) else { return }
@@ -217,6 +234,12 @@ enum DebugDriver {
         lastRetry = s.retry != nil
       }
       return s.phase == .ready
+    }
+    // the account may be indexed by another device (a phone signed in to it too): this Mac takes over, as the person
+    // would in Settings › Search & People, so the checks below run against this Mac's own index
+    if !m.search.indexes, let api = m.api {
+      log("another device indexes this account (\(m.me?.indexer ?? "-")): this Mac takes over")
+      do { try await takeOverIndexing(api) } catch { check(false, "take over indexing: \(error)") }
     }
     log("model download: \(retries) drops resumed, top speed \(bytes(Int64(sawRate)))/s, said: \(reasons.joined(separator: " | "))")
     check(sawError == nil, "search came up without an error on the way\(sawError.map { ": " + $0 } ?? "")")
@@ -454,6 +477,11 @@ enum DebugDriver {
         _ = await wait("search ready again", timeout: 600) { m.search.phase == .ready }
         m.me = try JSONDecoder().decode(Me.self, from: try await api.json("GET", "/api/me"))
         let mine = m.me?.session_id ?? ""
+        // another device of the account may have taken the role meanwhile (a phone signed in to it too): taken back
+        if let ix = m.me?.indexer, !ix.isEmpty, ix != mine {
+          log("another device indexes this account (\(ix)): this Mac takes over")
+          try await takeOverIndexing(api)
+        }
         // after signing in again this is a new session: it is the indexer once it writes, or none is set yet
         check(!mine.isEmpty && (m.me?.indexer == mine || m.me?.indexer == "") && m.search.indexes, "this Mac may index (indexer: \(m.me?.indexer ?? "-"))")
         struct Sessions: Decodable { let sessions: [SearchEngine.Device] }
@@ -479,8 +507,9 @@ enum DebugDriver {
         do { try await other.json("DELETE", "/api/index?model=laionb32"); check(false, "an older app's request to delete the index by family is refused") }
         catch let e as APIError { check(e.status == 409, "an older app's request to delete the index by family is refused (\(e.status))") }
         check(try await api.get(Page.self, "/api/index?model=laionb32").entries.count == before && before > 0, "the index stays (\(before))")
-        try await m.search.indexHere(api: api)
-        _ = await wait("indexing here again", timeout: 600) { m.search.indexes && m.search.phase == .ready }
+        // its image models went when it became a reader, and the yes with them: taking over asks again first
+        let asked = try await takeOverIndexing(api)
+        check(asked, "Index on This Mac Instead asks before downloading the image models again")
         check(m.search.indexes && has(ClipModel.clip.vision) && m.me?.indexer == mine, "Index on This Mac Instead: the image models are back and this Mac indexes")
         // signed out from the other device: the next request gets 401 and nothing of the account stays here
         let userId = m.me!.user.id

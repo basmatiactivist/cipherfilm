@@ -31,6 +31,18 @@ describe("duplicates on the phone", () => {
     expect(f.similar).toEqual([]);
     expect(f.searchOn).toBe(false);
     expect(f.indexed).toBe(0);
+    expect(f.checked).toBe(3);
+  });
+
+  it("finds copies under other names: by the original's SHA-256, or by size and capture time for older uploads", async () => {
+    const off = { ready: false, indexedAmong: async () => new Set<string>(), pairScores: async () => [] };
+    const h = "ab".repeat(32);
+    const a = item({}, { name: "IMG_1.jpg", capture_ts: 5, sha256: h }), b = item({}, { name: "photo.jpg", capture_ts: 9, sha256: h });
+    const c = item({}, { name: "IMG_2.jpg", capture_ts: 7 }), d = item({}, { name: "IMG_2 (1).jpg", capture_ts: 7 });
+    const f = await findDuplicates([a, b, c, d], off);
+    expect(f.exact.map((g) => new Set(g.ids))).toEqual(expect.arrayContaining([new Set([a.id, b.id]), new Set([c.id, d.id])]));
+    expect(candidateOf(a)!.sha256).toBe(h);
+    expect(candidateOf(c)).not.toHaveProperty("sha256");
   });
 
   it("groups similar photos through the native index's scores", async () => {

@@ -2,8 +2,11 @@
 // Nothing here talks to the server or reads a photo: it groups what the caller already has decrypted (the items'
 // metadata) and asks the caller for the similarity of pairs of image vectors (the search index, docs/SEARCH.md).
 //
-// - Exact duplicates: the same file name, size and capture time. The metadata carries no content hash, so this is
-//   the strongest signal there is; all three equal is the same file uploaded twice.
+// - Exact duplicates: the same file. Newer uploads carry the original's SHA-256 in their metadata (docs/CRYPTO.md):
+//   equal hashes are the same file, whatever it is called. Older items have none; for them the same size in bytes
+//   and the same capture time (to the millisecond) count, whatever the name ("IMG_1.jpg" and "IMG_1 (1).jpg", or the
+//   same photo from two devices), as long as the pixel size agrees where both know it; the same name, size and
+//   capture time count as before. Two items whose hashes differ are never the same file.
 // - Similar photos: images whose vectors are very close (cosine ≥ threshold) and that were taken close in time
 //   (burst shots, a near-identical series). Every photo in a group is close to every other one (complete linkage),
 //   so a long slow series is never chained into one big group, and a group spans at most the time window.
@@ -26,6 +29,8 @@ export interface Candidate {
   uploaded: number;
   /** a photo: only photos are compared by what they show */
   image: boolean;
+  /** SHA-256 of the original, lowercase hex, where the uploading app wrote one */
+  sha256?: string;
 }
 
 export interface Group {
@@ -61,19 +66,60 @@ const groupOf = (kind: Group["kind"], members: Candidate[]): Group => {
   return { kind, ids, keep: ids[0] };
 };
 
-/** The same file more than once: equal name (ignoring case), size and capture time. Groups ordered by capture time,
- *  newest first, like the timeline. */
+const SHA = /^[0-9a-f]{64}$/;
+const hashOf = (c: Candidate) => (c.sha256 && SHA.test(c.sha256) ? c.sha256 : undefined);
+
+/** The pixel size agrees, either way round (a client may report it before or after the EXIF turn), or one doesn't
+ *  know it. */
+const sameShape = (a: Candidate, b: Candidate) => {
+  if (!pixels(a) || !pixels(b)) return true;
+  return (a.width === b.width && a.height === b.height) || (a.width === b.height && a.height === b.width);
+};
+
+/** Without a hash on at least one side: the same size and capture time, and the same name or a pixel size that agrees. */
+const looksSame = (a: Candidate, b: Candidate) =>
+  a.size === b.size && a.ts === b.ts && (a.name.toLowerCase() === b.name.toLowerCase() || sameShape(a, b));
+
+/** The same file more than once (see the top of this file). Groups ordered by capture time, newest first, like the
+ *  timeline. */
 export function exactGroups(items: Candidate[]): Group[] {
-  const by = new Map<string, Candidate[]>();
-  for (const c of items) {
-    if (!(c.size > 0) || !Number.isFinite(c.ts)) continue;
-    const k = `${c.name.toLowerCase()}\0${c.size}\0${c.ts}`;
-    const list = by.get(k);
-    if (list) list.push(c); else by.set(k, [c]);
+  type Cluster = { members: Candidate[]; sha?: string };
+  const clusters: Cluster[] = [];
+  const bySha = new Map<string, Cluster>();
+  const byBucket = new Map<string, Cluster[]>(); // size and capture time → the clusters with a member there
+  const bucket = (c: Candidate) => `${c.size}\0${c.ts}`;
+  const note = (c: Candidate, cl: Cluster) => {
+    const k = bucket(c), list = byBucket.get(k);
+    if (!list) byBucket.set(k, [cl]); else if (!list.includes(cl)) list.push(cl);
+  };
+  const usable = items.filter((c) => c.size > 0 && Number.isFinite(c.ts))
+    .sort((a, b) => a.size - b.size || a.ts - b.ts || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  // first the ones with a hash: one cluster per hash
+  for (const c of usable) {
+    const h = hashOf(c);
+    if (!h) continue;
+    let cl = bySha.get(h);
+    if (!cl) { cl = { members: [], sha: h }; bySha.set(h, cl); clusters.push(cl); }
+    cl.members.push(c);
+    note(c, cl);
   }
-  const out: { ts: number; g: Group }[] = [];
-  for (const list of by.values()) if (list.length > 1) out.push({ ts: list[0].ts, g: groupOf("exact", list) });
-  return out.sort((a, b) => b.ts - a.ts).map((x) => x.g);
+  // then each one without: into the first cluster at its size and time that it fits as a whole (it looks the same as
+  // one of a hash cluster's hashed members and as every member without a hash), else a cluster of its own
+  for (const c of usable) {
+    if (hashOf(c)) continue;
+    const fits = (cl: Cluster) => {
+      const plain = cl.members.filter((m) => !hashOf(m));
+      if (!plain.every((m) => looksSame(c, m))) return false;
+      return !cl.sha || cl.members.some((m) => hashOf(m) && looksSame(c, m));
+    };
+    let cl = byBucket.get(bucket(c))?.find(fits);
+    if (!cl) { cl = { members: [] }; clusters.push(cl); }
+    cl.members.push(c);
+    note(c, cl);
+  }
+  return clusters.filter((cl) => cl.members.length > 1)
+    .map((cl) => ({ ts: Math.max(...cl.members.map((m) => m.ts)), g: groupOf("exact", cl.members) }))
+    .sort((a, b) => b.ts - a.ts || (a.g.keep < b.g.keep ? -1 : 1)).map((x) => x.g);
 }
 
 /** Pairs of positions in `sorted` (ascending by ts) taken within windowMs of each other, each item with at most
@@ -138,9 +184,20 @@ export function similarGroupsFrom(sorted: Candidate[], pairs: { a: Int32Array; b
 export interface Found {
   exact: Group[];
   similar: Group[];
+  /** photos and videos checked for exact copies */
+  checked: number;
   /** photos (not in an exact group's extra copies) that could be compared, and how many of them have a vector */
   images: number;
   indexed: number;
+}
+
+/** How far the look for similar photos went, for what the screen says: search is off (nothing compared), only some
+ *  photos have a vector, all of them do, or there are no photos to compare. */
+export type SimilarCheck = "off" | "partial" | "complete" | "nothing";
+export function similarCheck(f: Pick<Found, "images" | "indexed">, searchOn: boolean): SimilarCheck {
+  if (f.images === 0) return "nothing";
+  if (!searchOn) return "off";
+  return f.indexed >= f.images ? "complete" : "partial";
 }
 
 /**
@@ -156,7 +213,8 @@ export async function findGroups(items: Candidate[], indexed: (id: string) => bo
   for (const g of exact) for (const id of g.ids.slice(1)) extra.add(id);
   const photos = items.filter((c) => c.image && !extra.has(c.id) && Number.isFinite(c.ts));
   const usable = photos.filter((c) => indexed(c.id)).sort((x, y) => x.ts - y.ts || (x.id < y.id ? -1 : 1));
-  if (!score || usable.length < 2) return { exact, similar: [], images: photos.length, indexed: usable.length };
+  const checked = items.length;
+  if (!score || usable.length < 2) return { exact, similar: [], checked, images: photos.length, indexed: usable.length };
   const pairs = candidatePairs(usable, o.windowMs, o.neighbours);
   const scores = new Float32Array(pairs.a.length);
   for (let k = 0; k < pairs.a.length; k += SCORE_BATCH) {
@@ -166,7 +224,7 @@ export async function findGroups(items: Candidate[], indexed: (id: string) => bo
     const s = await score(a, b);
     for (let x = k; x < end; x++) { const v = s[x - k]; scores[x] = typeof v === "number" && Number.isFinite(v) ? v : NaN; }
   }
-  return { exact, similar: similarGroupsFrom(usable, pairs, scores, o.threshold), images: photos.length, indexed: usable.length };
+  return { exact, similar: similarGroupsFrom(usable, pairs, scores, o.threshold), checked, images: photos.length, indexed: usable.length };
 }
 
 /** The ones a group suggests moving to the trash: all but the one to keep. */

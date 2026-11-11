@@ -237,14 +237,23 @@ Web (account menu) and Android (Account) list photos that are there more than on
 extra ones can go to the trash (restorable for 30 days). Everything is worked out on the device from what it has
 already decrypted; nothing new is stored or sent, apart from the usual trash request for what the person chose.
 
-- **Exact duplicates:** items with the same file name (ignoring case), size and capture time. The metadata holds no
-  content hash, so this is the strongest signal there is. Videos and other files count too.
+- **Exact duplicates:** the same file. Newer uploads carry the original's SHA-256 in their encrypted metadata
+  (`sha256`, docs/CRYPTO.md): equal hashes are the same file whatever the names, and different hashes never are. Older
+  items have none; for them the same size in bytes and the same capture time (to the millisecond) count whatever the
+  name ("IMG_1.jpg" and "IMG_1 (1).jpg", the same photo uploaded from two devices), as long as the pixel size agrees
+  (either way round) where both know it; the same name, size and capture time count as before. An older item joins a
+  group only if it matches every member without a hash, so groups are never chained together. Videos and other files
+  count too.
 - **Similar photos:** photos whose image vectors (the search index above, of the model the account searches with)
   have a cosine of at least 0.92 and that were taken at most 5 minutes apart: bursts and near-identical series. Every
   photo in a group is that close to every other one (complete linkage), so a slow series is never chained into one
   big group. Photos are sorted by capture time and each is compared only with the next 24 within the window, so a
   library of 50,000 needs well under a million comparisons. Only one copy of an exact duplicate takes part. Photos
-  without an entry yet are left out ("Index more photos to find more"); with search off, only exact duplicates.
+  without an entry yet are left out; with search off, only exact duplicates.
+- **What was checked:** the screen always says it: how many photos and videos were checked for exact copies, and for
+  similar photos whether search is off (with the way to turn it on: Account › Search and people on Android; on the
+  web, which can't index, the Android or Mac app), how many of the photos are indexed ("X of Y"), or that all were
+  compared. With search off or only part indexed it says "No exact copies found", never "No duplicates found".
 - **Which to keep:** the highest resolution, then the largest file, then one with a location, then the earliest
   upload. All others in a group are chosen for the trash; the person can change that. Items that couldn't be verified
   and the trash are never included. The public demo shows the groups but can't move anything.

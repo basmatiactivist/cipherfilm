@@ -24,6 +24,10 @@ build notes: `mac/README.md`.
   usual, ⌘A selects all, Esc ends it). ⌫ moves the selection to the trash. A person's and an album's page have "Select
   All" for acting on all their photos at once (album, share, save, favorite, trash). The list is decrypted on all
   cores, so a large library opens quickly; the encrypted list is cached, so a restart shows it at once.
+- **On this day:** above Photos, a card for each earlier year with photos from within three days of today's date
+  (`CipherfilmCore/Memories.swift`, the same rules as the web and Android apps in `web/src/memories/memories.ts`); a
+  click opens that year's photos in the viewer. Picked on the Mac from the decrypted dates; Settings › General ›
+  Memories turns it off on this Mac.
 - **Shortcuts** (menu Photo; they act on the photo in the viewer, else on the selection): ⇧⌘F favorite, ⌃⌘A add to
   album, ⇧⌘N new album with the selection, ⇧⌘S share, ⇧⌘E save originals, ⌘K photos like this one, ⌘J go to date,
   ⌘⌫ move to trash, ⌘U upload, ⌃⌘L lock, ⌘, settings (also at the bottom of the sidebar). In the viewer also F, I, ⌫,

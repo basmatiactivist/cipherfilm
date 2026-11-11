@@ -5,6 +5,12 @@ All notable changes to Cipherfilm are listed here. The format follows
 [Semantic Versioning](https://semver.org/). The release workflow copies the section of the tagged
 version into the GitHub release notes, so a release cannot be published without an entry here.
 
+## [Unreleased]
+
+### Added
+- "On this day": above Photos, the web, Android and Mac apps show a card for each earlier year with photos from
+  around today's date. Worked out on the device; the server learns nothing. Turn it off in Account (Settings on Mac).
+
 ## [2.6.1] - 2026-11-10
 
 Photos and videos keep where they were taken, however they are uploaded, and what arrived without it gets it.

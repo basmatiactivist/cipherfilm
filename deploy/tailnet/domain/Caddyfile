@@ -1,0 +1,24 @@
+# Your own name inside the tailnet. Tailscale Serve hands every connection on :443 to Caddy (deploy/tailscale/serve-domain.json);
+# Caddy serves both names and forwards to the app. Plain HTTP and the admin API are off.
+{
+	admin off
+	default_bind 127.0.0.1 # only Tailscale Serve reaches it, not the tailnet address directly
+	auto_https disable_redirects
+	http_port 8081
+	https_port 4443
+}
+
+{$DOMAIN} {
+	tls {
+		dns cloudflare {env.CF_API_TOKEN} # Let's Encrypt, checked through a temporary DNS record
+		resolvers 1.1.1.1
+	}
+	reverse_proxy 127.0.0.1:8080
+}
+
+{$TS_DOMAIN} {
+	tls {
+		get_certificate tailscale # the tailnet name keeps its Tailscale certificate
+	}
+	reverse_proxy 127.0.0.1:8080
+}

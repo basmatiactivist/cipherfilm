@@ -1,0 +1,31 @@
+# Optional overlay: Portainer, to look at containers and logs and to run `cipherfilm` commands in the app's console.
+# Reachable ONLY in your tailnet at https://<TS_HOSTNAME>.<your-tailnet>.ts.net:9443 (Tailscale Serve); no host port,
+# no Funnel. Use it with the domain overlay and put it last:
+#   COMPOSE_FILE=...:deploy/tailnet/compose.domain.yaml:deploy/tailnet/compose.portainer.yaml
+# WARNING: Portainer has the Docker socket, so whoever signs in to it is root on this machine. Give it a strong
+# password and turn on its two-factor login. Without Portainer, `docker compose exec app cipherfilm help` does the same.
+services:
+  tailscale:
+    environment:
+      TS_SERVE_CONFIG: /config/serve-domain-portainer.json   # serve-domain.json plus :9443 for Portainer
+  portainer:
+    image: ${PORTAINER_IMAGE:-portainer/portainer-ce:2.45.3}   # CE or EE (Business Edition), LTS line
+    restart: unless-stopped
+    network_mode: service:tailscale        # inside the tailnet node only, like Kopia's UI
+    depends_on:
+      tailscale: { condition: service_started }
+    command:
+      - --http-enabled
+      - --bind=127.0.0.1:9000              # plain HTTP on loopback; Tailscale Serve adds HTTPS on :9443
+      - --bind-https=127.0.0.1:9445        # its own HTTPS port, off the tailnet's :9443
+      - --tunnel-addr=127.0.0.1            # no Edge agents
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    pids_limit: 256
+
+volumes:
+  portainer_data:
+    name: ${PORTAINER_VOLUME:-portainer_data}

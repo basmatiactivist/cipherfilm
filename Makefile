@@ -51,6 +51,12 @@ migration-test: ## move the e2e stack to a second, empty stack with scripts/back
 
 prod-config: ## validate the production compose files
 	@echo "== compose.yaml"; PUBLIC_HOSTS=photos.example.com docker compose -f compose.yaml config -q || exit 1; \
+	t=deploy/tailnet; for o in "$$t/compose.tailscale.yaml" "$$t/compose.tailscale.yaml:$$t/compose.kopia.yaml" \
+	  "$$t/compose.tailscale.yaml:$$t/compose.kopia.yaml:$$t/compose.domain.yaml" \
+	  "$$t/compose.tailscale.yaml:$$t/compose.kopia.yaml:$$t/compose.domain.yaml:$$t/compose.portainer.yaml"; do \
+	  echo "== compose.yaml:$$o"; COMPOSE_FILE="compose.yaml:$$o" PUBLIC_HOSTS=photos.example.com TS_AUTHKEY=x \
+	  KOPIA_SERVER_PASSWORD=x DOMAIN=photos.example.com TS_DOMAIN=photos.example.ts.net CF_API_TOKEN=x \
+	  docker compose config -q || exit 1; done; \
 	echo "all valid"
 multiarch: ## prove the image builds for amd64 and arm64 (not loaded, just built)
 	docker buildx build --platform linux/amd64,linux/arm64 -o type=oci,dest=/tmp/cipherfilm-multiarch.tar . && echo "multi-arch build OK: /tmp/cipherfilm-multiarch.tar"

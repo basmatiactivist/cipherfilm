@@ -71,6 +71,8 @@ photos.example.com {
 
 For private use with no open ports, [Tailscale Serve](https://tailscale.com/kb/1312/serve) works too:
 `tailscale serve --bg 8080` on the host, with `PUBLIC_HOSTS=<machine>.<tailnet>.ts.net` and `TRUST_PROXY=0`.
+A complete private setup in Docker (Tailscale, your own name, Kopia backups, all without open web ports):
+[TAILNET.md](TAILNET.md).
 
 A public site puts the login page on the internet. The app is invite-only (no public sign-up), rate-limits logins and
 stores nothing readable, but keep it updated. Hardening the host: [SERVER-HARDENING.md](SERVER-HARDENING.md).

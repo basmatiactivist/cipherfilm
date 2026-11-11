@@ -1,11 +1,12 @@
 // The notices of notices.ts at the top of the library: a new sign-in elsewhere, two-step sign-in turned off by an
 // administrator, or the password used for a sign-in that wasn't finished (nothing to open here: the password is
-// changed in the browser). Each shows until it is dismissed (on any device).
+// changed in the browser). Each shows until it is dismissed (on any device). Always one banner, however many there
+// are (noticeSummary): a stack of them pushed the photos far down.
 import { useEffect } from "react";
 import { StyleSheet, View } from "react-native";
 import { router } from "expo-router";
 import { Button, Text } from "react-native-paper";
-import { noticeText } from "./notices";
+import { noticeSummary } from "./notices";
 import { dismissNotice, refreshNotices, useNotices } from "./noticesStore";
 import { useAppTheme } from "./ui";
 import { radius } from "./tokens";
@@ -15,20 +16,17 @@ export function NoticeBanner() {
   const th = useAppTheme();
   const list = useNotices();
   useEffect(() => { refreshNotices().catch(() => {}); }, []);
-  if (!list.length) return null;
+  const s = noticeSummary(list);
+  if (!s) return null;
   return (
-    <View>
-      {list.slice(0, 3).map((n) => (
-        <View key={n.id} accessibilityLiveRegion="polite" style={[st.box, { backgroundColor: th.colors.primaryContainer, borderColor: th.colors.outlineVariant }]}>
-          <Text variant="bodyMedium" style={{ color: th.colors.onPrimaryContainer }}>{noticeText(n)}</Text>
-          <View style={st.row}>
-            {n.kind === "sign_in"
-              ? <Button compact onPress={() => router.push("/devices")}>{t("Review devices")}</Button>
-              : n.kind === "2fa_reset" ? <Button compact onPress={() => router.push("/two-step")}>{t("Two-step sign-in")}</Button> : null}
-            <Button compact onPress={() => { dismissNotice(n.id); }}>{t("Dismiss")}</Button>
-          </View>
-        </View>
-      ))}
+    <View accessibilityLiveRegion="polite" style={[st.box, { backgroundColor: th.colors.primaryContainer, borderColor: th.colors.outlineVariant }]}>
+      <Text variant="bodyMedium" style={{ color: th.colors.onPrimaryContainer }}>{s.text}</Text>
+      <View style={st.row}>
+        {s.open === "devices"
+          ? <Button compact onPress={() => router.push("/devices")}>{t("Review devices")}</Button>
+          : s.open === "two-step" ? <Button compact onPress={() => router.push("/two-step")}>{t("Two-step sign-in")}</Button> : null}
+        <Button compact onPress={() => { for (const id of s.ids) dismissNotice(id); }}>{s.many ? t("Dismiss all") : t("Dismiss")}</Button>
+      </View>
     </View>
   );
 }

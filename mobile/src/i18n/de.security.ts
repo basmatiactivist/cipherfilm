@@ -123,6 +123,11 @@ export const deSecurity: Record<string, string> = {
   "an unknown device": "ein unbekanntes Gerät",
   "Review devices": "Geräte prüfen",
   "Dismiss": "Ausblenden",
+  // several notices in one banner (notices.ts noticeSummary)
+  "{n} new sign-ins (latest: {device}, {time}). Not you? Review devices.": "{n} neue Anmeldungen (zuletzt: {device}, {time}). Nicht Sie? Prüfen Sie Ihre Geräte.",
+  "1 more notice.": "Und 1 weiterer Hinweis.",
+  "{n} more notices.": "Und {n} weitere Hinweise.",
+  "Dismiss all": "Alle ausblenden",
   // notices as notifications (noticeCheck.ts, NoticeAlertsSetting.tsx)
   "Security notifications": "Sicherheitsbenachrichtigungen",
   "Off: you see new sign-ins only when you open Cipherfilm": "Aus: Neue Anmeldungen sehen Sie nur, wenn Sie Cipherfilm öffnen",

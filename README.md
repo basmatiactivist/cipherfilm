@@ -83,7 +83,7 @@ and visitors are signed out every hour. To keep your own photos, [run your own s
 - **Duplicates and similar photos.** Find photos uploaded twice and bursts of nearly the same shot, worked out on
   your device, and move the extras to the trash (web and Android).
 - **Locks itself.** Fingerprint unlock, automatic lock after a time you choose or when the screen turns off, and
-  shake to lock and close.
+  shake to lock and close. On Android, screenshots and the recent-apps preview are blocked unless you allow them.
 - **Two-step sign-in and your devices.** Optional codes from an authenticator app at every new sign-in, with one-time
   recovery codes; a list of signed-in devices to sign out one or all others; a notice on your other devices when a
   new one signs in.

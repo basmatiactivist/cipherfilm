@@ -11,6 +11,7 @@ import { onWipe, start, useSession } from "../session";
 import { clearOutbox, tidyOutbox } from "../outbox";
 import { runBackup, scheduleBackground } from "../backup";
 import { startShake } from "../shake";
+import "../screenshots"; // its sign-out reset, whether or not Account was opened
 import { startAutoLock } from "../autolock";
 import { liveUnlocked } from "../live";
 import { startLiveSync } from "../liveSync";

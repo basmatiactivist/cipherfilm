@@ -11,6 +11,7 @@ import { clearImages } from "../library";
 import { Icon } from "../icons";
 import { Field, Problem, SwitchItem, useAppTheme } from "../ui";
 import { setShake, useShake } from "../shake";
+import { setScreenshots, useScreenshots } from "../screenshots";
 import { setMemoriesOn, useMemoriesOn } from "../memories";
 import { CHOICES, away, expectAway, setAutoLock, useAutoLock } from "../autolock";
 import { privacyUrl } from "../store";
@@ -41,6 +42,7 @@ export default function Account() {
   const [delError, setDelError] = useState<string>();
   const [bioOk, setBioOk] = useState(() => biometricPossible());
   const shake = useShake();
+  const shots = useScreenshots();
   const memoriesOn = useMemoriesOn();
   const auto = useAutoLock();
   const [pickLock, setPickLock] = useState(false);
@@ -141,6 +143,10 @@ export default function Account() {
           description={t("Two strong shakes lock and close Cipherfilm")}
           left={() => <View style={st.icon}><Icon name="phone" color={th.colors.primary} /></View>}
           value={shake} onValueChange={setShake} style={st.item} />
+        <SwitchItem title={t("Allow screenshots")}
+          description={shots ? t("Other apps and the recent-apps preview can see what's on screen") : t("Blocked, and recent apps show only the icon")}
+          left={() => <View style={st.icon}><Icon name="phone" color={th.colors.primary} /></View>}
+          value={shots} onValueChange={setScreenshots} style={st.item} />
         <List.Item title={t("Lock now")} description={t("Unlock again to see your photos")}
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="lock" color={th.colors.primary} /></View>} onPress={() => leave("lock")} style={st.item} />
         <List.Item title={t("Sign out")} description={t("Removes your account from this phone")}

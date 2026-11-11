@@ -124,6 +124,7 @@ scripts/restore.sh /path/to/cipherfilm-20261102-035500.tar --yes
 From your own tool's backup: `tar -cf restore.tar -C restored-folder backup blobs`, then restore that. The script ends
 every session (an older backup would revive revoked ones) and prints a health report. What happened to the accounts
 after the backup is taken over from the replaced data: devices signed out since, changed passwords and recovery keys,
+two-step sign-in turned on or off and new recovery codes (and the notices for the devices),
 roles, and disabled or deleted accounts (those stay disabled; their e-mail addresses are printed). This applies only
 when the replaced data is from the same server (the same `secret`).
 

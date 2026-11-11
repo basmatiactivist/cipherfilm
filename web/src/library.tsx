@@ -19,7 +19,7 @@ import { Icon, IconName, Logo } from "./icons";
 import { checkSession, loadUsage } from "./auth";
 import { hasIndex, loadPeople, refreshIndex, searchFamily, usePeople } from "./people/people";
 import { coalesce, startLive } from "./live";
-import { dismissNotice, loadNotices, noticeText, type Notice } from "./notices";
+import { dismissNotice, loadNotices, noticeAction, noticeText, type Notice } from "./notices";
 import { lazy } from "./lazy";
 import { Loading } from "./loader";
 import { findMemories, todayKey, type Memory } from "./memories/memories";
@@ -623,7 +623,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
                 <Icon name={n.kind === "sign_in" ? "shield" : "key"} size={20} />
                 <span>
                   {noticeText(n)}{" "}
-                  <button class="link" onClick={() => go({ n: "account", open: n.kind === "sign_in" ? "devices" : "2fa" })}>{n.kind === "sign_in" ? "Review devices" : "Open Account"}</button>
+                  <button class="link" onClick={() => go({ n: "account", open: noticeAction(n).open })}>{noticeAction(n).label}</button>
                 </span>
                 <button class="iconbtn tiny" aria-label="Dismiss" onClick={() => dismiss(n)}><Icon name="x" size={16} /></button>
               </div>

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
+	"time"
 )
 
 func copyTree(t *testing.T, from, to string) {
@@ -344,5 +345,123 @@ func TestRestoreKeepsLaterAccountChanges(t *testing.T) {
 	srv = restore(false)
 	if got := login(srv, "admin@x.org", ab); got != 200 {
 		t.Fatalf("restore over another server's data: %d", got)
+	}
+}
+
+// restoredApp does what restore.sh does: the backup becomes the data, the replaced data goes to .previous/; then the
+// after-restore step, and the restored server.
+func restoredApp(t *testing.T, e *env) *App {
+	t.Helper()
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "blobs"), 0o700)
+	os.MkdirAll(filepath.Join(dir, ".previous"), 0o700)
+	for _, f := range []string{"app.db", "app.db-wal", "app.db-shm", "secret"} {
+		if _, err := os.Stat(filepath.Join(e.app.dataDir, f)); err == nil {
+			copyFile(filepath.Join(e.app.dataDir, f), filepath.Join(dir, ".previous", f))
+		}
+	}
+	for _, f := range []string{"app.db", "secret"} {
+		if err := copyFile(filepath.Join(e.app.dataDir, "backup", f), filepath.Join(dir, f)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := runAfterRestore(dir); err != nil {
+		t.Fatal(err)
+	}
+	app2, err := newApp(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { app2.db.Close() })
+	return app2
+}
+
+// Two-step sign-in turned on, off, or given new recovery codes after the backup stays so after a restore: a restore
+// must not take away a second step the person added (or bring back recovery codes they replaced). The notices too.
+func TestRestoreKeepsLaterTwoFactorChanges(t *testing.T) {
+	e := newEnv(t)
+	e.pinClock()
+	admin, ab := e.setupAdmin("admin@x.org")
+	bob, bb := e.acceptInvite(e.invite(admin, "bob@x.org"))
+	carol, cb := e.acceptInvite(e.invite(admin, "carol@x.org"))
+	bobSecret, _ := e.enable2FA(bob, bb)
+	carolSecret, carolOld := e.enable2FA(carol, cb)
+	if err := runBackup(e.app.dataDir); err != nil {
+		t.Fatal(err)
+	}
+	// after the backup: the admin turns it on, bob turns it off, carol makes new recovery codes; a notice for bob
+	_, adminCodes := e.enable2FA(admin, ab)
+	e.app.now = func() time.Time { return time.Now().Add(time.Minute) }
+	if code, out := bob.do("POST", "/api/me/2fa/disable", map[string]any{"current_auth": bb["auth"], "code": codeAt(t, bobSecret, e.app.now())}, true); code != 200 {
+		t.Fatalf("disable: %d %v", code, out)
+	}
+	code, out := carol.do("POST", "/api/me/2fa/recovery-codes", map[string]any{"current_auth": cb["auth"], "code": codeAt(t, carolSecret, e.app.now())}, true)
+	if code != 200 {
+		t.Fatalf("new codes: %d %v", code, out)
+	}
+	carolNew := out["recovery_codes"].([]any)[0].(string)
+	bu, _ := e.app.userByEmail("bob@x.org")
+	e.app.notify(bu.ID, noticeTwoFactorReset, "", "")
+	type state struct {
+		secret, pending string
+		last            int64
+		codes           int
+	}
+	read := func(a *App, email string) (s state) {
+		u, _ := a.userByEmail(email)
+		a.db.QueryRow(`SELECT totp_secret, totp_pending, totp_last, (SELECT COUNT(*) FROM recovery_codes WHERE user_id=users.id) FROM users WHERE id=?`, u.ID).
+			Scan(&s.secret, &s.pending, &s.last, &s.codes)
+		return
+	}
+	before := map[string]state{}
+	for _, m := range []string{"admin@x.org", "bob@x.org", "carol@x.org"} {
+		before[m] = read(e.app, m)
+	}
+
+	app2 := restoredApp(t, e)
+	for m, want := range before {
+		if got := read(app2, m); got != want {
+			t.Fatalf("%s after the restore: %+v, want %+v", m, got, want)
+		}
+	}
+	srv := httptest.NewTLSServer(app2.handler())
+	t.Cleanup(srv.Close)
+	post := func(path string, body any) (int, map[string]any) {
+		b, _ := json.Marshal(body)
+		resp, err := srv.Client().Post(srv.URL+path, "application/json", bytes.NewReader(b))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var out map[string]any
+		json.NewDecoder(resp.Body).Decode(&out)
+		return resp.StatusCode, out
+	}
+	// the admin needs a code now, and a recovery code of the later enrolment works
+	code, out = post("/api/auth/login", map[string]any{"email": "admin@x.org", "auth": ab["auth"]})
+	if code != 401 || out["code"] != twoFactorRequired {
+		t.Fatalf("admin without a code: %d %v", code, out)
+	}
+	if code, out := post("/api/auth/login/2fa", map[string]any{"pending": out["pending"], "code": adminCodes[0]}); code != 200 {
+		t.Fatalf("admin's recovery code: %d %v", code, out)
+	}
+	// bob signs in with the password alone
+	if code, out := post("/api/auth/login", map[string]any{"email": "bob@x.org", "auth": bb["auth"]}); code != 200 {
+		t.Fatalf("bob: %d %v", code, out)
+	}
+	// carol's replaced recovery codes stay replaced
+	for _, c := range []struct {
+		code string
+		want int
+	}{{carolOld[0], 401}, {carolNew, 200}} {
+		_, out := post("/api/auth/login", map[string]any{"email": "carol@x.org", "auth": cb["auth"]})
+		if code, _ := post("/api/auth/login/2fa", map[string]any{"pending": out["pending"], "code": c.code}); code != c.want {
+			t.Fatalf("carol's recovery code %s: %d, want %d", c.code, code, c.want)
+		}
+	}
+	var n int
+	app2.db.QueryRow(`SELECT COUNT(*) FROM notices WHERE user_id=? AND kind=?`, bu.ID, noticeTwoFactorReset).Scan(&n)
+	if n != 1 {
+		t.Fatalf("bob's notice after the restore: %d", n)
 	}
 }

@@ -431,12 +431,8 @@ func (a *App) replaceAux(name string, max int64, col string) func(http.ResponseW
 			fail(w, 409, "this upload isn't finished")
 			return
 		}
-		release, ok := a.reserveBytes(u.ID, max+diskBlock)
-		if !ok {
-			fail(w, 413, "this would go over your storage limit")
-			return
-		}
-		defer release()
+		// the body is read first (at most max, removed again whatever happens) and only the growth is reserved, so
+		// someone at their limit can still replace a picture with one that takes no more room
 		bodyDeadline(w, uploadReadTime)
 		r.Body = http.MaxBytesReader(w, r.Body, max+1)
 		tmp, got, err := writeStaged(a.itemDir(it.ID), r.Body, func(n int64) bool { return n >= 1+24+16 && n <= max })
@@ -448,15 +444,29 @@ func (a *App) replaceAux(name string, max int64, col string) func(http.ResponseW
 		defer os.Remove(tmp) // a no-op once it has been renamed
 		a.auxMu.Lock()
 		defer a.auxMu.Unlock()
-		var old int64
-		if err := a.db.QueryRow(`SELECT `+bytesCol+` FROM items WHERE id=? AND user_id=?`, it.ID, u.ID).Scan(&old); err != nil {
+		var counted int64
+		if err := a.db.QueryRow(`SELECT `+bytesCol+` FROM items WHERE id=? AND user_id=?`, it.ID, u.ID).Scan(&counted); err != nil {
 			a.cleanupIfGone(it.ID)
 			fail(w, 404, "not found")
 			return
 		}
+		// an item finished before the column existed has 0 there, but its file is on disk and in stored_bytes
+		old := counted
+		if old == 0 {
+			if fi, err := os.Stat(filepath.Join(a.itemDir(it.ID), name)); err == nil && fi.Mode().IsRegular() {
+				old = fi.Size()
+			}
+		}
 		grow := got + blockSlack(got) - old - blockSlack(old)
-		res, err := a.db.Exec(`UPDATE items SET `+col+`=1, stored_bytes=MAX(0, stored_bytes+?), `+bytesCol+`=? WHERE id=? AND user_id=? AND state='ready' AND trashed_at IS NULL AND `+bytesCol+`=?`,
-			grow, got, it.ID, u.ID, old)
+		release, ok := a.reserveBytes(u.ID, grow) // nothing to reserve when it doesn't grow
+		if !ok {
+			fail(w, 413, "this would go over your storage limit")
+			return
+		}
+		defer release()
+		// aux_ver moves on, so the item is in the change list even when has_thumb/has_preview were 1 already (since.go)
+		res, err := a.db.Exec(`UPDATE items SET `+col+`=1, aux_ver=aux_ver+1, stored_bytes=MAX(0, stored_bytes+?), `+bytesCol+`=? WHERE id=? AND user_id=? AND state='ready' AND trashed_at IS NULL AND `+bytesCol+`=?`,
+			grow, got, it.ID, u.ID, counted)
 		if rowsAffected(res, err) != 1 {
 			a.cleanupIfGone(it.ID)
 			fail(w, 409, "the item changed meanwhile")

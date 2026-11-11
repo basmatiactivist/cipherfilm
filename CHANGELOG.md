@@ -31,8 +31,8 @@ version into the GitHub release notes, so a release cannot be published without 
   asks for a code or one of ten one-time recovery codes. Unlocking a device that is already signed in doesn't. An
   admin can turn it off for someone who lost their phone (Admin › Users, or `reset-2fa` on the server).
 - Devices under Account on Android and the Mac too (the web had it): see where you're signed in and sign out one or
-  all other devices. Your other devices show a notice when a new one signs in, and when an admin turned off two-step
-  sign-in.
+  all other devices. Your other devices show a notice when a new one signs in, when an admin turned off two-step
+  sign-in, and, with two-step sign-in on, when your password was used for a sign-in that wasn't finished.
 - "On this day": above Photos, the web, Android and Mac apps show a card for each earlier year with photos from
   around today's date. Worked out on the device; the server learns nothing. Turn it off in Account (Settings on Mac).
 - Web and Android: "Duplicates and similar photos" finds photos uploaded more than once and bursts of nearly the same

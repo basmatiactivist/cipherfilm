@@ -354,7 +354,8 @@ struct DevicesSection: View {
 
 // ---- notices ----
 
-/** The newest notice, once, over the library: a new sign-in elsewhere, or two-step sign-in turned off by an admin. */
+/** The newest notice, once, over the library: a new sign-in elsewhere, two-step sign-in turned off by an admin, or the
+ *  password used for a sign-in that wasn't finished. */
 struct NoticeBanner: View {
   @Environment(AppModel.self) private var model
   @Environment(\.openSettings) private var openSettings
@@ -365,11 +366,13 @@ struct NoticeBanner: View {
         Image(systemName: n.reviewDevices ? "person.badge.shield.checkmark" : "exclamationmark.shield").foregroundStyle(Ink.tealInk)
         Text(n.text(time: n.date.formatted(date: .abbreviated, time: .shortened))).font(Typo.label).foregroundStyle(Ink.ink)
           .frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
-        Button(n.reviewDevices ? "Review Devices" : "Open Settings") {
-          model.settingsTab = "security"
-          NSApp.activate()
-          openSettings()
-        }.buttonStyle(SecondaryButton())
+        if n.opensSettings {
+          Button(n.reviewDevices ? "Review Devices" : "Open Settings") {
+            model.settingsTab = "security"
+            NSApp.activate()
+            openSettings()
+          }.buttonStyle(SecondaryButton())
+        }
         Button { model.dismiss(n) } label: { Image(systemName: "xmark") }.buttonStyle(.borderless).help("Dismiss").accessibilityLabel("Dismiss")
       }
       .padding(Space.s3)

@@ -653,3 +653,255 @@ func TestPendingStoreKeepsFewPerAccount(t *testing.T) {
 func mustJSON(v any) string { b, _ := json.Marshal(v); return string(b) }
 
 func itoa(n int64) string { b, _ := json.Marshal(n); return string(b) }
+
+// Whoever has the recovery key can set a new password, but must not be able to wipe the account's code count with it
+// over and over: a recovery ends the pending sign-ins (issued for the old password) and keeps the count. A password
+// change (from a session that passed the code step) still clears it.
+func TestRecoveryKeepsTheCodeCount(t *testing.T) {
+	e := newEnv(t)
+	clk := e.pinClock()
+	admin, ab := e.setupAdmin("admin@x.org")
+	secret, _ := e.enable2FA(admin, ab)
+	clk.tick(30 * time.Second)
+	u, _ := e.app.userByEmail("admin@x.org")
+	for i := 0; i < totpAcctMax; i++ {
+		e.app.totpAcct.take("2fa|" + u.ID)
+	}
+	c := e.client()
+	p := e.passwordStep(c, "admin@x.org", ab)
+
+	_, out := c.do("POST", "/api/auth/recover/start", map[string]string{"email": "admin@x.org", "recovery_auth": ab["recovery_verifier"].(string)}, false)
+	nb := bundle()
+	fin := map[string]any{"ticket": out["ticket"], "new_auth": nb["auth"], "new_kdf": nb["kdf"], "new_wrapped_master_pw": nb["wrapped_master_pw"],
+		"new_wrapped_master_recovery": nb["wrapped_master_recovery"], "new_recovery_verifier": nb["recovery_verifier"]}
+	if code, out := c.do("POST", "/api/auth/recover/finish", fin, false); code != 200 {
+		t.Fatalf("recover: %d %v", code, out)
+	}
+	if e.app.totpAcct.allowed("2fa|" + u.ID) {
+		t.Fatal("a recovery cleared the code count")
+	}
+	if r := c.post("/api/auth/login/2fa", map[string]any{"pending": p, "code": codeAt(t, secret, clk.at)}); r.code != 401 || r.body["code"] != "two_factor_expired" {
+		t.Fatalf("pending sign-in survived the recovery: %d %v", r.code, r.body)
+	}
+	// the password change of a signed-in device clears it
+	e.app.totpAcct.clear("2fa|" + u.ID)
+	nc := e.client()
+	np := e.passwordStep(nc, "admin@x.org", nb)
+	if r := nc.post("/api/auth/login/2fa", map[string]any{"pending": np, "code": codeAt(t, secret, clk.at)}); r.code != 200 {
+		t.Fatalf("sign in after recovery: %d %v", r.code, r.body)
+	}
+	for i := 0; i < totpAcctMax; i++ {
+		e.app.totpAcct.take("2fa|" + u.ID)
+	}
+	pb := bundle()
+	if code, out := nc.do("POST", "/api/auth/password", map[string]any{"current_auth": nb["auth"], "new_auth": pb["auth"], "new_kdf": pb["kdf"], "new_wrapped_master_pw": pb["wrapped_master_pw"]}, true); code != 200 {
+		t.Fatalf("password change: %d %v", code, out)
+	}
+	if !e.app.totpAcct.allowed("2fa|" + u.ID) {
+		t.Fatal("a password change kept the code count")
+	}
+}
+
+// A notice can be dismissed only by a session that is shown it: whoever signed in with a stolen password can't take
+// down the notice about their own sign-in from the real person's devices, nor, from a second sign-in (even in the
+// same second), the notice about their first.
+func TestNoticesAreDismissedOnlyWhereTheyAreShown(t *testing.T) {
+	e := newEnv(t)
+	clk := e.pinClock()
+	admin, ab := e.setupAdmin("admin@x.org")
+	clk.tick(time.Second)
+	thief := e.login("admin@x.org", ab)
+	thief2 := e.login("admin@x.org", ab) // the same second
+	_, out := admin.do("GET", "/api/me/notices", nil, false)
+	l := out["notices"].([]any)
+	if len(l) != 2 {
+		t.Fatalf("notices: %v", out)
+	}
+	newer := int64(l[0].(map[string]any)["id"].(float64)) // about thief2
+	older := int64(l[1].(map[string]any)["id"].(float64)) // about thief
+	for _, x := range []struct {
+		c  *client
+		id int64
+	}{{thief, older}, {thief2, newer}, {thief2, older}} {
+		if code, _ := x.c.do("POST", "/api/me/notices/"+itoa(x.id)+"/dismiss", nil, true); code != 404 {
+			t.Fatalf("dismissed notice %d from a session it isn't shown on: %d", x.id, code)
+		}
+	}
+	if _, out := admin.do("GET", "/api/me/notices", nil, false); len(out["notices"].([]any)) != 2 {
+		t.Fatalf("taken down: %v", out)
+	}
+	// the earlier sign-in is shown the later one, and may dismiss it
+	if code, _ := thief.do("POST", "/api/me/notices/"+itoa(newer)+"/dismiss", nil, true); code != 200 {
+		t.Fatalf("dismiss a later sign-in: %d", code)
+	}
+	if code, _ := admin.do("POST", "/api/me/notices/"+itoa(older)+"/dismiss", nil, true); code != 200 {
+		t.Fatalf("dismiss on the device that was signed in before: %d", code)
+	}
+	if _, out := admin.do("GET", "/api/me/notices", nil, false); len(out["notices"].([]any)) != 0 {
+		t.Fatalf("left: %v", out)
+	}
+}
+
+// The newest noticesKept per account, whatever the other accounts get meanwhile (ids are shared by all accounts).
+func TestNoticesArePrunedPerAccount(t *testing.T) {
+	e := newEnv(t)
+	admin, _ := e.setupAdmin("admin@x.org")
+	e.acceptInvite(e.invite(admin, "bob@x.org"))
+	a, _ := e.app.userByEmail("admin@x.org")
+	b, _ := e.app.userByEmail("bob@x.org")
+	n := noticesKept - 10
+	for i := 0; i < n; i++ {
+		e.app.notify(a.ID, noticeSignIn, "x", "")
+		e.app.notify(b.ID, noticeSignIn, "x", "")
+	}
+	for _, u := range []*user{a, b} {
+		var got int
+		e.app.db.QueryRow(`SELECT COUNT(*) FROM notices WHERE user_id=?`, u.ID).Scan(&got)
+		if got != n {
+			t.Fatalf("%s: %d kept, want %d", u.Email, got, n)
+		}
+	}
+}
+
+// Dismissed notices are never shown again: they go before any that is still shown.
+func TestDismissedNoticesArePrunedFirst(t *testing.T) {
+	e := newEnv(t)
+	e.setupAdmin("admin@x.org")
+	u, _ := e.app.userByEmail("admin@x.org")
+	e.app.notify(u.ID, noticeTwoFactorReset, "", "")
+	var first int64
+	e.app.db.QueryRow(`SELECT MAX(id) FROM notices WHERE user_id=?`, u.ID).Scan(&first)
+	for i := 0; i < noticesKept; i++ {
+		e.app.notify(u.ID, noticeSignIn, "x", "")
+		if i == 0 {
+			e.app.db.Exec(`UPDATE notices SET dismissed=1 WHERE user_id=? AND id<>?`, u.ID, first)
+		}
+	}
+	var n int
+	e.app.db.QueryRow(`SELECT COUNT(*) FROM notices WHERE id=?`, first).Scan(&n)
+	if n != 1 {
+		t.Fatal("a shown notice went before a dismissed one")
+	}
+}
+
+// The setup's confirming code is read as typed, like the code at sign-in ("123 456", "123-456"); new recovery codes
+// are in the activity log like the other changes to two-step sign-in.
+func TestTwoFactorSetupCodeAsTypedAndNewCodesLogged(t *testing.T) {
+	e := newEnv(t)
+	clk := e.pinClock()
+	admin, ab := e.setupAdmin("admin@x.org")
+	_, out := admin.do("POST", "/api/me/2fa/setup", map[string]any{"current_auth": ab["auth"]}, true)
+	secret := out["secret"].(string)
+	c := codeAt(t, secret, clk.at)
+	if code, out := admin.do("POST", "/api/me/2fa/enable", map[string]any{"code": " " + c[:3] + " - " + c[3:]}, true); code != 200 {
+		t.Fatalf("enable with a spaced code: %d %v", code, out)
+	}
+	clk.tick(30 * time.Second)
+	if code, out := admin.do("POST", "/api/me/2fa/recovery-codes", map[string]any{"current_auth": ab["auth"], "code": codeAt(t, secret, clk.at)}, true); code != 200 {
+		t.Fatalf("new codes: %d %v", code, out)
+	}
+	var n int
+	e.app.db.QueryRow(`SELECT COUNT(*) FROM audit_log WHERE action LIKE '%recovery codes%'`).Scan(&n)
+	if n != 1 {
+		t.Fatalf("new recovery codes logged %d times", n)
+	}
+}
+
+func shownKinds(t *testing.T, c *client) []string {
+	t.Helper()
+	_, out := c.do("GET", "/api/me/notices", nil, false)
+	var k []string
+	for _, x := range out["notices"].([]any) {
+		k = append(k, x.(map[string]any)["kind"].(string))
+	}
+	return k
+}
+
+// A password step on an account with two-step sign-in that isn't followed by a right code (it expired, wore out, or
+// was pushed out by newer ones) is shown to the account's devices once the pending sign-in can no longer finish:
+// whoever has the password could otherwise keep the real person's sign-ins from finishing without a trace. One that
+// finished shows nothing more than the new sign-in. At most one such notice an hour.
+func TestUnfinishedPasswordStepIsNoticed(t *testing.T) {
+	e := newEnv(t)
+	clk := e.pinClock()
+	admin, ab := e.setupAdmin("admin@x.org")
+	secret, _ := e.enable2FA(admin, ab)
+	clk.tick(30 * time.Second)
+	count := func() (n int) {
+		for _, k := range shownKinds(t, admin) {
+			if k == noticePasswordUsed {
+				n++
+			}
+		}
+		return
+	}
+
+	// finished: nothing
+	c := e.client()
+	p := e.passwordStep(c, "admin@x.org", ab)
+	if r := c.post("/api/auth/login/2fa", map[string]any{"pending": p, "code": codeAt(t, secret, clk.at)}); r.code != 200 {
+		t.Fatalf("code: %d", r.code)
+	}
+	clk.tick(pendingTTL + time.Second)
+	if n := count(); n != 0 {
+		t.Fatalf("a finished sign-in left %d notices", n)
+	}
+
+	// not finished: shown once it has expired, not before
+	e.passwordStep(e.client(), "admin@x.org", ab)
+	clk.tick(pendingTTL / 2)
+	if n := count(); n != 0 {
+		t.Fatal("shown while it can still finish")
+	}
+	// another one within the hour, then the real person signs in: still one notice, and it stays
+	e.passwordStep(e.client(), "admin@x.org", ab)
+	clk.tick(30 * time.Second)
+	c = e.client()
+	p = e.passwordStep(c, "admin@x.org", ab)
+	if r := c.post("/api/auth/login/2fa", map[string]any{"pending": p, "code": codeAt(t, secret, clk.at)}); r.code != 200 {
+		t.Fatalf("code: %d", r.code)
+	}
+	clk.tick(pendingTTL + time.Second)
+	if n := count(); n != 1 {
+		t.Fatalf("%d notices, want 1", n)
+	}
+	_, out := admin.do("GET", "/api/me/notices", nil, false)
+	for _, x := range out["notices"].([]any) {
+		if n := x.(map[string]any); n["kind"] == noticePasswordUsed && n["device"] != "" {
+			t.Fatalf("notice: %v", n)
+		}
+	}
+	// a later sign-in sees it too (it is about the account, not about a session)
+	clk.tick(time.Second)
+	nc := e.client()
+	np := e.passwordStep(nc, "admin@x.org", ab)
+	clk.tick(30 * time.Second)
+	if r := nc.post("/api/auth/login/2fa", map[string]any{"pending": np, "code": codeAt(t, secret, clk.at)}); r.code != 200 {
+		t.Fatalf("code: %d", r.code)
+	}
+	if k := shownKinds(t, nc); len(k) != 1 || k[0] != noticePasswordUsed { // the earlier sign-ins aren't news to it
+		t.Fatalf("on a later device: %v", k)
+	}
+
+	// an hour on: a pending sign-in pushed out by newer ones counts too, even when one of those finishes
+	clk.tick(time.Hour)
+	for _, x := range []*client{admin, nc} {
+		_, out := x.do("GET", "/api/me/notices", nil, false)
+		for _, n := range out["notices"].([]any) {
+			x.do("POST", "/api/me/notices/"+itoa(int64(n.(map[string]any)["id"].(float64)))+"/dismiss", nil, true)
+		}
+	}
+	for i := 0; i < pendingPer; i++ {
+		e.passwordStep(e.client(), "admin@x.org", ab)
+	}
+	clk.tick(30 * time.Second)
+	c = e.client()
+	p = e.passwordStep(c, "admin@x.org", ab)
+	if r := c.post("/api/auth/login/2fa", map[string]any{"pending": p, "code": codeAt(t, secret, clk.at)}); r.code != 200 {
+		t.Fatalf("code: %d", r.code)
+	}
+	clk.tick(pendingTTL + time.Second)
+	if n := count(); n != 1 {
+		t.Fatalf("pushed-out sign-ins: %d notices, want 1", n)
+	}
+}

@@ -146,9 +146,13 @@ func runAfterRestore(dataDir string) error {
 }
 
 // carryAccounts takes over from the replaced database what happened to the accounts since the backup: a changed
-// password or recovery key (it wraps the same master key), a changed role, a disabled account, and accounts deleted
-// since stay disabled. A restore brings photos back, not access that was taken away. The replaced activity log is
-// kept too, and invites that were withdrawn or used since stay so.
+// password or recovery key (it wraps the same master key), two-step sign-in turned on or off and new recovery codes,
+// a changed role, a disabled account, and accounts deleted since stay disabled. A restore brings photos back, not
+// access that was taken away (nor a second step that was added). The replaced activity log is kept too, invites that
+// were withdrawn or used since stay so, and the accounts' notices are the replaced database's (the newer ones; the
+// sign-in notices among them are not shown to the sessions after the restore, which all start later, an
+// administrator's reset of two-step sign-in is, until dismissed). The authenticator secrets are sealed under this
+// server's secret, which the caller checked is the same.
 func carryAccounts(tx *sql.Tx) error {
 	disabled := []string{}
 	rows, err := tx.Query(`SELECT email FROM main.users m WHERE status='active' AND (NOT EXISTS (SELECT 1 FROM prev.users p WHERE p.id=m.id)
@@ -175,6 +179,30 @@ func carryAccounts(tx *sql.Tx) error {
 	} {
 		if _, err := tx.Exec(q); err != nil {
 			return err
+		}
+	}
+	// two-step sign-in, only from a replaced database that knew it (an older one: as the backup has it)
+	var cols, tables int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('users','prev') WHERE name IN ('totp_secret','totp_pending','totp_last')`).Scan(&cols); err != nil {
+		return err
+	}
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM prev.sqlite_master WHERE type='table' AND name IN ('recovery_codes','notices')`).Scan(&tables); err != nil {
+		return err
+	}
+	if cols == 3 && tables == 2 {
+		for _, q := range []string{
+			`UPDATE main.users SET totp_secret=p.totp_secret, totp_pending=p.totp_pending, totp_last=p.totp_last
+				FROM prev.users p WHERE p.id=users.id`,
+			`DELETE FROM main.recovery_codes WHERE user_id IN (SELECT id FROM prev.users)`,
+			`INSERT INTO main.recovery_codes(user_id,code_hash) SELECT user_id,code_hash FROM prev.recovery_codes
+				WHERE user_id IN (SELECT id FROM main.users)`,
+			`DELETE FROM main.notices WHERE user_id IN (SELECT id FROM prev.users)`,
+			`INSERT INTO main.notices(id,user_id,kind,device,session_pub,at,dismissed) SELECT id,user_id,kind,device,session_pub,at,dismissed
+				FROM prev.notices WHERE user_id IN (SELECT id FROM main.users) AND id NOT IN (SELECT id FROM main.notices)`,
+		} {
+			if _, err := tx.Exec(q); err != nil {
+				return err
+			}
 		}
 	}
 	for _, e := range disabled {

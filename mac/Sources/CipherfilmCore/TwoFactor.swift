@@ -141,7 +141,8 @@ public struct Device: Decodable, Sendable, Equatable, Identifiable {
   }
 }
 
-/** Something the account's devices show once (a new sign-in, two-step sign-in turned off by an admin). Dismissing it
+/** Something the account's devices show once (a new sign-in, two-step sign-in turned off by an admin, the password used
+ *  for a sign-in that wasn't finished). Dismissing it
  *  on any device dismisses it everywhere. */
 public struct Notice: Decodable, Sendable, Equatable, Identifiable {
   public let id: Int64
@@ -151,15 +152,18 @@ public struct Notice: Decodable, Sendable, Equatable, Identifiable {
 
   public init(id: Int64, kind: String, device: String, at: Int64) { self.id = id; self.kind = kind; self.device = device; self.at = at }
 
-  public static let kinds: Set<String> = ["sign_in", "2fa_reset"]
+  public static let kinds: Set<String> = ["sign_in", "2fa_reset", "password_used"]
   public var date: Date { Date(timeIntervalSince1970: TimeInterval(at)) }
   /** a sign-in notice leads to the device list */
   public var reviewDevices: Bool { kind == "sign_in" }
+  /** the banner has a button to Settings (the devices, or two-step sign-in); the password is changed in the browser */
+  public var opensSettings: Bool { kind != "password_used" }
 
   /** What the banner says; time is the moment as the app shows it. */
   public func text(time: String) -> String {
     switch kind {
     case "sign_in": return "New sign-in: \(device.isEmpty ? "an unknown device" : device), \(time). Not you? Review devices."
+    case "password_used": return "Your password was used to start a sign-in that wasn't finished (\(time)). Not you? Change your password in Cipherfilm in the browser."
     default: return "An administrator turned off two-step sign-in for your account (\(time)). Turn it on again in Settings."
     }
   }

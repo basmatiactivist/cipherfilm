@@ -190,8 +190,13 @@ func (a *App) replaceCodes(tx *sql.Tx, userID string, codes []string) error {
 // useCode checks a second-step code and uses it up: a TOTP code moves totp_last forward (so it, and every older one,
 // is refused from then on), a recovery code is deleted. Both happen atomically in the database, so two requests with
 // the same code cannot both pass.
+// asTyped strips what people type around a code: spaces and dashes ("123 456", "abcd-efgh-...").
+func asTyped(code string) string {
+	return strings.NewReplacer(" ", "", "-", "").Replace(strings.TrimSpace(code))
+}
+
 func (a *App) useCode(u *user, code string) bool {
-	c := strings.NewReplacer(" ", "", "-", "").Replace(strings.TrimSpace(code))
+	c := asTyped(code)
 	if digitsOnly(c, totpDigits) {
 		secret, err := a.openTOTP(u.ID, "on", u.TOTPSecret)
 		if err != nil {
@@ -221,12 +226,13 @@ func (a *App) codeSlots(userID string) []slot {
 	return []slot{{a.totpAcct, "2fa|" + userID, true}, {a.totpDay, "2fa|" + userID, true}}
 }
 
-// forgetCodeTries: after a password change or recovery whoever was guessing codes no longer has the password, so the
-// real person isn't kept waiting by their failures.
+// forgetCodeTries: after a password change whoever was guessing codes no longer has the password, so the real person
+// isn't kept waiting by their failures. Only a password change does this (it needs a session, which passed the code
+// step); a recovery only drops the pending sign-ins, since the recovery key alone gets no further than the code step.
 func (a *App) forgetCodeTries(userID string) {
 	a.totpAcct.clear("2fa|" + userID)
 	a.totpDay.clear("2fa|" + userID)
-	a.pending.dropUser(userID)
+	a.pending.dropUser(userID, a.now())
 }
 
 // ---- pending sign-ins ----
@@ -235,20 +241,39 @@ type pendingSignIn struct {
 	userID, authHash string
 	created, expires time.Time
 	tries            int
-	busy             bool // a code for it is being checked
+	busy             bool  // a code for it is being checked
+	notice           int64 // its password_used notice (notices.go), deleted if it finishes
 }
 
 type pendingStore struct {
 	mu sync.Mutex
 	m  map[string]*pendingSignIn // token hash ->
+	// password_used notices of pending sign-ins that ended without a right code (expired, worn out, pushed out,
+	// ended by a password change): they stay, also when another sign-in that shares the notice finishes
+	kept map[int64]time.Time
 }
 
-func newPendingStore() *pendingStore { return &pendingStore{m: map[string]*pendingSignIn{}} }
+func newPendingStore() *pendingStore {
+	return &pendingStore{m: map[string]*pendingSignIn{}, kept: map[int64]time.Time{}}
+}
+
+// lost removes a pending sign-in that didn't finish; its notice stays.
+func (p *pendingStore) lost(k string, now time.Time) {
+	if x := p.m[k]; x != nil && x.notice != 0 {
+		p.kept[x.notice] = now
+	}
+	delete(p.m, k)
+}
 
 func (p *pendingStore) sweep(now time.Time) {
 	for k, x := range p.m {
 		if now.After(x.expires) {
-			delete(p.m, k)
+			p.lost(k, now)
+		}
+	}
+	for n, at := range p.kept {
+		if now.Sub(at) > passwordUsedEvery+pendingTTL {
+			delete(p.kept, n)
 		}
 	}
 }
@@ -274,7 +299,7 @@ func (p *pendingStore) add(tokHash string, x *pendingSignIn, now time.Time) bool
 				old = i
 			}
 		}
-		delete(p.m, mine[old])
+		p.lost(mine[old], now)
 		mine = append(mine[:old], mine[old+1:]...)
 	}
 	p.m[tokHash] = x
@@ -289,7 +314,7 @@ func (p *pendingStore) claim(tokHash string, now time.Time) (pendingSignIn, erro
 	defer p.mu.Unlock()
 	x := p.m[tokHash]
 	if x == nil || now.After(x.expires) {
-		delete(p.m, tokHash)
+		p.lost(tokHash, now)
 		return pendingSignIn{}, errors.New("no such sign-in")
 	}
 	if x.busy {
@@ -300,36 +325,61 @@ func (p *pendingStore) claim(tokHash string, now time.Time) (pendingSignIn, erro
 }
 
 // done ends a check: used is true when the code was right (the pending sign-in is gone, single use), counted when
-// a wrong code counts against it, false when it was turned away unchecked (rate limit).
-func (p *pendingStore) done(tokHash string, used, counted bool) {
+// a wrong code counts against it, false when it was turned away unchecked (rate limit). After a right code it returns
+// the sign-in's password_used notice if nothing else needs it: no unfinished sign-in shares it.
+func (p *pendingStore) done(tokHash string, used, counted bool, now time.Time) (unneeded int64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	x := p.m[tokHash]
 	if x == nil {
-		return
+		return 0
 	}
 	x.busy = false
 	if counted {
 		x.tries++
 	}
-	if used || x.tries >= pendingTries {
+	if used {
 		delete(p.m, tokHash)
+		if x.notice == 0 {
+			return 0
+		}
+		if _, ok := p.kept[x.notice]; ok {
+			return 0
+		}
+		for _, o := range p.m {
+			if o.notice == x.notice {
+				return 0
+			}
+		}
+		return x.notice
 	}
+	if x.tries >= pendingTries {
+		p.lost(tokHash, now)
+	}
+	return 0
 }
 
-func (p *pendingStore) drop(tokHash string) {
+func (p *pendingStore) drop(tokHash string, now time.Time) {
 	p.mu.Lock()
-	delete(p.m, tokHash)
+	p.lost(tokHash, now)
 	p.mu.Unlock()
 }
 
-func (p *pendingStore) dropUser(userID string) {
+func (p *pendingStore) dropUser(userID string, now time.Time) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for k, x := range p.m {
 		if x.userID == userID {
-			delete(p.m, k)
+			p.lost(k, now)
 		}
+	}
+}
+
+func (p *pendingStore) setNotice(tokHash string, id int64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if x := p.m[tokHash]; x != nil {
+		x.notice = id
 	}
 }
 
@@ -339,7 +389,8 @@ func (p *pendingStore) count() int {
 	return len(p.m)
 }
 
-// startPending answers the password step of a sign-in to an account with two-step sign-in: a pending token, nothing else.
+// startPending answers the password step of a sign-in to an account with two-step sign-in: a pending token, nothing
+// else. If no right code follows, the account's devices are told (passwordUsedNotice).
 func (a *App) startPending(w http.ResponseWriter, u *user) {
 	tok := randToken()
 	now := a.now()
@@ -347,6 +398,7 @@ func (a *App) startPending(w http.ResponseWriter, u *user) {
 		failBusy(w)
 		return
 	}
+	a.pending.setNotice(sha256hex(tok), a.passwordUsedNotice(u))
 	writeJSON(w, http.StatusUnauthorized, map[string]any{"error": twoFactorMsg, "code": twoFactorRequired, "pending": tok,
 		"expires_in": int(pendingTTL.Seconds())})
 }
@@ -389,24 +441,26 @@ func (a *App) login2fa(w http.ResponseWriter, r *http.Request) {
 	ip := limiterIP(a.clientIP(r))
 	at, ok := reserve(append([]slot{{a.loginIP, "2fa|" + ip, false}}, a.codeSlots(p.userID)...)...)
 	if !ok {
-		a.pending.done(h, false, false)
+		a.pending.done(h, false, false, a.now())
 		fail(w, 429, "too many attempts, try later")
 		return
 	}
 	u, err := a.userByID(p.userID)
 	// the password it was issued for must still be the account's, and the account active with two-step sign-in on
 	if err != nil || u.Status != "active" || !ctEqual(u.AuthHash, p.authHash) || !u.twoFactor() {
-		a.pending.drop(h)
+		a.pending.drop(h, a.now())
 		at.refund()
 		writeJSON(w, 401, map[string]string{"error": pendingGone, "code": "two_factor_expired"})
 		return
 	}
 	if !a.useCode(u, req.Code) {
-		a.pending.done(h, false, true)
+		a.pending.done(h, false, true, a.now())
 		writeJSON(w, 401, map[string]string{"error": "that code isn't right", "code": "wrong_code"})
 		return
 	}
-	a.pending.done(h, true, false) // single use
+	if n := a.pending.done(h, true, false, a.now()); n != 0 { // single use
+		a.dropPasswordUsed(n) // it finished: nothing to tell
+	}
 	at.success()
 	ss, err := a.startSession(w, r, u.ID, u.AuthHash)
 	if errors.Is(err, errCredentialsChanged) {
@@ -514,7 +568,7 @@ func (a *App) twoFactorEnable(w http.ResponseWriter, r *http.Request, u *user, s
 		return
 	}
 	defer clear(secret)
-	step, good := totpMatch(secret, strings.TrimSpace(req.Code), a.now())
+	step, good := totpMatch(secret, asTyped(req.Code), a.now())
 	if !good {
 		writeJSON(w, 403, map[string]string{"error": "that code isn't right", "code": "wrong_code"})
 		return
@@ -600,7 +654,7 @@ func (a *App) turnOff(ctx context.Context, userID, secret string) bool {
 	if tx.Commit() != nil {
 		return false
 	}
-	a.pending.dropUser(userID)
+	a.pending.dropUser(userID, a.now())
 	return true
 }
 
@@ -626,6 +680,7 @@ func (a *App) twoFactorNewCodes(w http.ResponseWriter, r *http.Request, u *user,
 		fail(w, 500, "server error")
 		return
 	}
+	a.audit(u.Email, "made new recovery codes", u.Email, "")
 	writeJSON(w, 200, map[string]any{"recovery_codes": codes})
 }
 

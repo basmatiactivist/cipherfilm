@@ -156,7 +156,7 @@ export function Account({ open }: { open?: string }) {
       </section>
       {/* the public demo login: one stranger must not lock out the next (the server refuses these anyway) */}
       {!mem.me!.demo && <RecoveryKeyPanel onNew={setKit} />}
-      {!mem.me!.demo && <ChangePassword />}
+      {!mem.me!.demo && <ChangePassword open={open === "password"} />}
       {!mem.me!.demo && <TwoFactorPanel open={open === "2fa"} />}
       {!mem.me!.demo && <DevicesPanel open={open === "devices"} />}
       <SearchPanel />
@@ -194,14 +194,14 @@ function MemoriesPanel() {
   );
 }
 
-function ChangePassword() {
+function ChangePassword({ open }: { open?: boolean }) {
   const [cur, setCur] = useState("");
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
   const [done, setDone] = useState(false);
   const { busy, error, setError, run } = useAction();
   return (
-    <Acc icon="lock" title="Change password" sub="Signs out your other devices">
+    <Acc icon="lock" title="Change password" sub="Signs out your other devices" open={open}>
       <p>Your photos stay as they are. Your other devices are signed out.</p>
       <form onSubmit={(e) => {
         e.preventDefault();
@@ -572,6 +572,7 @@ function describe(a: AuditEntry, myEmail: string): { icon: IconName; text: any; 
     case "two-step sign-in turned off": return { icon: "key", text: <>{who} turned off two-step sign-in for {t}</>, warn: true };
     case "turned on two-step sign-in": return { icon: "key", text: <>{who} turned on two-step sign-in</> };
     case "turned off two-step sign-in": return { icon: "key", text: <>{who} turned off two-step sign-in</> };
+    case "made new recovery codes": return { icon: "key", text: <>{who} made new recovery codes for two-step sign-in</> };
     case "signed out every device": return { icon: "logout", text: <>{who} signed out every device of {t}{a.detail ? ", and they delete what they keep" : ""}</>, warn: !!a.detail };
   }
   return { icon: "info", text: <>{who} {a.action}{a.target ? <> · {t}</> : null}{a.detail ? <span class="small"> ({a.detail})</span> : null}</> };

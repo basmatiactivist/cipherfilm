@@ -121,38 +121,52 @@ struct SignInView: View {
   }
 }
 
-/** The second step of a sign-in with two-step sign-in on: the code from the authenticator app, or a recovery code. */
+/** The second step of a sign-in with two-step sign-in on: a passkey (in the browser), the code from the authenticator
+ *  app, or a recovery code. */
 struct CodeStepView: View {
+  enum Way { case passkey, code, recovery }
   @Environment(AppModel.self) private var model
   @State private var code = ""
-  @State private var recovery = false
+  @State private var way: Way?
   @State private var error: String?
   @State private var busy = false
   @FocusState private var focused: Bool
 
+  private var step: CodeStep? { model.codeStep }
+  private var current: Way { way ?? ((step?.passkey ?? false) && !(step?.totp ?? true) ? .passkey : (step?.totp ?? true) ? .code : .recovery) }
+  private var recovery: Bool { current == .recovery }
+
   var body: some View {
     AuthCard(title: "Two-step sign-in",
-             subtitle: recovery ? "Enter one of your recovery codes. Each works once." : "Enter the 6-digit code from your authenticator app.",
+             subtitle: current == .passkey ? "Confirm with your passkey. Your browser opens for it, on your server's own address."
+               : recovery ? "Enter one of your recovery codes. Each works once." : "Enter the 6-digit code from your authenticator app.",
              server: model.serverName) {
-      VStack(alignment: .leading, spacing: 6) {
-        FieldLabel(text: recovery ? "Recovery code" : "Code")
-        if recovery {
-          TextField("xxxx-xxxx-xxxx-xxxx", text: $code).field().focused($focused).autocorrectionDisabled().onSubmit(go)
-        } else {
-          TextField("123456", text: $code).field().focused($focused).textContentType(.oneTimeCode).onSubmit(go)
-            .onChange(of: code) { _, v in
-              let digits = String(v.filter(\.isNumber).prefix(6))
-              if digits != v { code = digits }
-            }
+      if current == .passkey {
+        if let error { Note(text: error) }
+        Button(action: usePasskey) { BusyLabel(busy, "Use Your Passkey", "Waiting for the browser…").frame(maxWidth: .infinity) }
+          .buttonStyle(PrimaryButton()).disabled(busy).keyboardShortcut(.defaultAction)
+      } else {
+        VStack(alignment: .leading, spacing: 6) {
+          FieldLabel(text: recovery ? "Recovery code" : "Code")
+          if recovery {
+            TextField("xxxx-xxxx-xxxx-xxxx", text: $code).field().focused($focused).autocorrectionDisabled().onSubmit(go)
+          } else {
+            TextField("123456", text: $code).field().focused($focused).textContentType(.oneTimeCode).onSubmit(go)
+              .onChange(of: code) { _, v in
+                let digits = String(v.filter(\.isNumber).prefix(6))
+                if digits != v { code = digits }
+              }
+          }
         }
+        if let error { Note(text: error) }
+        Button(action: go) { BusyLabel(busy, "Sign in", "Checking…").frame(maxWidth: .infinity) }
+          .buttonStyle(PrimaryButton()).disabled(busy || !TwoFactor.ready(code, recovery: recovery))
+          .keyboardShortcut(.defaultAction)
       }
-      if let error { Note(text: error) }
-      Button(action: go) { BusyLabel(busy, "Sign in", "Checking…").frame(maxWidth: .infinity) }
-        .buttonStyle(PrimaryButton()).disabled(busy || !TwoFactor.ready(code, recovery: recovery))
-        .keyboardShortcut(.defaultAction)
-      HStack {
-        Button(recovery ? "Use the authenticator app" : "Use a recovery code") { recovery.toggle(); code = ""; error = nil; focused = true }
-          .buttonStyle(TextLink()).font(Typo.caption)
+      HStack(spacing: 14) {
+        if current != .passkey, step?.passkey == true { switchTo(.passkey, "Use a passkey") }
+        if current != .code, step?.totp != false { switchTo(.code, "Use the authenticator app") }
+        if current != .recovery { switchTo(.recovery, "Use a recovery code") }
         Spacer()
         Button("Start over") { model.startOver() }.buttonStyle(TextLink()).font(Typo.caption).disabled(busy)
       }
@@ -160,11 +174,24 @@ struct CodeStepView: View {
     .onAppear { focused = true }
   }
 
+  private func switchTo(_ w: Way, _ label: String) -> some View {
+    Button(label) { way = w; code = ""; error = nil; focused = true }.buttonStyle(TextLink()).font(Typo.caption).disabled(busy)
+  }
+
   private func go() {
     guard TwoFactor.ready(code, recovery: recovery), !busy else { return }
+    attempt { try await model.finishSignIn(code: code) }
+  }
+
+  private func usePasskey() {
+    guard !busy else { return }
+    attempt { try await model.finishSignInWithPasskey() }
+  }
+
+  private func attempt(_ f: @escaping () async throws -> Void) {
     busy = true; error = nil
     Task {
-      do { try await model.finishSignIn(code: code) } catch let e as APIError where e.code == "two_factor_expired" {
+      do { try await f() } catch let e as APIError where e.code == "two_factor_expired" {
         model.notice = e.message // back on the password page
       } catch {
         self.error = error.localizedDescription

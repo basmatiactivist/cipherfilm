@@ -154,6 +154,21 @@ final class AppModel {
     }
   }
 
+  /** The code step with a passkey, in the browser (PasskeyBrowser): a passkey that isn't accepted may be tried again. */
+  func finishSignInWithPasskey() async throws {
+    guard let api, let step = codeStep else { return }
+    do {
+      let options = try await Account.passkeyChallenge(api: api, step: step)
+      let answer = try await PasskeyBrowser.shared.run(server: api.base, op: "get", options: options)
+      let (me, master) = try await Account.finish(api: api, step: step, passkey: answer)
+      codeStep = nil
+      adopt(me, master: master)
+    } catch let e as APIError where e.code == "two_factor_expired" {
+      codeStep = nil
+      throw e
+    }
+  }
+
   /** Back to the password: the key the password made is forgotten. */
   func startOver() {
     codeStep?.abandon()

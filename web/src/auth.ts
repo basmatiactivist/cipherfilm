@@ -14,6 +14,7 @@ import { forgetAlbums } from "./albums";
 import { forgetKeptForGood, keepKey, keptKey } from "./keep";
 import { open, LABEL } from "./crypto/wrap";
 import { announce, sameSession } from "./tabs";
+import { getPasskey } from "./passkeys";
 
 /** Give the browser a frame to paint a busy state before Argon2 blocks the thread. */
 export const paint = (): Promise<void> => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
@@ -169,9 +170,17 @@ export async function acceptInvite(token: string, email: string, password: strin
  *  code from the authenticator app (or a recovery code) before it hands out a session or any of the account's keys.
  *  It holds the key derived from the password until the code is accepted or the person starts over. */
 export interface CodeStep {
+  /** Which second steps the account has (the server says so after the right password): an authenticator app, and a
+   *  passkey for this address. Older servers say neither: then a code is asked for. */
+  totp: boolean;
+  passkey: boolean;
   /** Sends the code and signs in when it is right. A wrong code throws and the step stays; CodeExpired means the
    *  password is needed again (too old, too many wrong codes, the password changed). */
   finish(code: string): Promise<void>;
+  /** The same with a passkey: the browser asks for it, the server checks its answer to this sign-in's challenge. */
+  usePasskey(): Promise<void>;
+  /** Fetches the challenge ahead of the tap (some browsers allow the passkey dialog only right after a tap). */
+  preparePasskey(): void;
   /** Starting over: the key derived from the password is overwritten. */
   cancel(): void;
 }
@@ -183,31 +192,64 @@ export function pendingToken(e: unknown): string {
   return e instanceof ApiError && e.status === 401 && e.code === "two_factor_required" && typeof e.body?.pending === "string" ? e.body.pending : "";
 }
 
-/** What went wrong with a code: "wrong" (try again), "expired" (back to the password) or "other". */
+/** What went wrong with a code or passkey: "wrong" (try again), "expired" (back to the password) or "other". */
 export function codeProblem(e: unknown): "wrong" | "expired" | "other" {
   if (!(e instanceof ApiError) || e.status !== 401) return "other";
-  return e.code === "wrong_code" ? "wrong" : e.code === "two_factor_expired" ? "expired" : "other";
+  return e.code === "wrong_code" || e.code === "wrong_passkey" ? "wrong" : e.code === "two_factor_expired" ? "expired" : "other";
+}
+
+/** Which second steps the password step said the account has; an older server says nothing (a code, then). */
+export function methods(e: unknown): { totp: boolean; passkey: boolean } {
+  const b = e instanceof ApiError ? e.body : null;
+  if (!b || (typeof b.totp !== "boolean" && typeof b.passkey !== "boolean")) return { totp: true, passkey: false };
+  return { totp: b.totp === true, passkey: b.passkey === true };
 }
 
 const EXPIRED = "This sign-in expired. Enter your password again.";
 
-function codeStep(s: Awaited<ReturnType<typeof getSodium>>, email: string, kek: Uint8Array, pending: string): CodeStep {
+function codeStep(s: Awaited<ReturnType<typeof getSodium>>, email: string, kek: Uint8Array, pending: string, has: { totp: boolean; passkey: boolean }): CodeStep {
   let open = true;
   const cancel = () => { if (open) { open = false; s.memzero(kek); } };
+  const send = async (second: { code: string } | { passkey: Record<string, unknown> }, wrong: string) => {
+    let me: Me;
+    try {
+      me = await api<Me>("POST", "/api/auth/login/2fa", { pending, ...second });
+    } catch (e) {
+      if (codeProblem(e) === "expired") { cancel(); throw new CodeExpired(EXPIRED); }
+      if (codeProblem(e) === "wrong") throw new Error(wrong);
+      throw e;
+    }
+    open = false;
+    try { await signedIn(me, unlockMasterKey(s, email, kek, me.wrapped_master_pw)); } finally { s.memzero(kek); }
+  };
+  // a challenge is answered once: each try fetches a new one (ahead of the tap when it can)
+  let challenge: Promise<Record<string, unknown>> | null = null;
+  const fetchChallenge = () => api<{ options: Record<string, unknown> }>("POST", "/api/auth/login/2fa/passkey", { pending }).then((r) => r.options);
   return {
+    ...has,
     cancel,
     async finish(code: string) {
       if (!open) throw new CodeExpired(EXPIRED);
-      let me: Me;
+      challenge = null; // a code check uses up the passkey challenge too
+      await send({ code: code.trim() }, "That code isn't right. Check the time on your phone and try the newest code.");
+    },
+    preparePasskey() {
+      if (open && !challenge) { challenge = fetchChallenge(); challenge.catch(() => {}); }
+    },
+    async usePasskey() {
+      if (!open) throw new CodeExpired(EXPIRED);
+      const ready = challenge ?? fetchChallenge();
+      challenge = null;
+      let options: Record<string, unknown>;
       try {
-        me = await api<Me>("POST", "/api/auth/login/2fa", { pending, code: code.trim() });
+        options = await ready;
       } catch (e) {
         if (codeProblem(e) === "expired") { cancel(); throw new CodeExpired(EXPIRED); }
-        if (codeProblem(e) === "wrong") throw new Error("That code isn't right. Check the time on your phone and try the newest code.");
         throw e;
       }
-      open = false;
-      try { await signedIn(me, unlockMasterKey(s, email, kek, me.wrapped_master_pw)); } finally { s.memzero(kek); }
+      const passkey = await getPasskey(options);
+      if (!open) throw new CodeExpired(EXPIRED);
+      await send({ passkey }, "That passkey wasn't accepted. Try again, or use a code.");
     },
   };
 }
@@ -226,7 +268,7 @@ export async function login(email: string, password: string): Promise<CodeStep |
   } catch (err) {
     const pending = pendingToken(err);
     if (!pending) { s.memzero(kek); throw err; }
-    return codeStep(s, e, kek, pending);
+    return codeStep(s, e, kek, pending, methods(err));
   }
   try { await signedIn(me, unlockMasterKey(s, e, kek, me.wrapped_master_pw)); } finally { s.memzero(kek); }
   return null;

@@ -11,6 +11,7 @@ import { explicitChosen, indexChecked, loadPeople, refreshIndex, searchFamily, s
 import { vectorCount } from "./search/content";
 import { TEXT_MODELS } from "./search/rank";
 import * as tf from "./twofactor";
+import * as pk from "./passkeys";
 import { Card, ErrorLine, Field, KeepButton, NewPasswordFields, Submit, VersionLine, fmtGB, passwordProblem, useAction } from "./components";
 
 type Nav = (to: string) => void;
@@ -251,12 +252,14 @@ function DeleteAccount() {
   );
 }
 
-/** Two-step sign-in: a code from an authenticator app at every new sign-in. Unlocking this browser again doesn't ask. */
+/** Two-step sign-in: a code from an authenticator app, or a passkey, at every new sign-in. Unlocking this browser again
+ *  doesn't ask. */
+type TfMode = "" | "setup" | "qr" | "off" | "new" | "codes" | "addkey" | "removeapp" | { remove: pk.Passkey } | { rename: pk.Passkey };
+
 function TwoFactorPanel({ open }: { open?: boolean }) {
   const [st, setSt] = useState<tf.TwoFactorStatus | null>(null);
-  // off: setup (password), qr (scan and confirm); on: off or new (password and a code); codes: new recovery codes shown
-  const [mode, setMode] = useState<"" | "setup" | "qr" | "off" | "new" | "codes">("");
-  const [pw, setPw] = useState("");
+  const [keys, setKeys] = useState<pk.Passkey[]>([]);
+  const [mode, setMode] = useState<TfMode>("");
   const [code, setCode] = useState("");
   const [secret, setSecret] = useState<tf.TwoFactorSetup | null>(null);
   const [codes, setCodes] = useState<string[]>([]);
@@ -266,58 +269,103 @@ function TwoFactorPanel({ open }: { open?: boolean }) {
   const [stay, setStay] = useState(false);
   useEffect(() => { if (mode) setStay(true); }, [mode]);
   const { busy, error, setError, run } = useAction();
-  const load = () => tf.status().then((s) => { setSt(s); if (mem.me) mem.me.two_factor = s.enabled; }, () => {});
+  const load = () => {
+    tf.status().then((s) => { setSt(s); if (mem.me) mem.me.two_factor = s.enabled; }, () => {});
+    pk.list().then((l) => setKeys(l.passkeys), () => setKeys([]));
+  };
   useEffect(() => { load(); }, []);
-  const reset = () => { setMode(""); setPw(""); setCode(""); setSecret(null); setError(""); setSaved(false); setCopied(""); };
+  const reset = () => { setMode(""); setCode(""); setSecret(null); setError(""); setSaved(false); setCopied(""); };
+  const done = () => { reset(); load(); };
+  const showCodes = (c: string[] | null) => { if (c && c.length) { setCodes(c); setMode("codes"); } else done(); };
   const copy = (what: string, text: string) => navigator.clipboard.writeText(text).then(() => setCopied(what), () => setCopied(""));
   const on = st?.enabled ?? !!mem.me!.two_factor;
+  const totp = st?.totp ?? on; // an older server: on means the app
+  const canPasskey = pk.passkeysSupported();
+  const hereKeys = keys.filter((k) => k.here).length;
   if (st && !st.available) return null;
   const email = mem.me!.user.email;
+  const methods = [totp && "a code from your app", keys.length > 0 && "a passkey"].filter(Boolean).join(" or ");
 
   if (mode === "codes") {
     return (
       <Acc icon="key" title="Two-step sign-in" sub="Save your recovery codes" open>
-        <p>Each of these codes signs you in once instead of a code from your app, for when your phone is lost. <strong>They're shown only now.</strong></p>
+        <p>Each of these codes signs you in once instead of a code from your app or a passkey, for when your phone is lost. <strong>They're shown only now.</strong></p>
         <ol class="words codes" aria-label="Recovery codes">{codes.map((c) => <li key={c}><code>{c}</code></li>)}</ol>
         <div class="row">
           <button class="btn secondary" onClick={() => copy("codes", codes.join("\n"))}>{copied === "codes" ? "Copied" : "Copy"}</button>
           <a class="btn secondary" download="cipherfilm-recovery-codes.txt" href={"data:text/plain;charset=utf-8," + encodeURIComponent(tf.codesFile(email, codes))}>Download</a>
         </div>
         <label class="check"><input type="checkbox" checked={saved} onChange={(e) => setSaved((e.target as HTMLInputElement).checked)} /> I've saved these codes somewhere safe</label>
-        <button class="btn" disabled={!saved} onClick={() => { setCodes([]); reset(); load(); }}>Done</button>
+        <button class="btn" disabled={!saved} onClick={() => { setCodes([]); done(); }}>Done</button>
       </Acc>
     );
   }
+  const proofFor = (intro: string, submit: string, act: (p: pk.Proof) => Promise<void>, danger = false, second = on) => (
+    <ProofForm intro={intro} submit={submit} danger={danger} second={second} passkey={canPasskey && hereKeys > 0} onSubmit={act} onCancel={reset} />
+  );
   return (
-    <Acc icon="key" title="Two-step sign-in" sub={on ? "On: a code from your app at every new sign-in" : "Off"} open={open || stay || mode !== "" || undefined}>
-      {!on && mode === "" && (
+    <Acc icon="key" title="Two-step sign-in" sub={on ? `On: ${methods} at every new sign-in` : "Off"} open={open || stay || mode !== "" || undefined}>
+      {mode === "" && !on && (
         <>
-          <p>Ask for a 6-digit code from an authenticator app (such as Aegis, 2FAS or Google Authenticator) when you sign in on a new device or browser. Unlocking a device that is already signed in doesn't ask for it.</p>
-          <button class="btn secondary" onClick={() => setMode("setup")}>Turn on…</button>
+          <p>Ask for a second step when you sign in on a new device or browser: a 6-digit code from an authenticator app (such as Aegis, 2FAS or Google Authenticator), or a passkey in your password manager or on a security key. Unlocking a device that is already signed in doesn't ask for it. Your password still unlocks your photos.</p>
+          <div class="row">
+            <button class="btn secondary" onClick={() => setMode("setup")}>Use an authenticator app…</button>
+            {canPasskey && <button class="btn secondary" onClick={() => setMode("addkey")}>Use a passkey…</button>}
+          </div>
         </>
       )}
-      {!on && mode === "setup" && (
-        <form onSubmit={(e) => { e.preventDefault(); run(async () => { setSecret(await tf.setup(await auth.passwordProof(pw))); setPw(""); setMode("qr"); }); }}>
-          <Field label="Your password" id="tf-password" type="password" value={pw} onInput={setPw} autocomplete="current-password" autofocus />
-          <ErrorLine text={error} />
+      {mode === "" && on && (
+        <>
+          <p>A new sign-in asks for {methods}. {st ? `${st.recovery_codes_left} of 10 recovery codes left.` : ""}</p>
+          {st && st.recovery_codes_left <= 2 && <p class="warning small">Few recovery codes left. Make new ones so you aren't locked out if you lose your phone.</p>}
+          <h3 class="subhead">Authenticator app</h3>
+          {totp ? (
+            <div class="row">
+              <span class="small">On</span>
+              {keys.length > 0 && <button class="btn secondary" onClick={() => setMode("removeapp")}>Remove…</button>}
+            </div>
+          ) : <button class="btn secondary" onClick={() => setMode("setup")}>Add an authenticator app…</button>}
+          <h3 class="subhead">Passkeys</h3>
+          {keys.length > 0 && (
+            <ul class="devices passkeys">
+              {keys.map((k) => (
+                <li key={k.id}>
+                  <div class="devtext">
+                    <strong>{k.name}</strong>
+                    <p class="small">Added {new Date(k.created_at * 1000).toLocaleDateString()}{k.last_used_at ? `, last used ${new Date(k.last_used_at * 1000).toLocaleDateString()}` : ", not used yet"}{k.here ? "" : ` · for ${k.rp_id}`}</p>
+                  </div>
+                  <div class="row">
+                    <button class="btn secondary" onClick={() => setMode({ rename: k })}>Rename</button>
+                    <button class="btn secondary warn" onClick={() => setMode({ remove: k })}>Remove…</button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          {canPasskey ? <button class="btn secondary" onClick={() => setMode("addkey")}>Add a passkey…</button>
+            : <p class="small">This browser can't use passkeys here{location.protocol === "https:" ? "" : " (it needs the https address)"}.</p>}
+          <h3 class="subhead">Recovery codes</h3>
           <div class="row">
-            <Submit busy={busy} label="Continue" busyLabel="Checking…" />
-            <button type="button" class="btn secondary" onClick={reset}>Cancel</button>
+            <button class="btn secondary" onClick={() => setMode("new")}>New recovery codes…</button>
+            <button class="btn secondary warn" onClick={() => setMode("off")}>Turn off…</button>
           </div>
-        </form>
+        </>
       )}
-      {!on && mode === "qr" && secret && (() => {
+      {mode === "setup" && proofFor("", "Continue", async (p) => { setSecret(await tf.setup(p)); setMode("qr"); })}
+      {mode === "qr" && secret && (() => {
         const qr = tf.qrFor(secret.uri);
         return (
-          <form onSubmit={(e) => { e.preventDefault(); run(async () => { const c = await tf.enable(code); setCodes(c); setCode(""); setSecret(null); setMode("codes"); }); }}>
-            <p>Scan this code with your authenticator app, or type the key into it. Then enter the 6-digit code the app shows.</p>
+          <form onSubmit={(e) => { e.preventDefault(); run(async () => { const c = await tf.enable(code); setCode(""); setSecret(null); showCodes(c); }); }}>
+            <p>Scan this code with your authenticator app, or add it with the button on a phone, or type the key into it. Then enter the 6-digit code the app shows.</p>
+            {/* on a phone the app is on the same device: the otpauth: address opens it (or a password manager) directly */}
+            <a class="btn touch-only" href={secret.uri}>Open in authenticator app</a>
             {/* drawn here from the key: the key never goes to a QR service */}
             <svg class="qr" viewBox={`0 0 ${qr.size} ${qr.size}`} role="img" aria-label="QR code for your authenticator app" shape-rendering="crispEdges">
               <rect width={qr.size} height={qr.size} fill="#fff" />
               <path d={qr.d} fill="#000" />
             </svg>
             <p class="secret"><span class="small">Key</span> <code>{tf.groupSecret(secret.secret)}</code> <button type="button" class="link" onClick={() => copy("key", secret.secret)}>{copied === "key" ? "Copied" : "Copy"}</button></p>
-            <Field label="Code from the app" id="tf-code" value={code} onInput={setCode} autocomplete="one-time-code" inputmode="numeric" pattern="[0-9 ]*" maxLength={7} autofocus />
+            <Field label="Code from the app" id="tf-code" value={code} onInput={setCode} autocomplete="one-time-code" inputmode="numeric" pattern="[0-9 ]*" maxLength={7} autofocus={!tf.touchDevice()} />
             <ErrorLine text={error} />
             <div class="row">
               <Submit busy={busy} label="Turn on" busyLabel="Checking…" />
@@ -326,36 +374,88 @@ function TwoFactorPanel({ open }: { open?: boolean }) {
           </form>
         );
       })()}
-      {on && mode === "" && (
-        <>
-          <p>A new sign-in asks for a code from your authenticator app. {st ? `${st.recovery_codes_left} of 10 recovery codes left.` : ""}</p>
-          {st && st.recovery_codes_left <= 2 && <p class="warning small">Few recovery codes left. Make new ones so you aren't locked out if you lose your phone.</p>}
-          <div class="row">
-            <button class="btn secondary" onClick={() => setMode("new")}>New recovery codes…</button>
-            <button class="btn secondary warn" onClick={() => setMode("off")}>Turn off…</button>
-          </div>
-        </>
-      )}
-      {on && (mode === "off" || mode === "new") && (
-        <form onSubmit={(e) => {
-          e.preventDefault();
-          run(async () => {
-            const proof = await auth.passwordProof(pw);
-            if (mode === "off") { await tf.disable(proof, code); reset(); load(); return; }
-            setCodes(await tf.newCodes(proof, code)); setPw(""); setCode(""); setMode("codes");
-          });
-        }}>
-          <p>{mode === "off" ? "Turning it off means your password alone signs in again." : "Your old recovery codes stop working."}</p>
-          <Field label="Your password" id="tf-password" type="password" value={pw} onInput={setPw} autocomplete="current-password" autofocus />
-          <Field label="Code from your app, or a recovery code" id="tf-code" value={code} onInput={setCode} autocomplete="one-time-code" />
-          <ErrorLine text={error} />
-          <div class="row">
-            <Submit busy={busy} label={mode === "off" ? "Turn off" : "Make new codes"} busyLabel="Checking…" danger={mode === "off"} />
-            <button type="button" class="btn secondary" onClick={reset}>Cancel</button>
-          </div>
-        </form>
-      )}
+      {mode === "addkey" && <AddPasskey second={on} passkey={canPasskey && hereKeys > 0} onDone={showCodes} onCancel={reset} />}
+      {mode === "off" && proofFor("Turning it off removes the authenticator app, your passkeys and recovery codes: your password alone signs in again.", "Turn off",
+        async (p) => { await tf.disable(p); done(); }, true)}
+      {mode === "new" && proofFor("Your old recovery codes stop working.", "Make new codes", async (p) => { setCodes(await tf.newCodes(p)); setMode("codes"); })}
+      {mode === "removeapp" && proofFor("A new sign-in then asks for a passkey (or a recovery code).", "Remove the app", async (p) => { await tf.removeApp(p); done(); }, true)}
+      {typeof mode === "object" && "remove" in mode && proofFor(
+        keys.length === 1 && !totp ? `Removing "${mode.remove.name}", your only second step, turns two-step sign-in off.` : `Remove "${mode.remove.name}"? It can't be used to sign in any more.`,
+        "Remove", async (p) => { await pk.remove(mode.remove.id, p); done(); }, true)}
+      {typeof mode === "object" && "rename" in mode && <RenamePasskey key={mode.rename.id} k={mode.rename} onDone={done} onCancel={reset} />}
     </Acc>
+  );
+}
+
+/** The password and, when two-step sign-in is on, a second step: a code (from the app or a recovery code) or a passkey. */
+function ProofForm(p: { intro: string; submit: string; danger?: boolean; second: boolean; passkey: boolean; onSubmit: (proof: pk.Proof) => Promise<void>; onCancel: () => void }) {
+  const [pw, setPw] = useState("");
+  const [code, setCode] = useState("");
+  const { busy, error, run } = useAction();
+  // the passkey's challenge is fetched ahead, so the browser's dialog opens right on the tap (some allow it only then)
+  const challenge = useRef<Promise<Record<string, any>> | null>(null);
+  const prepare = () => { if (p.second && p.passkey) { challenge.current = api<{ options: Record<string, any> }>("POST", "/api/me/2fa/passkey", {}).then((r) => r.options); challenge.current.catch(() => {}); } };
+  useEffect(prepare, []);
+  const withPasskey = () => run(async () => {
+    try {
+      const answer = await pk.getPasskey(await (challenge.current ?? Promise.reject(new Error("Try again."))));
+      await p.onSubmit({ current_auth: await auth.passwordProof(pw), passkey: answer });
+    } finally { prepare(); } // a challenge is answered once
+  });
+  return (
+    <form onSubmit={(e) => { e.preventDefault(); run(async () => p.onSubmit({ current_auth: await auth.passwordProof(pw), ...(p.second ? { code: code.trim() } : {}) })); }}>
+      {p.intro && <p>{p.intro}</p>}
+      <Field label="Your password" id="tf-password" type="password" value={pw} onInput={setPw} autocomplete="current-password" autofocus />
+      {p.second && <Field label="Code from your app, or a recovery code" id="tf-code" value={code} onInput={setCode} autocomplete="one-time-code" required={!p.passkey} />}
+      <ErrorLine text={error} />
+      <div class="row">
+        <Submit busy={busy} label={p.submit} busyLabel="Checking…" danger={p.danger} />
+        {p.second && p.passkey && <button type="button" class="btn secondary" disabled={busy || !pw} onClick={withPasskey}>{p.submit} with a passkey</button>}
+        <button type="button" class="btn secondary" onClick={p.onCancel}>Cancel</button>
+      </div>
+    </form>
+  );
+}
+
+/** Adding a passkey: a name, the password (and the second step while two-step sign-in is on), then the browser makes it. */
+function AddPasskey(p: { second: boolean; passkey: boolean; onDone: (codes: string[] | null) => void; onCancel: () => void }) {
+  const [name, setName] = useState(pk.suggestName(navigator.userAgent));
+  const [options, setOptions] = useState<Record<string, any> | null>(null);
+  const { busy, error, run } = useAction();
+  if (!options) {
+    return (
+      <>
+        <p>A passkey lives in your password manager, your phone or computer, or on a security key. When you sign in on a new device, you confirm it instead of typing a code. Your password is still needed.</p>
+        <Field label="Name" id="pk-name" value={name} onInput={setName} hint="To tell your passkeys apart, like the password manager or key it's in." />
+        <ProofForm intro="" submit="Continue" second={p.second} passkey={p.passkey} onSubmit={async (pr) => setOptions(await pk.beginAdd(pr))} onCancel={p.onCancel} />
+      </>
+    );
+  }
+  // the browser's dialog right on this tap: some browsers allow it only then
+  return (
+    <>
+      <p>Now your browser or password manager makes the passkey.</p>
+      <ErrorLine text={error} />
+      <div class="row">
+        <button class="btn" disabled={busy} onClick={() => run(async () => p.onDone(await pk.finishAdd(options, name)))}>{busy ? "Waiting…" : "Make the passkey"}</button>
+        <button class="btn secondary" onClick={p.onCancel}>Cancel</button>
+      </div>
+    </>
+  );
+}
+
+function RenamePasskey(p: { k: pk.Passkey; onDone: () => void; onCancel: () => void }) {
+  const [name, setName] = useState(p.k.name);
+  const { busy, error, run } = useAction();
+  return (
+    <form onSubmit={(e) => { e.preventDefault(); run(async () => { await pk.rename(p.k.id, name); p.onDone(); }); }}>
+      <Field label="Name" id="pk-rename" value={name} onInput={setName} autofocus />
+      <ErrorLine text={error} />
+      <div class="row">
+        <Submit busy={busy} label="Save" busyLabel="Saving…" />
+        <button type="button" class="btn secondary" onClick={p.onCancel}>Cancel</button>
+      </div>
+    </form>
   );
 }
 
@@ -779,5 +879,31 @@ function DefaultLimit({ current, onSaved }: { current: number; onSaved: () => vo
         </form>
       )}
     </section>
+  );
+}
+
+/** /passkey: the Mac app's passkey step. A Mac app can't use passkeys of any server's name (Apple ties that to names
+ *  fixed when the app is built), so it opens this page on the server's own address in a sign-in window; the browser
+ *  asks for the passkey here and the answer goes back to the waiting app (docs/THREAT_MODEL.md, "Passkeys"). */
+export function PasskeyHandoff() {
+  const [h] = useState(() => { const x = pk.readHandoff(location.hash); history.replaceState(null, "", "/passkey"); return x; });
+  const { busy, error, run } = useAction();
+  const rp = h ? (h.op === "get" ? h.options.rpId : h.options.rp?.id) : "";
+  if (!h || (rp && rp !== location.hostname)) {
+    return <Card title="Passkey"><p>The Cipherfilm app on your Mac opens this page when it needs a passkey. There's nothing to do here.</p></Card>;
+  }
+  const back = (answer: Record<string, any> | null, why = "") => { location.href = pk.handoffReturn(answer, why); };
+  return (
+    <Card title={h.op === "get" ? "Confirm your sign-in" : "Make a passkey"} sealed>
+      <p class="lead">The Cipherfilm app on your Mac asked for this. Continue only if you just started it there.</p>
+      <p class="small">{location.host}</p>
+      <ErrorLine text={error} />
+      <div class="row">
+        <button class="btn" disabled={busy} onClick={() => run(async () => back(h.op === "get" ? await pk.getPasskey(h.options) : await pk.createPasskey(h.options)))}>
+          {busy ? "Waiting…" : h.op === "get" ? "Use your passkey" : "Make the passkey"}
+        </button>
+        <button class="btn secondary" onClick={() => back(null, "cancelled")}>Cancel</button>
+      </div>
+    </Card>
   );
 }

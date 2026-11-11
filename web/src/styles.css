@@ -509,6 +509,11 @@ kbd { display: inline-block; padding: 1px 7px; font: inherit; font-size: var(--t
 
 /* two-step sign-in (screens.tsx TwoFactorPanel) and notices (library.tsx) */
 .qr { display: block; width: 200px; height: 200px; margin: var(--space-3) 0; border: 1px solid var(--rule); border-radius: var(--radius-control); }
+/* two-step sign-in: the parts of the panel (app, passkeys, recovery codes) */
+.acc .subhead { font-size: var(--text-label); font-weight: 600; margin: var(--space-4) 0 var(--space-2); }
+/* "Open in authenticator app": on a phone the app is on the same device, on a computer the QR code is the way */
+.touch-only { display: none; }
+@media (pointer: coarse) { .touch-only { display: inline-flex; margin-bottom: var(--space-3); } }
 .secret { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); }
 .secret code, .codes code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: var(--text-label); letter-spacing: 0.04em; overflow-wrap: anywhere; }
 .words.codes { grid-template-rows: repeat(10, auto); }

@@ -42,3 +42,38 @@ export function lastActive(sec: number, now = Date.now() / 1000): string {
   if (h < 36) return h === 1 ? t("An hour ago") : t("{n} hours ago", { n: h });
   return new Date(sec * 1000).toLocaleDateString(locale(), { day: "numeric", month: "short", year: "numeric" });
 }
+
+/** What the library's one banner shows (NoticeBanner.tsx): never a stack. One notice: its own sentence and action.
+ *  Several sign-ins: one line counting them, with the newest. Several of mixed kinds: the most urgent one (two-step
+ *  sign-in turned off, then a password used, then a sign-in) and how many more there are. "Dismiss all" takes all. */
+export interface NoticeSummary {
+  text: string;
+  /** where its button leads; null: no button (the password is changed in the browser) */
+  open: "devices" | "two-step" | null;
+  ids: number[];
+  /** more than one: the dismiss button says "Dismiss all" */
+  many: boolean;
+}
+
+const URGENCY: Record<NoticeKind, number> = { "2fa_reset": 0, password_used: 1, sign_in: 2 };
+const opens = (k: NoticeKind): NoticeSummary["open"] => (k === "sign_in" ? "devices" : k === "2fa_reset" ? "two-step" : null);
+
+/** list: as visibleNotices gives it, newest first. null when there is nothing to show. */
+export function noticeSummary(list: readonly Notice[]): NoticeSummary | null {
+  if (!list.length) return null;
+  const ids = list.map((n) => n.id);
+  if (list.length === 1) return { text: noticeText(list[0]), open: opens(list[0].kind), ids, many: false };
+  if (list.every((n) => n.kind === "sign_in")) {
+    const n = list[0];
+    return {
+      text: t("{n} new sign-ins (latest: {device}, {time}). Not you? Review devices.", { n: list.length, device: n.device || t("an unknown device"), time: noticeTime(n.at) }),
+      open: "devices", ids, many: true,
+    };
+  }
+  const top = [...list].sort((a, b) => URGENCY[a.kind] - URGENCY[b.kind] || b.at - a.at || b.id - a.id)[0];
+  const rest = list.length - 1;
+  const more = rest === 1 ? t("1 more notice.") : t("{n} more notices.", { n: rest });
+  // a mixed list with sign-ins and no button of its own (a password used): the devices are what to look at
+  const open = opens(top.kind) ?? (list.some((n) => n.kind === "sign_in") ? "devices" : null);
+  return { text: `${noticeText(top)} ${more}`, open, ids, many: true };
+}

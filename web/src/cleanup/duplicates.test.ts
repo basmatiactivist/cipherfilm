@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bytesOf, candidatePairs, cosine, exactGroups, findGroups, keepOrder, scoreWith, SIMILAR, similarGroupsFrom, suggested, type Candidate } from "./duplicates";
+import { bytesOf, candidatePairs, chosenWith, cosine, exactGroups, findGroups, keepOrder, scoreWith, SIMILAR, similarGroupsFrom, suggested, type Candidate } from "./duplicates";
 
 const MIN = 60_000;
 let n = 0;
@@ -190,6 +190,12 @@ describe("selection", () => {
     const s = suggested(g);
     expect([...s].sort()).toEqual(["x", "y", "z"]);
     expect(bytesOf(s, (id) => ({ x: 1, y: 2, z: 4 } as Record<string, number>)[id])).toBe(7);
+  });
+  it("keeps the person's changes over the suggestion, for the groups that are still there", () => {
+    const g = [{ kind: "exact" as const, ids: ["k", "x", "y"], keep: "k" }];
+    const changed = new Map([["k", true], ["x", false], ["gone", true]]);
+    expect([...chosenWith(g, changed)].sort()).toEqual(["k", "y"]);
+    expect([...chosenWith(g, new Map())].sort()).toEqual(["x", "y"]);
   });
   it("computes the cosine", () => {
     expect(cosine([1, 0], [1, 0])).toBe(1);

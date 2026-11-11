@@ -172,6 +172,13 @@ export async function findGroups(items: Candidate[], indexed: (id: string) => bo
 /** The ones a group suggests moving to the trash: all but the one to keep. */
 export const suggested = (groups: Group[]): Set<string> => new Set(groups.flatMap((g) => g.ids.slice(1)));
 
+/** The suggestion with the person's own changes on top (id → chosen or not), for the groups there are now. */
+export function chosenWith(groups: Group[], changed: Map<string, boolean>): Set<string> {
+  const out = new Set<string>();
+  for (const g of groups) g.ids.forEach((id, k) => { if (changed.get(id) ?? k > 0) out.add(id); });
+  return out;
+}
+
 /** Bytes the chosen ones take. */
 export function bytesOf(ids: Iterable<string>, size: (id: string) => number): number {
   let n = 0;

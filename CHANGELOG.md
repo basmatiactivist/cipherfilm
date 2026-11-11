@@ -25,6 +25,13 @@ version into the GitHub release notes, so a release cannot be published without 
   their place; the Mac app now reads it there too, like the web app and the upload tool.
 
 ### Changed
+- Duplicates and similar photos (web and Android) say what was checked: all photos and videos for exact copies, and
+  for similar photos whether search is off (with a button to turn it on on Android), or how many photos are indexed.
+- Exact duplicates are also found under other names ("IMG_1.jpg" and "IMG_1 (1).jpg", or the same photo from two
+  devices): new uploads from every app store a fingerprint of the original in their encrypted metadata, and older
+  ones match by size and capture time.
+- The map no longer shows a bar with the number of photos: "Photos in this area" is a small button on the map (web)
+  or in the top bar (Android); the Mac shows it only while the list isn't open.
 - Albums update incrementally on every platform: after the first load, a change fetches only the albums that changed
   and which were deleted (`GET /api/albums?since=`), not every album again.
 - Two-step sign-in: turn on codes from an authenticator app under Account (web, Android, Mac); a new sign-in then

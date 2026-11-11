@@ -35,6 +35,10 @@ version into the GitHub release notes, so a release cannot be published without 
   Cipherfilm". No push service is used: the app asks your server itself (Android about every 15 minutes). On by
   default; Account › Security notifications (Android) and Settings › Security (Mac) turn it off. The web app can do
   the same while its tab is open in the background, if you turn it on under Account › Devices.
+- Mac: when another device indexes your photos and some aren't indexed yet, Settings › Search & People and an empty
+  search say how many, next to "Index on This Mac Instead" (for when that device stopped, for example because it waits
+  for its OK to download the models after an update).
+
 ### Fixed
 - Android: the search index kept on the phone (both the standard and the explicit model's) was deleted with the
   cleanup of cached pictures after every library load, so search had to fetch and open the whole index again at each

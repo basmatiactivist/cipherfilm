@@ -141,6 +141,18 @@ vector.
   the next device that indexes takes over.
 - The apps show it in their search settings: "This device indexes your photos" or "Indexed by <device>, last seen
   …", with "Index on this device instead". The web's Account › Devices marks the indexing device.
+- Taking over downloads the image (and face) models again: a device that only reads deleted them, and the yes to
+  download them with them (docs/MODELS.md). So "Index on this device instead" asks first; the role moves after the
+  yes. A device that becomes the indexer any other way (the indexer signed out or gave it up) waits in "Waiting for
+  your OK to download the models" until the person answers.
+- **When the indexing device stops.** It may wait for its own OK to download the models after an update, or be gone
+  without signing out; then nobody indexes new photos. The Mac says it where it matters: Settings › Search & People
+  and an empty search name how many photos and videos aren't indexed yet, next to "Index on This Mac Instead"
+  (`Models.waiting`: the photos the indexing device would index, without an up-to-date entry). The role is not handed
+  over automatically: the server can't tell an indexer that stopped from one that waits for power, Wi-Fi or the
+  person's OK, nor (the items' kinds are encrypted) photos that can't be indexed from ones not indexed yet; handing
+  it over by itself would make every device download several hundred MB of models it then may not use. A session
+  that expires (unused for its lifetime) or is signed out under Account › Devices frees the role as before.
 
 ## Devices
 

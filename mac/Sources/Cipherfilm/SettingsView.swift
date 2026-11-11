@@ -235,6 +235,12 @@ struct SearchSettings: View {
             Text("This Mac indexes your photos.").font(Typo.caption)
           } else {
             Text(indexedBy).font(Typo.caption)
+            // that device may have stopped (it waits for its own OK to download the models after an update, or is
+            // gone): said, so it is clear why search misses photos and what to do
+            if s.phase == .ready && s.waiting > 0 {
+              Text("\(s.waiting) \(s.waiting == 1 ? "photo or video isn't" : "photos and videos aren't") indexed yet. If that device no longer indexes, index on this Mac instead.")
+                .font(Typo.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
             Button(takingOver ? "Switching…" : "Index on This Mac Instead") {
               withConsent(s.clip, faces: model.settings.faces, reader: false) {
                 takingOver = true

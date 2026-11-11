@@ -9,6 +9,7 @@ import { clearCaches } from "./cache";
 import { clearPeople } from "./people/people";
 import { clearPlayer } from "./player";
 import { clearUploadMemory, forgetDecrypted } from "./items";
+import { forgetAlbums } from "./albums";
 import { forgetKept } from "./keep";
 import { Card } from "./components";
 import { Logo } from "./icons";
@@ -37,6 +38,7 @@ function forgetKeys(shared = true) {
   dropMasterKey();
   forgetKept(); // a lock asks for the password again, also after a reload
   forgetDecrypted();
+  forgetAlbums();
   clearCaches(shared);
   clearPeople();
   if (shared) { clearPlayer(); clearUploadMemory(); }

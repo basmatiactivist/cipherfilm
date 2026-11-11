@@ -40,43 +40,25 @@ func (a *App) ownsAlbum(w http.ResponseWriter, r *http.Request, u *user) (string
 	return id, true
 }
 
+// listAlbums sends every album with its photos, and the cursor for ?since (albumsince.go); with ?since only what
+// changed after it.
 func (a *App) listAlbums(w http.ResponseWriter, r *http.Request, u *user, s *session) {
-	rows, err := a.db.Query(`SELECT id,name_enc,created_at FROM albums WHERE user_id=? ORDER BY created_at, id`, u.ID)
+	if r.URL.Query().Get("since") != "" {
+		a.albumsSince(w, r, u)
+		return
+	}
+	// read before the list itself, so the list holds at least everything up to it
+	st, err := a.albumSyncState(u.ID)
 	if err != nil {
 		fail(w, 500, "server error")
 		return
 	}
-	type album struct {
-		ID      string   `json:"id"`
-		NameEnc string   `json:"name_enc"`
-		Created int64    `json:"created_at"`
-		ItemIDs []string `json:"item_ids"`
+	list, err := a.albumsOf(u.ID, false, 0, 0)
+	if err != nil {
+		fail(w, 500, "server error")
+		return
 	}
-	var list []*album
-	byID := map[string]*album{}
-	for rows.Next() {
-		x := &album{ItemIDs: []string{}}
-		if rows.Scan(&x.ID, &x.NameEnc, &x.Created) == nil {
-			list = append(list, x)
-			byID[x.ID] = x
-		}
-	}
-	rows.Close()
-	mem, err := a.db.Query(`SELECT ai.album_id, ai.item_id FROM album_items ai JOIN albums al ON al.id=ai.album_id JOIN items it ON it.id=ai.item_id
-		WHERE al.user_id=? AND it.state='ready' AND it.trashed_at IS NULL ORDER BY ai.added_at, ai.item_id`, u.ID)
-	if err == nil {
-		defer mem.Close()
-		for mem.Next() {
-			var aid, iid string
-			if mem.Scan(&aid, &iid) == nil && byID[aid] != nil {
-				byID[aid].ItemIDs = append(byID[aid].ItemIDs, iid)
-			}
-		}
-	}
-	if list == nil {
-		list = []*album{}
-	}
-	writeJSON(w, 200, map[string]any{"albums": list})
+	writeJSON(w, 200, map[string]any{"albums": list, "cursor": st.cursor(st.rev)})
 }
 
 type albumReq struct {

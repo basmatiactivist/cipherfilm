@@ -10,6 +10,7 @@ import { clearCaches } from "./cache";
 import { clearPeople } from "./people/people";
 import { clearPlayer } from "./player";
 import { clearUploadMemory, forgetDecrypted } from "./items";
+import { forgetAlbums } from "./albums";
 import { forgetKeptForGood, keepKey, keptKey } from "./keep";
 import { open, LABEL } from "./crypto/wrap";
 import { announce, sameSession } from "./tabs";
@@ -201,6 +202,7 @@ export function forgetLocal(): void {
   dropMasterKey();
   leaveSession();
   forgetDecrypted();
+  forgetAlbums();
   clearCaches();
   clearPeople(true);
   clearPlayer();

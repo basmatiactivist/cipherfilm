@@ -143,6 +143,10 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
+	if err := migrateAlbumSync(db); err != nil { // the same for albums (albumsince.go)
+		db.Close()
+		return nil, err
+	}
 	return db, nil
 }
 

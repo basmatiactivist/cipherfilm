@@ -14,6 +14,10 @@ version into the GitHub release notes, so a release cannot be published without 
 - Mac: videos with the iPhone's location key in a meta box inside udta (as ffmpeg writes it) uploaded without
   their place; the Mac app now reads it there too, like the web app and the upload tool.
 
+### Changed
+- Albums update incrementally on every platform: after the first load, a change fetches only the albums that changed
+  and which were deleted (`GET /api/albums?since=`), not every album again.
+
 ## [2.6.1] - 2026-11-10
 
 Photos and videos keep where they were taken, however they are uploaded, and what arrived without it gets it.

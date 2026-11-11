@@ -27,6 +27,15 @@ version into the GitHub release notes, so a release cannot be published without 
   their place; the Mac app now reads it there too, like the web app and the upload tool.
 
 ### Changed
+- Search uses one open model for everyone, in every app and build: LAION's CLIP ViT-B/32 (MIT), the model explicit
+  search already used. MobileCLIP S2, the standard model until now, is gone: its license only allows research use.
+  Accounts that used explicit search keep their index; for all others the indexing device (also a phone from Google
+  Play) builds the index once with the new model, keeping the faces and names of people, and search by content finds
+  more photos as it goes. The new model is a bigger download (about 650 MB on the indexing device, 258 MB on a device
+  that only searches and in the browser), and you're asked before it. Older apps need the update to keep searching.
+- Search leaves out photos and words it takes for explicit content. Where an admin allows explicit search, the person
+  can turn that off for their account (web, Mac, Android from GitHub; never in the Google Play app). Switching no
+  longer downloads another model or indexes the library again.
 - Duplicates and similar photos (web and Android) say what was checked: all photos and videos for exact copies, and
   for similar photos whether search is off (with a button to turn it on on Android), or how many photos are indexed.
 - Exact duplicates are also found under other names ("IMG_1.jpg" and "IMG_1 (1).jpg", or the same photo from two

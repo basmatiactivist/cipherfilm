@@ -741,3 +741,45 @@ func TestNoticesAreDismissedOnlyWhereTheyAreShown(t *testing.T) {
 		t.Fatalf("left: %v", out)
 	}
 }
+
+// The newest noticesKept per account, whatever the other accounts get meanwhile (ids are shared by all accounts).
+func TestNoticesArePrunedPerAccount(t *testing.T) {
+	e := newEnv(t)
+	admin, _ := e.setupAdmin("admin@x.org")
+	e.acceptInvite(e.invite(admin, "bob@x.org"))
+	a, _ := e.app.userByEmail("admin@x.org")
+	b, _ := e.app.userByEmail("bob@x.org")
+	n := noticesKept - 10
+	for i := 0; i < n; i++ {
+		e.app.notify(a.ID, noticeSignIn, "x", "")
+		e.app.notify(b.ID, noticeSignIn, "x", "")
+	}
+	for _, u := range []*user{a, b} {
+		var got int
+		e.app.db.QueryRow(`SELECT COUNT(*) FROM notices WHERE user_id=?`, u.ID).Scan(&got)
+		if got != n {
+			t.Fatalf("%s: %d kept, want %d", u.Email, got, n)
+		}
+	}
+}
+
+// Dismissed notices are never shown again: they go before any that is still shown.
+func TestDismissedNoticesArePrunedFirst(t *testing.T) {
+	e := newEnv(t)
+	e.setupAdmin("admin@x.org")
+	u, _ := e.app.userByEmail("admin@x.org")
+	e.app.notify(u.ID, noticeTwoFactorReset, "", "")
+	var first int64
+	e.app.db.QueryRow(`SELECT MAX(id) FROM notices WHERE user_id=?`, u.ID).Scan(&first)
+	for i := 0; i < noticesKept; i++ {
+		e.app.notify(u.ID, noticeSignIn, "x", "")
+		if i == 0 {
+			e.app.db.Exec(`UPDATE notices SET dismissed=1 WHERE user_id=? AND id<>?`, u.ID, first)
+		}
+	}
+	var n int
+	e.app.db.QueryRow(`SELECT COUNT(*) FROM notices WHERE id=?`, first).Scan(&n)
+	if n != 1 {
+		t.Fatal("a shown notice went before a dismissed one")
+	}
+}

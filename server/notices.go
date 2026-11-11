@@ -37,7 +37,10 @@ func (a *App) noticeRoutes(m *http.ServeMux) {
 func (a *App) notify(userID, kind, device, pub string) {
 	now := a.now()
 	a.db.Exec(`INSERT INTO notices(user_id,kind,device,session_pub,at) VALUES (?,?,?,?,?)`, userID, kind, device, pub, now.Unix())
-	a.db.Exec(`DELETE FROM notices WHERE user_id=? AND (at < ? OR id <= (SELECT MAX(id) FROM notices WHERE user_id=?) - ?)`,
+	// per account the newest noticesKept (ids are shared by all accounts), dismissed ones first to go: they are
+	// never shown again
+	a.db.Exec(`DELETE FROM notices WHERE user_id=? AND (at < ? OR id NOT IN
+		(SELECT id FROM notices WHERE user_id=? ORDER BY dismissed, id DESC LIMIT ?))`,
 		userID, now.Add(-noticesAge).Unix(), userID, noticesKept)
 	a.changed(userID, tNotices)
 }

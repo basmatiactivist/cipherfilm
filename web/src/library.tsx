@@ -22,6 +22,7 @@ import { checkSession, loadUsage } from "./auth";
 import { hasIndex, loadPeople, refreshIndex, searchFiltered, usePeople } from "./people/people";
 import { coalesce, startLive } from "./live";
 import { dismissNotice, loadNotices, noticeAction, noticeText, type Notice } from "./notices";
+import { alertNotices } from "./noticeAlerts";
 import { lazy } from "./lazy";
 import { Loading } from "./loader";
 import { findMemories, todayKey, type Memory } from "./memories/memories";
@@ -106,7 +107,11 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   // a new sign-in elsewhere, or an admin turning off two-step sign-in (notices.ts): shown once, on every device
   const [notices, setNotices] = useState<Notice[]>([]);
   const dismissed = useRef(new Set<number>());
-  const refreshNotices = () => (demo ? Promise.resolve() : loadNotices(dismissed.current).then(setNotices, () => {}));
+  // and, while this tab is hidden, as the browser's notifications if turned on (noticeAlerts.ts)
+  const refreshNotices = () => (demo ? Promise.resolve() : loadNotices(dismissed.current).then((l) => {
+    setNotices(l);
+    alertNotices(l, (n) => go({ n: "account", open: noticeAction(n).open }));
+  }, () => {}));
   useEffect(() => { refreshNotices(); }, []);
   const dismiss = (n: Notice) => {
     dismissed.current.add(n.id);

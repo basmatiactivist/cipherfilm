@@ -18,6 +18,8 @@ vi.mock("@crypto/account", () => ({
   unlockMasterKey: () => new Uint8Array([1, 2, 3]),
 }));
 vi.mock("@crypto/wrap", () => ({ open: () => new Uint8Array(), LABEL: {} }));
+// Android's passkey dialog: answers whatever challenge it is given
+vi.mock("./passkeys", () => ({ getPasskey: async (o: { challenge: string }) => ({ id: "k", answered: o.challenge }) }));
 const srv = vi.hoisted(() => ({ calls: [] as { path: string; body: any }[], answers: [] as (() => any)[] }));
 class ApiError extends Error { constructor(public status: number, m: string, public detail = "", public code = "", public body: unknown = null) { super(m); } }
 vi.mock("./api", () => ({
@@ -88,5 +90,33 @@ describe("sign-in with a code", () => {
     srv.answers.push(() => { throw new ApiError(401, "Wrong e-mail or password.", "", ""); });
     await expect(s.login("a@x.org", "pw")).rejects.toThrow(/Wrong e-mail/);
     expect([...kek.current]).toEqual([0, 0, 0]);
+  });
+
+  it("a passkey instead of the code: its answer to this sign-in's challenge, nothing of the account before", async () => {
+    const s = await import("./session");
+    srv.answers.push(() => { throw new ApiError(401, "two-step", "", "two_factor_required", { pending: "PENDING", expires_in: 300, totp: false, passkey: true }); });
+    const step = (await s.login("a@x.org", "pw"))!;
+    expect(step.passkey).toBe(true);
+    expect(step.totp).toBe(false);
+    srv.answers.push(() => ({ options: { challenge: "c1", rpId: "photos.test" } }));
+    srv.answers.push(() => { throw new ApiError(401, "x", "", "wrong_passkey"); });
+    await expect(step.usePasskey()).rejects.toThrow(/wasn't accepted/);
+    expect(s.session().me).toBeNull();
+    expect([...kek.current]).toEqual([9, 9, 9]); // kept for the next try
+    srv.answers.push(() => ({ options: { challenge: "c2", rpId: "photos.test" } }));
+    srv.answers.push(() => bundle);
+    await step.usePasskey();
+    const sent = srv.calls.filter((c) => c.path === "/api/auth/login/2fa").map((c) => c.body);
+    expect(sent).toEqual([{ pending: "PENDING", passkey: { id: "k", answered: "c1" } }, { pending: "PENDING", passkey: { id: "k", answered: "c2" } }]);
+    expect(s.session().phase).toBe("unlocked");
+    expect([...kek.current]).toEqual([0, 0, 0]);
+  });
+
+  it("an older server names no second step: the code is asked for", async () => {
+    const s = await import("./session");
+    srv.answers.push(twoFactor);
+    const step = (await s.login("a@x.org", "pw"))!;
+    expect(step.totp).toBe(true);
+    expect(step.passkey).toBe(false);
   });
 });

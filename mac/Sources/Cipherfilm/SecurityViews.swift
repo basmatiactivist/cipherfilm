@@ -18,6 +18,10 @@ struct SecuritySettings: View {
             Divider()
           }
           DevicesSection()
+          if !me.isDemo {
+            Divider()
+            NoticeNotificationsSection()
+          }
         } else {
           Text("Not signed in.").foregroundStyle(.secondary)
         }
@@ -30,29 +34,88 @@ struct SecuritySettings: View {
 
 private func say(_ error: Error) -> String { (error as? LocalizedError)?.errorDescription ?? error.localizedDescription }
 
+/** Notices as macOS notifications (Notifier.swift NoticeNotifier). */
+struct NoticeNotificationsSection: View {
+  @State private var on = NoticeNotifier.enabled
+
+  var body: some View {
+    Section_(title: "Notifications", subtitle: "While the window isn't in front, or Cipherfilm is locked and runs in the menu bar, a notification tells you about a new sign-in to your account. Its preview shows the device and the time; where macOS hides previews (the lock screen, by default), only that there was a new sign-in.") {
+      Toggle("Notify me about new sign-ins", isOn: Binding(get: { on }, set: { on = $0; NoticeNotifier.enabled = $0 }))
+    }
+  }
+}
+
 // ---- two-step sign-in ----
+
+/** A secret copied on purpose (the setup key, the recovery codes): marked concealed, so clipboard managers that honour
+ *  org.nspasteboard.ConcealedType don't keep or show it, and taken off the clipboard after a minute unless something
+ *  else was copied since. */
+@MainActor func copySecret(_ text: String) {
+  let pb = NSPasteboard.general
+  let concealed = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
+  pb.clearContents()
+  pb.declareTypes([.string, concealed], owner: nil)
+  pb.setString(text, forType: .string)
+  pb.setString("", forType: concealed)
+  let mine = pb.changeCount
+  DispatchQueue.main.asyncAfter(deadline: .now() + 60) { if pb.changeCount == mine { pb.clearContents() } }
+}
 
 struct TwoFactorSection: View {
   @Environment(AppModel.self) private var model
   @State private var status: TwoFactor.Status?
+  @State private var keys: [Passkeys.Item] = []
   @State private var error: String?
   @State private var setup = false
   @State private var action: ProofSheet.Mode?
   @State private var shownCodes: [String]?
 
+  private var on: Bool { status?.enabled ?? false }
+  private var hasApp: Bool { status?.hasApp ?? false }
+  private var hereKeys: Bool { keys.contains { $0.here } }
+
   var body: some View {
-    Section_(title: "Two-step sign-in", subtitle: "After your password, signing in on a new device also asks for a code from an authenticator app on your phone. Unlocking this Mac doesn't.") {
+    Section_(title: "Two-step sign-in", subtitle: "After your password, signing in on a new device also asks for a code from an authenticator app, or a passkey. Unlocking this Mac doesn't. Your password still unlocks your photos.") {
       if let s = status {
         if s.enabled {
           Label("On. \(s.recovery_codes_left) of 10 recovery codes left.", systemImage: "checkmark.shield").font(Typo.caption).foregroundStyle(Ink.ok)
           if s.recovery_codes_left <= 3 { Text("Make new recovery codes soon: each one works once.").font(Typo.caption).foregroundStyle(Ink.danger) }
+          HStack {
+            Text(hasApp ? "Authenticator app: on" : "Authenticator app: off").font(Typo.caption)
+            Spacer()
+            if hasApp {
+              if !keys.isEmpty { Button("Remove App…") { action = .removeApp } }
+            } else {
+              Button("Add Authenticator App…") { setup = true }
+            }
+          }
+          VStack(alignment: .leading, spacing: 6) {
+            Text("Passkeys").font(Typo.label)
+            ForEach(keys) { k in
+              HStack {
+                Image(systemName: "person.badge.key").foregroundStyle(Ink.teal).frame(width: 22)
+                VStack(alignment: .leading, spacing: 1) {
+                  Text(k.name).font(Typo.body)
+                  Text(k.last_used_at > 0 ? "Last used \(Date(timeIntervalSince1970: TimeInterval(k.last_used_at)).formatted(date: .abbreviated, time: .omitted))" + (k.here ? "" : " · \(k.rp_id)")
+                       : "Not used yet" + (k.here ? "" : " · \(k.rp_id)")).font(Typo.caption).foregroundStyle(Ink.muted)
+                }
+                Spacer()
+                Button("Remove…") { action = .removeKey(k) }
+              }
+            }
+            Button("Add Passkey…") { action = .addKey }
+            Text("Passkeys are made and used in your browser, on your server's own address.").font(Typo.caption).foregroundStyle(Ink.faint)
+          }
           HStack {
             Button("New Recovery Codes…") { action = .codes }
             Button("Turn Off…") { action = .off }
           }
         } else {
           Text("Off. Your password alone signs in.").font(Typo.caption).foregroundStyle(.secondary)
-          Button("Turn On…") { setup = true }
+          HStack {
+            Button("Turn On With an Authenticator App…") { setup = true }
+            Button("Turn On With a Passkey…") { action = .addKey }
+          }
         }
       } else if error == nil {
         ProgressView().controlSize(.small)
@@ -60,9 +123,11 @@ struct TwoFactorSection: View {
       if let error { Text(error).font(Typo.caption).foregroundStyle(Ink.danger) }
     }
     .task { await load() }
-    .sheet(isPresented: $setup, onDismiss: { Task { await load() } }) { TwoFactorSetupSheet().environment(model) }
+    .sheet(isPresented: $setup, onDismiss: { Task { await load() } }) {
+      TwoFactorSetupSheet(second: on, hasPasskey: hereKeys).environment(model)
+    }
     .sheet(item: $action, onDismiss: { Task { await load() } }) { m in
-      ProofSheet(mode: m) { codes in shownCodes = codes }.environment(model)
+      ProofSheet(mode: m, on: on, hasApp: hasApp, hasPasskey: hereKeys, onlyStep: keys.count == 1 && !hasApp) { codes in shownCodes = codes }.environment(model)
     }
     .sheet(isPresented: Binding(get: { shownCodes != nil }, set: { if !$0 { shownCodes = nil } })) {
       VStack(alignment: .leading, spacing: 14) {
@@ -75,8 +140,56 @@ struct TwoFactorSection: View {
 
   private func load() async {
     guard let api = model.api else { return }
-    do { status = try await TwoFactor.status(api: api); error = nil } catch { self.error = say(error) }
+    do {
+      status = try await TwoFactor.status(api: api)
+      keys = (try? await Passkeys.list(api: api)) ?? []
+      error = nil
+    } catch { self.error = say(error) }
     await model.refreshMe()
+  }
+}
+
+/** The second step a change asks for while two-step sign-in is on: the app's code, a recovery code, or a passkey (in
+ *  the browser, when the change is sent). */
+struct SecondStepFields: View {
+  @Binding var code: String
+  @Binding var way: CodeStepView.Way
+  let hasApp: Bool
+  let hasPasskey: Bool
+  var onSubmit: () -> Void = {}
+
+  static func start(hasApp: Bool, hasPasskey: Bool) -> CodeStepView.Way { hasApp ? .code : hasPasskey ? .passkey : .recovery }
+  static func ready(_ code: String, _ way: CodeStepView.Way) -> Bool { way == .passkey || TwoFactor.ready(code, recovery: way == .recovery) }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      switch way {
+      case .passkey:
+        Text("Your browser opens for your passkey when you continue.").font(Typo.caption).foregroundStyle(Ink.muted)
+      case .recovery:
+        FieldLabel(text: "Recovery code")
+        TextField("xxxx-xxxx-xxxx-xxxx", text: $code).field().autocorrectionDisabled().onSubmit(onSubmit)
+      case .code:
+        FieldLabel(text: "Code from your authenticator app")
+        TextField("123456", text: $code).field().textContentType(.oneTimeCode).onSubmit(onSubmit)
+      }
+      HStack(spacing: 14) {
+        if way != .code, hasApp { Button("Use the authenticator app") { way = .code; code = "" }.buttonStyle(TextLink()).font(Typo.caption) }
+        if way != .passkey, hasPasskey { Button("Use a passkey") { way = .passkey; code = "" }.buttonStyle(TextLink()).font(Typo.caption) }
+        if way != .recovery { Button("Use a recovery code") { way = .recovery; code = "" }.buttonStyle(TextLink()).font(Typo.caption) }
+      }
+    }
+  }
+}
+
+/** What the second step sends: the code as typed, or a passkey's answer to this session's challenge (in the browser). */
+@MainActor func secondStep(_ api: API, on: Bool, way: CodeStepView.Way, code: String) async throws -> TwoFactor.Second {
+  guard on else { return .none }
+  switch way {
+  case .code, .recovery: return .code(code)
+  case .passkey:
+    let options = try await Passkeys.proofChallenge(api: api)
+    return .passkey(try await PasskeyBrowser.shared.run(server: api.base, op: "get", options: options))
   }
 }
 
@@ -89,16 +202,15 @@ struct RecoveryCodesView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
       Text(fresh ? "Your recovery codes" : "Recovery codes").font(Typo.dialog)
-      Text("If you lose your phone, each of these signs in once instead of a code. Keep them somewhere safe, like a password manager. They are shown only now.")
+      Text("If you lose your phone or your passkeys, each of these signs in once instead. Keep them somewhere safe, like a password manager. They are shown only now.")
         .font(Typo.body).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
       LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 6) {
         ForEach(codes, id: \.self) { Text($0).font(.system(.body, design: .monospaced)).textSelection(.enabled) }
       }
       .padding(12)
       .background(RoundedRectangle(cornerRadius: Radius.control).fill(Ink.paperDeep))
-      Button(copied ? "Copied" : "Copy Codes") {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(codes.joined(separator: "\n"), forType: .string)
+      Button(copied ? "Copied for a Minute" : "Copy Codes") {
+        copySecret(codes.joined(separator: "\n"))
         copied = true
       }.buttonStyle(SecondaryButton())
     }
@@ -124,17 +236,24 @@ struct QRImage: View {
   }
 }
 
-/** Turning it on: the password, then the secret (QR and text) and a code from it, then the recovery codes. */
+/** Adding the authenticator app: the password (and a second step while a passkey has two-step sign-in on), then the
+ *  secret (to the Passwords app or an authenticator in one click, or QR and text) and a code from it, then the
+ *  recovery codes when it is the first second step. */
 struct TwoFactorSetupSheet: View {
+  var second = false
+  var hasPasskey = false
   @Environment(AppModel.self) private var model
   @Environment(\.dismiss) private var dismiss
   @State private var password = ""
   @State private var setup: TwoFactor.Setup?
   @State private var code = ""
+  @State private var proofCode = ""
+  @State private var way: CodeStepView.Way = .passkey
   @State private var codes: [String]?
   @State private var busy = false
   @State private var error: String?
   @State private var copied = false
+  @State private var opened: String?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
@@ -144,16 +263,21 @@ struct TwoFactorSetupSheet: View {
         HStack { Spacer(); Button("I Saved Them") { dismiss() }.buttonStyle(PrimaryButton()).keyboardShortcut(.defaultAction) }
       } else if let setup {
         Text("Add Cipherfilm to your authenticator app").font(Typo.dialog)
-        Text("Scan this with an authenticator app (such as 2FAS, Aegis, Google Authenticator or 1Password), or type the key in.")
+        Text("Open it in the Passwords app or another authenticator on this Mac, or scan it with an authenticator app on your phone (such as 2FAS, Aegis, Google Authenticator or 1Password), or type the key in.")
           .font(Typo.body).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
+        Button("Open in Passwords or Authenticator App") {
+          // otpauth:// is opened by the app registered for it (macOS Passwords on recent macOS, or another authenticator)
+          if let u = URL(string: setup.uri), NSWorkspace.shared.open(u) { opened = "Opened. Add the account there, then enter the code it shows." }
+          else { opened = "No app on this Mac opens it. Scan the code with your phone, or copy the key." }
+        }.buttonStyle(SecondaryButton())
+        if let opened { Text(opened).font(Typo.caption).foregroundStyle(Ink.muted) }
         HStack(alignment: .top, spacing: 16) {
           QRImage(text: setup.uri)
           VStack(alignment: .leading, spacing: 8) {
             FieldLabel(text: "Key")
             Text(TwoFactor.grouped(setup.secret)).font(.system(.body, design: .monospaced)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-            Button(copied ? "Copied" : "Copy Key") {
-              NSPasteboard.general.clearContents()
-              NSPasteboard.general.setString(setup.secret, forType: .string)
+            Button(copied ? "Copied for a Minute" : "Copy Key") {
+              copySecret(setup.secret)
               copied = true
             }.buttonStyle(SecondaryButton())
             Text("Time-based, 6 digits, every 30 seconds.").font(Typo.caption).foregroundStyle(Ink.faint)
@@ -172,29 +296,34 @@ struct TwoFactorSetupSheet: View {
             .disabled(busy || !TwoFactor.ready(code, recovery: false)).keyboardShortcut(.defaultAction)
         }
       } else {
-        Text("Turn on two-step sign-in").font(Typo.dialog)
+        Text(second ? "Add an authenticator app" : "Turn on two-step sign-in").font(Typo.dialog)
         Text("Enter your password to start.").font(Typo.body).foregroundStyle(Ink.muted)
         SecureField("Your password", text: $password).textContentType(.password).onSubmit(start)
+        if second { SecondStepFields(code: $proofCode, way: $way, hasApp: false, hasPasskey: hasPasskey, onSubmit: start) }
         if let error { Note(text: error) }
         HStack {
           Spacer()
           Button("Cancel") { dismiss() }.buttonStyle(SecondaryButton()).keyboardShortcut(.cancelAction).disabled(busy)
           Button(action: start) { BusyLabel(busy, "Continue", "Checking…") }.buttonStyle(PrimaryButton())
-            .disabled(busy || password.isEmpty).keyboardShortcut(.defaultAction)
+            .disabled(busy || password.isEmpty || (second && !SecondStepFields.ready(proofCode, way))).keyboardShortcut(.defaultAction)
         }
       }
     }
     .padding(24).frame(width: 500)
     .background(Ink.card)
     .interactiveDismissDisabled(codes != nil) // the codes are shown once: closed only with "I Saved Them"
+    .onAppear { way = SecondStepFields.start(hasApp: false, hasPasskey: hasPasskey) }
   }
 
   private func start() {
-    guard let api = model.api, let me = model.me, !password.isEmpty, !busy else { return }
+    guard let api = model.api, let me = model.me, !password.isEmpty, !busy, !second || SecondStepFields.ready(proofCode, way) else { return }
     busy = true; error = nil
     let pw = password
     Task {
-      do { setup = try await TwoFactor.setup(api: api, me: me, password: pw); password = "" } catch { self.error = say(error) }
+      do {
+        let s2 = try await secondStep(api, on: second, way: way, code: proofCode)
+        setup = try await TwoFactor.setup(api: api, me: me, password: pw, second: s2); password = ""
+      } catch { self.error = say(error); proofCode = "" }
       busy = false
     }
   }
@@ -203,66 +332,127 @@ struct TwoFactorSetupSheet: View {
     guard let api = model.api, TwoFactor.ready(code, recovery: false), !busy else { return }
     busy = true; error = nil
     Task {
-      do { codes = try await TwoFactor.enable(api: api, code: code); setup = nil; await model.refreshMe() } catch { self.error = say(error); code = "" }
+      do {
+        let c = try await TwoFactor.enable(api: api, code: code)
+        setup = nil
+        await model.refreshMe()
+        if let c, !c.isEmpty { codes = c } else { dismiss() }
+      } catch { self.error = say(error); code = "" }
       busy = false
     }
   }
 }
 
-/** Password and a code (or a recovery code), for turning two-step sign-in off or making new recovery codes. */
+/** The password and, while two-step sign-in is on, a second step: for turning it off, new recovery codes, removing the
+ *  app or a passkey, and adding a passkey (which then opens the browser to make it). */
 struct ProofSheet: View {
-  enum Mode: String, Identifiable { case off, codes; var id: String { rawValue } }
+  enum Mode: Identifiable {
+    case off, codes, removeApp, addKey
+    case removeKey(Passkeys.Item)
+    var id: String {
+      switch self {
+      case .off: return "off"
+      case .codes: return "codes"
+      case .removeApp: return "app"
+      case .addKey: return "add"
+      case .removeKey(let k): return "rm-" + k.id
+      }
+    }
+  }
   let mode: Mode
+  let on: Bool
+  let hasApp: Bool
+  let hasPasskey: Bool
+  /** the passkey to remove is the account's only second step */
+  var onlyStep = false
   let onCodes: ([String]) -> Void
   @Environment(AppModel.self) private var model
   @Environment(\.dismiss) private var dismiss
   @State private var password = ""
   @State private var code = ""
-  @State private var recovery = false
+  @State private var way: CodeStepView.Way = .code
+  @State private var name = "Passkey on this Mac"
   @State private var busy = false
   @State private var error: String?
 
+  private var title: String {
+    switch mode {
+    case .off: return "Turn off two-step sign-in?"
+    case .codes: return "Make new recovery codes?"
+    case .removeApp: return "Remove the authenticator app?"
+    case .addKey: return "Add a passkey"
+    case .removeKey(let k): return "Remove \(k.name)?"
+    }
+  }
+  private var detail: String {
+    switch mode {
+    case .off: return "Your password alone will sign in again. The authenticator app, your passkeys and your recovery codes are removed."
+    case .codes: return "Your old recovery codes stop working."
+    case .removeApp: return "A new sign-in then asks for a passkey, or a recovery code."
+    case .addKey: return "Your browser opens on your server's address and makes the passkey there: in your password manager, iCloud Keychain or on a security key. Your password is still needed at every new sign-in."
+    case .removeKey: return onlyStep ? "It's your only second step: two-step sign-in turns off." : "It can't be used to sign in any more."
+    }
+  }
+  private var action: String {
+    switch mode {
+    case .off: return "Turn Off"
+    case .codes: return "Make New Codes"
+    case .addKey: return "Continue"
+    default: return "Remove"
+    }
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
-      Text(mode == .off ? "Turn off two-step sign-in?" : "Make new recovery codes?").font(Typo.dialog)
-      Text(mode == .off ? "Your password alone will sign in again. Your recovery codes stop working." : "Your old recovery codes stop working.")
-        .font(Typo.body).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
-      SecureField("Your password", text: $password).textContentType(.password)
-      VStack(alignment: .leading, spacing: 6) {
-        FieldLabel(text: recovery ? "Recovery code" : "Code from your authenticator app")
-        if recovery {
-          TextField("xxxx-xxxx-xxxx-xxxx", text: $code).field().autocorrectionDisabled().onSubmit(go)
-        } else {
-          TextField("123456", text: $code).field().textContentType(.oneTimeCode).onSubmit(go)
+      Text(title).font(Typo.dialog)
+      Text(detail).font(Typo.body).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
+      if case .addKey = mode {
+        VStack(alignment: .leading, spacing: 6) {
+          FieldLabel(text: "Name")
+          TextField("", text: $name).field()
         }
-        Button(recovery ? "Use the authenticator app" : "Use a recovery code") { recovery.toggle(); code = "" }.buttonStyle(TextLink()).font(Typo.caption)
       }
+      SecureField("Your password", text: $password).textContentType(.password)
+      if on { SecondStepFields(code: $code, way: $way, hasApp: hasApp, hasPasskey: hasPasskey, onSubmit: go) }
       if let error { Note(text: error) }
       HStack {
         Spacer()
         Button("Cancel") { dismiss() }.buttonStyle(SecondaryButton()).keyboardShortcut(.cancelAction).disabled(busy)
-        Button(action: go) { BusyLabel(busy, mode == .off ? "Turn Off" : "Make New Codes", "Checking…") }.buttonStyle(PrimaryButton())
-          .disabled(busy || password.isEmpty || !TwoFactor.ready(code, recovery: recovery)).keyboardShortcut(.defaultAction)
+        Button(action: go) { BusyLabel(busy, action, "Checking…") }.buttonStyle(PrimaryButton())
+          .disabled(busy || password.isEmpty || (on && !SecondStepFields.ready(code, way))).keyboardShortcut(.defaultAction)
       }
     }
     .padding(24).frame(width: 460)
     .background(Ink.card)
+    .onAppear { way = SecondStepFields.start(hasApp: hasApp, hasPasskey: hasPasskey) }
   }
 
   private func go() {
-    guard let api = model.api, let me = model.me, !busy, !password.isEmpty, TwoFactor.ready(code, recovery: recovery) else { return }
+    guard let api = model.api, let me = model.me, !busy, !password.isEmpty, !on || SecondStepFields.ready(code, way) else { return }
     busy = true; error = nil
-    let pw = password, c = code
+    let pw = password
     Task {
       do {
-        if mode == .off {
-          try await TwoFactor.disable(api: api, me: me, password: pw, code: c)
-          await model.refreshMe()
+        let s2 = try await secondStep(api, on: on, way: way, code: code)
+        switch mode {
+        case .off:
+          try await TwoFactor.disable(api: api, me: me, password: pw, second: s2)
+          await model.refreshMe(); dismiss()
+        case .codes:
+          let codes = try await TwoFactor.newCodes(api: api, me: me, password: pw, second: s2)
+          dismiss(); onCodes(codes)
+        case .removeApp:
+          try await TwoFactor.removeApp(api: api, me: me, password: pw, second: s2)
           dismiss()
-        } else {
-          let codes = try await TwoFactor.newCodes(api: api, me: me, password: pw, code: c)
-          dismiss()
-          onCodes(codes)
+        case .removeKey(let k):
+          try await Passkeys.remove(api: api, me: me, password: pw, second: s2, id: k.id)
+          await model.refreshMe(); dismiss()
+        case .addKey:
+          let options = try await Passkeys.beginAdd(api: api, me: me, password: pw, second: s2)
+          let made = try await PasskeyBrowser.shared.run(server: api.base, op: "create", options: options)
+          let codes = try await Passkeys.finishAdd(api: api, name: name, credential: made)
+          await model.refreshMe(); dismiss()
+          if let codes, !codes.isEmpty { onCodes(codes) }
         }
       } catch { self.error = say(error); code = "" }
       busy = false

@@ -18,6 +18,7 @@ import { privacyUrl } from "../store";
 import { mapProvider, setMapOn, useMapOn } from "../mapConsent";
 import { reportUrl, summary, thisPhone } from "../report";
 import { isAdmin } from "../admin";
+import { NoticeAlertsSwitch } from "../NoticeAlertsSetting";
 import { text } from "../tokens";
 import { busyIcon } from "../Loader";
 import { locale, t } from "../i18n";
@@ -121,6 +122,7 @@ export default function Account() {
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="phone" color={th.colors.primary} /></View>} onPress={() => router.push("/devices")} style={st.item} />
         {me?.demo ? null : <List.Item title={t("Two-step sign-in")} description={me?.two_factor ? t("On: a new sign-in also needs a code") : t("Off: ask for a code from an authenticator app too")}
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="key" color={th.colors.primary} /></View>} onPress={() => router.push("/two-step")} style={st.item} />}
+        {me?.demo ? null : <NoticeAlertsSwitch style={st.item} iconStyle={st.icon} />}
         {isAdmin(me) ? <List.Item title={t("Administration")} description={t("People, invites, storage limits and the server")}
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="shield" color={th.colors.primary} /></View>} onPress={() => router.push("/admin")} style={st.item} /> : null}
         <List.Item title={t("Free up space")} description={t("Remove photos from this phone that are already in Cipherfilm")}

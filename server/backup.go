@@ -146,13 +146,14 @@ func runAfterRestore(dataDir string) error {
 }
 
 // carryAccounts takes over from the replaced database what happened to the accounts since the backup: a changed
-// password or recovery key (it wraps the same master key), two-step sign-in turned on or off and new recovery codes,
+// password or recovery key (it wraps the same master key), two-step sign-in turned on or off, passkeys added or
+// removed and new recovery codes,
 // a changed role, a disabled account, and accounts deleted since stay disabled. A restore brings photos back, not
 // access that was taken away (nor a second step that was added). The replaced activity log is kept too, invites that
 // were withdrawn or used since stay so, and the accounts' notices are the replaced database's (the newer ones; the
 // sign-in notices among them are not shown to the sessions after the restore, which all start later, an
 // administrator's reset of two-step sign-in is, until dismissed). The authenticator secrets are sealed under this
-// server's secret, which the caller checked is the same.
+// server's secret, which the caller checked is the same (so are the passkey records).
 func carryAccounts(tx *sql.Tx) error {
 	disabled := []string{}
 	rows, err := tx.Query(`SELECT email FROM main.users m WHERE status='active' AND (NOT EXISTS (SELECT 1 FROM prev.users p WHERE p.id=m.id)
@@ -199,6 +200,22 @@ func carryAccounts(tx *sql.Tx) error {
 			`DELETE FROM main.notices WHERE user_id IN (SELECT id FROM prev.users)`,
 			`INSERT INTO main.notices(id,user_id,kind,device,session_pub,at,dismissed) SELECT id,user_id,kind,device,session_pub,at,dismissed
 				FROM prev.notices WHERE user_id IN (SELECT id FROM main.users) AND id NOT IN (SELECT id FROM main.notices)`,
+		} {
+			if _, err := tx.Exec(q); err != nil {
+				return err
+			}
+		}
+	}
+	// passkeys, likewise only from a replaced database that had them
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM prev.sqlite_master WHERE type='table' AND name='passkeys'`).Scan(&tables); err != nil {
+		return err
+	}
+	if tables == 1 {
+		for _, q := range []string{
+			`DELETE FROM main.passkeys WHERE user_id IN (SELECT id FROM prev.users)`,
+			`INSERT INTO main.passkeys(id,user_id,cred_id,rp_id,cred,name,created_at,last_used_at)
+				SELECT id,user_id,cred_id,rp_id,cred,name,created_at,last_used_at FROM prev.passkeys
+				WHERE user_id IN (SELECT id FROM main.users) AND cred_id NOT IN (SELECT cred_id FROM main.passkeys)`,
 		} {
 			if _, err := tx.Exec(q); err != nil {
 				return err

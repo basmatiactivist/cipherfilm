@@ -154,6 +154,21 @@ final class AppModel {
     }
   }
 
+  /** The code step with a passkey, in the browser (PasskeyBrowser): a passkey that isn't accepted may be tried again. */
+  func finishSignInWithPasskey() async throws {
+    guard let api, let step = codeStep else { return }
+    do {
+      let options = try await Account.passkeyChallenge(api: api, step: step)
+      let answer = try await PasskeyBrowser.shared.run(server: api.base, op: "get", options: options)
+      let (me, master) = try await Account.finish(api: api, step: step, passkey: answer)
+      codeStep = nil
+      adopt(me, master: master)
+    } catch let e as APIError where e.code == "two_factor_expired" {
+      codeStep = nil
+      throw e
+    }
+  }
+
   /** Back to the password: the key the password made is forgotten. */
   func startOver() {
     codeStep?.abandon()
@@ -168,10 +183,34 @@ final class AppModel {
 
   func loadNotices() async {
     guard let api, phase == .unlocked else { return }
-    if let l = try? await Notice.load(api: api), phase == .unlocked { notices = l }
+    if let l = try? await Notice.load(api: api), phase == .unlocked {
+      // dismissed on another device: its notification goes too
+      NoticeNotifier.remove(notices.map(\.id).filter { id in !l.contains { $0.id == id } })
+      notices = l
+      let front = NoticeNotifier.windowInFront
+      NoticeNotifier.consider(l, server: api.base.absoluteString, visible: front)
+      if front { NoticeNotifier.remove(l.map(\.id)) } // the banner shows them now
+    }
+  }
+
+  /** While locked (and running in the menu bar): the notices every few minutes, for the notifications only (nothing is
+   *  shown in the window before unlocking). The live updates do this while unlocked. Without the key: notices aren't
+   *  encrypted. The check is a background one, so it doesn't keep the session alive. */
+  @ObservationIgnored private var lockedNoticeTimer: Timer?
+  private func checkNoticesWhileLocked() {
+    guard lockedNoticeTimer == nil else { return }
+    lockedNoticeTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { _ in
+      Task { @MainActor in
+        let m = AppModel.shared
+        guard m.phase == .locked, NoticeNotifier.enabled, let api = m.api,
+              let l = try? await Notice.load(api: api, background: true), m.phase == .locked else { return }
+        NoticeNotifier.consider(l, server: api.base.absoluteString, visible: false)
+      }
+    }
   }
 
   func dismiss(_ n: Notice) {
+    NoticeNotifier.remove([n.id])
     notices.removeAll { $0.id == n.id }
     guard let api else { return }
     Task { try? await Notice.dismiss(api: api, id: n.id) }
@@ -240,6 +279,7 @@ final class AppModel {
     } else {
       phase = .locked
     }
+    checkNoticesWhileLocked()
   }
 
   /** Lock when this Mac sleeps or its screen locks (on unless turned off in Settings), so a Mac left alone doesn't keep

@@ -37,6 +37,7 @@ func (a *App) routes() http.Handler {
 	a.thumbRoutes(m)
 	a.eventRoutes(m)
 	a.twoFactorRoutes(m)
+	a.passkeyRoutes(m)
 	a.noticeRoutes(m)
 	m.HandleFunc("GET /api/admin/users", a.auth(true, a.adminListUsers))
 	m.HandleFunc("DELETE /api/admin/invites/{id}", a.auth(true, a.adminRevokeInvite))
@@ -227,7 +228,7 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 	at.success()
 	// two-step sign-in: no session and none of the account's keys yet, only a token for the code step (twofactor.go)
 	if u.twoFactor() {
-		a.startPending(w, u)
+		a.startPending(w, r, u)
 		return
 	}
 	ss, err := a.startSession(w, r, u.ID, u.AuthHash)
@@ -300,7 +301,7 @@ func (a *App) changePassword(w http.ResponseWriter, r *http.Request, u *user, s 
 	defer tx.Rollback()
 	// only if the password is still the one just checked: when two devices change it at the same moment, the second
 	// would otherwise overwrite the first and leave a password that neither person typed last
-	res, err := tx.Exec(`UPDATE users SET kdf=?, auth_hash=?, wrapped_master_pw=? WHERE id=? AND auth_hash=? AND status='active'`, req.NewKDF.json(), ah, req.NewWrappedMasterPW, u.ID, u.AuthHash)
+	res, err := tx.Exec(`UPDATE users SET kdf=?, auth_hash=?, wrapped_master_pw=?, totp_pending='' WHERE id=? AND auth_hash=? AND status='active'`, req.NewKDF.json(), ah, req.NewWrappedMasterPW, u.ID, u.AuthHash)
 	if err != nil {
 		fail(w, 500, "server error")
 		return
@@ -577,7 +578,7 @@ func (a *App) recoverFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	res, err := tx.Exec(`UPDATE users SET kdf=?, auth_hash=?, wrapped_master_pw=?, wrapped_master_recovery=?, recovery_hash=? WHERE id=? AND recovery_hash=? AND status='active'`,
+	res, err := tx.Exec(`UPDATE users SET kdf=?, auth_hash=?, wrapped_master_pw=?, wrapped_master_recovery=?, recovery_hash=?, totp_pending='' WHERE id=? AND recovery_hash=? AND status='active'`,
 		req.NewKDF.json(), ah, req.NewWrappedMasterPW, req.NewWrappedMasterRec, rh, t.userID, t.recHash)
 	if err != nil {
 		fail(w, 500, "server error")

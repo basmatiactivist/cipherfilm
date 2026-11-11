@@ -73,6 +73,13 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   openAppSettings(): void;
   backupNotify(title: string, text: string, progress: number, ongoing: boolean): void;
   backupNotifyCancel(): void;
+  // account notices as notifications (Notices.kt, src/noticeCheck.ts)
+  /** Android allows them: the app's notifications and the Security channel are on */
+  noticesAllowed(): boolean;
+  /** Shows a notice's notification (the lock screen shows only publicTitle); false when Android doesn't allow it. */
+  noticeShow(id: number, title: string, text: string, publicTitle: string): boolean;
+  noticeCancel(id: number): void;
+  noticeCancelAll(): void;
   /** Keeps the app running while uploads go on (a foreground service with the notification); false if Android
    *  doesn't allow it right now. Each keepRunning(holder) needs its letGo(holder). */
   keepRunning(holder: string, title: string, text: string): boolean;
@@ -87,6 +94,13 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   appVersion(): { name: string; code: number };
   /** Forgets the session cookie (sign-out). */
   clearCookies(): void;
+
+  // passkeys (Passkeys.kt): Credential Manager, Android 14 and newer; JSON in (the server's options), JSON out
+  passkeysSupported(): boolean;
+  passkeyCreate(optionsJson: string): Promise<string>;
+  passkeyGet(optionsJson: string): Promise<string>;
+  /** A secret the person copies on purpose (setup key, recovery codes): marked sensitive, cleared after a minute. */
+  copySecret(label: string, text: string): void;
 
   // search on the phone, see android/.../Vision.kt, SearchIndex.kt, Models.kt
   downloadModel(url: string, path: string, sha256: string, size: number): Promise<boolean>;

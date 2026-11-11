@@ -69,6 +69,15 @@ Gradle cache paths), then run the check. CI builds don't have the problem (their
 The version is baked into the image: `docker run --rm ghcr.io/<owner>/cipherfilm:2 version`,
 and it is shown in the admin area under Server.
 
+## Going back to an older version
+
+Database changes are backward compatible in the sense that an older server starts on a newer database, but it ignores
+what it doesn't know. That is not always harmless: **once passkeys are in use (the first release with passkeys), going
+back to a server version before it is not supported.** An older server doesn't read the `passkeys` table, so an
+account whose only second step is a passkey signs in there with the password alone. If you must go back anyway,
+restore a backup taken before the upgrade, or turn two-step sign-in off and on again with an authenticator app for
+those accounts first. Say this in the release notes of any release that adds a security check an older server lacks.
+
 ## Google Play
 
 The Play build differs from the GitHub APK only by `CF_STORE=play` at prebuild (`mobile/app.config.js`): no

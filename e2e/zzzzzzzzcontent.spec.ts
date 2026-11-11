@@ -91,7 +91,7 @@ test.describe.serial("search by what is in a photo", () => {
     await page.getByRole("menuitem", { name: "Account" }).click();
     await page.getByText("Search", { exact: true }).click();
     await expect(page.getByText("3 photos can be found by what is in them")).toBeVisible();
-    await expect(page.getByText(/Search model downloaded from Hugging Face on .*, \\d+ MB\./)).toBeVisible();
+    await expect(page.getByText(/Search model downloaded from Hugging Face on .*, \d+ MB\./)).toBeVisible();
     await expect(page.getByRole("switch", { name: "Explicit search" })).toHaveCount(0); // not allowed for carol
 
     // leave carol's library as it was

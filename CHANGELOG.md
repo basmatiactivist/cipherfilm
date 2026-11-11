@@ -7,9 +7,22 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+### Note
+- Going back to an older server version is not supported once anyone has added a passkey: older servers don't know
+  passkeys, so an account with only passkeys would sign in with the password alone there (docs/RELEASING.md).
+
 ### Added
 - Web, Android, Mac: before the search models are downloaded from Hugging Face, the app asks: what, how big, from
   whom and what Hugging Face sees. Turning search off deletes them; the settings show when they were downloaded.
+- Two-step sign-in with a passkey: instead of a code from the authenticator app, confirm a new sign-in with a passkey
+  from your password manager, phone or a security key (web; Android 14 and newer; Mac through your browser). Your
+  password is still needed and still unlocks your photos. Add, rename and remove passkeys under Account › Two-step
+  sign-in; a passkey alone can turn two-step sign-in on (with recovery codes, as for the app).
+- Setting up the authenticator app takes one tap: "Add to authenticator app" (Android, and on phones in the browser)
+  and "Open in Passwords or Authenticator App" (Mac) hand the account to the app; the key can be copied (Android and
+  Mac clear it from the clipboard after a minute), and the recovery codes copied or shared.
+- Server: `/.well-known/assetlinks.json` lets the Android app use the server's passkeys; `ANDROID_APP_CERTS` and
+  `ANDROID_APP_PACKAGES` name the apps (docs/SELF-HOSTING.md).
 - Android and Mac: the admin area is in the apps too (Account › Administration on Android, Settings › Administration
   on the Mac): people and their usage, invites to share, storage limits, roles, disabling and deleting accounts,
   turning off someone's two-step sign-in, explicit search, the server's state and the activity log.
@@ -17,6 +30,11 @@ version into the GitHub release notes, so a release cannot be published without 
   in `deploy/tailnet`, the same one the project's own server runs; guide in docs/TAILNET.md.
 - Android: Account › "Allow screenshots" lets this phone take screenshots and screen recordings of the app and show
   it in the recent apps. Off by default, so the app stays blocked as before; the change applies at once.
+- Android and Mac: a new sign-in to your account (and the other security notices) also arrives as a notification
+  while the app is closed or in the background, at most once each; the lock screen shows only "New sign-in to
+  Cipherfilm". No push service is used: the app asks your server itself (Android about every 15 minutes). On by
+  default; Account › Security notifications (Android) and Settings › Security (Mac) turn it off. The web app can do
+  the same while its tab is open in the background, if you turn it on under Account › Devices.
 ### Fixed
 - Android: the search index kept on the phone (both the standard and the explicit model's) was deleted with the
   cleanup of cached pictures after every library load, so search had to fetch and open the whole index again at each

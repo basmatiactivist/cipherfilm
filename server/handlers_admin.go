@@ -9,7 +9,7 @@ import (
 func (a *App) adminListUsers(w http.ResponseWriter, r *http.Request, u *user, s *session) {
 	rows, err := a.db.Query(`SELECT u.id,u.email,u.role,u.status,u.created_at,u.quota_bytes,
 		` + usedBytesSQL("u.id") + `,
-		(SELECT COUNT(*) FROM items i WHERE i.user_id=u.id AND i.state='ready'), u.last_login_at, u.nsfw, u.totp_secret<>''
+		(SELECT COUNT(*) FROM items i WHERE i.user_id=u.id AND i.state='ready'), u.last_login_at, u.nsfw, (u.totp_secret<>'' OR EXISTS (SELECT 1 FROM passkeys p WHERE p.user_id=u.id))
 		FROM users u ORDER BY u.created_at`)
 	if err != nil {
 		fail(w, 500, "server error")

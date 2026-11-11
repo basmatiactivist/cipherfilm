@@ -122,6 +122,9 @@ func (c *client) post(path string, body any) rawResp {
 	c.e.t.Helper()
 	bb, _ := json.Marshal(body)
 	req, _ := http.NewRequest("POST", c.e.srv.URL+path, bytes.NewReader(bb))
+	if c.host != "" {
+		req.Host = c.host
+	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-CF-Device", "Test phone (Android app)")
 	resp, err := c.c.Do(req)
@@ -239,7 +242,8 @@ func TestTwoFactorSignInGivesNothingBeforeTheCode(t *testing.T) {
 		t.Fatalf("cookies before the code: %v", r.header.Values("Set-Cookie"))
 	}
 	for k := range r.body {
-		if k != "error" && k != "code" && k != "pending" && k != "expires_in" {
+		// totp, passkey: which second steps the account has, told only after the right password
+		if k != "error" && k != "code" && k != "pending" && k != "expires_in" && k != "totp" && k != "passkey" {
 			t.Fatalf("password step answered %q", k)
 		}
 	}
@@ -903,5 +907,121 @@ func TestUnfinishedPasswordStepIsNoticed(t *testing.T) {
 	clk.tick(pendingTTL + time.Second)
 	if n := count(); n != 1 {
 		t.Fatalf("pushed-out sign-ins: %d notices, want 1", n)
+	}
+}
+
+// The Android app checks for notices in the background (mobile/src/noticeCheck.ts) with X-CF-Background: such a GET
+// gets the same answer, but doesn't count as using the device: the session's last activity and idle end stay.
+func TestBackgroundCheckIsNotActivity(t *testing.T) {
+	e := newEnv(t)
+	clk := e.pinClock()
+	admin, ab := e.setupAdmin("admin@x.org")
+	clk.tick(time.Second)
+	e.login("admin@x.org", ab)
+	seen := func() (last, exp int64) {
+		t.Helper()
+		e.app.db.QueryRow(`SELECT last_seen, expires_at FROM sessions ORDER BY created_at LIMIT 1`).Scan(&last, &exp)
+		return
+	}
+	last0, exp0 := seen()
+	clk.tick(10 * time.Minute)
+	get := func(path string, background bool) (int, map[string]any) {
+		t.Helper()
+		req, _ := http.NewRequest("GET", e.srv.URL+path, nil)
+		if background {
+			req.Header.Set("X-CF-Background", "1")
+		}
+		resp, err := admin.c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var out map[string]any
+		json.NewDecoder(resp.Body).Decode(&out)
+		return resp.StatusCode, out
+	}
+	code, out := get("/api/me/notices", true)
+	if code != 200 || len(out["notices"].([]any)) != 1 {
+		t.Fatalf("background check: %d %v", code, out)
+	}
+	if last, exp := seen(); last != last0 || exp != exp0 {
+		t.Fatalf("background check counted as activity: %d/%d -> %d/%d", last0, exp0, last, exp)
+	}
+	// only a GET: a write is always the person (and still needs its CSRF token)
+	if code, _ := admin.do("POST", "/api/me/notices/1/dismiss", nil, false); code != 403 {
+		t.Fatalf("dismiss without token: %d", code)
+	}
+	// the same request without the header is activity, as before
+	if code, _ := get("/api/me/notices", false); code != 200 {
+		t.Fatalf("check: %d", code)
+	}
+	if last, exp := seen(); last == last0 || exp <= exp0 {
+		t.Fatalf("a normal request isn't activity: %d/%d -> %d/%d", last0, exp0, last, exp)
+	}
+}
+
+// A password step on an account with two-step sign-in never creates a session row, whatever happens to its pending
+// sign-in (wrong code, wrong recovery code, expired, worn out, pushed out, noticed as password_used); only a right
+// code does, exactly one. The device list (GET /api/me/sessions) is read from these rows.
+func TestPasswordStepNeverCreatesASession(t *testing.T) {
+	e := newEnv(t)
+	clk := e.pinClock()
+	admin, ab := e.setupAdmin("admin@x.org")
+	secret, _ := e.enable2FA(admin, ab)
+	clk.tick(30 * time.Second)
+	u, _ := e.app.userByEmail("admin@x.org")
+	rows := func() (n int) {
+		e.app.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE user_id=?`, u.ID).Scan(&n)
+		return
+	}
+	listed := func() int {
+		_, out := admin.do("GET", "/api/me/sessions", nil, false)
+		return len(out["sessions"].([]any))
+	}
+	before := rows()
+	if before != 1 || listed() != 1 {
+		t.Fatalf("start: %d rows, %d listed", before, listed())
+	}
+	check := func(what string) {
+		t.Helper()
+		if n := rows(); n != before {
+			t.Fatalf("%s: %d session rows, want %d", what, n, before)
+		}
+		if n := listed(); n != before {
+			t.Fatalf("%s: %d devices listed, want %d", what, n, before)
+		}
+	}
+
+	c := e.client()
+	p := e.passwordStep(c, "admin@x.org", ab)
+	check("password step")
+	c.post("/api/auth/login/2fa", map[string]any{"pending": p, "code": "000000"})
+	check("wrong code")
+	c.post("/api/auth/login/2fa", map[string]any{"pending": p, "code": "aaaa-bbbb-cccc-dddd"})
+	check("wrong recovery code")
+	for i := 0; i < pendingTries; i++ {
+		c.post("/api/auth/login/2fa", map[string]any{"pending": p, "code": "000000"})
+	}
+	check("worn out")
+	e.app.totpAcct.clear("2fa|" + u.ID)
+	for i := 0; i < pendingPer+1; i++ { // the oldest are pushed out
+		e.passwordStep(e.client(), "admin@x.org", ab)
+	}
+	check("pushed out")
+	clk.tick(pendingTTL + 3*time.Second) // expired; its password_used notice is shown now
+	e.app.pending.sweep(clk.at)
+	if k := shownKinds(t, admin); len(k) == 0 {
+		t.Fatal("no password_used notice")
+	}
+	check("expired and noticed")
+
+	// the right code: one session, and only one
+	c = e.client()
+	p = e.passwordStep(c, "admin@x.org", ab)
+	if r := c.post("/api/auth/login/2fa", map[string]any{"pending": p, "code": codeAt(t, secret, clk.at)}); r.code != 200 {
+		t.Fatalf("right code: %d %v", r.code, r.body)
+	}
+	if n := rows(); n != before+1 {
+		t.Fatalf("after the code: %d session rows, want %d", n, before+1)
 	}
 }

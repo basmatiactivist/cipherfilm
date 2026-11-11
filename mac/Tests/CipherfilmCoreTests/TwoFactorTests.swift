@@ -48,7 +48,10 @@ import Testing
 
   @Test func statusAndSetupDecode() throws {
     let s = try JSONDecoder().decode(TwoFactor.Status.self, from: Data(#"{"enabled":true,"recovery_codes_left":9,"available":true}"#.utf8))
-    #expect(s == TwoFactor.Status(enabled: true, recovery_codes_left: 9, available: true))
+    #expect(s == TwoFactor.Status(enabled: true, recovery_codes_left: 9, available: true, totp: nil, passkeys: nil))
+    #expect(s.hasApp) // an older server: on means the app
+    let p = try JSONDecoder().decode(TwoFactor.Status.self, from: Data(#"{"enabled":true,"recovery_codes_left":9,"available":true,"totp":false,"passkeys":2}"#.utf8))
+    #expect(!p.hasApp && p.passkeys == 2)
     let u = try JSONDecoder().decode(TwoFactor.Setup.self, from: Data(#"{"secret":"ABC","uri":"otpauth://totp/x","algorithm":"SHA1","digits":6,"period":30}"#.utf8))
     #expect(u.uri == "otpauth://totp/x")
   }
@@ -81,5 +84,89 @@ import Testing
 
   @Test func liveKnowsNotices() {
     #expect(LiveSignal(SSEvent(event: "changed", data: #"{"v":5,"what":["notices"]}"#)) == .changed(v: 5, what: [.notices]))
+  }
+
+  @Test func passwordAnswerSaysWhichSecondSteps() {
+    let kek = Data(repeating: 7, count: 32)
+    let pk = CodeStep(APIError(status: 401, message: "x", code: "two_factor_required", pending: "tok", totp: false, passkey: true), email: "a@x.org", kek: kek)
+    #expect(pk?.passkey == true && pk?.totp == false)
+    // an older server names none: the app's code, as before
+    let old = CodeStep(APIError(status: 401, message: "x", code: "two_factor_required", pending: "tok"), email: "a@x.org", kek: kek)
+    #expect(old?.passkey == false && old?.totp == true)
+  }
+
+  @Test func passkeyHandoffToTheBrowserAndBack() throws {
+    let options = Data(#"{"challenge":"AQID","rpId":"photos.example"}"#.utf8)
+    let u = try Passkeys.handoffURL(server: URL(string: "https://photos.example/")!, op: "get", options: options)
+    #expect(u.absoluteString.hasPrefix("https://photos.example/passkey#"))
+    // the fragment holds what the page reads: the step and the options, base64url JSON (never sent to the server)
+    let frag = try #require(u.fragment)
+    #expect(!frag.contains("=") && !frag.contains("+") && !frag.contains("/"))
+    let raw = try #require(Passkeys.unb64url(frag))
+    let h = try #require(JSONSerialization.jsonObject(with: raw) as? [String: Any])
+    #expect(h["op"] as? String == "get")
+    #expect((h["options"] as? [String: Any])?["rpId"] as? String == "photos.example")
+    #expect(throws: (any Error).self) { try Passkeys.handoffURL(server: URL(string: "http://photos.example")!, op: "get", options: options) }
+    #expect(throws: (any Error).self) { try Passkeys.handoffURL(server: URL(string: "https://photos.example")!, op: "steal", options: options) }
+
+    let answer = Data(#"{"id":"k","type":"public-key"}"#.utf8)
+    let back = URL(string: "cipherfilm-mac://passkey#" + Passkeys.b64url(answer))!
+    #expect(try JSONSerialization.jsonObject(with: Passkeys.answer(from: back)) as? [String: String] == ["id": "k", "type": "public-key"])
+    #expect(throws: (any Error).self) { try Passkeys.answer(from: URL(string: "cipherfilm-mac://passkey#error=cancelled")!) }
+    #expect(throws: (any Error).self) { try Passkeys.answer(from: URL(string: "cipherfilm://passkey#" + Passkeys.b64url(answer))!) }
+    #expect(throws: (any Error).self) { try Passkeys.answer(from: URL(string: "cipherfilm-mac://other#" + Passkeys.b64url(answer))!) }
+  }
+
+  @Test func passkeysDecode() throws {
+    struct L: Decodable { let passkeys: [Passkeys.Item] }
+    let l = try JSONDecoder().decode(L.self, from: Data(#"{"passkeys":[{"id":"0123456789abcdef0123456789abcdef","name":"Key","rp_id":"photos.example","here":true,"created_at":1,"last_used_at":0}],"available":true,"max":20}"#.utf8))
+    #expect(l.passkeys.first?.name == "Key" && l.passkeys.first?.here == true)
+  }
+}
+
+// Notices as macOS notifications (NoticeAlerts): each at most once, none while the banner shows them.
+@Suite struct NoticeAlertsTests {
+  let now = Date(timeIntervalSince1970: 1_800_000_000)
+  func n(_ id: Int64, ago: TimeInterval = 60, kind: String = "sign_in") -> Notice {
+    Notice(id: id, kind: kind, device: "Pixel 8 (Android app)", at: Int64(now.timeIntervalSince1970 - ago))
+  }
+
+  @Test func eachOnceOldestFirst() {
+    var a = NoticeAlerts()
+    #expect(a.take([n(3, ago: 10), n(2, ago: 100)], server: "s", now: now, visible: false).map(\.id) == [2, 3])
+    #expect(a.take([n(3), n(2)], server: "s", now: now, visible: false).isEmpty)
+    #expect(a.take([n(4), n(3), n(2)], server: "s", now: now, visible: false).map(\.id) == [4])
+  }
+
+  @Test func noneWhileTheBannerShowsThem() {
+    var a = NoticeAlerts()
+    #expect(a.take([n(5)], server: "s", now: now, visible: true).isEmpty)
+    // and not later either, once the window is gone
+    #expect(a.take([n(5)], server: "s", now: now, visible: false).isEmpty)
+  }
+
+  @Test func oldOnesOnlyRemembered() {
+    var a = NoticeAlerts()
+    #expect(a.take([n(9), n(8, ago: NoticeAlerts.recent + 1)], server: "s", now: now, visible: false).map(\.id) == [9])
+    #expect(a.ids == [9, 8])
+  }
+
+  @Test func perServerAndBounded() throws {
+    var a = NoticeAlerts()
+    _ = a.take([n(7)], server: "s", now: now, visible: false)
+    #expect(a.take([n(7)], server: "other", now: now, visible: false).map(\.id) == [7])
+    _ = a.take((1...Int64(NoticeAlerts.keep + 30)).map { n($0) }, server: "other", now: now, visible: true)
+    #expect(a.ids.count == NoticeAlerts.keep)
+    #expect(a.ids.first == Int64(NoticeAlerts.keep + 30))
+    // kept in UserDefaults as JSON
+    let back = try JSONDecoder().decode(NoticeAlerts.self, from: JSONEncoder().encode(a))
+    #expect(back == a)
+  }
+
+  @Test func titleSaysNothingAboutTheDevice() {
+    #expect(NoticeAlerts.title(n(1)) == "New sign-in to Cipherfilm")
+    #expect(!NoticeAlerts.title(n(1)).contains("Pixel"))
+    #expect(NoticeAlerts.title(n(2, kind: "2fa_reset")) == "Two-step sign-in turned off")
+    #expect(NoticeAlerts.title(n(3, kind: "password_used")) == "Unfinished sign-in to Cipherfilm")
   }
 }

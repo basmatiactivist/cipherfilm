@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // The sign-in of an account with two-step sign-in: the password step gives no session and no keys, only a pending
 // token; the code step finishes it. A stand-in server and key material, as in auth.test.ts.
-const server = vi.hoisted(() => ({ calls: [] as string[], csrf: [] as string[] }));
+const server = vi.hoisted(() => ({ calls: [] as string[], csrf: [] as string[], challenges: 0 }));
 const kek = vi.hoisted(() => ({ last: null as Uint8Array | null }));
 
 vi.mock("./api", async () => {
@@ -15,11 +15,21 @@ vi.mock("./api", async () => {
       server.calls.push(path);
       if (path.startsWith("/api/auth/params")) return { alg: "argon2id13", v: 1, ops: 3, mem: 64 << 20, salt: "x" };
       if (path === "/api/auth/login") {
+        if (body.auth === "auth:passkey") throw new real.ApiError(401, "Two-step.", { code: "two_factor_required", pending: "pend-1", expires_in: 300, totp: false, passkey: true });
         if (body.auth !== "auth:right") throw new real.ApiError(401, "Wrong e-mail or password.", { error: "wrong e-mail or password" });
         throw new real.ApiError(401, "This account uses two-step sign-in.", { error: "x", code: "two_factor_required", pending: "pend-1", expires_in: 300 });
       }
+      if (path === "/api/auth/login/2fa/passkey") {
+        if (body.pending !== "pend-1") throw new real.ApiError(401, "Expired.", { code: "two_factor_expired" });
+        server.challenges++;
+        return { options: { challenge: "c" + server.challenges, rpId: "photos.test" } };
+      }
       if (path === "/api/auth/login/2fa") {
         if (body.pending !== "pend-1") throw new real.ApiError(401, "Expired.", { code: "two_factor_expired" });
+        if (body.passkey) {
+          if (body.passkey.answered === "c1") throw new real.ApiError(401, "No.", { code: "wrong_passkey" });
+          return { csrf: "c2", session_id: "s", user: { id: "u", email: "a@x.org", role: "user" }, wrapped_master_pw: "m9" };
+        }
         if (body.code === "123456" || body.code === "abcd-efgh-jkmn-pqrs") return { csrf: "c2", session_id: "s", user: { id: "u", email: "a@x.org", role: "user" }, wrapped_master_pw: "m9" };
         if (body.code === "999999") throw new real.ApiError(401, "Expired.", { code: "two_factor_expired" });
         throw new real.ApiError(401, "That code isn't right.", { code: "wrong_code" });
@@ -34,11 +44,13 @@ vi.mock("./crypto/account", () => ({
   unlockMasterKey: (_s: unknown, _e: string, k: Uint8Array, wrapped: string) => { if (!k.some((b) => b)) throw new Error("zeroed key"); return new Uint8Array([Number(wrapped.slice(1))]); },
 }));
 vi.mock("./cache", () => ({ clearCaches: () => {} }));
+// the browser's passkey dialog: answers whatever challenge it is given
+vi.mock("./passkeys", () => ({ getPasskey: async (o: { challenge: string }) => ({ id: "k", answered: o.challenge }) }));
 vi.mock("./player", () => ({ clearPlayer: () => {} }));
 vi.mock("./items", () => ({ clearUploadMemory: () => {}, forgetDecrypted: () => {} }));
 
 describe("two-step sign-in", () => {
-  beforeEach(() => { server.calls = []; server.csrf = []; vi.resetModules(); });
+  beforeEach(() => { server.calls = []; server.csrf = []; server.challenges = 0; vi.resetModules(); });
 
   it("signs in only after the code; nothing of the account before", async () => {
     const auth = await import("./auth");
@@ -85,6 +97,30 @@ describe("two-step sign-in", () => {
     expect(kek.last!.every((b) => b === 0)).toBe(true);
   });
 
+  it("a passkey instead of the code: a new challenge for every try, nothing of the account before", async () => {
+    const auth = await import("./auth");
+    const { mem } = await import("./state");
+    const step = await auth.login("a@x.org", "passkey");
+    expect(step!.passkey).toBe(true);
+    expect(step!.totp).toBe(false);
+    step!.preparePasskey(); // fetched ahead of the tap
+    step!.preparePasskey(); // only once
+    await expect(step!.usePasskey()).rejects.toThrow(/wasn't accepted/);
+    expect(mem.me).toBeNull();
+    expect(kek.last!.some((b) => b)).toBe(true); // kept for the next try
+    await step!.usePasskey(); // the next challenge
+    expect(server.challenges).toBe(2);
+    expect(mem.me?.user.id).toBe("u");
+    expect(kek.last!.every((b) => b === 0)).toBe(true);
+  });
+
+  it("an older server says nothing about the second steps: a code is asked for", async () => {
+    const auth = await import("./auth");
+    const step = await auth.login("a@x.org", "right");
+    expect(step!.totp).toBe(true);
+    expect(step!.passkey).toBe(false);
+  });
+
   it("reads the server's answers", async () => {
     const { ApiError } = await import("./api");
     const auth = await import("./auth");
@@ -93,6 +129,8 @@ describe("two-step sign-in", () => {
     expect(auth.pendingToken(new ApiError(403, "x", { code: "two_factor_required", pending: "p" }))).toBe("");
     expect(auth.pendingToken(new Error("x"))).toBe("");
     expect(auth.codeProblem(new ApiError(401, "x", { code: "wrong_code" }))).toBe("wrong");
+    expect(auth.codeProblem(new ApiError(401, "x", { code: "wrong_passkey" }))).toBe("wrong");
+    expect(auth.methods(new ApiError(401, "x", { code: "two_factor_required", totp: true, passkey: true }))).toEqual({ totp: true, passkey: true });
     expect(auth.codeProblem(new ApiError(401, "x", { code: "two_factor_expired" }))).toBe("expired");
     expect(auth.codeProblem(new ApiError(429, "x", null))).toBe("other");
   });

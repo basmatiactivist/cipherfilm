@@ -130,6 +130,11 @@ class CfNativeModule : Module() {
     Function("openAppSettings") { BackupNative.openAppSettings(appContext.reactContext!!) }
     Function("backupNotify") { title: String, text: String, progress: Double, ongoing: Boolean -> BackupNative.notify(appContext.reactContext!!, title, text, progress, ongoing) }
     Function("backupNotifyCancel") { BackupNative.cancel(appContext.reactContext!!) }
+    // ---- account notices as notifications (Notices.kt, src/noticeCheck.ts) ----
+    Function("noticesAllowed") { Notices.allowed(appContext.reactContext!!) }
+    Function("noticeShow") { id: Int, title: String, text: String, publicTitle: String -> Notices.show(appContext.reactContext!!, id, title, text, publicTitle) }
+    Function("noticeCancel") { id: Int -> Notices.cancel(appContext.reactContext!!, id) }
+    Function("noticeCancelAll") { Notices.cancelAll(appContext.reactContext!!) }
     Function("keepRunning") { holder: String, title: String, text: String ->
       JsTimers.keep(appContext.reactContext, holder) // also when Android refuses the service: the run still needs timers
       TransferService.hold(appContext.reactContext!!, holder, title, text)
@@ -149,6 +154,15 @@ class CfNativeModule : Module() {
     Function("retryBackupSoon") { minutes: Int -> NewMedia.retrySoon(appContext.reactContext!!, minutes.toLong().coerceIn(1, 60)) }
     Function("clearCookies") {
       android.webkit.CookieManager.getInstance().apply { removeAllCookies(null); flush() }
+    }
+
+    // ---- passkeys (Credential Manager) and secrets copied on purpose (Passkeys.kt) ----
+    Function("passkeysSupported") { Passkeys.supported() }
+    AsyncFunction("passkeyCreate") Coroutine { options: String -> Passkeys.create(appContext.currentActivity, options) }
+    AsyncFunction("passkeyGet") Coroutine { options: String -> Passkeys.get(appContext.currentActivity, options) }
+    Function("copySecret") { label: String, text: String ->
+      appContext.reactContext?.let { SecretClip.copy(it.applicationContext, label, text) }
+      Unit
     }
 
     // ---- search on the phone (Vision.kt, SearchIndex.kt, Models.kt) ----

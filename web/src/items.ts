@@ -7,6 +7,7 @@ import { decodeImage, decodeVideoFrame, ItemMeta, kindOf, kindOfMeta, PREVIEW_PX
 import { mem } from "./state";
 import { ListSync, type Page } from "./sync";
 import { normEdit, normOrig } from "./edit/edit";
+import { Sha256, SHA256_HEX } from "./crypto/sha256";
 
 export interface Item {
   id: string;
@@ -51,6 +52,7 @@ function wellFormed(m: ItemMeta, createdAt: number): ItemMeta {
   const edit = normEdit(m.edit), orig = normOrig(m.orig);
   if (edit) m.edit = edit; else delete m.edit;
   if (orig) m.orig = orig; else delete m.orig;
+  if (m.sha256 !== undefined && !(typeof m.sha256 === "string" && SHA256_HEX.test(m.sha256))) delete m.sha256;
   return m;
 }
 
@@ -255,10 +257,15 @@ export async function uploadFile(f: File, onProgress: (done: number, total: numb
   // a few segments in flight at once: one round trip per 4 MiB part is what limits a single stream
   const inflight = new Set<Promise<void>>();
   let failure: unknown;
+  // the original's SHA-256 for the metadata (finding the same file again, docs/CRYPTO.md): from the parts as they are
+  // read; the parts the server already has (a resumed upload) are read for it alone
+  const hash = new Sha256();
   for (let i = 0; i < count && failure === undefined; i++) {
-    if (received.has(i)) continue;
     const len = f.size === 0 ? 0 : segmentPlainLen(f.size, i);
     const plain = new Uint8Array(await f.slice(i * SEG_PLAIN, i * SEG_PLAIN + len).arrayBuffer());
+    if (plain.length !== len) throw new Error("The file changed while it was being read.");
+    hash.update(plain);
+    if (received.has(i)) continue;
     mine();
     const ct = encryptSegment(s, itemKey, id, i, count, f.size, plain);
     if (ct.length !== cipherLen(len)) throw new Error("internal size error");
@@ -272,6 +279,7 @@ export async function uploadFile(f: File, onProgress: (done: number, total: numb
   await thumbWork;
   if (failure !== undefined) throw failure;
   const meta = await readMeta(f, dims);
+  meta.sha256 = hash.hex();
   mine();
   await api("POST", `/api/items/${id}/finalize`, { wrapped_item_key: wrapped, meta_enc: b64(s, encryptMeta(s, meta, itemKey, id)) });
   savePending(owner, f, null);

@@ -3,7 +3,7 @@ import { FlatList, ScrollView, StyleSheet, View } from "react-native";
 import { router } from "expo-router";
 import { Appbar, Button, Dialog, Portal, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { bytesOf, chosenWith, type Found, type Group } from "@cleanup/duplicates";
+import { bytesOf, chosenWith, similarCheck, type Found, type Group } from "@cleanup/duplicates";
 import { refreshLibrary, useLibrary } from "../libraryStore";
 import { refreshAlbums } from "../albumsStore";
 import { api } from "../api";
@@ -87,26 +87,34 @@ export default function Duplicates() {
     }
   };
 
-  const missing = found ? found.images - found.indexed : 0;
+  const similar = found ? similarCheck(found, found.searchOn) : "nothing";
+  const fmt = (n: number) => n.toLocaleString(locale());
+  // what was looked at, so "nothing found" is never read as more than it is
+  const exactLine = !found ? "" : found.checked === 0 ? t("There is nothing in your library to check yet.")
+    : tn(found.checked, "Checked {n} photo or video for exact copies.", "Checked all {n} photos and videos for exact copies.");
+  const similarLine = !found ? "" : similar === "off" ? (phase === "off"
+    ? t("Similar photos (bursts, near-identical shots) were not checked: that needs search, which is off.")
+    : t("Similar photos are checked once search is ready on this phone."))
+    : similar === "partial" ? t("{indexed} of {total} photos are indexed, so only those were checked for similar photos.", { indexed: fmt(found.indexed), total: fmt(found.images) })
+    : similar === "complete" ? tn(found.images, "Checked {n} photo for similar ones.", "Checked all {n} photos for similar ones.") : "";
   const header = found ? (
     <View>
       <View style={[st.card, { backgroundColor: live.length ? th.colors.primaryContainer : th.colors.surfaceVariant }]}>
         <View style={st.row}>
           <Icon name="similar" size={28} color={th.colors.primary} />
           <View style={{ flex: 1 }}>
-            <Text variant="headlineSmall">{groups.length ? gb(bytes) : t("No duplicates found")}</Text>
-            <Text variant="bodyMedium" style={{ color: th.colors.onSurfaceVariant }}>
-              {groups.length ? t("{n} chosen to move to the trash", { n: live.length.toLocaleString(locale()) }) : t("Nothing in your library is there twice, and no photos look nearly the same.")}
-            </Text>
+            <Text variant="headlineSmall">{groups.length ? gb(bytes) : similar === "complete" || similar === "nothing" ? t("No duplicates found") : t("No exact copies found")}</Text>
+            {groups.length ? (
+              <Text variant="bodyMedium" style={{ color: th.colors.onSurfaceVariant }}>{t("{n} chosen to move to the trash", { n: fmt(live.length) })}</Text>
+            ) : null}
           </View>
         </View>
-        {!found.searchOn ? (
-          <>
-            <Text variant="bodySmall" style={{ marginTop: 8 }}>{t("Exact duplicates only. Turn on search to also find similar photos (bursts, near-identical shots).")}</Text>
-            <Button mode="outlined" compact onPress={() => router.push("/search-settings")} style={{ marginTop: 8, alignSelf: "flex-start" }}>{t("Search and people")}</Button>
-          </>
-        ) : missing > 0 ? (
-          <Text variant="bodySmall" style={{ marginTop: 8 }}>{t("{indexed} of {total} photos are indexed. Index more photos to find more.", { indexed: found.indexed.toLocaleString(locale()), total: found.images.toLocaleString(locale()) })}</Text>
+        <Text variant="bodySmall" style={{ marginTop: 12 }}>{exactLine}</Text>
+        {similarLine ? <Text variant="bodySmall" style={{ marginTop: 4 }}>{similarLine}</Text> : null}
+        {similar === "off" || similar === "partial" ? (
+          <Button mode="outlined" compact onPress={() => router.push("/search-settings")} style={{ marginTop: 8, alignSelf: "flex-start" }}>
+            {phase === "off" ? t("Turn on search") : t("Search and people")}
+          </Button>
         ) : null}
         {demo ? <Text variant="labelLarge" style={{ color: th.colors.primary, marginTop: 8 }}>{demoNote()}</Text> : groups.length ? (
           <Button mode="contained" icon={busy ? busyIcon : "trash"} disabled={!live.length || busy} onPress={() => setAsking(true)} style={st.button}>

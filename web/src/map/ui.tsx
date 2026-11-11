@@ -228,18 +228,17 @@ function MapView(p: { items: Item[]; onOpen: (list: Item[], index: number) => vo
     fillPanel.current();
   }, [points]);
 
-  const inView = openPanel;
-
   if (!conf) return <p class="hint">The map is turned off on this server.</p>;
   return (
     <div class={`mappage${panel ? " withpanel" : ""}`}>
       <div class="mapwrap">
         <div ref={box} class="mapbox" aria-label="Map of your photos" role="region" />
         {failed && <p class="error mapfail" role="alert">The map couldn't be loaded. Check the connection and try again later.</p>}
-        <div class="mapbar">
-          <span>{points.length === 0 ? "No photos with a location yet" : points.length === 1 ? "1 photo on the map" : `${points.length} photos on the map`}</span>
-          {points.length > 0 && <button class="btn small" onClick={inView}><Icon name="photos" size={16} />Photos in this area</button>}
-        </div>
+        {/* the photos in what the map shows, as a small map control (a cluster opens its photos once zoomed in) */}
+        {points.length > 0 && !panel && (
+          <button class="mapctl" onClick={openPanel} aria-label="Photos in this area" title="Photos in this area"><Icon name="photos" size={18} /></button>
+        )}
+        {points.length === 0 && <p class="mapempty small">No photos with a location yet.</p>}
       </div>
       {panel && (
         <aside class="mappanel" aria-label={panel.title}>

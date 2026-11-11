@@ -8,7 +8,7 @@ import type { Item } from "./library";
 export const candidateOf = (it: Item): Candidate | null =>
   it.broken || !it.meta || it.trashed_at ? null : {
     id: it.id, ts: it.meta.capture_ts, name: it.meta.name, size: it.meta.size || it.size, width: it.meta.width, height: it.meta.height,
-    gps: !!it.meta.gps, uploaded: it.created_at, image: it.kind === "image",
+    gps: !!it.meta.gps, uploaded: it.created_at, image: it.kind === "image", ...(it.meta.sha256 ? { sha256: it.meta.sha256 } : {}),
   };
 
 export interface Index {

@@ -2,6 +2,7 @@
 // format, keys and metadata, so every client and cipherfilm-decrypt read it. Only ciphertext leaves the Mac.
 import AVFoundation
 import CoreGraphics
+import CryptoKit
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
@@ -346,6 +347,9 @@ public enum Uploader {
 
       progress(0, max(size, 1))
       let done = Counter()
+      // the original's SHA-256 for the metadata (finding the same file again, docs/CRYPTO.md): from the parts as they
+      // are read for encryption, never a second read of the file
+      var hash = SHA256()
       try await withThrowingTaskGroup(of: Void.self) { g in
         var inFlight = 0
         for i in 0..<count {
@@ -354,6 +358,7 @@ public enum Uploader {
           try fh.seek(toOffset: UInt64(i) * UInt64(Segments.plain))
           var plain = len > 0 ? (try fh.read(upToCount: len) ?? Data()) : Data()
           guard plain.count == len else { throw APIError(status: -1, message: "The file changed while it was being read.") }
+          hash.update(data: plain)
           let ct = try Segments.encrypt(itemKey: key, itemId: id, index: i, count: count, total: size, plain: plain)
           Sodium.memzero(&plain)
           if inFlight >= 2 { try await g.next(); inFlight -= 1 }
@@ -367,17 +372,7 @@ public enum Uploader {
       }
       let dims = (try? await thumbs.value) ?? nil
       let mi = await info.value
-      var meta: [String: Any] = [
-        "name": name, "mime": mime, "size": size, "lastModified": (modified.timeIntervalSince1970 * 1000).rounded(),
-        "capture_ts": (mi.captureTs ?? modified.timeIntervalSince1970 * 1000).rounded(),
-      ]
-      if let w = mi.width ?? dims?.0 { meta["width"] = w }
-      if let h = mi.height ?? dims?.1 { meta["height"] = h }
-      if let d = mi.duration { meta["duration"] = d }
-      if let m = mi.make { meta["make"] = m }
-      if let m = mi.model { meta["model"] = m }
-      if let la = mi.lat, let lo = mi.lon { meta["gps"] = ["lat": la, "lon": lo] }
-      let json = try JSONSerialization.data(withJSONObject: meta, options: [.withoutEscapingSlashes])
+      let json = try metaJSON(name: name, mime: mime, size: size, modified: modified, info: mi, dims: dims, sha256: hex(hash.finalize()))
       try live()
       try await api.json("POST", "/api/items/\(id)/finalize", body: ["wrapped_item_key": wrapped, "meta_enc": B64.encode(Crypto.encryptMeta(json, itemKey: key, itemId: id))])
       return id
@@ -387,6 +382,26 @@ public enum Uploader {
       throw error
     }
   }
+}
+
+extension Uploader {
+  /** The item's metadata as every client writes it (docs/CRYPTO.md). */
+  static func metaJSON(name: String, mime: String, size: Int64, modified: Date, info mi: Media.Info, dims: (Int, Int)?, sha256: String?) throws -> Data {
+    var meta: [String: Any] = [
+      "name": name, "mime": mime, "size": size, "lastModified": (modified.timeIntervalSince1970 * 1000).rounded(),
+      "capture_ts": (mi.captureTs ?? modified.timeIntervalSince1970 * 1000).rounded(),
+    ]
+    if let w = mi.width ?? dims?.0 { meta["width"] = w }
+    if let h = mi.height ?? dims?.1 { meta["height"] = h }
+    if let d = mi.duration { meta["duration"] = d }
+    if let m = mi.make { meta["make"] = m }
+    if let m = mi.model { meta["model"] = m }
+    if let la = mi.lat, let lo = mi.lon { meta["gps"] = ["lat": la, "lon": lo] }
+    if let h = sha256 { meta["sha256"] = h }
+    return try JSONSerialization.data(withJSONObject: meta, options: [.withoutEscapingSlashes])
+  }
+
+  static func hex(_ d: SHA256.Digest) -> String { d.map { String(format: "%02x", $0) }.joined() }
 }
 
 final class Counter: @unchecked Sendable {

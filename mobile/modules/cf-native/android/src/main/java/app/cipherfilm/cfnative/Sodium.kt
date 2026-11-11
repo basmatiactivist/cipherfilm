@@ -8,7 +8,7 @@ import com.sun.jna.ptr.NativeLongByReference
 /**
  * The libsodium functions the app uses, mapped one to one onto the C API of the libsodium.so built by
  * scripts/build-libsodium.sh. size_t is NativeLong (64-bit on arm64), unsigned long long is Long. The secretstream
- * state is the plain 52-byte struct, passed as a byte array.
+ * state is the plain 52-byte struct, passed as a byte array; so is the SHA-256 state (crypto_hash_sha256_statebytes()).
  */
 @Suppress("FunctionName", "LocalVariableName")
 interface Sodium : Library {
@@ -19,6 +19,10 @@ interface Sodium : Library {
   fun sodium_pad(padded_len: NativeLongByReference, buf: ByteArray, unpadded_len: NativeLong, blocksize: NativeLong, max_len: NativeLong): Int
   fun sodium_unpad(unpadded_len: NativeLongByReference, buf: ByteArray, padded_len: NativeLong, blocksize: NativeLong): Int
   fun crypto_hash_sha256(out: ByteArray, input: ByteArray, inlen: Long): Int
+  fun crypto_hash_sha256_statebytes(): NativeLong
+  fun crypto_hash_sha256_init(state: ByteArray): Int
+  fun crypto_hash_sha256_update(state: ByteArray, input: ByteArray, inlen: Long): Int
+  fun crypto_hash_sha256_final(state: ByteArray, out: ByteArray): Int
   fun crypto_generichash(out: ByteArray, outlen: NativeLong, input: ByteArray, inlen: Long, key: ByteArray?, keylen: NativeLong): Int
   fun crypto_pwhash(out: ByteArray, outlen: Long, passwd: ByteArray, passwdlen: Long, salt: ByteArray, opslimit: Long, memlimit: NativeLong, alg: Int): Int
   fun crypto_kdf_derive_from_key(subkey: ByteArray, subkey_len: NativeLong, subkey_id: Long, ctx: ByteArray, key: ByteArray): Int

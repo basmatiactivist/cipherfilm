@@ -52,6 +52,7 @@ private class SodiumFailed(what: String) : CodedException("ERR_SODIUM", "$what f
  */
 class CfNativeModule : Module() {
   private val na get() = Sodium.lib
+  private val sha256State by lazy { na.crypto_hash_sha256_statebytes().toInt() }
   private val resolver get() = appContext.reactContext!!.contentResolver
   private var pendingTrash: Promise? = null
   private var pendingPick: Promise? = null
@@ -229,6 +230,17 @@ class CfNativeModule : Module() {
     Function("randombytes_buf") { size: Int -> bounded(size, 0..(16 shl 20), "randombytes"); ByteArray(size).also { na.randombytes_buf(it, n(size)) } }
     Function("memcmp") { a: ByteArray, b: ByteArray -> a.size == b.size && na.sodium_memcmp(a, b, n(a.size)) == 0 }
     Function("crypto_hash_sha256") { m: ByteArray -> ByteArray(32).also { check(na.crypto_hash_sha256(it, m, len(m)), "sha256") } }
+    // SHA-256 fed part by part (an upload's original, src/upload.ts): the state crosses into JavaScript and back
+    Function("sha256_init") { ByteArray(sha256State).also { check(na.crypto_hash_sha256_init(it), "sha256_init") } }
+    Function("sha256_update") { state: ByteArray, m: ByteArray ->
+      if (state.size != sha256State) throw SodiumFailed("sha256_update")
+      check(na.crypto_hash_sha256_update(state, m, len(m)), "sha256_update")
+      state
+    }
+    Function("sha256_final") { state: ByteArray ->
+      if (state.size != sha256State) throw SodiumFailed("sha256_final")
+      ByteArray(32).also { check(na.crypto_hash_sha256_final(state, it), "sha256_final") }
+    }
     Function("crypto_generichash") { outLen: Int, m: ByteArray, key: ByteArray? ->
       bounded(outLen, 16..64, "generichash")
       ByteArray(outLen).also { check(na.crypto_generichash(it, n(outLen), m, len(m), key, n(key?.size ?: 0)), "generichash") }

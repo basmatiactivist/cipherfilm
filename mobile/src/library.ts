@@ -17,6 +17,7 @@ import { ThumbBatcher } from "./thumbbatch";
 import { kindOf } from "./kind";
 import { ListSync, type Page } from "./sync";
 import { normEdit, normOrig, pictureKey, type Edit, type Orig } from "@edit/edit";
+import { SHA256_HEX } from "@crypto/sha256";
 
 export interface ItemMeta {
   name: string; mime: string; size: number; lastModified: number; capture_ts: number;
@@ -25,6 +26,8 @@ export interface ItemMeta {
   edit?: Edit;
   /** the date and place before the person changed them */
   orig?: Orig;
+  /** SHA-256 of the original file, 64 lowercase hex characters (newer uploads only; docs/CRYPTO.md) */
+  sha256?: string;
 }
 
 /** What an edit says is checked like the rest: what doesn't make sense is dropped, not trusted. */
@@ -33,6 +36,7 @@ export function checkedMeta(m: ItemMeta): ItemMeta {
   if (edit) m.edit = edit; else delete m.edit;
   if (orig) m.orig = orig; else delete m.orig;
   if (Number.isFinite(m.capture_ts)) m.capture_ts = Math.round(m.capture_ts);
+  if (m.sha256 !== undefined && !(typeof m.sha256 === "string" && SHA256_HEX.test(m.sha256))) delete m.sha256;
   return m;
 }
 

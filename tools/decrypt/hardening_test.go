@@ -154,11 +154,12 @@ func TestMalformedIdsAreRefused(t *testing.T) {
 	}
 }
 
-// Edits made in the apps (docs/EDITING.md) add optional fields to the metadata: the tool still reads it, exports the
-// original (never the edit) and files it under the date the person set.
+// Edits made in the apps (docs/EDITING.md) and the original's SHA-256 (docs/CRYPTO.md) add optional fields to the
+// metadata: the tool still reads it, exports the original (never the edit) and files it under the date the person set.
 func TestMetadataWithEditsStillReads(t *testing.T) {
 	raw := []byte(`{"name":"a.jpg","mime":"image/jpeg","size":10,"lastModified":1,"capture_ts":1714565000000,` +
-		`"gps":{"lat":1,"lon":2},"edit":{"rot":90,"crop":{"x":0.1,"y":0,"w":0.5,"h":1},"v":"ab12"},"orig":{"capture_ts":1,"gps":null}}`)
+		`"gps":{"lat":1,"lon":2},"edit":{"rot":90,"crop":{"x":0.1,"y":0,"w":0.5,"h":1},"v":"ab12"},"orig":{"capture_ts":1,"gps":null},` +
+		`"sha256":"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}`)
 	var m meta
 	if err := json.Unmarshal(raw, &m); err != nil {
 		t.Fatalf("unreadable: %v", err)

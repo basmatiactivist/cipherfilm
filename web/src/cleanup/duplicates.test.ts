@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bytesOf, candidatePairs, chosenWith, cosine, exactGroups, findGroups, keepOrder, scoreWith, SIMILAR, similarGroupsFrom, suggested, type Candidate } from "./duplicates";
+import { bytesOf, candidatePairs, chosenWith, cosine, exactGroups, findGroups, keepOrder, scoreWith, SIMILAR, similarCheck, similarGroupsFrom, suggested, type Candidate } from "./duplicates";
 
 const MIN = 60_000;
 let n = 0;
@@ -58,11 +58,70 @@ describe("exact duplicates", () => {
     expect(g[0].keep).toBe(b.id); // the one with a location
     expect(new Set(g[0].ids)).toEqual(new Set([a.id, b.id, c.id]));
   });
-  it("doesn't group when any of the three differs", () => {
+  it("doesn't group when the size or the capture time differs", () => {
     const base = { name: "x.jpg", size: 5000, ts: 1000 };
     expect(exactGroups([item(base), item({ ...base, size: 5001 })])).toEqual([]);
     expect(exactGroups([item(base), item({ ...base, ts: 1001 })])).toEqual([]);
-    expect(exactGroups([item(base), item({ ...base, name: "y.jpg" })])).toEqual([]);
+  });
+  it("groups older items by size and capture time whatever their names, when the pixel size agrees or isn't known", () => {
+    const base = { size: 5000, ts: 1000 };
+    // a copy saved as "IMG_1 (1).jpg", or the same photo uploaded from two devices under other names
+    expect(exactGroups([item({ ...base, name: "IMG_1.jpg" }), item({ ...base, name: "IMG_1 (1).jpg" })])).toHaveLength(1);
+    expect(exactGroups([item({ ...base, name: "a.jpg", width: 40, height: 30 }), item({ ...base, name: "b.jpg", width: 40, height: 30 })])).toHaveLength(1);
+    // the turn applied on one device and not on the other
+    expect(exactGroups([item({ ...base, name: "a.jpg", width: 40, height: 30 }), item({ ...base, name: "b.jpg", width: 30, height: 40 })])).toHaveLength(1);
+    expect(exactGroups([item({ ...base, name: "a.jpg", width: 40, height: 30 }), item({ ...base, name: "b.jpg" })])).toHaveLength(1);
+    // another pixel size under another name: not the same file
+    expect(exactGroups([item({ ...base, name: "a.jpg", width: 40, height: 30 }), item({ ...base, name: "b.jpg", width: 80, height: 60 })])).toEqual([]);
+    // the same name still counts, as before
+    expect(exactGroups([item({ ...base, name: "a.jpg", width: 40, height: 30 }), item({ ...base, name: "A.JPG", width: 80, height: 60 })])).toHaveLength(1);
+  });
+  it("puts an item only where it matches every member without a hash (no chains)", () => {
+    const base = { size: 5000, ts: 1000 };
+    const a = item({ ...base, name: "a.jpg", width: 40, height: 30 });
+    const open = item({ ...base, name: "b.jpg" }); // matches both a and c
+    const c = item({ ...base, name: "c.jpg", width: 80, height: 60 });
+    const g = exactGroups([a, open, c]);
+    expect(g).toHaveLength(1);
+    expect(g[0].ids).toHaveLength(2);
+    expect(g[0].ids).toContain(open.id);
+  });
+});
+
+describe("exact duplicates by the original's SHA-256", () => {
+  const h = (c: string) => c.repeat(64);
+  it("groups equal hashes whatever the names, times and sizes say", () => {
+    const a = item({ name: "IMG_1.jpg", size: 5000, ts: 1, sha256: h("a") });
+    const b = item({ name: "from-phone.jpg", size: 5000, ts: 99, sha256: h("a") }); // the date read differently
+    const g = exactGroups([a, b, item({ sha256: h("b") })]);
+    expect(g).toHaveLength(1);
+    expect(new Set(g[0].ids)).toEqual(new Set([a.id, b.id]));
+  });
+  it("never groups different hashes, even with the same name, size and time", () => {
+    const base = { name: "x.jpg", size: 5000, ts: 1000 };
+    expect(exactGroups([item({ ...base, sha256: h("a") }), item({ ...base, sha256: h("b") })])).toEqual([]);
+  });
+  it("joins an older item without a hash to the matching hashed copies", () => {
+    const base = { size: 5000, ts: 1000 };
+    const x = item({ ...base, name: "a.jpg", sha256: h("c") }), y = item({ ...base, name: "b.jpg", sha256: h("c") });
+    const old = item({ ...base, name: "old.jpg" });
+    const g = exactGroups([old, x, y]);
+    expect(g).toHaveLength(1);
+    expect(new Set(g[0].ids)).toEqual(new Set([x.id, y.id, old.id]));
+    // one hashed item and one old one: a pair
+    expect(exactGroups([item({ ...base, name: "p.jpg", sha256: h("d") }), item({ ...base, name: "q.jpg" })])).toHaveLength(1);
+  });
+  it("puts an older item with only one of two different hashed files", () => {
+    const base = { size: 5000, ts: 1000 };
+    const g = exactGroups([item({ ...base, name: "a.jpg", sha256: h("1") }), item({ ...base, name: "b.jpg", sha256: h("2") }), item({ ...base, name: "c.jpg" })]);
+    expect(g).toHaveLength(1);
+    expect(g[0].ids).toHaveLength(2);
+  });
+  it("ignores a hash that isn't 64 lowercase hex characters", () => {
+    const base = { name: "x.jpg", size: 5000, ts: 1000 };
+    // taken as no hash: the name, size and time decide
+    expect(exactGroups([item({ ...base, sha256: "nope" }), item({ ...base, sha256: h("A") })])).toHaveLength(1);
+    expect(exactGroups([item({ ...base, sha256: "nope" }), item({ ...base, ts: 5, sha256: "nope" })])).toEqual([]);
   });
   it("leaves out empty files and items without a time", () => {
     expect(exactGroups([item({ name: "e", size: 0, ts: 1 }), item({ name: "e", size: 0, ts: 1 })])).toEqual([]);
@@ -173,6 +232,17 @@ describe("similar photos", () => {
     const f = await findGroups([a, b, item(), item()], () => true, null);
     expect(f.exact).toHaveLength(1);
     expect(f.similar).toEqual([]);
+    expect(f.checked).toBe(4);
+    expect(similarCheck(f, false)).toBe("off");
+  });
+
+  it("says how far the look for similar photos went", () => {
+    expect(similarCheck({ images: 0, indexed: 0 }, false)).toBe("nothing");
+    expect(similarCheck({ images: 0, indexed: 0 }, true)).toBe("nothing");
+    expect(similarCheck({ images: 10, indexed: 10 }, false)).toBe("off");
+    expect(similarCheck({ images: 10, indexed: 4 }, true)).toBe("partial");
+    expect(similarCheck({ images: 10, indexed: 0 }, true)).toBe("partial");
+    expect(similarCheck({ images: 10, indexed: 10 }, true)).toBe("complete");
   });
 
   it("asks for scores in batches", async () => {

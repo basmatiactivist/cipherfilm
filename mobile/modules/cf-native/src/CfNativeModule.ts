@@ -33,6 +33,10 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   randombytes_buf(n: number): Bytes;
   memcmp(a: Bytes, b: Bytes): boolean;
   crypto_hash_sha256(m: Bytes): Bytes;
+  /** SHA-256 part by part: the state goes in and comes back (an upload's original, src/upload.ts) */
+  sha256_init(): Bytes;
+  sha256_update(state: Bytes, m: Bytes): Bytes;
+  sha256_final(state: Bytes): Bytes;
   crypto_generichash(outLen: number, m: Bytes, key: Bytes | null): Bytes;
   crypto_pwhash(outLen: number, password: Bytes, salt: Bytes, ops: number, mem: number, alg: number): Bytes;
   crypto_kdf_derive_from_key(outLen: number, id: number, ctx: string, key: Bytes): Bytes;

@@ -9,13 +9,13 @@ import { Loading } from "../loader";
 import { fmtGB } from "../components";
 import { hasIndex, refreshIndex, searchFamily } from "../people/people";
 import { hasVector, scorePairs } from "../search/content";
-import { bytesOf, chosenWith, findGroups, type Candidate, type Found, type Group } from "./duplicates";
+import { bytesOf, chosenWith, findGroups, similarCheck, type Candidate, type Found, type Group } from "./duplicates";
 
 /** What the grouping needs of an item. Broken items (and the trash, which isn't in the list) are left out. */
 export const candidateOf = (it: Item): Candidate | null =>
   it.broken || !it.meta ? null : {
     id: it.id, ts: it.meta.capture_ts, name: it.meta.name, size: it.meta.size || it.size, width: it.meta.width, height: it.meta.height,
-    gps: !!it.meta.gps, uploaded: it.created_at, image: it.kind === "image",
+    gps: !!it.meta.gps, uploaded: it.created_at, image: it.kind === "image", ...(it.meta.sha256 ? { sha256: it.meta.sha256 } : {}),
   };
 
 const SHOWN = 40; // groups at first; more on request
@@ -57,21 +57,25 @@ export function Duplicates(p: { items: Item[] | null; demo: boolean; retention: 
 
   if (error) return <p class="error" role="alert">{error}</p>;
   if (!found) return <Loading label="Looking for duplicates and similar photos…" />;
-  const missing = found.images - found.indexed;
+  const similar = similarCheck(found, hasIndex());
   return (
     <div class="dupes">
       <section class="panel">
-        <h2><Icon name="copy" />{groups.length ? `${groups.length} ${groups.length === 1 ? "group" : "groups"}` : "No duplicates found"}</h2>
-        <p class="small">
-          {groups.length
-            ? `${live.length} chosen to move to the trash, freeing ${fmtGB(bytes)}. The suggested one to keep in each group is marked; click a photo to change the choice.`
-            : "Nothing in your library is there twice, and no photos look nearly the same."}
-        </p>
-        {!hasIndex() ? (
-          <p class="hint">Exact duplicates only. To also find similar photos (bursts, near-identical shots), turn on search in the Android or Mac app.</p>
-        ) : missing > 0 ? (
-          <p class="hint">{found.indexed} of {found.images} photos are indexed. Index more photos to find more.</p>
-        ) : null}
+        <h2><Icon name="copy" />{groups.length ? `${groups.length} ${groups.length === 1 ? "group" : "groups"}` : similar === "complete" || similar === "nothing" ? "No duplicates found" : "No exact copies found"}</h2>
+        {groups.length > 0 && (
+          <p class="small">{`${live.length} chosen to move to the trash, freeing ${fmtGB(bytes)}. The suggested one to keep in each group is marked; click a photo to change the choice.`}</p>
+        )}
+        {/* what was looked at, so "nothing found" is never read as more than it is */}
+        <ul class="dupchecks small">
+          <li>{found.checked === 0 ? "There is nothing in your library to check yet." : found.checked === 1 ? "Checked 1 photo or video for exact copies." : `Checked all ${found.checked} photos and videos for exact copies.`}</li>
+          {similar === "off" ? (
+            <li>Similar photos (bursts, near-identical shots) were not checked: that needs search. Turn it on in the Android or Mac app, under Search and people; this browser then uses what the app found.</li>
+          ) : similar === "partial" ? (
+            <li>{found.indexed} of {found.images} photos are indexed, so only those were checked for similar photos. The Android or Mac app indexes the rest while search is on there.</li>
+          ) : similar === "complete" ? (
+            <li>{found.images === 1 ? "Checked 1 photo for similar ones." : `Checked all ${found.images} photos for similar ones.`}</li>
+          ) : null}
+        </ul>
         {groups.length > 0 && !p.demo && (
           <div class="row">
             <button class="btn danger" disabled={!live.length || busy} onClick={move}>

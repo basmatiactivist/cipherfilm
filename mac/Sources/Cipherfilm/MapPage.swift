@@ -182,15 +182,16 @@ final class MapController: NSObject, WKNavigationDelegate, WKUIDelegate {
 
   /** A small JPEG of the item's thumbnail for a marker, from the same decrypted thumbnails the grid shows. */
   private func thumb(_ id: String) async -> String? {
-    if let hit = thumbs[id] { return hit }
-    guard let model, let it = model.item(id), let v = model.vault else { return nil }
-    var img = model.images.cachedThumb(id)
+    guard let model, let it = model.item(id) else { return nil }
+    if let hit = thumbs[it.pictureKey] { return hit } // a new one after an edit elsewhere
+    guard let v = model.vault else { return nil }
+    var img = model.images.cachedThumb(it)
     if img == nil { img = await model.images.thumb(it, v) }
     guard let img, let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
     let url = await Task.detached(priority: .userInitiated) { MapController.dataURL(cg) }.value
     if let url {
       if thumbs.count > 600 { thumbs.removeAll() }
-      thumbs[id] = url
+      thumbs[it.pictureKey] = url
     }
     return url
   }

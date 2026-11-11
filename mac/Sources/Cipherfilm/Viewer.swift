@@ -20,7 +20,7 @@ struct Viewer: View {
         topBar(item)
         ZStack {
           if let item {
-            if item.kind == .video { VideoView(item: item).id(item.id) } else { PhotoView(item: item).id(item.id) }
+            if item.kind == .video { VideoView(item: item).id(item.id) } else { PhotoView(item: item).id(item.pictureKey) }
           }
           HStack {
             NavArrow(icon: "chevron.left", enabled: state.index > 0) { move(-1) }
@@ -207,8 +207,8 @@ struct StripThumb: View {
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(item.date.formatted(date: .long, time: .shortened))
     .accessibilityAddTraits(current ? [.isButton, .isSelected] : .isButton)
-    .task(id: item.id) {
-      if let hit = model.images.cachedThumb(item.id) { image = hit; return }
+    .task(id: item.pictureKey) {
+      if let hit = model.images.cachedThumb(item) { image = hit; return }
       if let v = model.vault { image = await model.images.thumb(item, v) }
     }
   }
@@ -243,7 +243,7 @@ struct PhotoView: View {
     .clipped()
     .task {
       guard let v = model.vault else { return }
-      if let t = model.images.cachedThumb(item.id) { image = t }
+      if let t = model.images.cachedThumb(item) { image = t }
       if let p = await model.images.preview(item, v) { image = p }
       if let o = await model.images.original(item, v) { image = o }
     }
@@ -348,6 +348,7 @@ struct InfoPanel: View {
         if let m = [item.meta?.make, item.meta?.model].compactMap({ $0 }).joined(separator: " ").nilIfEmpty { row("Camera", cameraName(m)) }
         if let g = item.meta?.gps { place(g) }
         row("Type", item.meta?.mime ?? item.kind.rawValue)
+        if item.isEditedPicture { row("Edited", "Turned or cropped in another app. The original is kept as it was: Save Original and the export folder save it as taken.") }
         let albums = model.albums.filter { $0.itemIds.contains(item.id) }
         if !albums.isEmpty { row("Albums", albums.map(\.name).joined(separator: ", ")) }
         Label("Encrypted on your devices", systemImage: "lock.fill").font(Typo.caption).foregroundStyle(Ink.teal).padding(.top, 4)

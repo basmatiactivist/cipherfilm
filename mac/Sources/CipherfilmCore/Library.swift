@@ -17,6 +17,8 @@ public struct ItemMeta: Codable, Sendable, Hashable {
   public var make: String?
   public var model: String?
   public var gps: GPS?
+  /** turned and cropped in another app (PictureEdit.swift); nil when it isn't */
+  public var edit: PictureEdit?
 
   public init(name: String, mime: String, size: Int64, lastModified: Double, capture_ts: Double, width: Double? = nil, height: Double? = nil,
               duration: Double? = nil, make: String? = nil, model: String? = nil, gps: GPS? = nil) {
@@ -192,6 +194,7 @@ public final class Vault: @unchecked Sendable {
         if let d = meta.duration, !(d.isFinite && d >= 0 && d < 1e7) { meta.duration = nil }
         meta.capture_ts = Self.timestamp(meta.capture_ts) ?? Self.timestamp(x.created_at * 1000) ?? 0
         meta.lastModified = Self.timestamp(meta.lastModified)
+        if meta.edit?.isIdentity == true { meta.edit = nil }
         // the kind as the authenticated metadata says, by the rule the upload used: the server's plain `kind` could
         // otherwise route this item's own bytes to the video player or the image decoder at will
         it.kind = Media.kind(name: meta.name, mime: meta.mime)

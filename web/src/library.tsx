@@ -34,10 +34,11 @@ const PersonHeader = lazy(() => import("./people/ui").then((m) => m.PersonHeader
 const MapPage = lazy(() => import("./map/ui").then((m) => m.MapPage));
 const Account = lazy(() => import("./screens").then((m) => m.Account));
 const Admin = lazy(() => import("./screens").then((m) => m.Admin));
+const Duplicates = lazy(() => import("./cleanup/ui").then((m) => m.Duplicates));
 
 interface Job { key: number; owner: string; name: string; file: File; done: number; total: number; state: "queued" | "working" | "done" | "error"; error?: string; retryable?: boolean; stop: { cancelled: boolean } }
 type View = { n: "timeline" } | { n: "favorites" } | { n: "albums" } | { n: "album"; id: string } | { n: "people" } | { n: "person"; key: string; cover?: string } | { n: "map" } | { n: "trash" };
-type Page = View | { n: "account"; open?: string } | { n: "admin" };
+type Page = View | { n: "account"; open?: string } | { n: "admin" } | { n: "duplicates" };
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : "Something went wrong.");
 const isMedia = (f: File) => f.type.startsWith("image/") || f.type.startsWith("video/") || /\.(heic|heif)$/i.test(f.name);
@@ -322,7 +323,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   useEffect(() => { if (!uploading) setUnfinished(unfinishedUploads().filter((n) => !active.some((j) => j.name === n))); }, [uploading]);
   const empty = items && items.length === 0 && active.length === 0;
   const libraryView = page.n === "timeline" || page.n === "favorites" || page.n === "albums" || page.n === "album" || page.n === "people" || page.n === "person" || page.n === "map" || page.n === "trash";
-  const title = page.n === "timeline" ? "Timeline" : page.n === "favorites" ? "Favorites" : page.n === "albums" ? "Albums" : page.n === "trash" ? "Trash" : page.n === "people" ? "People" : page.n === "map" ? "Map" : page.n === "person" ? person?.person?.name || "Not named yet" : page.n === "account" ? "Account" : page.n === "admin" ? { users: "Users", defaults: "Defaults", server: "Server", activity: "Activity" }[adminSection] : album?.name ?? "Album";
+  const title = page.n === "timeline" ? "Timeline" : page.n === "favorites" ? "Favorites" : page.n === "albums" ? "Albums" : page.n === "trash" ? "Trash" : page.n === "people" ? "People" : page.n === "map" ? "Map" : page.n === "person" ? person?.person?.name || "Not named yet" : page.n === "account" ? "Account" : page.n === "duplicates" ? "Duplicates and similar photos" : page.n === "admin" ? { users: "Users", defaults: "Defaults", server: "Server", activity: "Activity" }[adminSection] : album?.name ?? "Album";
   const pct = usage && !usage.unlimited && usage.quota_bytes ? Math.min(100, Math.round((usage.used_bytes / usage.quota_bytes) * 100)) : 0;
 
   // the library is filtered 150 ms after typing stops, not on every key: matching a big library takes a moment.
@@ -560,6 +561,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
               <div class="menu" role="menu" aria-label="Account" onKeyDown={menuKeys}>
                 <div class="menuhead"><span class="avatar" aria-hidden="true">{props.email.slice(0, 1).toUpperCase()}</span><span class="email">{props.email}</span></div>
                 <button class="menuitem" role="menuitem" onClick={() => { setMenuOpen(false); go({ n: "account" }); }}><Icon name="user" />Account</button>
+                <button class="menuitem" role="menuitem" onClick={() => { setMenuOpen(false); go({ n: "duplicates" }); }}><Icon name="copy" />Duplicates and similar</button>
                 {props.admin && <button class="menuitem" role="menuitem" onClick={() => { setMenuOpen(false); go({ n: "admin" }); }}><Icon name="shield" />Admin</button>}
                 <button class="menuitem" role="menuitem" onClick={() => { setMenuOpen(false); if (uploading) setError("Files are still uploading. Wait or cancel them, then lock."); else props.onLock(); }}><Icon name="lock" />Lock</button>
                 <button class="menuitem kbditem" role="menuitem" onClick={() => { setMenuOpen(false); setHelp(true); }}><Icon name="keyboard" />Keyboard shortcuts</button>
@@ -652,6 +654,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
 
           {page.n === "account" && <Account open={page.open} />}
           {page.n === "admin" && <Admin section={adminSection} />}
+          {page.n === "duplicates" && <Duplicates items={items} demo={demo} retention={retention} onTrash={moveToTrash} />}
 
           {view.n === "timeline" && (
             <>

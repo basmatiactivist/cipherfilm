@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 describe("the native module", () => {
   const dir = path.resolve(import.meta.dirname, "../../modules/cf-native/android/src/main/java/app/cipherfilm/cfnative");
   const mod = readFileSync(path.join(dir, "CfNativeModule.kt"), "utf8");
-  it.each(["downloadModel", "checkModel", "visionOpen", "visionAnalyze", "visionText", "faceCrop", "indexPut", "indexSave", "indexLoad", "indexSearch", "indexSimilar", "indexCluster"])(
+  it.each(["downloadModel", "checkModel", "visionOpen", "visionAnalyze", "visionText", "faceCrop", "indexPut", "indexSave", "indexLoad", "indexSearch", "indexSimilar", "indexCluster", "indexHasAll", "indexScores"])(
     "%s runs on a thread of its own", (name) => {
       const at = mod.indexOf(`AsyncFunction("${name}")`);
       expect(at).toBeGreaterThan(0);

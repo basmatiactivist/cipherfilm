@@ -540,6 +540,16 @@ export async function textSearch(q: string, limit = 100_000): Promise<Hit[]> {
   return N.indexSearch(vec, limit, -1);
 }
 
+/** Duplicates and similar photos (app/duplicates.tsx): which items have a vector of the model in use, and the cosine
+ *  of pairs (NaN where one has none). Nothing while search isn't ready on this phone. */
+export const indexedAmong = async (ids: string[]): Promise<Set<string>> => {
+  if (!ready) return new Set();
+  const has = await N.indexHasAll(ids);
+  return new Set(ids.filter((_, k) => has[k]));
+};
+export const pairScores = async (a: string[], b: string[]): Promise<number[]> =>
+  (ready ? (await N.indexScores(a, b)).map((s) => (s < -1.5 ? NaN : s)) : a.map(() => NaN));
+
 export const similarTo = (id: string) => (ready ? N.indexSimilar(id, 60, 0.6) : Promise.resolve([]));
 
 /** Turns search off on this phone; with clear also the index on the server (entries of every device). */

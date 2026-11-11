@@ -231,4 +231,26 @@ Account › Free up space lists photos and videos on the phone whose name and si
 (not in the trash). Optionally only older ones and only some folders. They go to Android's own trash
 (`MediaStore.createTrashRequest`, restorable for 30 days) after the system's confirmation dialog.
 
+## Duplicates and similar photos
+
+Web (account menu) and Android (Account) list photos that are there more than once or look nearly the same, so the
+extra ones can go to the trash (restorable for 30 days). Everything is worked out on the device from what it has
+already decrypted; nothing new is stored or sent, apart from the usual trash request for what the person chose.
+
+- **Exact duplicates:** items with the same file name (ignoring case), size and capture time. The metadata holds no
+  content hash, so this is the strongest signal there is. Videos and other files count too.
+- **Similar photos:** photos whose image vectors (the search index above, of the model the account searches with)
+  have a cosine of at least 0.92 and that were taken at most 5 minutes apart: bursts and near-identical series. Every
+  photo in a group is that close to every other one (complete linkage), so a slow series is never chained into one
+  big group. Photos are sorted by capture time and each is compared only with the next 24 within the window, so a
+  library of 50,000 needs well under a million comparisons. Only one copy of an exact duplicate takes part. Photos
+  without an entry yet are left out ("Index more photos to find more"); with search off, only exact duplicates.
+- **Which to keep:** the highest resolution, then the largest file, then one with a location, then the earliest
+  upload. All others in a group are chosen for the trash; the person can change that. Items that couldn't be verified
+  and the trash are never included. The public demo shows the groups but can't move anything.
+
+The grouping is one module shared by both apps (`web/src/cleanup/duplicates.ts`, `@cleanup` on Android). The web app
+scores the pairs in its search worker; on Android the native index scores them (`indexScores`), so the vectors never
+leave native memory. The Mac app doesn't have it yet.
+
 Hugging Face is a trademark of Hugging Face, Inc. Cipherfilm is not affiliated with or endorsed by Hugging Face.

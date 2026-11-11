@@ -187,6 +187,9 @@ class CfNativeModule : Module() {
     AsyncFunction("indexSearch") Coroutine { query: ByteArray, limit: Int, minScore: Double -> withContext(Lanes.index) { SearchIndex.search(query, limit, minScore) } }
     AsyncFunction("indexSimilar") Coroutine { item: String, limit: Int, minScore: Double -> withContext(Lanes.index) { SearchIndex.similar(item, limit, minScore) } }
     Function("indexFacesOf") { item: String -> SearchIndex.facesOf(item) }
+    // duplicates and similar photos: which items have a vector, and the cosine of pairs (src/app/duplicates.tsx)
+    AsyncFunction("indexHasAll") Coroutine { items: List<String> -> withContext(Lanes.index) { SearchIndex.hasAll(items) } }
+    AsyncFunction("indexScores") Coroutine { a: List<String>, b: List<String> -> withContext(Lanes.index) { SearchIndex.scores(a, b) } }
     AsyncFunction("indexCluster") Coroutine { threshold: Double, anchors: Map<String, List<String>>, rejects: Map<String, List<String>>, minFaces: Int ->
       withContext(Lanes.index) { SearchIndex.cluster(threshold, anchors, rejects, minFaces) }
     }

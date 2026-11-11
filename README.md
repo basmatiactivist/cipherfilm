@@ -78,6 +78,8 @@ and visitors are signed out every hour. To keep your own photos, [run your own s
 - **On this day.** Photos from around today's date in earlier years at the top of your library, picked on the device
   from the encrypted capture dates.
 - **Free up space.** Remove photos from the phone once they are in Cipherfilm.
+- **Duplicates and similar photos.** Find photos uploaded twice and bursts of nearly the same shot, worked out on
+  your device, and move the extras to the trash (web and Android).
 - **Locks itself.** Fingerprint unlock, automatic lock after a time you choose or when the screen turns off, and
   shake to lock and close.
 - **Two-step sign-in and your devices.** Optional codes from an authenticator app at every new sign-in, with one-time

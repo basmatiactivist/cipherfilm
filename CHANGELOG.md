@@ -30,6 +30,8 @@ version into the GitHub release notes, so a release cannot be published without 
   sign-in.
 - "On this day": above Photos, the web, Android and Mac apps show a card for each earlier year with photos from
   around today's date. Worked out on the device; the server learns nothing. Turn it off in Account (Settings on Mac).
+- Web and Android: "Duplicates and similar photos" finds photos uploaded more than once and bursts of nearly the same
+  shot, on your device, suggests which to keep and moves the rest to the trash (restorable for 30 days).
 
 ## [2.6.1] - 2026-11-10
 

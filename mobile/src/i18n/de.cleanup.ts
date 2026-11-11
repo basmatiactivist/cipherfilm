@@ -1,0 +1,22 @@
+// German for duplicates and similar photos (app/duplicates.tsx; see ../i18n.ts).
+export const deCleanup: Record<string, string> = {
+  "Duplicates and similar photos": "Doppelte und ähnliche Fotos",
+  "Find photos that are there twice or look nearly the same": "Fotos finden, die doppelt da sind oder fast gleich aussehen",
+  "Looking for duplicates and similar photos…": "Suche nach doppelten und ähnlichen Fotos …",
+  "No duplicates found": "Keine Doppelten gefunden",
+  "Nothing in your library is there twice, and no photos look nearly the same.": "Nichts in Ihrer Bibliothek ist doppelt da, und keine Fotos sehen fast gleich aus.",
+  "{n} chosen to move to the trash": "{n} ausgewählt für den Papierkorb",
+  "Exact duplicates only. Turn on search to also find similar photos (bursts, near-identical shots).": "Nur exakte Doppelte. Schalten Sie die Suche ein, um auch ähnliche Fotos zu finden (Serienbilder, fast gleiche Aufnahmen).",
+  "{indexed} of {total} photos are indexed. Index more photos to find more.": "{indexed} von {total} Fotos sind indexiert. Indexieren Sie mehr Fotos, um mehr zu finden.",
+  "Move {n} to trash": "{n} in den Papierkorb",
+  "Move {n} to the trash?": "{n} in den Papierkorb verschieben?",
+  "They can be restored from the trash for 30 days. Until then they count toward your storage.": "Sie lassen sich 30 Tage lang aus dem Papierkorb wiederherstellen. Bis dahin zählen sie zu Ihrem Speicherplatz.",
+  "Move to trash": "In den Papierkorb",
+  "The suggested one to keep in each group is marked. Tap a photo to change the choice.": "In jeder Gruppe ist das Foto zum Behalten markiert. Tippen Sie auf ein Foto, um die Auswahl zu ändern.",
+  "Same file, uploaded more than once": "Dieselbe Datei, mehrfach hochgeladen",
+  "Similar, taken within minutes": "Ähnlich, innerhalb von Minuten aufgenommen",
+  "To the trash": "In den Papierkorb",
+  "Keep": "Behalten",
+  "location": "Ort",
+  "All of this group is chosen: none would be kept.": "Die ganze Gruppe ist ausgewählt: keines würde behalten.",
+};

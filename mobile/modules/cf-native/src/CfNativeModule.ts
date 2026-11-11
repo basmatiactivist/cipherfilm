@@ -107,6 +107,10 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   indexSearch(query: Bytes, limit: number, minScore: number): Promise<Hit[]>;
   indexSimilar(item: string, limit: number, minScore: number): Promise<Hit[]>;
   indexFacesOf(item: string): { key: string; box: number[]; score: number }[];
+  /** for each item, whether it has an image vector */
+  indexHasAll(items: string[]): Promise<boolean[]>;
+  /** the cosine of the image vectors of a[k] and b[k]; -2 where either has none */
+  indexScores(a: string[], b: string[]): Promise<number[]>;
   indexCluster(threshold: number, anchors: Record<string, string[]>, rejects: Record<string, string[]>, minFaces: number): Promise<FaceGroup[]>;
   phoneMedia(): Promise<PhoneMedia[]>;
 

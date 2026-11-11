@@ -27,7 +27,7 @@ onWipe(() => {
 
 const themes = { light: paperTheme(light, false), dark: paperTheme(dark, true) };
 // screens that show the library: none stays on screen while it is locked
-const PRIVATE = new Set(["library", "albums", "album", "photo", "account", "trash", "backup", "search", "people", "person", "favorites", "free-space", "search-settings", "map", "two-step", "devices"]);
+const PRIVATE = new Set(["library", "albums", "album", "photo", "account", "trash", "backup", "search", "people", "person", "favorites", "free-space", "search-settings", "map", "two-step", "devices", "duplicates"]);
 
 export default function Root() {
   const theme = useColorScheme() === "dark" ? themes.dark : themes.light;

@@ -5,16 +5,20 @@ import * as ort from "onnxruntime-web/wasm";
 import { allFinite, unhalf } from "../people/faces";
 import { Tokenizer } from "./tokenizer";
 import { embed } from "./embed";
+import { scoreWith } from "../cleanup/duplicates";
 import { Family, Hit, MODEL_CACHE, ModelFile, TEXT_MODELS, TOKENIZER, familyOf, normalize, rank } from "./rank";
 
 export type Req =
   | { t: "put"; entries: { item: string; m?: string; clip?: Uint8Array }[] }
   | { t: "remove"; items: string[] }
-  | { t: "search"; id: number; q: string; family: Family };
+  | { t: "search"; id: number; q: string; family: Family }
+  /** cosine of the vectors of a[k] and b[k] (NaN where one has none): duplicates and similar photos (cleanup/) */
+  | { t: "score"; id: number; family: Family; a: string[]; b: string[] };
 
 export type Res =
   | { id: number; t: "progress"; done: number; total: number }
   | { id: number; t: "done"; hits: Hit[] }
+  | { id: number; t: "scores"; scores: Float32Array }
   | { id: number; t: "error"; error: string };
 
 ort.env.wasm.numThreads = 1; // threads need cross-origin isolation, which the app doesn't have; one is fast enough for text
@@ -111,7 +115,11 @@ self.onmessage = async (e: MessageEvent<Req>) => {
       if (f && v && allFinite(v)) vectors[f].set(x.item, normalize(v));
     }
   } else if (r?.t === "remove" && Array.isArray(r.items)) r.items.forEach(remove);
-  else if (r?.t === "search" && typeof r.q === "string" && Object.hasOwn(TEXT_MODELS, r.family)) {
+  else if (r?.t === "score" && Object.hasOwn(TEXT_MODELS, r.family) && Array.isArray(r.a) && Array.isArray(r.b) && r.a.length === r.b.length) {
+    const v = vectors[r.family];
+    const scores = scoreWith((id) => v.get(id))(r.a, r.b);
+    self.postMessage({ id: r.id, t: "scores", scores } satisfies Res, { transfer: [scores.buffer] });
+  } else if (r?.t === "search" && typeof r.q === "string" && Object.hasOwn(TEXT_MODELS, r.family)) {
     const post = (m: Res) => self.postMessage(m);
     try {
       const s = await session(r.family, (done, total) => post({ id: r.id, t: "progress", done, total }));

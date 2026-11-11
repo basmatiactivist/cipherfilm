@@ -6,7 +6,7 @@ import type { Req, Res } from "./content.worker";
 
 let worker: Worker | null = null;
 let nextId = 1;
-const waiting = new Map<number, { ok: (h: Hit[]) => void; fail: (e: Error) => void; progress?: (done: number, total: number) => void }>();
+const waiting = new Map<number, { ok: (h: any) => void; fail: (e: Error) => void; progress?: (done: number, total: number) => void }>();
 /** item id → which model made its vector, to count what can be searched with which model */
 const made = new Map<string, Family>();
 
@@ -19,7 +19,7 @@ function send(r: Req) {
       if (!w) return;
       if (e.data.t === "progress") { w.progress?.(e.data.done, e.data.total); return; }
       waiting.delete(e.data.id);
-      e.data.t === "done" ? w.ok(e.data.hits) : w.fail(new Error(e.data.error));
+      e.data.t === "done" ? w.ok(e.data.hits) : e.data.t === "scores" ? w.ok(e.data.scores) : w.fail(new Error(e.data.error));
     };
     worker.onerror = () => { for (const w of waiting.values()) w.fail(new Error("Search stopped working. Reload the page.")); waiting.clear(); };
   }
@@ -38,6 +38,16 @@ export function putVectors(entries: { item: string; m?: string; clip?: Uint8Arra
 
 /** How many photos have a vector from this model (the ones search by content can find). */
 export const vectorCount = (f: Family) => { let n = 0; for (const v of made.values()) if (v === f) n++; return n; };
+
+/** Whether this item has a vector from this model (duplicates and similar photos compare only those). */
+export const hasVector = (id: string, f: Family) => made.get(id) === f;
+
+/** The cosine of the vectors of a[k] and b[k], NaN where one has none (cleanup/duplicates.ts). */
+export function scorePairs(family: Family, a: string[], b: string[]): Promise<Float32Array> {
+  if (typeof Worker === "undefined") return Promise.resolve(new Float32Array(a.length).fill(NaN));
+  const id = nextId++;
+  return new Promise((ok, fail) => { waiting.set(id, { ok, fail }); send({ t: "score", id, family, a, b }); });
+}
 
 /** Keeps only the active model's text file in the browser's cache: after a switch (or an admin withdrawing explicit
  *  search) the other one, 64 or 254 MB, doesn't stay behind. */

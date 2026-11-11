@@ -1,5 +1,6 @@
-// The notices of notices.ts at the top of the library: a new sign-in elsewhere, or two-step sign-in turned off by an
-// administrator. Each shows until it is dismissed (on any device).
+// The notices of notices.ts at the top of the library: a new sign-in elsewhere, two-step sign-in turned off by an
+// administrator, or the password used for a sign-in that wasn't finished (nothing to open here: the password is
+// changed in the browser). Each shows until it is dismissed (on any device).
 import { useEffect } from "react";
 import { StyleSheet, View } from "react-native";
 import { router } from "expo-router";
@@ -23,7 +24,7 @@ export function NoticeBanner() {
           <View style={st.row}>
             {n.kind === "sign_in"
               ? <Button compact onPress={() => router.push("/devices")}>{t("Review devices")}</Button>
-              : <Button compact onPress={() => router.push("/two-step")}>{t("Two-step sign-in")}</Button>}
+              : n.kind === "2fa_reset" ? <Button compact onPress={() => router.push("/two-step")}>{t("Two-step sign-in")}</Button> : null}
             <Button compact onPress={() => { dismissNotice(n.id); }}>{t("Dismiss")}</Button>
           </View>
         </View>

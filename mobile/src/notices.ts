@@ -1,11 +1,12 @@
 // Notices: what the server asks every other device of the account to show once (server/notices.go): a new sign-in,
-// or an administrator turning two-step sign-in off. This part has no React Native: it checks what arrived, keeps only
+// an administrator turning two-step sign-in off, or the password used for a sign-in that wasn't finished (no right
+// code followed). This part has no React Native: it checks what arrived, keeps only
 // kinds it knows, and words them. The store (noticesStore.ts) fetches and dismisses.
 import { locale, t } from "./i18n";
 
-export type NoticeKind = "sign_in" | "2fa_reset";
+export type NoticeKind = "sign_in" | "2fa_reset" | "password_used";
 export interface Notice { id: number; kind: NoticeKind; device: string; at: number }
-const KINDS = new Set<string>(["sign_in", "2fa_reset"]);
+const KINDS = new Set<string>(["sign_in", "2fa_reset", "password_used"]);
 
 /** The notices to show from a server answer: well formed, of a known kind, not dismissed here, newest first. */
 export function visibleNotices(answer: unknown, dismissed: ReadonlySet<number>): Notice[] {
@@ -26,6 +27,8 @@ export const noticeTime = (at: number): string =>
 
 export function noticeText(n: Notice): string {
   const time = noticeTime(n.at);
+  // the password is changed in the browser (Account says so)
+  if (n.kind === "password_used") return t("Your password was used to start a sign-in that wasn't finished ({time}). Not you? Change your password in Cipherfilm in the browser.", { time });
   if (n.kind === "2fa_reset") return t("An administrator turned off two-step sign-in for your account ({time}). Turn it on again under Account.", { time });
   return t("New sign-in: {device}, {time}. Not you? Review devices.", { device: n.device || t("an unknown device"), time });
 }

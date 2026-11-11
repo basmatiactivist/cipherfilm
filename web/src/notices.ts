@@ -1,11 +1,12 @@
 // Notices: what the other devices of an account show once (server/notices.go). A new sign-in ("Not you? Review
-// devices") and two-step sign-in turned off by an administrator. They arrive with the live updates ("notices"),
+// devices"), two-step sign-in turned off by an administrator, and the password used for a sign-in that wasn't finished
+// (no right code followed: "Not you? Change your password"). They arrive with the live updates ("notices"),
 // dismissing one dismisses it on every device, and a dismissed one never comes back.
 import { api } from "./api";
 
-export interface Notice { id: number; kind: "sign_in" | "2fa_reset"; device: string; at: number }
+export interface Notice { id: number; kind: "sign_in" | "2fa_reset" | "password_used"; device: string; at: number }
 
-const KINDS = new Set(["sign_in", "2fa_reset"]);
+const KINDS = new Set(["sign_in", "2fa_reset", "password_used"]);
 
 /** The notices to show from the server's answer: known kinds only (a newer server may add some), not the ones this
  *  tab already dismissed, newest first. */
@@ -25,8 +26,16 @@ export const when = (at: number): string =>
 
 /** The banner's sentence (the action, "Review devices", is a separate link). */
 export function noticeText(n: Notice): string {
+  if (n.kind === "password_used") return `Your password was used to start a sign-in that wasn't finished (${when(n.at)}). Not you?`;
   if (n.kind === "2fa_reset") return `An administrator turned off two-step sign-in for your account (${when(n.at)}). Turn it on again under Account.`;
   return `New sign-in: ${n.device || "an unknown device"}, ${when(n.at)}. Not you?`;
+}
+
+/** Where the banner's link goes: the part of Account it opens, and what it says. */
+export function noticeAction(n: Notice): { open: "devices" | "2fa" | "password"; label: string } {
+  if (n.kind === "sign_in") return { open: "devices", label: "Review devices" };
+  if (n.kind === "password_used") return { open: "password", label: "Change your password" };
+  return { open: "2fa", label: "Open Account" };
 }
 
 export const dismissNotice = (id: number) => api("POST", `/api/me/notices/${id}/dismiss`);

@@ -72,6 +72,11 @@ import Testing
     #expect(shown[0].text(time: "Nov 11") == "An administrator turned off two-step sign-in for your account (Nov 11). Turn it on again in Settings.")
     #expect(!shown[0].reviewDevices)
     #expect(Notice(id: 4, kind: "sign_in", device: "", at: 0).text(time: "t").contains("an unknown device"))
+    #expect(shown[0].opensSettings && shown[1].opensSettings)
+    let used = Notice.shown([Notice(id: 5, kind: "password_used", device: "", at: 50)])
+    #expect(used.map(\.id) == [5])
+    #expect(used[0].text(time: "Nov 11") == "Your password was used to start a sign-in that wasn't finished (Nov 11). Not you? Change your password in Cipherfilm in the browser.")
+    #expect(!used[0].reviewDevices && !used[0].opensSettings)
   }
 
   @Test func liveKnowsNotices() {

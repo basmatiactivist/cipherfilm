@@ -156,7 +156,7 @@ export function Account({ open }: { open?: string }) {
       </section>
       {/* the public demo login: one stranger must not lock out the next (the server refuses these anyway) */}
       {!mem.me!.demo && <RecoveryKeyPanel onNew={setKit} />}
-      {!mem.me!.demo && <ChangePassword />}
+      {!mem.me!.demo && <ChangePassword open={open === "password"} />}
       {!mem.me!.demo && <TwoFactorPanel open={open === "2fa"} />}
       {!mem.me!.demo && <DevicesPanel open={open === "devices"} />}
       <SearchPanel />
@@ -194,14 +194,14 @@ function MemoriesPanel() {
   );
 }
 
-function ChangePassword() {
+function ChangePassword({ open }: { open?: boolean }) {
   const [cur, setCur] = useState("");
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
   const [done, setDone] = useState(false);
   const { busy, error, setError, run } = useAction();
   return (
-    <Acc icon="lock" title="Change password" sub="Signs out your other devices">
+    <Acc icon="lock" title="Change password" sub="Signs out your other devices" open={open}>
       <p>Your photos stay as they are. Your other devices are signed out.</p>
       <form onSubmit={(e) => {
         e.preventDefault();

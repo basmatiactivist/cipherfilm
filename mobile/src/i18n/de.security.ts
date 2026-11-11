@@ -68,6 +68,8 @@ export const deSecurity: Record<string, string> = {
   "An administrator turned off two-step sign-in for your account ({time}). Turn it on again under Account.":
     "Eine Administratorin oder ein Administrator hat die Anmeldung in zwei Schritten für Ihr Konto ausgeschaltet ({time}). Schalten Sie sie unter Konto wieder ein.",
   "New sign-in: {device}, {time}. Not you? Review devices.": "Neue Anmeldung: {device}, {time}. Nicht Sie? Prüfen Sie Ihre Geräte.",
+  "Your password was used to start a sign-in that wasn't finished ({time}). Not you? Change your password in Cipherfilm in the browser.":
+    "Mit Ihrem Passwort wurde eine Anmeldung begonnen, aber nicht abgeschlossen ({time}). Nicht Sie? Ändern Sie Ihr Passwort in Cipherfilm im Browser.",
   "an unknown device": "ein unbekanntes Gerät",
   "Review devices": "Geräte prüfen",
   "Dismiss": "Ausblenden",

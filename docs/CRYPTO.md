@@ -72,7 +72,13 @@ ad for every chunk = "seg" || itemId || u32(i) || u32(segment_count) || u64(tota
 - The authoritative `total_size` also lives in the encrypted metadata and the client rejects an item whose server-declared size differs; `segment_count` is bound through the associated data and must equal `ceil(total_size / 4 MiB)` (at least 1).
 - Independent segments give: parallel and resumable upload, retry per segment, and random access (a Range request maps to segment + chunk offsets, so video seeking works).
 - Thumbnail and preview: single-shot AEAD, `ad = "thumb"|"preview" || itemId` (single-shot AEAD via the wrap format, so the label and owner are joined with a NUL byte).
-- Metadata: JSON (`name`, `mime`, `capture_ts`, `width`, `height`, `duration`, GPS, EXIF subset, `size`, `segment_count`, `content_hash`) padded to a multiple of 256 B (small leak reduction), single-shot AEAD under `metaKey`, `ad = "meta" || itemId`.
+- Metadata: JSON (`name`, `mime`, `size`, `lastModified`, `capture_ts`, `width`, `height`, `duration`, `gps`, `make`, `model`, `sha256`) padded to a multiple of 256 B (small leak reduction), single-shot AEAD under `metaKey`, `ad = "meta" || itemId`.
+  `sha256` (optional, written by uploads from the web, Android and Mac apps and `cipherfilm-upload` since it was
+  added) is the SHA-256 of the plaintext original as 64 lowercase hex characters, computed from the segments as they
+  are read for encryption (`cipherfilm-upload` reads the file once more alongside). It only lets the apps find the
+  same file again (Duplicates, docs/SEARCH.md); clients drop a value of any other form, and older clients and
+  `cipherfilm-decrypt` ignore the field. Older items have none. (Earlier versions of this list named a
+  `content_hash` that no client ever wrote; `sha256` is that field.)
   Edits (docs/EDITING.md) add the optional `edit` (turn, crop, picture version) and `orig` (date and place before the
   person changed them); the thumbnail and preview made for an edit replace the old ones under the same subkeys and `ad`.
 

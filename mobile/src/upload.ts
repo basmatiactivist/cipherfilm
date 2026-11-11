@@ -96,6 +96,19 @@ export async function uploadShared(f: Shared, onProgress: (done: number, total: 
   }
 }
 
+/** SHA-256 part by part through the native module (the state crosses back and forth); null once anything fails. */
+function sha256Start(): Uint8Array | null {
+  try { return typeof N.sha256_init === "function" ? N.sha256_init() : null; } catch { return null; }
+}
+function sha256Add(state: Uint8Array | null, part: Uint8Array): Uint8Array | null {
+  if (!state || !part.length) return state;
+  try { return N.sha256_update(state, part); } catch { return null; }
+}
+function sha256End(s: Sodium, state: Uint8Array | null): { sha256?: string } {
+  if (!state) return {};
+  try { return { sha256: s.to_hex(N.sha256_final(state)) }; } catch { return {}; }
+}
+
 /** The upload itself. wrap() locks the new item key: under the master key, or sealed to the account's public key by
  *  the background backup. mine() throws to stop between steps. The backup passes its own server in to. */
 const DECODE_MS = 90_000; // a thumbnail or a video frame; seconds even for very large files
@@ -129,6 +142,10 @@ export async function uploadFile(f: Shared, s: Sodium, wrap: (itemKey: Uint8Arra
     })();
     const infoWork = bounded(N.mediaInfo(f.uri, kind === "video"), DECODE_MS).catch(() => ({}));
 
+    // the original's SHA-256 for the metadata (finding the same file again, docs/CRYPTO.md): from the parts as they
+    // are read, in native code; without it (an older native build, an error) the field is simply left out
+    let hash = sha256Start();
+
     let done = 0;
     onProgress(0, f.size || 1);
     const inflight = new Set<Promise<void>>();
@@ -137,6 +154,7 @@ export async function uploadFile(f: Shared, s: Sodium, wrap: (itemKey: Uint8Arra
       mine();
       const len = f.size === 0 ? 0 : segmentPlainLen(f.size, i);
       const plain = len ? await bounded(N.readRange(f.uri, i * SEG_PLAIN, len), READ_MS) : new Uint8Array(0);
+      hash = sha256Add(hash, plain);
       const ct = encryptSegment(s, itemKey, id, i, count, f.size, plain);
       plain.fill(0);
       if (ct.length !== cipherLen(len)) throw new Error("internal size error");
@@ -159,6 +177,7 @@ export async function uploadFile(f: Shared, s: Sodium, wrap: (itemKey: Uint8Arra
       width: info.width ?? dims.width, height: info.height ?? dims.height, duration: info.duration,
       ...(info.make ? { make: info.make } : {}), ...(info.model ? { model: info.model } : {}),
       ...(info.lat != null && info.lon != null ? { gps: { lat: info.lat, lon: info.lon } } : {}),
+      ...sha256End(s, hash),
     };
     mine();
     await api("POST", `/api/items/${id}/finalize`, { wrapped_item_key: wrapped, meta_enc: b64(s, encryptMeta(s, meta, itemKey, id)) }, to);

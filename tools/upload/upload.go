@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -251,11 +253,16 @@ func (u *uploader) uploadOne(ctx context.Context, f *localFile) (err error) {
 			u.stats.bytesTotal.Add(-f.Size)
 		}
 	}()
+	// the original's SHA-256 for the metadata (docs/CRYPTO.md), read alongside the parts: those go out several at a
+	// time and out of order, and a resumed upload skips the ones the server has
+	hashed := make(chan string, 1)
+	go func() { hashed <- fileSHA256(ctx, f.Path, f.Size) }()
 	if err := u.sendSegments(ctx, f, id, itemKey, count, received, &sentHere); err != nil {
 		cancel()
 		thumbWG.Wait()
 		return err
 	}
+	info.Meta.SHA256 = <-hashed
 	thumbWG.Wait()
 	if thumbErr != nil {
 		if errors.Is(thumbErr, errQuota) {
@@ -329,6 +336,36 @@ func (u *uploader) sendSegments(ctx context.Context, f *localFile, id string, it
 	}
 	wg.Wait()
 	return first
+}
+
+// fileSHA256 is the file's SHA-256 in lowercase hex, or "" if it can't be read whole or isn't size bytes long.
+func fileSHA256(ctx context.Context, path string, size int64) string {
+	h, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer h.Close()
+	sum := sha256.New()
+	buf := make([]byte, 1<<20)
+	var n int64
+	for {
+		if ctx.Err() != nil {
+			return ""
+		}
+		k, err := h.Read(buf)
+		sum.Write(buf[:k])
+		n += int64(k)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return ""
+		}
+	}
+	if n != size {
+		return ""
+	}
+	return hex.EncodeToString(sum.Sum(nil))
 }
 
 func segLen(total, n int64) int64 {

@@ -194,3 +194,14 @@ describe("the library on the phone", () => {
       ["index-laionb32.bin", "index-laionb32.json", "index-mcs2.bin", "index-mcs2.json", "list.json", `preview-${A}`, `thumb-${A}`].sort());
   });
 });
+
+describe("the original's SHA-256 in the metadata", () => {
+  it("is kept when it is 64 lowercase hex characters, and dropped otherwise", async () => {
+    const { checkedMeta } = await import("./library");
+    const base = { name: "a.jpg", mime: "image/jpeg", size: 1, lastModified: 0, capture_ts: 1 };
+    const good = "0f".repeat(32);
+    expect(checkedMeta({ ...base, sha256: good }).sha256).toBe(good);
+    for (const bad of ["0F".repeat(32), "0f".repeat(31), 42, null, ""]) expect(checkedMeta({ ...base, sha256: bad as never })).not.toHaveProperty("sha256");
+    expect(checkedMeta({ ...base })).not.toHaveProperty("sha256");
+  });
+});

@@ -168,6 +168,9 @@ func (a *App) relyingParty(r *http.Request) (*webauthn.WebAuthn, error) {
 			ResidentKey:      protocol.ResidentKeyRequirementPreferred,
 			UserVerification: protocol.VerificationPreferred,
 		},
+		// passkey providers report extension results nobody asked for (credProps from browsers and Android's
+		// Credential Manager); they are the client's own words, not signed, and nothing here uses any of them
+		ExtensionsUnsolicitedOutputPolicy: protocol.UnsolicitedOutputPolicyIgnore,
 	})
 }
 

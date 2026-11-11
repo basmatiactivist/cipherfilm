@@ -87,7 +87,8 @@ func (k *softKey) create(opts map[string]any) map[string]any {
 	return map[string]any{"id": b64u.EncodeToString(k.id), "rawId": b64u.EncodeToString(k.id), "type": "public-key",
 		"response": map[string]any{"clientDataJSON": b64u.EncodeToString(clientData("webauthn.create", opts["challenge"].(string), k.origin)),
 			"attestationObject": b64u.EncodeToString(att), "transports": []string{"internal"}},
-		"clientExtensionResults": map[string]any{}}
+		// as Android's Credential Manager and some browsers send it without being asked
+		"clientExtensionResults": map[string]any{"credProps": map[string]any{"rk": true}}}
 }
 
 // get answers assertion options; the signature counter moves forward first.

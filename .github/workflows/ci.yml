@@ -55,6 +55,14 @@ jobs:
         with: { persist-credentials: false }  # no token left in .git for later steps
       - name: design tokens are up to date
         run: make tokens-check
+  deploy-config:
+    # every production compose combination (compose.yaml alone and with the deploy/tailnet overlays) is valid
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }  # no token left in .git for later steps
+      - name: compose files are valid
+        run: make prod-config
   server:
     needs: changes
     # see "changes"; runs if that job itself failed

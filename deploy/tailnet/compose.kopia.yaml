@@ -8,7 +8,7 @@ services:
     environment:
       TS_SERVE_CONFIG: /config/serve-kopia.json   # the app on :443 and Kopia's UI on :8443
   kopia-perms:   # once per start: Kopia's own volumes belong to the app's user, so Kopia needs no extra rights
-    image: alpine:3.24
+    image: alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
     command: chown -R 65532:65532 /app/config /app/cache /app/logs
     volumes:
       - kopiaconfig:/app/config
@@ -19,7 +19,7 @@ services:
     cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
     security_opt: ["no-new-privileges:true"]
   kopia:
-    image: ${KOPIA_IMAGE:-kopia/kopia:0.23.1}
+    image: kopia/kopia:0.23.1@sha256:89fd95ee2942880ca00eae964266958a394421ddbdf69bca62e38afc55f5900e
     restart: unless-stopped
     network_mode: service:tailscale   # listens on 127.0.0.1 inside the tailnet node only; no host ports
     depends_on:

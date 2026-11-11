@@ -70,6 +70,21 @@ updates:
     cooldown: { default-days: 7 }   # docker, docker-compose and github-actions take no per-semver days
     multi-ecosystem-group: e2e-stack
     patterns: ["*"]
+  # the private tailnet setup (deploy/tailnet, docs/TAILNET.md): Tailscale, Kopia, Portainer, the Alpine helpers and the
+  # Caddy build, all pinned by tag and digest. CI checks every overlay combination (make prod-config). The Caddy
+  # Cloudflare module's version (xcaddy, deploy/tailnet/domain/Dockerfile) is checked by hand (docs/RELEASING.md).
+  - package-ecosystem: docker-compose
+    directory: /deploy/tailnet
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7 }
+    open-pull-requests-limit: 2
+    groups: { tailnet: { patterns: ["*"] } }
+  - package-ecosystem: docker
+    directory: /deploy/tailnet/domain
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7 }
+    open-pull-requests-limit: 2
+    groups: { tailnet-caddy: { patterns: ["*"] } }
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }

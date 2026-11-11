@@ -4,5 +4,6 @@ import { deBackup } from "./i18n/de.backup";
 import { deSearch } from "./i18n/de.search";
 import { deApp } from "./i18n/de.app";
 import { deReport } from "./i18n/de.report";
+import { deCleanup } from "./i18n/de.cleanup";
 
-export const de: Record<string, string> = { ...deApp, ...deSearch, ...deBackup, ...deReport };
+export const de: Record<string, string> = { ...deApp, ...deSearch, ...deBackup, ...deReport, ...deCleanup };

@@ -114,6 +114,8 @@ export default function Account() {
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="search" color={th.colors.primary} /></View>} onPress={() => router.push("/search-settings")} style={st.item} />
         <List.Item title={t("Free up space")} description={t("Remove photos from this phone that are already in Cipherfilm")}
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="phone" color={th.colors.primary} /></View>} onPress={() => router.push("/free-space")} style={st.item} />
+        <List.Item title={t("Duplicates and similar photos")} description={t("Find photos that are there twice or look nearly the same")}
+          descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="similar" color={th.colors.primary} /></View>} onPress={() => router.push("/duplicates")} style={st.item} />
         {me?.map ? <SwitchItem title={t("Map")} description={t("Your photos on a map. Map images from {who}.", { who: mapProvider() || t("the map server") })}
           left={() => <View style={st.icon}><Icon name="map" color={th.colors.primary} /></View>}
           value={mapOn} onValueChange={(v) => setMapOn(v)} style={st.item} /> : null}

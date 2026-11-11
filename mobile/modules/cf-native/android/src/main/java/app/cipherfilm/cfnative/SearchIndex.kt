@@ -65,6 +65,21 @@ internal object SearchIndex {
 
   @Synchronized fun has(item: String) = rows.containsKey(item)
 
+  /** Which of these items have an image vector (duplicates and similar photos compare only those). */
+  @Synchronized fun hasAll(items: List<String>): List<Boolean> = items.map { rows.containsKey(it) }
+
+  /** The cosine of the image vectors of a[k] and b[k]; -2 where either has none. For duplicates and similar photos
+   *  (web/src/cleanup/duplicates.ts): JavaScript names the pairs, the vectors never leave native memory. */
+  @Synchronized fun scores(a: List<String>, b: List<String>): List<Double> = List(minOf(a.size, b.size)) { k ->
+    val ra = rows[a[k]]; val rb = rows[b[k]]
+    if (ra == null || rb == null) -2.0 else {
+      val oa = ra * Vision.CLIP_DIM; val ob = rb * Vision.CLIP_DIM
+      var d = 0f; var na = 0f; var nb = 0f
+      for (i in 0 until Vision.CLIP_DIM) { val x = vecs[oa + i]; val y = vecs[ob + i]; d += x * y; na += x * x; nb += y * y }
+      if (na > 0f && nb > 0f) (d / Math.sqrt((na * nb).toDouble()).toFloat()).toDouble() else 0.0
+    }
+  }
+
   /** Items whose image vector is closest to the query vector (float32), best first. */
   @Synchronized fun search(query: ByteArray, limit: Int, minScore: Double): List<Map<String, Any>> {
     val q = Vision.unfloats(query)

@@ -1,4 +1,4 @@
-// Search and people on the Mac: the models (downloaded from Hugging Face at pinned URLs, checked against fixed SHA-256
+// Search and people on the Mac: the model (downloaded from Hugging Face at pinned URLs, checked against fixed SHA-256
 // values; the same list as server/models.json, which a test compares), index entries in the shared format (docs/SEARCH.md), the people document, and the search box's query
 // language. The same constants as mobile/src/search/*.ts, so an entry made here is used on the phone and back.
 import CryptoKit
@@ -12,52 +12,40 @@ public struct ModelFile: Sendable {
   }
 }
 
-/** Which model says what is in a photo. MobileCLIP S2 for everyone; LAION's OpenCLIP ViT-B/32 for a person an admin
- *  allowed explicit search and who turned it on (docs/SEARCH.md, "Explicit search"). Both use the same tokenizer. */
+/** The model that says what is in a photo: LAION's OpenCLIP ViT-B/32, for everyone (docs/SEARCH.md, docs/MODELS.md).
+ *  MobileCLIP S2, used before, was dropped for its license; explicit content is filtered from search instead
+ *  (Explicit.swift). One case: the type stays, so the functions below keep their shape. */
 public enum ClipModel: String, Sendable, Codable {
-  case mobileclip = "mobileclip-s2"
-  case laion = "laion-b32"
-
-  public static func choose(allowed: Bool, explicit: Bool) -> ClipModel { allowed && explicit ? .laion : .mobileclip }
+  case clip = "clip-b32"
 
   public var vision: ModelFile {
-    switch self {
-    case .mobileclip: ModelFile(name: "mobileclip-s2-vision.onnx", url: "https://huggingface.co/Xenova/mobileclip_s2/resolve/0c311c620b36a2270b851db7bef9135f3eaae5d7/onnx/vision_model.onnx", sha256: "d28b92d7a3a6ba99bd000cce5c91678c0e279dc934c887a3785908a811872a6c", size: 143_020_962, faces: false)
-    case .laion: ModelFile(name: "nsfw-laion-b32-vision.onnx", url: "https://huggingface.co/immich-app/ViT-B-32__laion2b-s34b-b79k/resolve/19a057a0fb927cf239541300e74237cd56c7ffe2/visual/model.onnx", sha256: "b9ce24b91a8c62ef8d40ea786051709c93140104cbf2b6b4a2cc270df3838f9c", size: 351_613_724, faces: false)
-    }
+    ModelFile(name: "clip-b32-vision.onnx", url: "https://huggingface.co/immich-app/ViT-B-32__laion2b-s34b-b79k/resolve/19a057a0fb927cf239541300e74237cd56c7ffe2/visual/model.onnx", sha256: "b9ce24b91a8c62ef8d40ea786051709c93140104cbf2b6b4a2cc270df3838f9c", size: 351_613_724, faces: false)
   }
 
   public var text: ModelFile {
-    switch self {
-    case .mobileclip: ModelFile(name: "mobileclip-s2-text.onnx", url: "https://huggingface.co/Xenova/mobileclip_s2/resolve/0c311c620b36a2270b851db7bef9135f3eaae5d7/onnx/text_model_quantized.onnx", sha256: "f8aaa97cf17fbadd78b0bd6d5f6a1c57f712402cacc3055ea92c1a3331357dfe", size: 64_117_260, faces: false)
-    case .laion: ModelFile(name: "nsfw-laion-b32-text.onnx", url: "https://huggingface.co/immich-app/ViT-B-32__laion2b-s34b-b79k/resolve/19a057a0fb927cf239541300e74237cd56c7ffe2/textual/model.onnx", sha256: "48c25be37b352398f2533c9426dab6f9340535e14e46f884cc894236a5060722", size: 254_193_396, faces: false)
-    }
+    ModelFile(name: "clip-b32-text.onnx", url: "https://huggingface.co/immich-app/ViT-B-32__laion2b-s34b-b79k/resolve/19a057a0fb927cf239541300e74237cd56c7ffe2/textual/model.onnx", sha256: "48c25be37b352398f2533c9426dab6f9340535e14e46f884cc894236a5060722", size: 254_193_396, faces: false)
   }
 
-  /** Index entry tags: bumped when the models or how their output is used change, entries with another are made again. */
-  public var tag: String { self == .mobileclip ? "mcs2+yunet23+sface21/2" : "laionb32+yunet23+sface21/1" }
-  public var tagNoFaces: String { self == .mobileclip ? "mcs2/2" : "laionb32/1" }
+  /** Index entry tags: bumped when the models or how their output is used change, entries with another are made again.
+   *  The ones explicit search's LAION entries had, so those are kept. */
+  public var tag: String { "laionb32+yunet23+sface21/1" }
+  public var tagNoFaces: String { "laionb32/1" }
 
   /** The model family the server keeps entries under (`GET /api/index?model=`): the tag up to "+" or "/". */
-  public var family: String { self == .mobileclip ? "mcs2" : "laionb32" }
+  public var family: String { "laionb32" }
 
   /** Whether an entry's tag was made with this model (its image vector can be compared with this model's). */
   public func owns(_ tag: String?) -> Bool { tag == self.tag || tag == tagNoFaces }
 
-  /** The model every device can search with: the Android app from Google Play, an older app, a person not allowed. */
-  public static let standard = ClipModel.mobileclip
-
-  /** While explicit search is on, the indexing device keeps MobileCLIP's entries current too (docs/SEARCH.md,
-   *  "Explicit search"), so the devices that only read those always find a complete index. */
-  public func keepsStandard(indexes: Bool) -> Bool { indexes && self != .standard }
-
-  /** The family whose entries go on the server when the account's model changes: LAION's when explicit search is
-   *  turned off (they free space); MobileCLIP's never, other devices search with them. */
-  public static func dropped(from old: ClipModel, to new: ClipModel) -> ClipModel? { old == .laion && new != .laion ? .laion : nil }
+  /** MobileCLIP's entries, made by this app before (and by older apps still): read only by the indexing device, which
+   *  takes their faces over into the new entries (the people document names faces by their place in an entry), then
+   *  deletes them (docs/SEARCH.md "One model"). */
+  public static let legacyFamily = "mcs2"
+  public static func legacyFaces(_ tag: String?) -> Bool { tag?.hasPrefix("mcs2+yunet23+sface21/") == true }
 }
 
 public enum Models {
-  public static let tokenizer = ModelFile(name: "mobileclip-s2-tokenizer.json", url: "https://huggingface.co/Xenova/mobileclip_s2/resolve/0c311c620b36a2270b851db7bef9135f3eaae5d7/tokenizer.json", sha256: "72ed5c96db5729294468543e4bc75fce14ca63f58e37300290189ba1c1e52b85", size: 2_224_081, faces: false)
+  public static let tokenizer = ModelFile(name: "clip-b32-tokenizer.json", url: "https://huggingface.co/immich-app/ViT-B-32__laion2b-s34b-b79k/resolve/19a057a0fb927cf239541300e74237cd56c7ffe2/textual/tokenizer.json", sha256: "6d9109cc838977f3ca94a379eec36aecc7c807e1785cd729660ca2fc0171fb35", size: 3_642_073, faces: false)
   public static let faceFiles: [ModelFile] = [
     ModelFile(name: "yunet-2023mar.onnx", url: "https://huggingface.co/opencv/face_detection_yunet/resolve/3cc26e7f1014a5ee5d74a42acee58bafc9d0a310/face_detection_yunet_2023mar.onnx", sha256: "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4", size: 232_589, faces: true),
     ModelFile(name: "sface-2021dec.onnx", url: "https://huggingface.co/opencv/face_recognition_sface/resolve/3d7082438a6e4551e840c9b2bb60b71e8da4b524/face_recognition_sface_2021dec.onnx", sha256: "0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79", size: 38_696_353, faces: true),
@@ -65,30 +53,27 @@ public enum Models {
 
   public static func all(_ clip: ClipModel) -> [ModelFile] { [clip.vision, clip.text, tokenizer] + faceFiles }
   /** Every file any setting can need. */
-  public static let every: [ModelFile] = all(.mobileclip) + [ClipModel.laion.vision, ClipModel.laion.text]
+  public static let every: [ModelFile] = all(.clip)
 
-  /** MobileCLIP's tags, kept for callers and tests that predate the choice of model. */
-  public static let tag = ClipModel.mobileclip.tag
-  public static let tagNoFaces = ClipModel.mobileclip.tagNoFaces
+  public static let tag = ClipModel.clip.tag
+  public static let tagNoFaces = ClipModel.clip.tagNoFaces
 
   /** Whether an entry is up to date: made with this model, and with faces when faces are wanted. */
-  public static func good(_ tag: String?, faces: Bool, clip: ClipModel = .mobileclip) -> Bool { faces ? tag == clip.tag : clip.owns(tag) }
+  public static func good(_ tag: String?, faces: Bool, clip: ClipModel = .clip) -> Bool { faces ? tag == clip.tag : clip.owns(tag) }
 
-  /** reader: a device that only reads the index (another one computes it) needs just the text model and the tokenizer.
-   *  Indexing with LAION also needs MobileCLIP's image model (not its text model: this device searches with LAION). */
-  public static func needed(faces: Bool, clip: ClipModel = .mobileclip, reader: Bool = false) -> [ModelFile] {
+  /** reader: a device that only reads the index (another one computes it) needs just the text model and the tokenizer. */
+  public static func needed(faces: Bool, clip: ClipModel = .clip, reader: Bool = false) -> [ModelFile] {
     if reader { return [clip.text, tokenizer] }
-    let also = clip.keepsStandard(indexes: true) ? [ClipModel.standard.vision] : []
-    return (all(clip) + also).filter { faces || !$0.faces }
+    return all(clip).filter { faces || !$0.faces }
   }
 
-  /** What the indexing device still computes for a photo, from the tags of its entries (the account's model's and,
-   *  next to LAION, MobileCLIP's): the models whose entry isn't current. Empty when the photo is done. */
-  public static func toCompute(_ tag: String?, standard: String?, faces: Bool, clip: ClipModel, indexes: Bool = true) -> [ClipModel] {
-    var out = good(tag, faces: faces, clip: clip) ? [] : [clip]
-    if clip.keepsStandard(indexes: indexes) && !good(standard, faces: faces, clip: .standard) { out.append(.standard) }
-    return out
-  }
+  /** Files earlier versions downloaded: explicit search's LAION model under its old names (the same bytes, moved to the
+   *  new ones instead of downloaded again; checked by SHA-256 as always), MobileCLIP's (deleted: its license doesn't
+   *  allow their use). */
+  public static let oldFiles: [(old: String, now: String?)] = [
+    ("nsfw-laion-b32-vision.onnx", "clip-b32-vision.onnx"), ("nsfw-laion-b32-text.onnx", "clip-b32-text.onnx"),
+    ("mobileclip-s2-vision.onnx", nil), ("mobileclip-s2-text.onnx", nil), ("mobileclip-s2-tokenizer.json", nil),
+  ]
 
   public static func sha256(of url: URL) -> String? {
     guard let fh = try? FileHandle(forReadingFrom: url) else { return nil }
@@ -120,7 +105,22 @@ public final class ModelStore: @unchecked Sendable {
   private let lock = NSLock()
   private var checked = Set<String>()
 
-  public init(dir: URL) { self.dir = dir }
+  public init(dir: URL) { self.dir = dir; tidyOldFiles() }
+
+  /** Moves explicit search's LAION files to their new names and deletes MobileCLIP's (Models.oldFiles). */
+  public func tidyOldFiles() {
+    let fm = FileManager.default
+    for (old, now) in Models.oldFiles {
+      let from = dir.appendingPathComponent(old)
+      try? fm.removeItem(at: dir.appendingPathComponent(old + ".part"))
+      guard fm.fileExists(atPath: from.path) else { continue }
+      if let now, !fm.fileExists(atPath: dir.appendingPathComponent(now).path) {
+        if (try? fm.moveItem(at: from, to: dir.appendingPathComponent(now))) == nil { try? fm.removeItem(at: from) }
+      } else {
+        try? fm.removeItem(at: from)
+      }
+    }
+  }
 
   // ---- the yes to download ----
 
@@ -145,13 +145,13 @@ public final class ModelStore: @unchecked Sendable {
 
   /** What a download would fetch that the person hasn't agreed to; empty when nothing needs asking. (After `have`,
    *  which removes a file with the wrong hash, a model update shows here as a missing file.) */
-  public func unagreed(faces: Bool, clip: ClipModel = .mobileclip, reader: Bool = false) -> [ModelFile] {
+  public func unagreed(faces: Bool, clip: ClipModel = .clip, reader: Bool = false) -> [ModelFile] {
     let sha = Set(consent()?.sha ?? [])
     return Models.needed(faces: faces, clip: clip, reader: reader).filter { !onDisk($0) && !sha.contains($0.sha256) }
   }
 
   /** The yes: what these settings need may be downloaded. */
-  public func agree(faces: Bool, clip: ClipModel = .mobileclip, reader: Bool = false, now: Date = Date()) {
+  public func agree(faces: Bool, clip: ClipModel = .clip, reader: Bool = false, now: Date = Date()) {
     let old = consent()?.sha ?? []
     let add = Models.needed(faces: faces, clip: clip, reader: reader).map(\.sha256).filter { !old.contains($0) }
     save(ModelConsent(at: now, sha: old + add))
@@ -173,11 +173,11 @@ public final class ModelStore: @unchecked Sendable {
     return (c?.at, here.reduce(0) { $0 + $1.size })
   }
 
-  public func missingBytes(faces: Bool, clip: ClipModel = .mobileclip, reader: Bool = false) -> Int64 {
+  public func missingBytes(faces: Bool, clip: ClipModel = .clip, reader: Bool = false) -> Int64 {
     Models.needed(faces: faces, clip: clip, reader: reader).filter { !FileManager.default.fileExists(atPath: dir.appendingPathComponent($0.name).path) }.reduce(0) { $0 + $1.size }
   }
 
-  public func have(faces: Bool, clip: ClipModel = .mobileclip, reader: Bool = false) -> Bool {
+  public func have(faces: Bool, clip: ClipModel = .clip, reader: Bool = false) -> Bool {
     for m in Models.needed(faces: faces, clip: clip, reader: reader) {
       if lock.withLock({ checked.contains(m.name) }) { continue }
       let f = dir.appendingPathComponent(m.name)
@@ -197,7 +197,7 @@ public final class ModelStore: @unchecked Sendable {
 
   /** Downloads what is missing from Hugging Face, each file into "<name>.part" next to where it goes, so a drop (or a
    *  quit) resumes where it stopped; progress counts the bytes of all files together. */
-  public func download(faces: Bool, clip: ClipModel = .mobileclip, reader: Bool = false, progress: @escaping @Sendable (Progress) -> Void) async throws {
+  public func download(faces: Bool, clip: ClipModel = .clip, reader: Bool = false, progress: @escaping @Sendable (Progress) -> Void) async throws {
     // nothing goes to Hugging Face without the yes, whatever asked for it: a file already here with the right hash
     // isn't downloaded and needs none
     let sha = Set(consent()?.sha ?? [])
@@ -235,21 +235,8 @@ public final class ModelStore: @unchecked Sendable {
     }
   }
 
-  /** Removes the files of a model no longer used (the explicit model's 600 MB after it is turned off). */
-  public func remove(_ clip: ClipModel) { remove([clip.vision, clip.text]) }
-
-  /** Removes the image and text models that using `clip` doesn't need (MobileCLIP's text model next to LAION; its
-   *  image model too where this device only reads). Returns their names. */
-  @discardableResult
-  public func removeUnused(clip: ClipModel, reader: Bool) -> [String] {
-    let keep = Set(Models.needed(faces: true, clip: clip, reader: reader).map(\.name))
-    let gone = [ClipModel.mobileclip, .laion].flatMap { [$0.vision, $0.text] }.filter { !keep.contains($0.name) }
-    remove(gone)
-    return gone.map(\.name)
-  }
-
   /** A device that only reads the index keeps no image or face models (hundreds of MB it would never run). */
-  public func removeIndexing() { remove([ClipModel.mobileclip.vision, ClipModel.laion.vision] + Models.faceFiles) }
+  public func removeIndexing() { remove([ClipModel.clip.vision] + Models.faceFiles) }
 
   private func remove(_ files: [ModelFile]) {
     for m in files {
@@ -281,7 +268,7 @@ public struct IndexEntry: Codable, Sendable {
   public var clip: String?
   public var faces: [Face]?
 
-  public init(analysis a: Analysis, faces: Bool, model: ClipModel = .mobileclip) {
+  public init(analysis a: Analysis, faces: Bool, model: ClipModel = .clip) {
     self.init(vector: a.clip, faces: faces ? Self.faces(a.faces) : nil, model: model)
   }
 
@@ -295,8 +282,8 @@ public struct IndexEntry: Codable, Sendable {
 
   static func faces(_ found: [FaceFound]?) -> [Face] { (found ?? []).map { Face(box: $0.box, score: $0.score, emb: B64.encode($0.emb)) } }
 
-  /** The entries for one look at a photo, one per model in a.clips; the faces found once go into each, or those given
-   *  (known: from the photo's other entry, when only one was missing), so both list the same faces. */
+  /** The entries for one look at a photo, one per model in a.clips; the faces found, or those given (known: from the
+   *  photo's MobileCLIP entry made before one model), so the people document's names stay with them. */
   public static func entries(_ a: Analyses, faces: Bool, known: [Face]? = nil) -> [IndexEntry] {
     let fs = faces ? known ?? Self.faces(a.faces) : nil
     return a.clips.map { IndexEntry(vector: $0.vector, faces: fs, model: $0.model) }
@@ -341,7 +328,8 @@ public struct Person: Codable, Sendable, Hashable, Identifiable {
 public struct PeopleDoc: Codable, Sendable {
   public var v: Int = 1
   public var people: [Person] = []
-  /** the person chose explicit search (used only while an admin allows it); one choice for all their devices */
+  /** the person chose explicit search: search without the explicit-content filter (only while an admin allows it, and
+   *  never in an app that doesn't offer it); one choice for all their devices */
   public var explicit: Bool?
   public init() {}
 }

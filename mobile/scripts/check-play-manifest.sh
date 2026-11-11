@@ -1,7 +1,7 @@
 #!/bin/sh
 # After a Play build (CF_STORE=play): the merged release manifest, as it goes into the bundle, must not hold what
 # Google Play's policies reject for this app (docs/play/REQUIREMENTS.md §4.4) and must keep what it needs; the bundle's
-# app config must say it is the Play build (src/store.ts: no explicit search).
+# app config must say it is the Play build (src/store.ts: search always filtered).
 #   mobile/scripts/check-play-manifest.sh mobile/android/app
 set -eu
 app="${1:?usage: $0 ANDROID_APP_DIR}"

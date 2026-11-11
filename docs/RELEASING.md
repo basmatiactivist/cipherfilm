@@ -82,7 +82,8 @@ those accounts first. Say this in the release notes of any release that adds a s
 
 The Play build differs from the GitHub APK only by `CF_STORE=play` at prebuild (`mobile/app.config.js`): no
 `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` (the app opens Android's battery optimisation list instead of the direct
-dialog) and no explicit search model (`mobile/src/store.ts`, docs/SEARCH.md). Requirements and the Play Console forms:
+dialog) and no explicit search: its search always filters explicit content (`mobile/src/store.ts`, docs/SEARCH.md;
+the model and the index are the same in both builds). Requirements and the Play Console forms:
 [docs/play/REQUIREMENTS.md](play/REQUIREMENTS.md).
 
 Signing (Play App Signing, option B there): the **app signing key** is the existing release key

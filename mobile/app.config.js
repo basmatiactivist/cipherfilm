@@ -10,7 +10,7 @@ module.exports = ({ config }) => {
     config.android = { ...config.android, versionCode: major * 1_000_000 + minor * 1_000 + patch };
   }
   // the Play build (docs/play/REQUIREMENTS.md): no direct battery-exemption request (BackupNative.askBatteryExemption
-  // opens Android's list instead, seeing the permission isn't declared) and no explicit search model (src/store.ts)
+  // opens Android's list instead, seeing the permission isn't declared) and always filters explicit content from search (src/store.ts)
   const store = process.env.CF_STORE === "play" ? "play" : "github";
   if (process.env.CF_STORE && process.env.CF_STORE !== "play" && process.env.CF_STORE !== "github") throw new Error(`CF_STORE must be play or github, not ${process.env.CF_STORE}`);
   config.extra = { ...config.extra, store };

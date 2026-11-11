@@ -81,7 +81,7 @@ export default function AdminUserPage() {
           {!self ? <List.Item title={t("Storage limit")} description={limitText(u.quota_bytes)} left={icon("cloud")}
             onPress={() => { setGb(u.quota_bytes ? String(Math.round(u.quota_bytes / 1e9)) : "0"); setAsk("limit"); }} style={st.item} /> : null}
           {/* off for everyone by default; the person still turns it on in their app. Never offered by the Play build. */}
-          {explicitSearchOffered() ? <SwitchItem title={t("Allow explicit search")} description={t("An uncensored search model they can turn on themselves. Off for everyone by default.")}
+          {explicitSearchOffered() ? <SwitchItem title={t("Allow explicit search")} description={t("Lets them turn off the filter that leaves explicit photos out of search. Off for everyone by default.")}
             left={icon("search")} value={u.nsfw} disabled={act.busy} onValueChange={(v) => run(() => setExplicit(u.id, v))} style={st.item} /> : null}
           {!self && u.two_factor ? <List.Item title={t("Turn off two-step sign-in")} description={t("For someone who lost their authenticator and recovery codes")}
             descriptionNumberOfLines={3} left={icon("key")} onPress={() => setAsk("twostep")} style={st.item} /> : null}

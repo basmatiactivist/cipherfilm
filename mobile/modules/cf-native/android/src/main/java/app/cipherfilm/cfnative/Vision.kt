@@ -24,9 +24,8 @@ import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /**
- * On-device search (docs/SEARCH.md): what is in a photo (MobileCLIP S2 image and text encoders, or, where an admin
- * allowed explicit search and the person chose it, LAION's uncensored CLIP ViT-B/32) and the faces in it
- * (YuNet finds them, SFace describes each one). It reads decrypted preview images from memory and returns vectors;
+ * On-device search (docs/SEARCH.md): what is in a photo (LAION's OpenCLIP ViT-B/32 image and text encoders) and the
+ * faces in it (YuNet finds them, SFace describes each one). It reads decrypted preview images from memory and returns vectors;
  * nothing is written to storage and nothing leaves the phone from here. The models are files the app downloaded from
  * its own server and checked against fixed SHA-256 values (src/search/models.ts) before they are opened.
  */
@@ -38,11 +37,10 @@ internal object Vision {
   const val FACE_DIM = 128
   private const val MIN_SIDE = 16
 
-  /** The two image/text models: MobileCLIP S2 (256 px, 0..1) and LAION ViT-B/32 (224 px, CLIP mean and std). */
+  /** The image/text model: LAION's ViT-B/32 (224 px, CLIP mean and std). (MobileCLIP S2, 256 px, 0..1, was dropped.) */
   private class Clip(val vision: String, val text: String, val px: Int, val mean: FloatArray?, val std: FloatArray?)
   private val CLIPS = mapOf(
-    "mobileclip-s2" to Clip("mobileclip-s2-vision.onnx", "mobileclip-s2-text.onnx", 256, null, null),
-    "laion-b32" to Clip("nsfw-laion-b32-vision.onnx", "nsfw-laion-b32-text.onnx", 224,
+    "clip-b32" to Clip("clip-b32-vision.onnx", "clip-b32-text.onnx", 224,
       floatArrayOf(0.48145466f, 0.4578275f, 0.40821073f), floatArrayOf(0.26862954f, 0.26130258f, 0.27577711f)),
   )
   private const val DET_PX = 640
@@ -50,11 +48,8 @@ internal object Vision {
 
   private val env: OrtEnvironment by lazy { OrtEnvironment.getEnvironment().also { runCatching { it.setTelemetry(false) } } }
   private var dir: File? = null
-  private var clipKind: Clip = CLIPS.getValue("mobileclip-s2")
+  private var clipKind: Clip = CLIPS.getValue("clip-b32")
   private var image: OrtSession? = null
-  // MobileCLIP's image model next to LAION's, on the phone that indexes while explicit search is on (docs/SEARCH.md)
-  private var alsoKind: Clip? = null
-  private var also: OrtSession? = null
   private var text: OrtSession? = null
   private var det: OrtSession? = null
   private var rec: OrtSession? = null
@@ -64,28 +59,24 @@ internal object Vision {
     setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
   }
 
-  /** indexes = false: a phone that only searches (another device indexes) loads only the text model. alsoClip: a
-   *  second image model the phone that indexes runs on every photo too (MobileCLIP next to LAION), or null. */
-  @Synchronized fun open(path: String, faces: Boolean, clip: String, indexes: Boolean, alsoClip: String?) {
-    try { openModels(path, faces, clip, indexes, alsoClip) } finally { shown = snapshot() }
+  /** indexes = false: a phone that only searches (another device indexes) loads only the text model. */
+  @Synchronized fun open(path: String, faces: Boolean, clip: String, indexes: Boolean) {
+    try { openModels(path, faces, clip, indexes) } finally { shown = snapshot() }
   }
 
-  private fun openModels(path: String, faces: Boolean, clip: String, indexes: Boolean, alsoClip: String?) {
+  private fun openModels(path: String, faces: Boolean, clip: String, indexes: Boolean) {
     val d = File(path)
     val k = CLIPS[clip] ?: throw IllegalArgumentException("unknown model $clip")
-    val a = alsoClip?.let { CLIPS[it] ?: throw IllegalArgumentException("unknown model $it") }?.takeIf { it !== k && indexes }
     if (dir != d || k !== clipKind) close()
     dir = d
     clipKind = k
     if (text == null) text = env.createSession(File(d, k.text).path, opts())
-    if (a !== alsoKind) { runCatching { also?.close() }; also = null; alsoKind = null }
     if (!indexes) {
       listOf(image, det, rec).forEach { runCatching { it?.close() } }
       image = null; det = null; rec = null
       return
     }
     if (image == null) image = env.createSession(File(d, k.vision).path, opts())
-    if (a != null && also == null) { also = env.createSession(File(d, a.vision).path, opts()); alsoKind = a }
     if (faces) {
       if (det == null) det = env.createSession(File(d, "yunet-2023mar.onnx").path, opts())
       if (rec == null) rec = env.createSession(File(d, "sface-2021dec.onnx").path, opts())
@@ -103,12 +94,11 @@ internal object Vision {
   private fun snapshot(): Map<String, Any?> = mapOf(
     "clip" to CLIPS.entries.firstOrNull { it.value === clipKind }?.key, "dir" to dir?.path,
     "text" to (text != null), "image" to (image != null), "faces" to (det != null && rec != null),
-    "also" to (if (also != null) CLIPS.entries.firstOrNull { it.value === alsoKind }?.key else null),
   )
 
   @Synchronized fun close() {
-    listOf(image, also, text, det, rec).forEach { runCatching { it?.close() } }
-    image = null; also = null; alsoKind = null; text = null; det = null; rec = null; dir = null
+    listOf(image, text, det, rec).forEach { runCatching { it?.close() } }
+    image = null; text = null; det = null; rec = null; dir = null
     shown = snapshot()
   }
 
@@ -119,7 +109,7 @@ internal object Vision {
   fun analyze(jpeg: ByteArray, faces: Boolean, clips: List<String>): Map<String, Any> {
     val models = clips.map { c ->
       val k = CLIPS[c] ?: throw IllegalArgumentException("unknown model $c")
-      (if (k === clipKind) image else if (k === alsoKind) also else null)?.let { it to k } ?: throw IllegalStateException("search models not loaded")
+      (if (k === clipKind) image else null)?.let { it to k } ?: throw IllegalStateException("search models not loaded")
     }
     val bmp = decode(jpeg, 1280) ?: throw UnusableImage()
     try {
@@ -144,7 +134,7 @@ internal object Vision {
   /** The text vector for CLIP token ids (src/search/tokenizer.ts), little-endian float32. */
   fun textVector(ids: IntArray): ByteArray {
     val t = text ?: throw IllegalStateException("search models not loaded")
-    // MobileCLIP's text model takes int64 ids, LAION's (Immich's export) int32
+    // Immich's export takes int32 ids (other exports int64)
     val int32 = (t.inputInfo.values.first().info as? ai.onnxruntime.TensorInfo)?.type == ai.onnxruntime.OnnxJavaType.INT32
     val input = if (int32) {
       val padded = IntArray(77); ids.take(77).forEachIndexed { i, v -> padded[i] = v }
@@ -181,7 +171,7 @@ internal object Vision {
     }
   }
 
-  // ---- CLIP: centre square, scaled to the model's size; MobileCLIP 0..1, LAION with CLIP's mean and std ----
+  // ---- CLIP: centre square, scaled to the model's size, with CLIP's mean and std ----
 
   private fun clip(s: OrtSession, k: Clip, src: Bitmap): FloatArray {
     val CLIP_PX = k.px

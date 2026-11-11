@@ -8,11 +8,11 @@ import { setMemoriesOn, useMemoriesOn } from "./memories/setting";
 import { browserAlertsPossible, setBrowserAlerts, useBrowserAlerts } from "./noticeAlerts";
 import { Loader, Loading } from "./loader";
 import { BackupReport, backupState } from "./backup";
-import { explicitChosen, indexChecked, loadPeople, refreshIndex, searchFamily, setExplicit } from "./people/people";
-import { forgetContentModels, loadModel, vectorCount } from "./search/content";
+import { explicitChosen, indexChecked, loadPeople, refreshIndex, setExplicit } from "./people/people";
+import { forgetContentModels, loadModel, oldCount, vectorCount } from "./search/content";
 import { adoptCached, agreeModels, downloaded, mb, modelsAgreed, useModelConsent } from "./search/consent";
 import { ModelConsent } from "./search/consentui";
-import { TEXT_MODELS, TOKENIZER } from "./search/rank";
+import { FAMILY as family, TEXT_MODELS, TOKENIZER } from "./search/rank";
 import * as tf from "./twofactor";
 import * as pk from "./passkeys";
 import { Card, ErrorLine, Field, KeepButton, NewPasswordFields, Submit, VersionLine, fmtGB, passwordProblem, useAction } from "./components";
@@ -582,8 +582,7 @@ function SearchPanel() {
     return () => { alive = false; };
   }, []);
   const allowed = !!mem.me?.user.nsfw;
-  const family = searchFamily();
-  const n = vectorCount(family), other = vectorCount(family === "mcs2" ? "laionb32" : "mcs2");
+  const n = vectorCount(family), other = oldCount();
   // the search model from Hugging Face: asked before it is downloaded, shown when it is here (search/consent.ts)
   useModelConsent();
   const [adopted, setAdopted] = useState(false);
@@ -605,7 +604,7 @@ function SearchPanel() {
       {!indexChecked() ? <Loading inline label="Checking…" /> : n === 0 && other === 0 ? (
         <p>To find photos by what's in them (dog, beach, birthday), <strong>turn on search in the Android or Mac app</strong> (Search and people). This browser then uses what the app found.</p>
       ) : (
-        <p>{n === 1 ? "1 photo" : `${n} photos`} can be found by what is in them. Combine with a date or a name, like “beach 2023” or “Anna cake”.{n === 0 && " Your Android or Mac app is still indexing them with the model you chose."} Runs in this browser; your search words never leave it. Needs a {mb(TEXT_MODELS[family].size + TOKENIZER.size)} model, downloaded once from Hugging Face after you agree.</p>
+        <p>{n === 1 ? "1 photo" : `${n} photos`} can be found by what is in them. Combine with a date or a name, like “beach 2023” or “Anna cake”.{other > 0 && ` ${other === 1 ? "1 more photo" : `${other} more photos`} can be found once your Android or Mac app has updated the index to the new search model.`} Runs in this browser; your search words never leave it. Needs a {mb(TEXT_MODELS[family].size + TOKENIZER.size)} model, downloaded once from Hugging Face after you agree.</p>
       )}
       {adopted && (got || (indexChecked() && n + other > 0)) && (
         got ? (
@@ -633,7 +632,7 @@ function SearchPanel() {
               }} />
             Explicit search
           </label>
-          <p class="hint">Uses a model that also knows explicit content. <strong>This applies to all your devices:</strong> the indexing device (Account › Devices) indexes your whole library again, and search finds fewer photos until it's done. In this browser it's a {Math.round(TEXT_MODELS.laionb32.size / 1e6)} MB download from Hugging Face, asked first and removed when you sign out.</p>
+          <p class="hint">Off, search leaves out photos and words it takes for explicit content. On, it finds everything. <strong>This applies to all your devices</strong> (not the Android app from Google Play, which always leaves them out).</p>
           <ErrorLine text={error} />
         </>
       )}
@@ -811,7 +810,7 @@ export function Admin({ section }: { section: "users" | "defaults" | "server" | 
       )}
       <section class="panel" aria-labelledby="usr-h">
         <h2 id="usr-h"><Icon name="users" />Users</h2>
-        <p class="hint">Explicit search is off for everyone. Allow it for someone, and they can turn on an uncensored search model themselves.</p>
+        <p class="hint">Explicit search is off for everyone: search leaves out explicit photos. Allow it for someone, and they can turn that filter off for themselves.</p>
         {actError && <p class="error" role="alert">{actError}</p>}
         <ul class="people">
           {users.map((u) => (
@@ -825,7 +824,7 @@ export function Admin({ section }: { section: "users" | "defaults" | "server" | 
               <div class="pactions">
                 {/* off for everyone by default; the person still turns it on in their app. Admins may allow it for themselves. */}
                 {confirm !== u.id && (
-                  <button class="btn secondary small" aria-pressed={u.nsfw} title="An uncensored search model in the Android and Mac apps and the web. Off for everyone by default."
+                  <button class="btn secondary small" aria-pressed={u.nsfw} title="Lets the person turn off the filter that leaves explicit photos out of search (not in the Android app from Google Play). Off for everyone by default."
                     onClick={() => act(() => api("PATCH", `/api/admin/users/${u.id}`, { nsfw: !u.nsfw }))}>
                     <Icon name="search" size={18} />{u.nsfw ? "Turn off explicit search" : "Allow explicit search"}<span class="sr"> for {u.email}</span>
                   </button>

@@ -18,8 +18,6 @@ export const deSearch: Record<string, string> = {
 
   // search settings
   "Search and people": "Suche und Personen",
-  "a {size} download": "{size} Download",
-  "already on this phone": "bereits auf diesem Handy",
   "Search what's in your photos": "Suchen, was auf Ihren Fotos ist",
   "Downloading models · {done} of {total}": "Modelle werden heruntergeladen · {done} von {total}",
   "Waiting for Wi-Fi to download the models": "Warten auf WLAN, um die Modelle herunterzuladen",
@@ -30,8 +28,6 @@ export const deSearch: Record<string, string> = {
   "Ready · {n} photo or video": "Bereit · {n} Foto oder Video",
   "Ready · {n} photos and videos": "Bereit · {n} Fotos und Videos",
   "Download now ({size})": "Jetzt herunterladen ({size})",
-  "Runs on this phone. Downloads once from Hugging Face: standard search {standard}, explicit search {explicit}. You choose when you turn it on.":
-    "Läuft auf diesem Handy. Einmaliger Download von Hugging Face: Standardsuche {standard}, explizite Suche {explicit}. Sie wählen beim Einschalten.",
   "Runs on this phone. Downloads {size} once from Hugging Face.": "Läuft auf diesem Handy. Lädt einmalig {size} von Hugging Face herunter.",
   "The models are already on this phone.": "Die Modelle sind bereits auf diesem Handy.",
   "Downloaded once from Hugging Face. Hugging Face sees this phone's IP address, nothing of your photos.":
@@ -47,10 +43,9 @@ export const deSearch: Record<string, string> = {
   "Group photos by face. You can name people.": "Fotos nach Gesichtern gruppieren. Sie können Personen benennen.",
   "Download models only on Wi-Fi": "Modelle nur über WLAN herunterladen",
   "Explicit search": "Explizite Suche",
-  "Uses an uncensored model (LAION CLIP ViT-B/32). Turn off to go back to MobileCLIP.":
-    "Nutzt ein unzensiertes Modell (LAION CLIP ViT-B/32). Ausschalten, um zu MobileCLIP zurückzukehren.",
-  "Your admin allowed it. An uncensored model (LAION CLIP ViT-B/32) that also finds explicit content; {size}. Applies to all your devices; the index is rebuilt.":
-    "Ihr Admin hat sie erlaubt. Ein unzensiertes Modell (LAION CLIP ViT-B/32), das auch explizite Inhalte findet; {size}. Gilt für alle Ihre Geräte; der Index wird neu erstellt.",
+  "Search also finds explicit photos. Applies to all your devices.": "Die Suche findet auch explizite Fotos. Gilt für alle Ihre Geräte.",
+  "Your admin allowed it. Search leaves out photos and words it takes for explicit content; turn on to find everything. Applies to all your devices.":
+    "Ihr Admin hat sie erlaubt. Die Suche lässt Fotos und Wörter aus, die sie für explizit hält; einschalten, um alles zu finden. Gilt für alle Ihre Geräte.",
   "In the background": "Im Hintergrund",
   "Also when the app is closed": "Auch wenn die App geschlossen ist",
   "About every 15 minutes when Android allows, and after a backup": "Etwa alle 15 Minuten, wenn Android es zulässt, und nach einem Backup",
@@ -60,16 +55,8 @@ export const deSearch: Record<string, string> = {
   "Android stops indexing when the app is closed. In the app settings, open Battery and allow background usage.":
     "Android stoppt die Indexierung, wenn die App geschlossen ist. Öffnen Sie in den App-Einstellungen „Akku“ und erlauben Sie die Hintergrundnutzung.",
   "On Xiaomi phones: app settings › Battery saver › No restrictions.": "Auf Xiaomi-Handys: App-Einstellungen › Energiesparmodus › Keine Einschränkungen.",
-  "Runs on this phone with open models (MobileCLIP for content, YuNet and SFace for faces). Results are encrypted before they are stored and shared with your other devices. The server never learns what your photos show or who is in them. Photos only on the server are indexed while the app is open and unlocked.":
-    "Läuft auf diesem Handy mit offenen Modellen (MobileCLIP für Inhalte, YuNet und SFace für Gesichter). Die Ergebnisse werden verschlüsselt, bevor sie gespeichert und mit Ihren anderen Geräten geteilt werden. Der Server erfährt nie, was Ihre Fotos zeigen oder wer darauf ist. Fotos, die nur auf dem Server liegen, werden indexiert, während die App geöffnet und entsperrt ist.",
-  "Which search?": "Welche Suche?",
-  "Your admin allowed explicit search. It applies to all your devices, and you can change it later.":
-    "Ihr Admin hat die explizite Suche erlaubt. Sie gilt für alle Ihre Geräte, und Sie können sie später ändern.",
-  "Standard": "Standard",
-  "MobileCLIP, {size}. Best for everyday searches.": "MobileCLIP, {size}. Am besten für alltägliche Suchen.",
-  "Explicit": "Explizit",
-  "LAION CLIP, {size}. Also finds explicit content.": "LAION CLIP, {size}. Findet auch explizite Inhalte.",
-  "Standard search": "Standardsuche",
+  "Runs on this phone with open models (LAION's CLIP ViT-B/32 for content, YuNet and SFace for faces). Results are encrypted before they are stored and shared with your other devices. The server never learns what your photos show or who is in them. Photos only on the server are indexed while the app is open and unlocked.":
+    "Läuft auf diesem Handy mit offenen Modellen (CLIP ViT-B/32 von LAION für Inhalte, YuNet und SFace für Gesichter). Die Ergebnisse werden verschlüsselt, bevor sie gespeichert und mit Ihren anderen Geräten geteilt werden. Der Server erfährt nie, was Ihre Fotos zeigen oder wer darauf ist. Fotos, die nur auf dem Server liegen, werden indexiert, während die App geöffnet und entsperrt ist.",
   "Turn off search?": "Suche ausschalten?",
   "The models are deleted from this phone; turning search on again asks before downloading them. You can also delete the search data on all your devices, including the names of people.":
     "Die Modelle werden von diesem Handy gelöscht; wenn Sie die Suche wieder einschalten, werden Sie vor dem Herunterladen erneut gefragt. Sie können auch die Suchdaten auf allen Ihren Geräten löschen, einschließlich der Namen von Personen.",
@@ -148,7 +135,6 @@ export const deSearch: Record<string, string> = {
   "Getting the index from the server": "Index wird vom Server geladen",
   "Your account's keys don't match.": "Die Schlüssel Ihres Kontos stimmen nicht überein.",
   "Your account's keys don't match. Search was not turned on.": "Die Schlüssel Ihres Kontos stimmen nicht überein. Die Suche wurde nicht eingeschaltet.",
-  "Explicit search isn't available in this version.": "Die explizite Suche ist in dieser Version nicht verfügbar.",
   "Couldn't save. Try again.": "Speichern fehlgeschlagen. Bitte erneut versuchen.",
 
   // what a search matched (query.ts)

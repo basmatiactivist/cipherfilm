@@ -8,7 +8,7 @@ const st = vi.hoisted(() => ({
   saves: [] as { path: string; extra: string }[],
   calls: [] as string[], // network, in order, with the native loads
   opened: 0, // entries opened (decrypted)
-  vision: { clip: null as string | null, dir: null as string | null, text: false, image: false, faces: false, also: null as string | null },
+  vision: { clip: null as string | null, dir: null as string | null, text: false, image: false, faces: false},
   visionOpens: [] as boolean[],
   wipe: (() => {}) as (how?: "locked" | "ended") => void,
   have: true, // the models are on the phone
@@ -47,6 +47,7 @@ vi.mock("../../modules/cf-native/src/CfNativeModule", () => ({
     indexPut: async () => {},
     indexRemove: () => {},
     indexSearch: async () => [{ id: "a", score: 0.3 }],
+    indexConcepts: async () => {},
     visionText: async () => new Uint8Array(4),
     visionState: () => st.vision,
     visionOpen: async (dir: string, faces: boolean, clip: string, all: boolean) => { st.visionOpens.push(all); Object.assign(st.vision, { dir, clip, text: true, image: all || st.vision.image, faces }); },
@@ -57,7 +58,7 @@ vi.mock("../../modules/cf-native/src/CfNativeModule", () => ({
 }));
 vi.mock("@crypto/item", () => ({ accountKeyPair: () => ({ pk: new Uint8Array(32), sk: new Uint8Array(32) }) }));
 vi.mock("@crypto/search", () => ({
-  openIndexEntry: () => { st.opened++; return { v: 1, m: "mcs2/2", clip: "AAAA" }; },
+  openIndexEntry: () => { st.opened++; return { v: 1, m: "laionb32/1", clip: "AAAA" }; },
   sealIndexEntry: () => new Uint8Array(1),
   decryptPeople: () => ({}),
 }));
@@ -83,14 +84,14 @@ vi.mock("../keepAlive", () => ({
   onlyHolder: () => true,
 }));
 vi.mock("./settings", () => ({
-  loadSettings: async () => ({ enabled: true, faces: false, background: false, wifiOnly: false, chargingOnly: false, asked: true, clip: "mobileclip-s2", indexes: true }),
+  loadSettings: async () => ({ enabled: true, faces: false, background: false, wifiOnly: false, chargingOnly: false, asked: true, indexes: true }),
   saveSettings: async () => {}, settingsDir: () => ({}),
 }));
 vi.mock("./models", () => ({
-  haveModels: async () => st.have, modelPath: () => "/doc/models", family: () => "mcs2", modelTag: (_c: string, f: boolean) => (f ? "mcs2+faces/2" : "mcs2/2"),
+  haveModels: async () => st.have, modelPath: () => "/doc/models", family: () => "laionb32", modelTag: (_c: string, f: boolean) => (f ? "laionb32+faces/1" : "laionb32/1"),
   dropOtherModels: () => [], downloadModels: async () => { st.downloads++; await st.download; st.have = true; }, downloadSize: () => 207e6,
   unagreed: () => st.unagreed, NeedsConsent: class extends Error {}, tokenizerFile: () => ({ text: async () => "{}" }),
-  STANDARD: "mobileclip-s2", keepsStandard: () => false, toCompute: () => [],
+  CLIP: "clip-b32", LEGACY_FAMILY: "mcs2", legacyFaces: () => false, toCompute: () => [],
 }));
 vi.mock("./tokenizer", () => ({ Tokenizer: class { encode() { return [1]; } } }));
 
@@ -101,11 +102,11 @@ describe("search after unlocking", () => {
   beforeEach(() => {
     st.wipe(); // as a lock does
     Object.assign(st, { copy: null, loads: [], saves: [], calls: [], opened: 0, visionOpens: [], master: new Uint8Array(32).fill(7), gate: null, entries: [], have: true, download: null, holds: [], downloads: 0, unagreed: [] });
-    st.vision = { clip: null, dir: null, text: false, image: false, faces: false, also: null };
+    st.vision = { clip: null, dir: null, text: false, image: false, faces: false };
   });
 
   it("searches from the copy on the phone before anything comes from the server, with the text model only", async () => {
-    st.copy = JSON.stringify({ v: 1, items: { a: ["mcs2/2", "x"], b: ["mcs2/2", "y"] } });
+    st.copy = JSON.stringify({ v: 1, items: { a: ["laionb32/1", "x"], b: ["laionb32/1", "y"] } });
     await engine.warmSearch();
     expect(st.calls).toEqual(["load copy"]); // nothing over the network yet
     expect(engine.searchReady()).toBe(true);
@@ -113,15 +114,15 @@ describe("search after unlocking", () => {
     expect(st.visionOpens).toEqual([false]); // not the image or face models
     expect(await engine.textSearch("dog")).toEqual([{ id: "a", score: 0.3 }]);
     // bound to this account and model, under a key derived from the master key (not the master key itself)
-    expect(st.loads[0].path).toBe("/cache/cf-ct/alice/index-mcs2.bin");
-    expect(st.loads[0].ad).toBe("cipherfilm search index copy v1|alice|mcs2");
+    expect(st.loads[0].path).toBe("/cache/cf-ct/alice/index-laionb32.bin");
+    expect(st.loads[0].ad).toBe("cipherfilm search index copy v1|alice|laionb32");
     expect(st.loads[0].key).toHaveLength(32);
     expect([...st.loads[0].key]).not.toEqual([...st.master!]);
   });
 
   it("then opens only the entries that changed since, and keeps the copy up to date", async () => {
     const enc = (s: string) => `AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA${s}`;
-    st.copy = JSON.stringify({ v: 1, items: { a: ["mcs2/2", enc("aaaaaaaaaaaaaaaaaaaaaaaa").slice(-24)], b: ["mcs2/2", enc("bbbbbbbbbbbbbbbbbbbbbbbb").slice(-24)] } });
+    st.copy = JSON.stringify({ v: 1, items: { a: ["laionb32/1", enc("aaaaaaaaaaaaaaaaaaaaaaaa").slice(-24)], b: ["laionb32/1", enc("bbbbbbbbbbbbbbbbbbbbbbbb").slice(-24)] } });
     st.entries = [
       { item_id: "a", data_enc: enc("aaaaaaaaaaaaaaaaaaaaaaaa"), updated_at: 1 }, // unchanged
       { item_id: "b", data_enc: enc("BBBBBBBBBBBBBBBBBBBBBBBB"), updated_at: 2 }, // made again on another device
@@ -139,7 +140,7 @@ describe("search after unlocking", () => {
   });
 
   it("a copy still loading when the library locks is dropped", async () => {
-    st.copy = JSON.stringify({ v: 1, items: { a: ["mcs2/2", "x"] } });
+    st.copy = JSON.stringify({ v: 1, items: { a: ["laionb32/1", "x"] } });
     let release = () => {};
     st.gate = new Promise((r) => { release = r; });
     const warm = engine.warmSearch();
@@ -163,7 +164,7 @@ describe("search after unlocking", () => {
 
   it("without the yes nothing is downloaded: search waits for it, and goes on after it", async () => {
     st.have = false;
-    st.unagreed = ["mobileclip-s2-vision.onnx"];
+    st.unagreed = ["clip-b32-vision.onnx"];
     await engine.startSearch(lib(["a"]));
     expect(st.downloads).toBe(0);
     expect(st.holds).toEqual([]);

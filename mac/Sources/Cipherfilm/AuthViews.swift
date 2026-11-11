@@ -282,7 +282,6 @@ struct SignOutSheet: View {
 struct AgentQuestion: View {
   @Environment(AppModel.self) private var model
   @State private var search = true
-  @State private var explicit = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
@@ -293,17 +292,9 @@ struct AgentQuestion: View {
         Toggle(isOn: $search) {
           VStack(alignment: .leading, spacing: 2) {
             Text("Search what and who is in your photos").font(Typo.label)
-            Text(model.search.downloadSize(explicit ? .laion : .mobileclip, faces: model.settings.faces).map { "Runs on this Mac. Needs \($0) of models from Hugging Face; you're asked before anything is downloaded. Hugging Face is a trademark of Hugging Face, Inc. Cipherfilm is not affiliated with or endorsed by Hugging Face." } ?? "Runs on this Mac. The models are already here.").font(Typo.caption).foregroundStyle(Ink.muted)
+            Text(model.search.downloadSize(.clip, faces: model.settings.faces).map { "Runs on this Mac. Needs \($0) of models from Hugging Face; you're asked before anything is downloaded. Hugging Face is a trademark of Hugging Face, Inc. Cipherfilm is not affiliated with or endorsed by Hugging Face." } ?? "Runs on this Mac. The models are already here.").font(Typo.caption).foregroundStyle(Ink.muted)
           }
         }.toggleStyle(.checkbox)
-        // only for people an admin allowed explicit search: which model, before anything is downloaded
-        if model.me?.user.nsfw == true && search {
-          Picker("Model", selection: $explicit) {
-            Text("Standard search (MobileCLIP, \(model.search.downloadSize(.mobileclip, faces: model.settings.faces) ?? "already on this Mac"))").tag(false)
-            Text("Explicit search (LAION, \(model.search.downloadSize(.laion, faces: model.settings.faces) ?? "already on this Mac")): also understands explicit content").tag(true)
-          }
-          .pickerStyle(.radioGroup).labelsHidden().font(Typo.caption).padding(.leading, 20)
-        }
       }
       Text("You can change this any time in Settings.").font(Typo.caption).foregroundStyle(Ink.faint)
       HStack {
@@ -318,6 +309,6 @@ struct AgentQuestion: View {
 
   private func askSearch() {
     guard !model.settings.searchAsked else { return }
-    if search { model.turnOnSearch(explicit: model.me?.user.nsfw == true ? explicit : nil) } else { model.settings.searchAsked = true }
+    if search { model.turnOnSearch() } else { model.settings.searchAsked = true }
   }
 }

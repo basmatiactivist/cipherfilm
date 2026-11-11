@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-# Reference vectors for explicit search (docs/SEARCH.md, "Explicit search"): LAION's OpenCLIP ViT-B/32 run through ONNX
+# Reference vectors for search (docs/SEARCH.md): LAION's OpenCLIP ViT-B/32 run through ONNX
 # Runtime with the documented preprocessing (shortest side to 224 with PIL's bicubic, centre crop, CLIP mean and std;
 # text as int32 [1, 77] padded with 0). Tests/CipherfilmCoreTests/LaionParityTests.swift compares the Mac with these.
 #   pip install onnxruntime==1.31.1 numpy pillow
-#   python3 scripts/laion-reference.py <folder with nsfw-laion-b32-*.onnx> <out.json> <image>...
+#   python3 scripts/laion-reference.py <folder with clip-b32-*.onnx> <out.json> <image>...
 import json
 import sys
 
@@ -33,8 +33,8 @@ def image_input(path):
 
 def main():
     models, out, images = sys.argv[1], sys.argv[2], sys.argv[3:]
-    vision = ort.InferenceSession(f"{models}/nsfw-laion-b32-vision.onnx", providers=["CPUExecutionProvider"])
-    text = ort.InferenceSession(f"{models}/nsfw-laion-b32-text.onnx", providers=["CPUExecutionProvider"])
+    vision = ort.InferenceSession(f"{models}/clip-b32-vision.onnx", providers=["CPUExecutionProvider"])
+    text = ort.InferenceSession(f"{models}/clip-b32-text.onnx", providers=["CPUExecutionProvider"])
     ref = {"ort": ort.__version__, "images": {}, "texts": {}}
     for p in images:
         ref["images"][p] = vision.run(None, {"image": image_input(p)})[0][0].tolist()

@@ -8,7 +8,7 @@ import { haystack, matches, splitQuery } from "./search";
 import { contentSearch, vectorCount } from "./search/content";
 import { agreeModels, askedLater, askLater, NeedsConsent, useModelConsent } from "./search/consent";
 import { ModelConsent } from "./search/consentui";
-import { TEXT_MODELS, type Family } from "./search/rank";
+import { FAMILY as family, TEXT_MODELS, type Family } from "./search/rank";
 import { downloadItems, downloadOriginal } from "./downloads";
 import { prefetchThumbs } from "./cache";
 import { Album, addToAlbum, createAlbum, deleteAlbum, loadAlbums, removeFromAlbum, renameAlbum } from "./albums";
@@ -19,7 +19,7 @@ import { ReportDialog } from "./reportdialog";
 import { Field, KeepButton, Submit, fmtGB, useAction } from "./components";
 import { Icon, IconName, Logo } from "./icons";
 import { checkSession, loadUsage } from "./auth";
-import { hasIndex, loadPeople, refreshIndex, searchFamily, usePeople } from "./people/people";
+import { hasIndex, loadPeople, refreshIndex, searchFiltered, usePeople } from "./people/people";
 import { coalesce, startLive } from "./live";
 import { dismissNotice, loadNotices, noticeAction, noticeText, type Notice } from "./notices";
 import { alertNotices } from "./noticeAlerts";
@@ -370,7 +370,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const split = useMemo(() => splitQuery(q, personNames), [q, personNames]);
   // need: the model isn't here and the person wasn't asked yet (search/consent.ts): the question shows, nothing is fetched
   const [content, setContent] = useState<{ q: string; ids: string[] | null; status: string; need?: Family }>({ q: "", ids: null, status: "" });
-  const family = searchFamily();
+  const filtered = searchFiltered();
   const searchable = items ? vectorCount(family) : 0;
   const consentTick = useModelConsent();
   useEffect(() => {
@@ -380,14 +380,14 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
     const size = TEXT_MODELS[family].size;
     const t = setTimeout(() => {
       setContent((c) => ({ ...c, q: cq, status: "Looking at what's in your photos…" }));
-      contentSearch(cq, family, (done, total) => {
+      contentSearch(cq, family, filtered, (done, total) => {
         if (alive && done < total) setContent((c) => ({ ...c, status: `Downloading the search model: ${Math.round(done / 1e6)} of ${Math.round(total / 1e6)} MB…` }));
       }).then((hits) => alive && setContent({ q: cq, ids: hits.map((h) => h.id), status: "" }),
         (e) => alive && setContent(e instanceof NeedsConsent ? { q: cq, ids: null, status: "", need: e.family }
           : { q: cq, ids: null, status: `Couldn't search photo content. ${e instanceof Error ? e.message : "Try again."}` }));
     }, size > 1e8 ? 400 : 250);
     return () => { alive = false; clearTimeout(t); };
-  }, [split.content, family, searchable > 0, consentTick]);
+  }, [split.content, filtered, searchable > 0, consentTick]);
   // ranked like Immich (docs/SEARCH.md): every photo the model indexed, best match first, page by page
   const ranked = content.q === split.content && split.content ? content.ids : null;
   const PAGE = 200;

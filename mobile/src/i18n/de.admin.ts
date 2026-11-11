@@ -35,7 +35,7 @@ export const deAdmin: Record<string, string> = {
   "Storage limit": "Speicherlimit",
   "Limit in GB (0 = no limit)": "Limit in GB (0 = kein Limit)",
   "Allow explicit search": "Explizite Suche erlauben",
-  "An uncensored search model they can turn on themselves. Off for everyone by default.": "Ein unzensiertes Suchmodell, das die Person selbst einschalten kann. Standardmäßig für alle aus.",
+  "Lets them turn off the filter that leaves explicit photos out of search. Off for everyone by default.": "Die Person kann den Filter ausschalten, der explizite Fotos aus der Suche lässt. Standardmäßig für alle aus.",
   "For someone who lost their authenticator and recovery codes": "Für jemanden, der Authenticator und Wiederherstellungscodes verloren hat",
   "Make regular user": "Zu normalem Benutzer machen",
   "Make admin": "Zum Administrator machen",

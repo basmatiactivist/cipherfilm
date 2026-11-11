@@ -72,7 +72,7 @@ func TestDemoAccountReadsAndSearchesButChangesNothing(t *testing.T) {
 		method, path string
 		body         any
 	}{
-		{"PUT", "/api/items/" + item + "/index", map[string]any{"data_enc": rb(300)}},
+		{"PUT", "/api/items/" + item + "/index", map[string]any{"data_enc": rb(300), "model": "laionb32/1"}},
 		{"PUT", "/api/me/indexer", nil},
 	} {
 		if code, out := demo.do(c.method, c.path, c.body, true); code != 409 || out["code"] != "not_indexer" {

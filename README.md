@@ -69,8 +69,9 @@ and visitors are signed out every hour. To keep your own photos, [run your own s
 - **Automatic backup from Android.** New photos in the folders you choose are encrypted and uploaded in the background.
   The backup never holds your master key: it seals each new photo to your account's public key, so it can add photos
   but never read any.
-- **Search and people, on your device.** Find photos by content and group faces into people, with open CLIP and face
-  models that run locally ([docs/SEARCH.md](docs/SEARCH.md), [docs/MODELS.md](docs/MODELS.md)).
+- **Search and people, on your device.** Find photos by content and group faces into people, with one open CLIP model
+  (LAION's ViT-B/32, MIT) and open face models that run locally, the same in every app. Search leaves explicit photos
+  out unless an admin allows otherwise ([docs/SEARCH.md](docs/SEARCH.md), [docs/MODELS.md](docs/MODELS.md)).
 - **Map and places.** See your photos on a map, find them by town, region or country, and see where each was taken.
   Coordinates stay encrypted and are only read on your devices. Place names come from a file inside the apps, so
   naming a place sends nothing anywhere; the map is off until you turn it on, and what its tile server sees is in
@@ -106,7 +107,7 @@ and visitors are signed out every hour. To keep your own photos, [run your own s
 | **Mac** | from the [latest release](https://github.com/basmatiactivist/cipherfilm/releases/latest) | Apple silicon, macOS 15 or newer |
 | **Web** | comes with your server, in any current browser | also iPhone and iPad |
 
-The Play build differs in three ways Google Play requires (no explicit search, automatic backup in shorter background
+The Play build differs in three ways Google Play requires (search always leaves explicit photos out, automatic backup in shorter background
 runs, battery settings opened instead of asked). **For automatic backup the APK is the better choice:** it keeps
 uploading in the background until everything is done, large videos included; on Google Play a video too large for one
 background run waits until you tap Back up now. Photos are backed up the same way by both.

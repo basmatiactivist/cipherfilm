@@ -1,6 +1,7 @@
 package main
 
 import (
+	"slices"
 	"database/sql"
 	"net/http"
 	"path/filepath"
@@ -94,10 +95,10 @@ func TestOneDeviceIndexes(t *testing.T) {
 		code, _ := c.do("PUT", "/api/items/"+i1+"/index", map[string]any{"data_enc": rb(200), "model": model}, true)
 		return code
 	}
-	if put(phone, "mcs2/2") != 200 {
+	if put(phone, "laionb32/1") != 200 {
 		t.Fatal("first device to index")
 	}
-	if code := put(admin, "mcs2/2"); code != 409 {
+	if code := put(admin, "laionb32/1"); code != 409 {
 		t.Fatalf("second device indexed too: %d", code)
 	}
 	_, me := admin.do("GET", "/api/me", nil, false)
@@ -106,12 +107,12 @@ func TestOneDeviceIndexes(t *testing.T) {
 		t.Fatalf("indexer %v, phone %v", me["indexer"], pm["session_id"])
 	}
 	// the person moves indexing to this device
-	if code, _ := admin.do("PUT", "/api/me/indexer", nil, true); code != 200 || put(admin, "mcs2/2") != 200 || put(phone, "mcs2/2") != 409 {
+	if code, _ := admin.do("PUT", "/api/me/indexer", nil, true); code != 200 || put(admin, "laionb32/1") != 200 || put(phone, "laionb32/1") != 409 {
 		t.Fatal("claiming the indexer")
 	}
 	// the indexer signs out: the next device takes over
 	admin.do("POST", "/api/auth/logout", nil, true)
-	if put(phone, "mcs2/2") != 200 {
+	if put(phone, "laionb32/1") != 200 {
 		t.Fatal("after the indexer signed out")
 	}
 	if code, _ := phone.do("DELETE", "/api/me/indexer", nil, true); code != 200 {
@@ -122,36 +123,61 @@ func TestOneDeviceIndexes(t *testing.T) {
 	}
 }
 
-func TestIndexEntriesArePerModel(t *testing.T) {
+// One model family: MobileCLIP's entries (and untagged ones from before 1.9.0) left from older apps are read only with
+// ?model=mcs2, a new entry for an item replaces its old one, and they can be deleted on their own; the index itself
+// can't be deleted by family (older apps asked that for LAION's when explicit search was turned off).
+func TestLegacyEntriesStayReadableUntilReplaced(t *testing.T) {
 	e := newEnv(t)
 	admin, _ := e.setupAdmin("admin@x.org")
-	i1 := e.readyItem(admin)
-	a, b := rb(200), rb(200)
-	admin.do("PUT", "/api/items/"+i1+"/index", map[string]any{"data_enc": a, "model": "mcs2+yunet23+sface21/2"}, true)
-	admin.do("PUT", "/api/items/"+i1+"/index", map[string]any{"data_enc": b, "model": "laionb32+yunet23+sface21/1"}, true)
+	_, me := admin.do("GET", "/api/me", nil, false)
+	uid := me["user"].(map[string]any)["id"].(string)
+	i1, i2, i3 := e.readyItem(admin), e.readyItem(admin), e.readyItem(admin)
+	for _, r := range []struct{ id, model string }{{i1, "mcs2"}, {i2, ""}, {i3, "mcs2"}} {
+		if _, err := e.app.db.Exec(`INSERT INTO item_index(item_id,user_id,model,data_enc,updated_at) VALUES(?,?,?,?,1)`, r.id, uid, r.model, rb(200)); err != nil {
+			t.Fatal(err)
+		}
+	}
 	get := func(q string) []string {
 		_, out := admin.do("GET", "/api/index?since=0"+q, nil, false)
 		var l []string
 		for _, x := range out["entries"].([]any) {
-			l = append(l, x.(map[string]any)["data_enc"].(string))
+			l = append(l, x.(map[string]any)["item_id"].(string))
 		}
 		return l
 	}
-	if l := get("&model=mcs2"); len(l) != 1 || l[0] != a {
+	if l := get("&model=mcs2"); len(l) != 3 {
 		t.Fatalf("mcs2: %v", l)
 	}
-	if l := get("&model=laionb32"); len(l) != 1 || l[0] != b {
+	if l := get("&model=laionb32"); len(l) != 0 {
+		t.Fatalf("laionb32 before indexing: %v", l)
+	}
+	b := rb(200)
+	if code, _ := admin.do("PUT", "/api/items/"+i1+"/index", map[string]any{"data_enc": b, "model": "laionb32+yunet23+sface21/1"}, true); code != 200 {
+		t.Fatalf("index: %d", code)
+	}
+	if l := get("&model=laionb32"); len(l) != 1 || l[0] != i1 {
 		t.Fatalf("laionb32: %v", l)
 	}
-	if l := get(""); len(l) != 2 {
+	if l := get("&model=mcs2"); len(l) != 2 || slices.Contains(l, i1) {
+		t.Fatalf("the item's MobileCLIP entry stayed: %v", l)
+	}
+	if code, _ := admin.do("PUT", "/api/items/"+i2+"/index", map[string]any{"data_enc": rb(200), "model": "laionb32/1"}, true); code != 200 {
+		t.Fatalf("index: %d", code)
+	}
+	if l := get(""); len(l) != 3 {
 		t.Fatalf("all: %v", l)
 	}
 	if code, _ := admin.do("GET", "/api/index?model=bad!", nil, false); code != 400 {
 		t.Fatalf("bad model: %d", code)
 	}
-	admin.do("DELETE", "/api/index?model=laionb32", nil, true)
-	if l := get(""); len(l) != 1 || l[0] != a {
-		t.Fatalf("after deleting one model: %v", l)
+	if code, _ := admin.do("DELETE", "/api/index?model=laionb32", nil, true); code != 409 || len(get("&model=laionb32")) != 2 {
+		t.Fatalf("an older app deleted the index: %d", code)
+	}
+	if code, _ := admin.do("DELETE", "/api/index?model=mcs2", nil, true); code != 200 {
+		t.Fatalf("delete mcs2: %d", code)
+	}
+	if l := get(""); len(l) != 2 || len(get("&model=mcs2")) != 0 {
+		t.Fatalf("after deleting MobileCLIP's: %v", l)
 	}
 }
 

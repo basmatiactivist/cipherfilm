@@ -54,7 +54,7 @@ type userView struct {
 	ID    string `json:"id"`
 	Email string `json:"email"`
 	Role  string `json:"role"`
-	// the admin allows this person search of explicit content: the apps then offer it (and its model) in settings
+	// the admin allows this person search of explicit content: the apps then offer to turn off its filter in settings
 	NSFW bool `json:"nsfw"`
 }
 

@@ -40,9 +40,9 @@ vi.mock("expo-sharing", () => ({ clearSharedPayloads: () => {} }));
 vi.mock("react-native", () => ({ Platform: { constants: { Model: "Test" } }, AppState: { currentState: "background" } }));
 vi.mock("./keepAlive", () => ({ keepRunning: () => false, letGo: () => {}, onlyHolder: () => false }));
 vi.mock("./search/models", () => ({
-  haveModels: async () => true, modelPath: () => "/doc/models", family: () => "mcs2",
-  modelTag: (_c: string, f: boolean) => (f ? "mcs2+yunet23+sface21/2" : "mcs2/2"), dropOtherModels: () => [],
-  STANDARD: "mobileclip-s2", keepsStandard: () => false, toCompute: () => ["mobileclip-s2"],
+  haveModels: async () => true, modelPath: () => "/doc/models", family: () => "laionb32", CLIP: "clip-b32",
+  modelTag: (_c: string, f: boolean) => (f ? "laionb32+yunet23+sface21/1" : "laionb32/1"), dropOtherModels: () => [],
+  toCompute: () => ["clip-b32"], LEGACY_FAMILY: "mcs2", legacyFaces: () => false,
 }));
 vi.mock("@crypto/account", () => ({
   normEmail: (e: string) => e.trim().toLowerCase(),

@@ -168,7 +168,7 @@ func TestEventsPingTheOtherDevicesOnEveryChange(t *testing.T) {
 			phone.do("PUT", "/api/me/blobs/people", map[string]any{"data_enc": rb(60), "version": 0}, true)
 		}, "people"},
 		{"index", func() {
-			phone.do("PUT", "/api/items/"+id+"/index", map[string]any{"data_enc": rb(60), "model": "mcs2"}, true)
+			phone.do("PUT", "/api/items/"+id+"/index", map[string]any{"data_enc": rb(60), "model": "laionb32"}, true)
 		}, "index"},
 	}
 	last := v1

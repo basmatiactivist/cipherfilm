@@ -1,5 +1,5 @@
 // On-device search (docs/SEARCH.md), the same pipeline as the Android app (mobile/modules/cf-native/.../Vision.kt), so an
-// index entry made here matches one made on the phone: MobileCLIP S2 (or, for explicit search, LAION's ViT-B/32) for
+// index entry made here matches one made on the phone: LAION's OpenCLIP ViT-B/32 for
 // what is in a photo, YuNet to find faces and SFace to describe them. It reads decrypted pictures from memory and returns vectors; nothing is written anywhere.
 import CoreGraphics
 import Foundation
@@ -167,8 +167,7 @@ public struct Analysis: Sendable {
   public var faces: [FaceFound]?
 }
 
-/** One look at a photo with several image models (LAION's and MobileCLIP's while explicit search is on): a vector
- *  from each, in the order asked, and the faces once. */
+/** One look at a photo: the image vector of each model asked for (one since MobileCLIP was dropped) and the faces. */
 public struct Analyses: Sendable {
   public var clips: [(model: ClipModel, vector: Data)]
   public var faces: [FaceFound]?
@@ -184,20 +183,16 @@ public final class Vision: @unchecked Sendable {
 
   public let model: ClipModel
   private let image: OrtModel?
-  /** MobileCLIP's image model next to LAION's, on the device that indexes while explicit search is on */
-  private let standard: OrtModel?
   private let text: OrtModel
   private let det: OrtModel?
   private let rec: OrtModel?
   public var hasFaces: Bool { det != nil }
 
   /** Opens the models in a folder (checked against their SHA-256 before). textOnly: only the text model, on a device
-   *  that reads the index another one computes; it can search but not look at photos. standardToo: MobileCLIP's image
-   *  model as well, next to LAION's (ClipModel.keepsStandard). */
-  public init(dir: URL, faces: Bool, clip: ClipModel = .mobileclip, threads: Int32 = 2, textOnly: Bool = false, standardToo: Bool = false) throws {
+   *  that reads the index another one computes; it can search but not look at photos. */
+  public init(dir: URL, faces: Bool, clip: ClipModel = .clip, threads: Int32 = 2, textOnly: Bool = false) throws {
     model = clip
     image = textOnly ? nil : try OrtModel(path: dir.appendingPathComponent(clip.vision.name), threads: threads)
-    standard = textOnly || !standardToo || clip == .standard ? nil : try OrtModel(path: dir.appendingPathComponent(ClipModel.standard.vision.name), threads: threads)
     text = try OrtModel(path: dir.appendingPathComponent(clip.text.name), threads: threads)
     if faces && !textOnly {
       det = try OrtModel(path: dir.appendingPathComponent("yunet-2023mar.onnx"), threads: threads)
@@ -217,11 +212,10 @@ public final class Vision: @unchecked Sendable {
     return Analysis(clip: a.clips[0].vector, faces: a.faces)
   }
 
-  /** The image vector of each model in clips (this one's, MobileCLIP's next to it, or both) and the faces in a JPEG,
-   *  found once whatever the number of models. */
+  /** The image vector of each model in clips and the faces in a JPEG, found once. */
   public func analyze(_ jpeg: Data, faces: Bool, clips: [ClipModel]) throws -> Analyses {
     let run = try clips.map { m -> (ClipModel, OrtModel) in
-      guard let s = m == model ? image : m == .standard ? standard : nil else { throw CryptoError.failed("this device only reads the index") }
+      guard let s = m == model ? image : nil else { throw CryptoError.failed("this device only reads the index") }
       return (m, s)
     }
     guard let bmp = Pixels.decode(jpeg, maxPx: 1280) else { throw CryptoError.failed("not an image") }
@@ -237,37 +231,28 @@ public final class Vision: @unchecked Sendable {
 
   /** The text vector for CLIP token ids (Tokenizer), L2-normalised. */
   public func textVector(_ ids: [Int]) throws -> [Float] {
-    let input: OrtModel.Input
-    switch model {
-    case .mobileclip:
-      var padded = [Int64](repeating: 0, count: 77)
-      for (i, v) in ids.prefix(77).enumerated() { padded[i] = Int64(v) }
-      input = .int64(padded, [1, 77])
-    case .laion:
-      var padded = [Int32](repeating: 0, count: 77)
-      for (i, v) in ids.prefix(77).enumerated() { padded[i] = Int32(v) }
-      input = .int32(padded, [1, 77])
-    }
-    return Self.normalize(try text.vector(input, dim: Self.clipDim))
+    // Immich's export takes int32 ids
+    var padded = [Int32](repeating: 0, count: 77)
+    for (i, v) in ids.prefix(77).enumerated() { padded[i] = Int32(v) }
+    return Self.normalize(try text.vector(.int32(padded, [1, 77]), dim: Self.clipDim))
   }
 
-  // ---- MobileCLIP: shortest side to 256, centre crop, 0..1, no mean/std. LAION: 224, then CLIP's mean and std ----
+  // ---- shortest side to 224 (bicubic, as the Python reference's Pillow), centre crop, CLIP's mean and std ----
 
   static let laionMean: [Float] = [0.48145466, 0.4578275, 0.40821073]
   static let laionStd: [Float] = [0.26862954, 0.26130258, 0.27577711]
 
   /** The image model's input for a picture: [1, 3, P, P], channels first. */
   static func clipInput(_ src: Pixels, _ model: ClipModel) -> (buf: [Float], px: Int) {
-    let P = model == .mobileclip ? clipPx : 224
-    let (mean, std): ([Float], [Float]) = model == .mobileclip ? ([0, 0, 0], [1, 1, 1]) : (laionMean, laionStd)
+    let P = 224
+    let (mean, std) = (laionMean, laionStd)
     // a very long or tall picture: only its middle (at most 4 times the short side) is scaled, which is all the centre
     // crop below reads, so the scaled picture stays small however thin the original is
     let cap = 4 * min(src.w, src.h), cw = min(src.w, cap), ch = min(src.h, cap)
     let pic = src.cropped((src.w - cw) / 2, (src.h - ch) / 2, cw, ch)
     let scale = Float(P) / Float(min(pic.w, pic.h))
     let sw = max(P, Int((Float(pic.w) * scale).rounded())), sh = max(P, Int((Float(pic.h) * scale).rounded()))
-    // MobileCLIP as on Android (Vision.kt); LAION as its Python reference (Pillow's bicubic)
-    let sized = model == .mobileclip ? pic.smooth(sw, sh) : pic.bicubic(sw, sh)
+    let sized = pic.bicubic(sw, sh)
     let l = (sized.w - P) / 2, t = (sized.h - P) / 2
     let n = P * P
     var buf = [Float](repeating: 0, count: 3 * n)

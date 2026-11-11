@@ -221,8 +221,8 @@ export async function loadCachedLibrary(): Promise<Item[] | null> {
 }
 
 /** The search index's copies in the same folder (search/engine.ts): the server's entries per model family
- *  (index-<family>.json) and the opened index (index-<family>.bin). Both families stay: while explicit search is on,
- *  the phone that indexes keeps MobileCLIP's entries next to LAION's, and the Play build only ever reads MobileCLIP's. */
+ *  (index-<family>.json) and the opened index (index-<family>.bin). Left alone here: the indexing phone still reads
+ *  MobileCLIP's entries from before for their faces until it has made the new ones (search/engine.ts deletes them). */
 const SEARCH_COPY = /^index-[a-z0-9][a-z0-9._-]{0,63}\.(json|bin)$/;
 
 /** Drops cached images of items that are gone, and all but the newest previews. Only images: the list and the search

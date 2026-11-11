@@ -166,8 +166,6 @@ struct SearchSettings: View {
   @Environment(AppModel.self) private var model
   @State private var confirm = false
   @State private var error: String?
-  @State private var explicitAsk: Bool?
-  @State private var askModel = false
   @State private var explicitBusy = false
   @State private var indexer: SearchEngine.Device?
   @State private var takingOver = false
@@ -188,11 +186,9 @@ struct SearchSettings: View {
     @Bindable var model = model
     let unlocked = model.phase == .unlocked
     VStack(alignment: .leading, spacing: 20) {
-      Section_(title: "Search and people", subtitle: "Runs on this Mac with open models (MobileCLIP, YuNet, SFace)\(size(.mobileclip).map { ", \($0)" } ?? ", already on this Mac"). Results are encrypted and stored on your server, shared with your other devices.") {
+      Section_(title: "Search and people", subtitle: "Runs on this Mac with open models (LAION's CLIP ViT-B/32, YuNet, SFace)\(size(.clip).map { ", \($0)" } ?? ", already on this Mac"). Results are encrypted and stored on your server, shared with your other devices.") {
         Toggle("Search and people", isOn: Binding(get: { model.settings.search }, set: { on in
-          // where explicit search is allowed, which model is asked first, so only that one is downloaded
-          if on && model.me?.user.nsfw == true { askModel = true }
-          else if on { withConsent(.mobileclip, faces: model.settings.faces) { model.settings.search = true; model.settings.searchAsked = true } }
+          if on { withConsent(.clip, faces: model.settings.faces) { model.turnOnSearch() } }
           // off: the models stay unless the person deletes them (asked when there are any)
           else if model.search.models.downloaded() != nil { offAsk = true }
           else { model.settings.search = false; model.settings.searchAsked = true }
@@ -211,13 +207,18 @@ struct SearchSettings: View {
         Toggle("Also while on battery", isOn: $model.settings.indexOnBattery).disabled(!model.settings.search)
         if !unlocked { NeedsUnlock() }
       }
-      // only for a person an admin allowed it (docs/SEARCH.md, "Explicit search")
+      // only for a person an admin allowed it (docs/SEARCH.md, "Explicit content")
       if model.me?.user.nsfw == true && model.settings.search {
         let on = model.search.people.explicit == true
-        Section_(title: "Explicit search", subtitle: "Uses LAION's OpenCLIP ViT-B/32, which also understands explicit content\(size(.laion).map { " (\($0) download)" } ?? ""). Applies to your account: all devices switch and every photo is indexed again.") {
-          Toggle("Explicit search", isOn: Binding(get: { on }, set: { explicitAsk = $0 }))
+        Section_(title: "Explicit search", subtitle: "Off, search leaves out photos and words it takes for explicit content. On, it finds everything. Applies to all your devices (not the Android app from Google Play, which always leaves them out).") {
+          Toggle("Explicit search", isOn: Binding(get: { on }, set: { want in
+            explicitBusy = true
+            Task {
+              do { try await model.search.setExplicit(want); error = nil } catch { self.error = error.localizedDescription }
+              explicitBusy = false
+            }
+          }))
             .disabled(!unlocked || explicitBusy || model.search.phase == .off)
-          if on && model.search.clip == .laion { Text("On. Search uses the LAION model.").font(Typo.caption).foregroundStyle(.secondary) }
         }
       }
       if model.settings.search {
@@ -280,42 +281,10 @@ struct SearchSettings: View {
       Button("Turn Off, Keep the Models") { model.settings.search = false; model.settings.searchAsked = true }
       Button("Cancel", role: .cancel) {}
     } message: { Text("Deleting the models frees their space; turning search on again then asks before downloading them.") }
-    .alert("Which search?", isPresented: $askModel) {
-      Button("Standard Search (MobileCLIP, \(size(.mobileclip) ?? "already on this Mac"))") { withConsent(.mobileclip, faces: model.settings.faces) { model.turnOnSearch(explicit: false) } }
-      Button("Explicit Search (LAION, \(size(.laion) ?? "already on this Mac"))") { withConsent(.laion, faces: model.settings.faces) { model.turnOnSearch(explicit: true) } }
-      Button("Cancel", role: .cancel) {}
-    } message: {
-      Text("Explicit search also understands explicit content. It applies to all your devices. You can change it later here.")
-    }
-    .alert(explicitAsk == true ? "Turn on explicit search?" : "Turn off explicit search?", isPresented: Binding(get: { explicitAsk != nil }, set: { if !$0 { explicitAsk = nil } })) {
-      Button(explicitAsk == true ? "Turn On" : "Turn Off") {
-        guard let want = explicitAsk else { return }
-        let go = {
-          explicitBusy = true
-          Task {
-            do { try await model.search.setExplicit(want); error = nil } catch { self.error = error.localizedDescription }
-            explicitBusy = false
-          }
-        }
-        if want { withConsent(.laion, faces: model.settings.faces, then: go) } else { go() }
-      }
-      Button("Cancel", role: .cancel) {}
-    } message: {
-      Text(switchText(to: explicitAsk == true ? .laion : .mobileclip))
-    }
   }
 
   /** The download a model needs here now, from what is missing ("about 248 MB"); nil when it is all here. */
   private func size(_ clip: ClipModel) -> String? { model.search.downloadSize(clip, faces: model.settings.faces) }
-
-  private func switchText(to clip: ClipModel) -> String {
-    let old = clip == .laion ? "MobileCLIP" : "the explicit model"
-    let get = size(clip).map { "downloads \(clip == .laion ? "the explicit model" : "MobileCLIP") (\($0))" } ?? "uses the model already here"
-    guard model.search.indexes else { return "This Mac deletes \(old), \(get) and searches with what your indexing device finds again. Your other devices switch too." }
-    // the indexing Mac keeps MobileCLIP's results current next to LAION's, for devices without explicit search
-    if clip == .laion { return "This Mac \(get) and looks at every photo and video again. It keeps MobileCLIP's results up to date too, for devices without explicit search. Your other devices switch too." }
-    return "This Mac deletes the explicit model and searches with MobileCLIP's results, kept up to date all along. Your other devices switch too."
-  }
 
   private var indexedBy: String {
     guard let d = indexer, !d.current else { return "Another device indexes your photos." }
@@ -332,8 +301,8 @@ struct SearchSettings: View {
     case .indexing: return "Indexing \(s.done) of \(s.total)"
     case .waitPower: return s.message ?? "Waiting for power."
     case .ready:
-      if !s.indexes { return s.clip == .laion ? "Ready (explicit search), using the indexing device's results." : "Ready, using the indexing device's results." }
-      return s.clip == .laion ? "Up to date (explicit search)." : "Up to date."
+      if !s.indexes { return s.filtered ? "Ready, using the indexing device's results." : "Ready (explicit search), using the indexing device's results." }
+      return s.filtered ? "Up to date." : "Up to date (explicit search)."
     case .error: return s.message ?? "Stopped."
     }
   }

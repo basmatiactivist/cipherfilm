@@ -71,8 +71,8 @@ describe("search settings", () => {
 
   it("two saves at once both count", async () => {
     const m = await fresh();
-    await Promise.all([m.saveSettings({ asked: true }), m.saveSettings({ enabled: true }), m.saveSettings({ clip: "laion-b32" })]);
-    expect(await m.loadSettings()).toMatchObject({ asked: true, enabled: true, clip: "laion-b32" });
-    expect(JSON.parse(st.file!)).toMatchObject({ asked: true, enabled: true, clip: "laion-b32" });
+    await Promise.all([m.saveSettings({ asked: true }), m.saveSettings({ enabled: true }), m.saveSettings({ faces: false })]);
+    expect(await m.loadSettings()).toMatchObject({ asked: true, enabled: true, faces: false });
+    expect(JSON.parse(st.file!)).toMatchObject({ asked: true, enabled: true, faces: false });
   });
 });

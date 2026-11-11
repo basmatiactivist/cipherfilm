@@ -42,7 +42,7 @@ export interface Group {
 }
 
 export const SIMILAR = {
-  /** cosine of two image vectors (MobileCLIP S2 or LAION B/32, L2-normalised) from which they count as the same scene */
+  /** cosine of two image vectors (LAION B/32, L2-normalised) from which they count as the same scene */
   threshold: 0.92,
   /** taken at most this far apart (ms) */
   windowMs: 5 * 60_000,

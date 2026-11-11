@@ -90,7 +90,7 @@ The same app, with three differences Google Play's rules require:
 
 | | Google Play | APK (GitHub, Obtainium) |
 |---|---|---|
-| Explicit search | not offered | offered where the server's admin allows it (docs/SEARCH.md) |
+| Explicit search | not offered: search always leaves explicit photos out | offered where the server's admin allows it (docs/SEARCH.md) |
 | Automatic backup | in short background runs that continue in the next one; a video too large for one waits for **Back up now** (the app says so), which runs until it is done | runs until it is done, also in the background |
 | Battery optimisation | opens Android's list, you pick Cipherfilm | asks directly |
 | Updates | through Google Play | through Obtainium, or a new APK by hand |

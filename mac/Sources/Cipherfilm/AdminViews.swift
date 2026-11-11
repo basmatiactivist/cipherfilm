@@ -143,7 +143,7 @@ struct AdminPeople: View {
       }
       if let users = accounts?.users {
         Divider()
-        Section_(title: "Users", subtitle: "Explicit search is off for everyone. Allow it for someone, and they can turn on an uncensored search model themselves.") {
+        Section_(title: "Users", subtitle: "Explicit search is off for everyone: search leaves out explicit photos. Allow it for someone, and they can turn that filter off for themselves.") {
           if let actError { Text(actError).font(Typo.caption).foregroundStyle(Ink.danger) }
           VStack(alignment: .leading, spacing: 0) {
             ForEach(users) { u in

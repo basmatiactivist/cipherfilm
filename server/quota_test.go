@@ -213,7 +213,7 @@ func TestIndexAndUserBlobsCountTowardTheQuota(t *testing.T) {
 	if code, _ := bob.do("PUT", "/api/me/blobs/people", map[string]any{"data_enc": people, "version": 0}, true); code != 200 {
 		t.Fatalf("people: %d", code)
 	}
-	if code, _ := bob.do("PUT", "/api/items/"+id+"/index", map[string]any{"data_enc": entry, "model": "mcs2/2"}, true); code != 200 {
+	if code, _ := bob.do("PUT", "/api/items/"+id+"/index", map[string]any{"data_enc": entry, "model": "laionb32/1"}, true); code != 200 {
 		t.Fatalf("index: %d", code)
 	}
 	want := float64(len(people) + len(entry))
@@ -228,10 +228,10 @@ func TestIndexAndUserBlobsCountTowardTheQuota(t *testing.T) {
 	}
 	// a replacement costs only the difference; growing past the limit is refused
 	e.app.db.Exec(`UPDATE users SET quota_bytes=? WHERE email='bob@x.org'`, int64(want)+10)
-	if code, _ := bob.do("PUT", "/api/items/"+id+"/index", map[string]any{"data_enc": rb(1500), "model": "mcs2+yunet23+sface21/2"}, true); code != 200 {
+	if code, _ := bob.do("PUT", "/api/items/"+id+"/index", map[string]any{"data_enc": rb(1500), "model": "laionb32+yunet23+sface21/1"}, true); code != 200 {
 		t.Fatalf("replacing an entry: %d", code)
 	}
-	if code, _ := bob.do("PUT", "/api/items/"+id+"/index", map[string]any{"data_enc": rb(1000), "model": "laionb32/1"}, true); code != 413 {
+	if code, _ := bob.do("PUT", "/api/items/"+id+"/index", map[string]any{"data_enc": rb(3000), "model": "laionb32/1"}, true); code != 413 {
 		t.Fatalf("index over quota: %d", code)
 	}
 	if code, _ := bob.do("PUT", "/api/me/blobs/people", map[string]any{"data_enc": rb(2000), "version": 1}, true); code != 413 {

@@ -84,8 +84,8 @@ and visitors are signed out every hour. To keep your own photos, [run your own s
   your device, and move the extras to the trash (web and Android).
 - **Locks itself.** Fingerprint unlock, automatic lock after a time you choose or when the screen turns off, and
   shake to lock and close. On Android, screenshots and the recent-apps preview are blocked unless you allow them.
-- **Two-step sign-in and your devices.** Optional codes from an authenticator app at every new sign-in, with one-time
-  recovery codes; a list of signed-in devices to sign out one or all others; a notice on your other devices when a
+- **Two-step sign-in and your devices.** Optional codes from an authenticator app (added in one tap) or a passkey at
+  every new sign-in, with one-time recovery codes; the password is still needed and still unlocks the photos; a list of signed-in devices to sign out one or all others; a notice on your other devices when a
   new one signs in.
 - **Mac app.** Keeps an export folder up to date, uploads watched folders and indexes for search in the background
   ([docs/MAC.md](docs/MAC.md)).
@@ -154,6 +154,9 @@ controls the server could deliver modified JavaScript), is in [docs/THREAT_MODEL
   ([SECURITY.md](SECURITY.md)), but there has been **no independent human security review**.
 - No sharing between people. Two-step sign-in uses authenticator-app codes (TOTP), which the server must be able to
   check: whoever runs the server could make codes (it could also serve altered web code, see the threat model).
+  Passkeys are only a second step: they can't replace the password, which derives the keys. On Android they need
+  Android 14 and a server Google can reach on the internet (it checks the server's assetlinks.json), so not a
+  tailnet-only one; the Mac uses them through the browser.
 - No server-side thumbnails or transcoding (the server can't see the content). iPhone HEVC videos don't play in every
   browser.
 - Not tested at large scale (tens of thousands of photos).

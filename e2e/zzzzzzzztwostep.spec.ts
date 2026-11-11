@@ -78,7 +78,7 @@ test.describe.serial("two-step sign-in", () => {
 
     await openMenuItem(page, "Account");
     await page.getByText("Two-step sign-in", { exact: true }).click();
-    await page.getByRole("button", { name: "Turn on…" }).click();
+    await page.getByRole("button", { name: "Use an authenticator app…" }).click();
     await page.getByLabel("Your password").fill(GRACE_PW);
     await page.getByRole("button", { name: "Continue" }).click();
     // the QR code is drawn in the page; the key is shown as text too

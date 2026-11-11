@@ -22,6 +22,7 @@ import { fingerprint } from "./prints";
 import { indexUploaded, rememberUploaded, runBackgroundIndex } from "./search/background";
 import { forgetSettings, loadSettings } from "./search/settings";
 import { onSessionChange, onSignOut, savedServer } from "./session";
+import { checkNotices, noticeCheckWanted } from "./noticeCheck";
 import { t, tn } from "./i18n";
 
 export const TASK = "cipherfilm-backup";
@@ -608,15 +609,17 @@ export async function waitingCount(): Promise<number> {
   return n;
 }
 
-/** The one background task runs the backup and background search indexing; it stays scheduled while either is on. */
+/** The one background task runs the backup, background search indexing and the check for account notices
+ *  (noticeCheck.ts); it stays scheduled while any of them is on. */
 export async function scheduleBackground() {
   const [c, st] = await Promise.all([loadConfig(), loadSettings()]);
-  const want = !!c?.enabled || (st.enabled && st.background);
+  const media = !!c?.enabled || (st.enabled && st.background);
+  const want = media || noticeCheckWanted();
   try {
     if (want) await BackgroundTask.registerTaskAsync(TASK, { minimumInterval: 15 });
     else await BackgroundTask.unregisterTaskAsync(TASK);
   } catch { /* already in that state */ }
-  N.watchNewMedia(want); // and seconds after a new photo or video
+  N.watchNewMedia(media); // and seconds after a new photo or video
 }
 
 // A session end, another sign-in or another server: a run still going stops before its next request.
@@ -635,6 +638,8 @@ onSignOut(async () => {
 
 // The background entry: defined when the bundle loads (index.js), also when Android starts the app only for this.
 TaskManager.defineTask(TASK, async () => {
+  // first, and on its own: one small request, before a backup that may take minutes
+  await checkNotices().catch(() => {});
   try {
     await runBackup("background");
     // a backup still going from an earlier run (in the service) uses the models itself

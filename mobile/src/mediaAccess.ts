@@ -37,3 +37,12 @@ export async function askMediaLocation(): Promise<boolean> {
   const r = await away(() => PermissionsAndroid.request(LOCATION)).catch(() => null);
   return r === PermissionsAndroid.RESULTS.GRANTED || N.mediaLocationAllowed();
 }
+
+/** Asks Android to allow notifications (Android 13+ has a prompt; before, and when it won't ask any more or the app's
+ *  channel in question is off, its app settings open instead). ok tells whether what the caller needs is on now. */
+export async function requestNotifications(ok: () => boolean): Promise<void> {
+  if (N.backupState().sdk < 33) { expectAway(); N.openAppSettings(); return; }
+  const r = await away(() => PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS)).catch(() => null);
+  // refused for good, or allowed with the channel switched off: both only in the app settings
+  if (r === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN || (r === PermissionsAndroid.RESULTS.GRANTED && !ok())) { expectAway(); N.openAppSettings(); }
+}

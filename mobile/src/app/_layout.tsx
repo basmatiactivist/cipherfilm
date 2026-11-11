@@ -16,6 +16,7 @@ import { startAutoLock } from "../autolock";
 import { liveUnlocked } from "../live";
 import { startLiveSync } from "../liveSync";
 import { refreshLang, useLang } from "../i18n";
+import { onNoticeOpen, takeNoticeOpen } from "../noticeOpen";
 
 // expo-image keeps decoded pictures (the viewer's previews, faces) in its memory cache beyond the
 // session that decrypted them: dropped at every lock and sign-out, and once more after the screens that showed them
@@ -54,6 +55,13 @@ export default function Root() {
     const top = segments[0] as string | undefined;
     if (phase !== "unlocked" && phase !== "starting" && PRIVATE.has(top ?? "")) router.replace("/");
   }, [phase, segments]);
+  // a tap on a notice's notification (noticeOpen.ts): Devices, once the library is unlocked (on top of the library)
+  useEffect(() => {
+    if (phase !== "unlocked") return;
+    const go = () => { if (takeNoticeOpen()) setTimeout(() => router.push("/devices"), 300); };
+    go();
+    return onNoticeOpen(go);
+  }, [phase]);
   return (
     <SafeAreaProvider>
       <StatusBar barStyle={theme.dark ? "light-content" : "dark-content"} />

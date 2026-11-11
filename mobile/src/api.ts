@@ -27,7 +27,12 @@ export const setCsrf = (t: string) => { csrf = t; };
 export const csrfToken = () => csrf;
 /** Where a background job sends its requests, with the CSRF token of its own /api/me: the app's server and token stay
  *  as they are, whatever the job does. The session cookie is still the one in Android's cookie store. */
-export interface Remote { base: string; csrf: string }
+export interface Remote {
+  base: string; csrf: string;
+  /** a periodic check of the background (noticeCheck.ts): its GETs don't count as using the phone (X-CF-Background),
+   *  so they neither keep the session from ending when idle nor show the phone as active in the device list */
+  background?: boolean;
+}
 export const remote = (origin: string): Remote => ({ base: origin.replace(/\/+$/, ""), csrf: "" });
 const here = (): Remote => ({ base, csrf });
 
@@ -67,6 +72,7 @@ export async function api<T = any>(method: string, path: string, body?: unknown,
   const headers: Record<string, string> = { Accept: "application/json", "X-CF-Device": DEVICE };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (method !== "GET" && to.csrf) headers["X-CSRF-Token"] = to.csrf;
+  if (method === "GET" && to.background) headers["X-CF-Background"] = "1";
   let res: Response;
   const time = limit(JSON_TIMEOUT);
   try {

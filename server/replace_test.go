@@ -135,3 +135,60 @@ func TestReplacingExistingPicturesShowsInTheChangeList(t *testing.T) {
 		}
 	}
 }
+
+// A person at their storage limit can still replace a thumbnail or preview with one that takes no more room; a larger
+// one is refused, and nothing is counted for it.
+func TestReplacingAtTheLimitNeedsOnlyTheDifference(t *testing.T) {
+	e := newEnv(t)
+	admin, _ := e.setupAdmin("admin@x.org")
+	bob, _ := e.acceptInvite(e.invite(admin, "bob@x.org"))
+	id := e.newItem(bob, 10)
+	bob.put("/api/items/"+id+"/segments/0", randBytes(int(cipherLen(10))))
+	bob.put("/api/items/"+id+"/thumb", randBytes(3000))
+	bob.put("/api/items/"+id+"/preview", randBytes(50000))
+	if code, _ := bob.do("POST", "/api/items/"+id+"/finalize", finalizeBody(), true); code != 200 {
+		t.Fatalf("finalize: %d", code)
+	}
+	e.app.db.Exec(`UPDATE users SET quota_bytes=(SELECT stored_bytes FROM items WHERE id=?) WHERE email='bob@x.org'`, id)
+	stored := func() (n int64) {
+		e.app.db.QueryRow(`SELECT stored_bytes FROM items WHERE id=?`, id).Scan(&n)
+		return
+	}
+	full := stored()
+	for _, p := range []struct {
+		path string
+		size int
+		want int
+	}{{"preview", 50000, 200}, {"preview", 40000, 200}, {"thumb", 3000, 200}, {"thumb", 2000, 200}, {"thumb", 3000, 200}, {"thumb", 20000, 413}} {
+		if code, _ := bob.put("/api/items/"+id+"/replace/"+p.path, randBytes(p.size)); code != p.want {
+			t.Fatalf("replace %s with %d bytes at the limit: %d, want %d", p.path, p.size, code, p.want)
+		}
+	}
+	if want := full - (50000 + blockSlack(50000)) + 40000 + blockSlack(40000); stored() != want {
+		t.Fatalf("stored_bytes %d, want %d", stored(), want)
+	}
+}
+
+// Items finished before thumb_bytes and preview_bytes were counted have 0 there, though their files are on disk and
+// in stored_bytes: a replacement credits the old file's size, not nothing.
+func TestReplacingAPictureFromBeforeItWasCountedCreditsTheOldOne(t *testing.T) {
+	e := newEnv(t)
+	admin, _ := e.setupAdmin("admin@x.org")
+	id := e.newItem(admin, 10)
+	admin.put("/api/items/"+id+"/segments/0", randBytes(int(cipherLen(10))))
+	admin.put("/api/items/"+id+"/thumb", randBytes(5000))
+	if code, _ := admin.do("POST", "/api/items/"+id+"/finalize", finalizeBody(), true); code != 200 {
+		t.Fatalf("finalize: %d", code)
+	}
+	e.app.db.Exec(`UPDATE items SET thumb_bytes=0 WHERE id=?`, id) // as an older server left it
+	var stored0 int64
+	e.app.db.QueryRow(`SELECT stored_bytes FROM items WHERE id=?`, id).Scan(&stored0)
+	if code, _ := admin.put("/api/items/"+id+"/replace/thumb", randBytes(5000)); code != 200 {
+		t.Fatalf("replace: %d", code)
+	}
+	var stored, th int64
+	e.app.db.QueryRow(`SELECT stored_bytes, thumb_bytes FROM items WHERE id=?`, id).Scan(&stored, &th)
+	if stored != stored0 || th != 5000 {
+		t.Fatalf("stored_bytes %d (was %d), thumb_bytes %d", stored, stored0, th)
+	}
+}

@@ -14,6 +14,7 @@ import { forgetAlbums } from "./albums";
 import { forgetKeptForGood, keepKey, keptKey } from "./keep";
 import { open, LABEL } from "./crypto/wrap";
 import { announce, sameSession } from "./tabs";
+import { forgetBrowserAlerts } from "./noticeAlerts";
 
 /** Give the browser a frame to paint a busy state before Argon2 blocks the thread. */
 export const paint = (): Promise<void> => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
@@ -286,6 +287,7 @@ export function forgetLocal(): void {
   clearPeople(true);
   clearPlayer();
   clearUploadMemory();
+  forgetBrowserAlerts();
 }
 
 /** This tab no longer holds a session (what it stores is dropped by the caller). */

@@ -213,6 +213,7 @@ export function Editor(p: { item: Item; onClose: () => void; onSaved: () => void
         {pictureTools && work ? (
           <div class="edpic" ref={box} onPointerMove={move} onPointerUp={up} onPointerCancel={up} style={{ width: `${Math.floor(pic.w * fit)}px`, height: `${Math.floor(pic.h * fit)}px` }}>
             <canvas ref={canvas} aria-hidden="true" />
+            <div class="edshade" aria-hidden="true"><div style={{ left: `${crop.x * 100}%`, top: `${crop.y * 100}%`, width: `${crop.w * 100}%`, height: `${crop.h * 100}%` }} /></div>
             <div class="edframe" role="group" tabIndex={0} aria-label="Crop frame. Arrow keys move it, Shift and arrow keys change its size."
               style={{ left: `${crop.x * 100}%`, top: `${crop.y * 100}%`, width: `${crop.w * 100}%`, height: `${crop.h * 100}%` }}
               onPointerDown={down("move")} onKeyDown={keys}>

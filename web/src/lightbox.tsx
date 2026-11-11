@@ -178,7 +178,8 @@ export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number)
           <p class="small">Decrypted in your browser. The server never sees these details.</p>
         </aside>
       )}
-      {editing && <Editor key={it.id} item={it} onClose={() => setEditing(false)} onSaved={() => p.onEdited?.(it.id)} />}
+      {editing && <Editor key={it.id} item={it} onSaved={() => p.onEdited?.(it.id)}
+        onClose={() => { setEditing(false); setTimeout(() => dlg.current?.querySelector<HTMLElement>('[aria-label="Edit"]')?.focus()); }} />}
     </dialog>
   );
 }

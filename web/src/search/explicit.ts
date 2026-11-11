@@ -69,6 +69,16 @@ export function explicitScore(v: Float32Array, image: boolean): number {
   return e - o;
 }
 
+/** The concepts as they are stored (float16 vectors one after the other), for the Android app's native index, which
+ *  works out the image score itself (SearchIndex.kt, the same formula as explicitScore). */
+export function conceptData(): { vecs: Uint8Array; explicit: boolean[]; image: boolean[] } {
+  const parts = FILTER.concepts.map((c) => unb64url(c.vec));
+  const vecs = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let at = 0;
+  for (const p of parts) { vecs.set(p, at); at += p.length; }
+  return { vecs, explicit: FILTER.concepts.map((c) => c.explicit), image: FILTER.concepts.map((c) => c.image) };
+}
+
 /** A photo kept out of filtered search results (image vector, any scale). */
 export const imageHidden = (v: Float32Array) => explicitScore(v, true) >= IMAGE_THRESHOLD;
 /** Search words that find nothing in filtered search (their text vector). */

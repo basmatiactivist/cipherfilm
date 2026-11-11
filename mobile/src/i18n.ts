@@ -2,6 +2,7 @@
 // by its English wording, so the code stays readable and a missing translation falls back to English instead of a key.
 // Placeholders are {name}: t("Backing up {n} of {total}", { n, total }). i18n.test.ts fails when a t("…") in the
 // app has no German entry, so nothing new ships half translated.
+import { useSyncExternalStore } from "react";
 import { de } from "./i18n.de";
 
 export type Lang = "en" | "de";
@@ -17,10 +18,43 @@ export function detectLang(locale?: string): Lang {
 }
 
 let lang: Lang = detectLang();
+const subs = new Set<() => void>();
 
-/** For tests, and for a language change while the app runs (Android restarts the activity then anyway). */
-export function setLang(l: Lang) { lang = l; }
+/** Sets the language; screens that follow it (useLang) render again when it changed. */
+export function setLang(l: Lang) {
+  if (l === lang) return;
+  lang = l;
+  subs.forEach((f) => f());
+}
 export const currentLang = () => lang;
+export function subscribeLang(f: () => void) { subs.add(f); return () => { subs.delete(f); }; }
+/** The language, for the root that renders the screens again when it changes (app/_layout.tsx). */
+export const useLang = () => useSyncExternalStore(subscribeLang, currentLang);
+
+/**
+ * Takes up a language change made while the app runs: the phone's language or the app's own (Android 13's per-app
+ * setting). The activity isn't recreated then (plugins/withConfigChanges.js), so the app asks again when it comes back
+ * to the screen. `now` reads the language the app has now (the native module); without it, the JavaScript engine's.
+ * True when it changed.
+ */
+export function refreshLang(now: () => string | null | undefined = nativeLocale): boolean {
+  let l: string | null | undefined;
+  try { l = now(); } catch { l = undefined; }
+  const next = detectLang(l || undefined);
+  if (next === lang) return false;
+  setLang(next);
+  return true;
+}
+
+function nativeLocale(): string | null | undefined {
+  try {
+    // read when needed, not at import: the unit tests (plain Node) load this file
+    const N = require("../modules/cf-native/src/CfNativeModule").default as { appLocale?: () => string | null };
+    return N.appLocale?.();
+  } catch {
+    return undefined;
+  }
+}
 /** The locale for dates and numbers that match the words around them. */
 export const locale = () => (lang === "de" ? "de-DE" : "en-US");
 

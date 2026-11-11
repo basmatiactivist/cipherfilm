@@ -83,3 +83,50 @@ import Testing
     #expect(LiveSignal(SSEvent(event: "changed", data: #"{"v":5,"what":["notices"]}"#)) == .changed(v: 5, what: [.notices]))
   }
 }
+
+// Notices as macOS notifications (NoticeAlerts): each at most once, none while the banner shows them.
+@Suite struct NoticeAlertsTests {
+  let now = Date(timeIntervalSince1970: 1_800_000_000)
+  func n(_ id: Int64, ago: TimeInterval = 60, kind: String = "sign_in") -> Notice {
+    Notice(id: id, kind: kind, device: "Pixel 8 (Android app)", at: Int64(now.timeIntervalSince1970 - ago))
+  }
+
+  @Test func eachOnceOldestFirst() {
+    var a = NoticeAlerts()
+    #expect(a.take([n(3, ago: 10), n(2, ago: 100)], server: "s", now: now, visible: false).map(\.id) == [2, 3])
+    #expect(a.take([n(3), n(2)], server: "s", now: now, visible: false).isEmpty)
+    #expect(a.take([n(4), n(3), n(2)], server: "s", now: now, visible: false).map(\.id) == [4])
+  }
+
+  @Test func noneWhileTheBannerShowsThem() {
+    var a = NoticeAlerts()
+    #expect(a.take([n(5)], server: "s", now: now, visible: true).isEmpty)
+    // and not later either, once the window is gone
+    #expect(a.take([n(5)], server: "s", now: now, visible: false).isEmpty)
+  }
+
+  @Test func oldOnesOnlyRemembered() {
+    var a = NoticeAlerts()
+    #expect(a.take([n(9), n(8, ago: NoticeAlerts.recent + 1)], server: "s", now: now, visible: false).map(\.id) == [9])
+    #expect(a.ids == [9, 8])
+  }
+
+  @Test func perServerAndBounded() throws {
+    var a = NoticeAlerts()
+    _ = a.take([n(7)], server: "s", now: now, visible: false)
+    #expect(a.take([n(7)], server: "other", now: now, visible: false).map(\.id) == [7])
+    _ = a.take((1...Int64(NoticeAlerts.keep + 30)).map { n($0) }, server: "other", now: now, visible: true)
+    #expect(a.ids.count == NoticeAlerts.keep)
+    #expect(a.ids.first == Int64(NoticeAlerts.keep + 30))
+    // kept in UserDefaults as JSON
+    let back = try JSONDecoder().decode(NoticeAlerts.self, from: JSONEncoder().encode(a))
+    #expect(back == a)
+  }
+
+  @Test func titleSaysNothingAboutTheDevice() {
+    #expect(NoticeAlerts.title(n(1)) == "New sign-in to Cipherfilm")
+    #expect(!NoticeAlerts.title(n(1)).contains("Pixel"))
+    #expect(NoticeAlerts.title(n(2, kind: "2fa_reset")) == "Two-step sign-in turned off")
+    #expect(NoticeAlerts.title(n(3, kind: "password_used")) == "Unfinished sign-in to Cipherfilm")
+  }
+}

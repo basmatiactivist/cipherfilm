@@ -18,6 +18,10 @@ struct SecuritySettings: View {
             Divider()
           }
           DevicesSection()
+          if !me.isDemo {
+            Divider()
+            NoticeNotificationsSection()
+          }
         } else {
           Text("Not signed in.").foregroundStyle(.secondary)
         }
@@ -29,6 +33,17 @@ struct SecuritySettings: View {
 }
 
 private func say(_ error: Error) -> String { (error as? LocalizedError)?.errorDescription ?? error.localizedDescription }
+
+/** Notices as macOS notifications (Notifier.swift NoticeNotifier). */
+struct NoticeNotificationsSection: View {
+  @State private var on = NoticeNotifier.enabled
+
+  var body: some View {
+    Section_(title: "Notifications", subtitle: "While the window isn't in front, or Cipherfilm is locked and runs in the menu bar, a notification tells you about a new sign-in to your account. Its preview shows the device and the time; where macOS hides previews (the lock screen, by default), only that there was a new sign-in.") {
+      Toggle("Notify me about new sign-ins", isOn: Binding(get: { on }, set: { on = $0; NoticeNotifier.enabled = $0 }))
+    }
+  }
+}
 
 // ---- two-step sign-in ----
 

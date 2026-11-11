@@ -85,9 +85,10 @@ struct Commands: SwiftUI.Commands {
 struct MenuBarLabel: View {
   let busy: Bool
   @Environment(\.openWindow) private var openWindow
+  @Environment(\.openSettings) private var openSettings
   var body: some View {
     Image(nsImage: MenuBarIcon.image(busy: busy))
-      .onAppear { AppModel.shared.agent.opener = openWindow }
+      .onAppear { AppModel.shared.agent.opener = openWindow; AppModel.shared.agent.settingsOpener = openSettings }
   }
 }
 
@@ -138,6 +139,7 @@ struct RootView: View {
 extension AppDelegate {
   func applicationDidFinishLaunching(_ notification: Notification) {
     MainActor.assumeIsolated {
+      NoticeNotifier.setUp()
       Task {
         await AppModel.shared.start()
         #if DEBUG

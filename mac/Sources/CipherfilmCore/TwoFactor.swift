@@ -173,12 +173,46 @@ public struct Notice: Decodable, Sendable, Equatable, Identifiable {
     list.filter { kinds.contains($0.kind) }.sorted { $0.id > $1.id }
   }
 
-  public static func load(api: API) async throws -> [Notice] {
+  public static func load(api: API, background: Bool = false) async throws -> [Notice] {
     struct L: Decodable { let notices: [Notice] }
-    return shown(try await api.get(L.self, "/api/me/notices").notices)
+    return shown(try JSONDecoder().decode(L.self, from: try await api.json("GET", "/api/me/notices", background: background)).notices)
   }
 
   public static func dismiss(api: API, id: Int64) async throws {
     _ = try await api.json("POST", "/api/me/notices/\(id)/dismiss")
+  }
+}
+
+/**
+ * Which notices this Mac also shows as a macOS notification, when its window isn't in front (the banner shows them
+ * otherwise): each at most once. Every notice the app has seen is remembered (the newest `keep` ids, per server: ids
+ * are the server's), whether it went out as a notification or was in the banner. Old ones (from before `recent`) are
+ * only remembered: a Mac that was off for a week doesn't get a pile, the banner still shows them.
+ */
+public struct NoticeAlerts: Codable, Equatable, Sendable {
+  public private(set) var server: String
+  public private(set) var ids: [Int64]
+  public static let recent: TimeInterval = 3 * 24 * 3600
+  public static let keep = 200
+
+  public init(server: String = "", ids: [Int64] = []) { self.server = server; self.ids = ids }
+
+  /** The ones to post now, oldest first; all of list is remembered. visible: the window shows the banner. */
+  public mutating func take(_ list: [Notice], server: String, now: Date, visible: Bool) -> [Notice] {
+    if self.server != server { self.server = server; ids = [] }
+    let known = Set(ids)
+    let fresh = list.filter { !known.contains($0.id) }
+    ids = Array(Set(ids).union(list.map(\.id))).sorted(by: >).prefix(Self.keep).map { $0 }
+    if visible { return [] }
+    return fresh.filter { $0.date >= now.addingTimeInterval(-Self.recent) }.sorted { ($0.at, $0.id) < ($1.at, $1.id) }
+  }
+
+  /** The notification's title; what the lock screen and hidden previews show (never the device or the time). */
+  public static func title(_ n: Notice) -> String {
+    switch n.kind {
+    case "sign_in": return "New sign-in to Cipherfilm"
+    case "2fa_reset": return "Two-step sign-in turned off"
+    default: return "Unfinished sign-in to Cipherfilm"
+    }
   }
 }

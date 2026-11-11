@@ -245,4 +245,10 @@ export const deApp: Record<string, string> = {
   "OpenFreeMap (through Cloudflare; VersaTiles if OpenFreeMap doesn't answer)": "OpenFreeMap (über Cloudflare; VersaTiles, falls OpenFreeMap nicht antwortet)",
   "You can turn the map off again under Account › Map.": "Sie können die Karte unter Konto › Karte jederzeit wieder ausschalten.",
   "Turn on map": "Karte einschalten",
+  // memories ("On this day")
+  "On this day": "An diesem Tag",
+  "1 year ago": "Vor einem Jahr",
+  "{n} years ago": "Vor {n} Jahren",
+  "Memories": "Erinnerungen",
+  "Show photos from this day in earlier years above Photos. Found on this phone; the server learns nothing.": "Zeigt über den Fotos, was an diesem Tag in früheren Jahren entstand. Wird auf dem Handy ermittelt; der Server erfährt nichts davon.",
 };

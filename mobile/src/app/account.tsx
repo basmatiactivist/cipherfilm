@@ -11,6 +11,7 @@ import { clearImages } from "../library";
 import { Icon } from "../icons";
 import { Field, Problem, SwitchItem, useAppTheme } from "../ui";
 import { setShake, useShake } from "../shake";
+import { setMemoriesOn, useMemoriesOn } from "../memories";
 import { CHOICES, away, expectAway, setAutoLock, useAutoLock } from "../autolock";
 import { privacyUrl } from "../store";
 import { mapProvider, setMapOn, useMapOn } from "../mapConsent";
@@ -40,6 +41,7 @@ export default function Account() {
   const [delError, setDelError] = useState<string>();
   const [bioOk, setBioOk] = useState(() => biometricPossible());
   const shake = useShake();
+  const memoriesOn = useMemoriesOn();
   const auto = useAutoLock();
   const [pickLock, setPickLock] = useState(false);
   const [report, setReport] = useState(false);
@@ -117,6 +119,9 @@ export default function Account() {
         {me?.map ? <SwitchItem title={t("Map")} description={t("Your photos on a map. Map images from {who}.", { who: mapProvider() || t("the map server") })}
           left={() => <View style={st.icon}><Icon name="map" color={th.colors.primary} /></View>}
           value={mapOn} onValueChange={(v) => setMapOn(v)} style={st.item} /> : null}
+        <SwitchItem title={t("Memories")} description={t("Show photos from this day in earlier years above Photos. Found on this phone; the server learns nothing.")}
+          left={() => <View style={st.icon}><Icon name="photos" color={th.colors.primary} /></View>}
+          value={memoriesOn} onValueChange={setMemoriesOn} style={st.item} />
         <SwitchItem title={t("Unlock with fingerprint or face")}
           description={bioOk || biometric ? t("Your key stays in this phone's secure hardware") : t("Set up fingerprint or face unlock in Android settings first")}
           left={() => <View style={st.icon}><Icon name="fingerprint" color={bioOk || biometric ? th.colors.primary : th.colors.onSurfaceDisabled} /></View>}

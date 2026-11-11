@@ -10,6 +10,8 @@ import { askMediaLocation } from "../mediaAccess";
 import { useMapOn } from "../mapConsent";
 import { relocate } from "../relocate";
 import { Gallery } from "../Gallery";
+import { MemoriesRow } from "../MemoriesRow";
+import { useMemories } from "../memories";
 import { NAV_HEIGHT, NavBar } from "../NavBar";
 import { Icon } from "../icons";
 import { refreshLibrary, useLibrary } from "../libraryStore";
@@ -33,6 +35,7 @@ export default function Library() {
   const inset = useSafeAreaInsets();
   const { items, error, loading } = useLibrary();
   const demo = !!useSession().me?.demo;
+  const memories = useMemories(items);
   useEffect(() => { if (!items) refreshLibrary(); }, []);
   // while the map is on: what this phone uploaded without where it was taken gets it (relocate.ts, every few minutes)
   const mapOn = useMapOn();
@@ -78,6 +81,7 @@ export default function Library() {
             {demo ? <Text variant="labelLarge" style={[st.demo, { backgroundColor: th.colors.primaryContainer, color: th.colors.onPrimaryContainer }]}>{demoNote()}</Text> : null}
           </View>
         }
+        top={memories.length ? <MemoriesRow memories={memories} /> : undefined}
         empty={<Empty />}
         fab={demo ? undefined : <FAB icon="upload" label={t("Upload")} onPress={pick} accessibilityLabel={t("Upload photos and videos from this phone")}
           style={[st.fab, { right: 16 + inset.right, bottom: 16 + inset.bottom + NAV_HEIGHT, backgroundColor: th.colors.primary }]} color={th.colors.onPrimary} />}

@@ -1,4 +1,4 @@
-// The items the viewer swipes through when it was opened from search results or a person, in that order.
+// The items the viewer swipes through when it was opened from search results, a person or a memory, in that order.
 import { onWipe } from "./session";
 
 let list: string[] = [];

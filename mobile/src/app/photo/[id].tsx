@@ -374,7 +374,7 @@ function Info({ item, visible, onClose, onOriginal }: { item: Item; visible: boo
   const inset = useSafeAreaInsets();
   const m = item.meta;
   const [place, setPlace] = useState("");
-  useEffect(() => { setPlace(""); if (visible) placeName(item).then(setPlace, () => {}); }, [item.id, visible]);
+  useEffect(() => { setPlace(""); if (visible) placeName(item).then(setPlace, () => {}); }, [item.id, visible, m?.gps?.lat, m?.gps?.lon]);
   const at = coords(item);
   const rows: [string, string | undefined][] = [
     [t("Taken"), fmtWhen(when(item))],

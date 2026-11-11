@@ -79,6 +79,13 @@ export function rotateRect(r: Rect, by: Turn): Rect {
 /** Width and height after turning. */
 export const turnedSize = (w: number, h: number, rot: Turn | undefined) => (normTurn(rot) % 180 ? { w: h, h: w } : { w, h });
 
+/** The size of the edited picture for an original of w × h (as the grid lays it out). */
+export function editedSize(w: number, h: number, e: Edit | undefined): { w: number; h: number } {
+  const n = normEdit(e);
+  const t = turnedSize(w, h, n?.rot);
+  return { w: t.w * (n?.crop?.w ?? 1), h: t.h * (n?.crop?.h ?? 1) };
+}
+
 /** The crop as a fraction of the original, unturned picture. */
 export function sourceRect(e: Edit | undefined): Rect {
   const rot = normTurn(e?.rot);

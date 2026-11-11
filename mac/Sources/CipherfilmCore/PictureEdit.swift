@@ -66,6 +66,12 @@ public struct PictureEdit: Codable, Sendable, Hashable {
     return CropRect(x: round4(o.x), y: round4(o.y), w: round4(o.w), h: round4(o.h))
   }
 
+  /** The size of the edited picture for an original of width × height. */
+  public func size(width: Double, height: Double) -> (Double, Double) {
+    let q = rot % 180 != 0
+    return ((q ? height : width) * (crop?.w ?? 1), (q ? width : height) * (crop?.h ?? 1))
+  }
+
   /** The crop as a fraction of the original, unturned picture. */
   public var sourceRect: CropRect { Self.rotate(crop ?? .full, by: (360 - rot) % 360) }
 

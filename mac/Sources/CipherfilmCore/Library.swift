@@ -55,10 +55,12 @@ public struct Item: Identifiable, Sendable, Hashable {
   /** width / height, clamped like the web grid */
   public var aspect: Double {
     guard let w = meta?.width, let h = meta?.height, w > 0, h > 0 else { return 1 }
-    return min(4, max(0.4, w / h))
+    let e = meta?.edit?.size(width: w, height: h) ?? (w, h) // as shown: turned and cropped when it was edited
+    return min(4, max(0.4, e.0 / e.1))
   }
 
-  public static func == (a: Item, b: Item) -> Bool { a.id == b.id && a.favorite == b.favorite && a.trashedAt == b.trashedAt && a.broken == b.broken }
+  // a changed date, place or edit (made in another app) is a change the screens show
+  public static func == (a: Item, b: Item) -> Bool { a.id == b.id && a.favorite == b.favorite && a.trashedAt == b.trashedAt && a.broken == b.broken && a.meta == b.meta }
   public func hash(into h: inout Hasher) { h.combine(id) }
 }
 

@@ -359,7 +359,7 @@ struct InfoPanel: View {
     .foregroundStyle(Ink.ink)
     .background(Ink.card)
     .task(id: item.id + "\(model.search.version)") { faces = await model.search.facesIn(item.id) }
-    .task(id: item.id) {
+    .task(id: "\(item.id) \(item.meta?.gps?.lat ?? 0) \(item.meta?.gps?.lon ?? 0)") { // also after the place was changed elsewhere
       placeName = nil
       if let g = item.location { placeName = await PlaceBook.label(g) }
     }

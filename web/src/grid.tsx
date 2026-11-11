@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/ho
 import { memo } from "preact/compat";
 import type { Item } from "./items";
 import { cachedThumb, dropImage, thumbUrl, wantImage } from "./cache";
-import { pictureKey } from "./edit/edit";
+import { editedSize, pictureKey } from "./edit/edit";
 import { Icon } from "./icons";
 
 export interface Mods { range: boolean; multi: boolean }
@@ -19,7 +19,12 @@ const dayKey = (ts: number): string => { const d = new Date(ts); return `${d.get
 
 type Row = { top: number; h: number } & ({ head: string; year: number } | { items: { it: Item; w: number }[] });
 
-const aspect = (it: Item): number => (it.broken ? 1 : it.meta?.width && it.meta?.height ? Math.min(4, Math.max(0.4, it.meta.width / it.meta.height)) : 4 / 3);
+// the picture as shown: turned and cropped when it was edited (edit/edit.ts)
+const aspect = (it: Item): number => {
+  if (it.broken || !it.meta?.width || !it.meta?.height) return it.broken ? 1 : 4 / 3;
+  const e = editedSize(it.meta.width, it.meta.height, it.meta.edit);
+  return Math.min(4, Math.max(0.4, e.w / e.h));
+};
 
 export function Tile(p: { item: Item; selectMode: boolean; selected: boolean; onOpen: (m: Mods) => void; onToggle: (m: Mods) => void; dragIds?: () => string[]; w?: number; onContext?: (e: MouseEvent) => void; plain?: boolean; onShown?: (id: string) => void }) {
   const it = p.item;

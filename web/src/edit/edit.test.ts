@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   dragCrop, drawPlan, isEdited, MIN_CROP, normEdit, normOrig, normRect, normTurn, pictureKey, placeChanged, ratioRect, reverted,
-  editedName, rotateRect, sameEdit, sourceRect, turn, turnedSize, versionName, withDate, withPicture, withPlace, type EditableMeta, type Rect,
+  editedName, editedSize, rotateRect, sameEdit, sourceRect, turn, turnedSize, versionName, withDate, withPicture, withPlace, type EditableMeta, type Rect,
 } from "./edit";
 
 const bare = (capture_ts: number): EditableMeta => ({ capture_ts });
@@ -46,6 +46,11 @@ describe("turning and cropping", () => {
     close(rotateRect(r, 270), { x: 0.2, y: 0.6, w: 0.4, h: 0.3 });
     close(rotateRect(rotateRect(r, 90), 270), r);
     close(rotateRect(r, 0), r);
+  });
+  it("knows the edited picture's size, for the grid", () => {
+    expect(editedSize(4000, 3000, { rot: 90 })).toEqual({ w: 3000, h: 4000 });
+    expect(editedSize(4000, 3000, { rot: 90, crop: { x: 0, y: 0, w: 0.5, h: 1 } })).toEqual({ w: 1500, h: 4000 });
+    expect(editedSize(4000, 3000, undefined)).toEqual({ w: 4000, h: 3000 });
   });
   it("swaps width and height for a quarter turn", () => {
     expect(turnedSize(4000, 3000, 90)).toEqual({ w: 3000, h: 4000 });

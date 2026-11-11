@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { Item, fetchOriginal } from "./items";
 import { lazy } from "./lazy";
 import { downloadEdited, downloadOriginal } from "./downloads";
-import { normEdit } from "./edit/edit";
+import { normEdit, pictureKey } from "./edit/edit";
 import { canEdit } from "./edit/apply";
 import { BLOB_LIMIT, forgetStream, prepareStream, streamingAvailable } from "./player";
 import { playMime } from "./sw-range";
@@ -97,7 +97,7 @@ export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number)
     }
     for (const n of [p.items[p.index - 1], p.items[p.index + 1]]) if (n && !n.broken && n.has_preview) previewUrl(n).catch(() => {});
     return () => { alive = false; };
-  }, [it.id]);
+  }, [pictureKey(it.id, it.meta)]); // a new preview after an edit
 
   const go = (d: number) => { const i = p.index + d; if (i >= 0 && i < p.items.length) p.onIndex(i); };
   const name = it.meta?.name ?? "Unreadable item";
@@ -194,6 +194,6 @@ function PlaceName({ item }: { item: Item }) {
     setName("");
     import("./map/locations").then((m) => m.placeName(item)).then((n) => alive && setName(n), () => {});
     return () => { alive = false; };
-  }, [item.id]);
+  }, [item.id, item.meta?.gps?.lat, item.meta?.gps?.lon]); // also after the place was changed
   return name ? <><span dir="auto">{name}</span><br /></> : null;
 }

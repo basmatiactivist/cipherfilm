@@ -79,5 +79,9 @@ import Testing
     #expect(it.pictureKey == "ab" && !it.isEditedPicture)
     it.meta!.edit = PictureEdit(rot: 90, v: "v1")
     #expect(it.pictureKey == "ab.v1" && it.isEditedPicture)
+    // laid out as shown: a 4000×3000 photo turned and 80 % of its width kept is 2400×4000
+    it.meta!.width = 4000; it.meta!.height = 3000
+    it.meta!.edit = PictureEdit(rot: 90, crop: CropRect(x: 0, y: 0, w: 0.8, h: 1), v: "v2")
+    #expect(abs(it.aspect - 2400.0 / 4000) < 1e-9)
   }
 }

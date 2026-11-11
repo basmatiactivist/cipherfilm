@@ -10,6 +10,8 @@ version into the GitHub release notes, so a release cannot be published without 
 ### Added
 - Server: a ready-made private setup in your tailnet (Tailscale, your own name, Kopia backups, optional Portainer)
   in `deploy/tailnet`, the same one the project's own server runs; guide in docs/TAILNET.md.
+- Android: Account › "Allow screenshots" lets this phone take screenshots and screen recordings of the app and show
+  it in the recent apps. Off by default, so the app stays blocked as before; the change applies at once.
 ### Fixed
 - Android: the search index kept on the phone (both the standard and the explicit model's) was deleted with the
   cleanup of cached pictures after every library load, so search had to fetch and open the whole index again at each

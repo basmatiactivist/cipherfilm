@@ -455,7 +455,8 @@ func (a *App) replaceAux(name string, max int64, col string) func(http.ResponseW
 			return
 		}
 		grow := got + blockSlack(got) - old - blockSlack(old)
-		res, err := a.db.Exec(`UPDATE items SET `+col+`=1, stored_bytes=MAX(0, stored_bytes+?), `+bytesCol+`=? WHERE id=? AND user_id=? AND state='ready' AND trashed_at IS NULL AND `+bytesCol+`=?`,
+		// aux_ver moves on, so the item is in the change list even when has_thumb/has_preview were 1 already (since.go)
+		res, err := a.db.Exec(`UPDATE items SET `+col+`=1, aux_ver=aux_ver+1, stored_bytes=MAX(0, stored_bytes+?), `+bytesCol+`=? WHERE id=? AND user_id=? AND state='ready' AND trashed_at IS NULL AND `+bytesCol+`=?`,
 			grow, got, it.ID, u.ID, old)
 		if rowsAffected(res, err) != 1 {
 			a.cleanupIfGone(it.ID)

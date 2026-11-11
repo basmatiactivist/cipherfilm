@@ -27,7 +27,6 @@ const tombRetention = 30 * 24 * time.Hour
 
 var cursorRe = regexp.MustCompile(`^([0-9a-f]{16})\.([0-9]{1,19})$`)
 
-// the columns whose change a list shows; has_thumb/has_preview only change while uploading, listed for safety
 const syncSchema = `
 CREATE TABLE IF NOT EXISTS item_tombstones (
   user_id TEXT NOT NULL,
@@ -41,7 +40,9 @@ CREATE INDEX IF NOT EXISTS items_rev ON items(user_id, rev);
 INSERT OR IGNORE INTO settings(key,value) VALUES ('sync_epoch', lower(hex(randomblob(8))));
 `
 
-// The triggers are made anew at every start, so a changed definition takes effect with the next version.
+// The triggers are made anew at every start, so a changed definition takes effect with the next version. They watch
+// the columns whose change a list shows; has_thumb/has_preview only change while uploading, and a replaced thumbnail
+// or preview of a finished item (where both stay 1) moves aux_ver on.
 // No foreign key on item_tombstones: an account's deletion cascades to its items, whose trigger then finds no account
 // row and writes nothing (a tombstone inserted mid-cascade could otherwise fail the deletion); items_tomb_user takes
 // along what is left.
@@ -49,9 +50,9 @@ var syncTriggers = []string{
 	`DROP TRIGGER IF EXISTS items_rev_upd`,
 	`DROP TRIGGER IF EXISTS items_rev_del`,
 	`DROP TRIGGER IF EXISTS items_tomb_user`,
-	`CREATE TRIGGER items_rev_upd AFTER UPDATE OF state,wrapped_item_key,meta_enc,has_thumb,has_preview,favorite,trashed_at ON items
+	`CREATE TRIGGER items_rev_upd AFTER UPDATE OF state,wrapped_item_key,meta_enc,has_thumb,has_preview,aux_ver,favorite,trashed_at ON items
 WHEN NEW.state='ready' AND (OLD.state IS NOT NEW.state OR OLD.wrapped_item_key IS NOT NEW.wrapped_item_key OR OLD.meta_enc IS NOT NEW.meta_enc
-  OR OLD.has_thumb IS NOT NEW.has_thumb OR OLD.has_preview IS NOT NEW.has_preview OR OLD.favorite IS NOT NEW.favorite OR OLD.trashed_at IS NOT NEW.trashed_at)
+  OR OLD.has_thumb IS NOT NEW.has_thumb OR OLD.has_preview IS NOT NEW.has_preview OR OLD.aux_ver IS NOT NEW.aux_ver OR OLD.favorite IS NOT NEW.favorite OR OLD.trashed_at IS NOT NEW.trashed_at)
 BEGIN
   UPDATE users SET items_rev=items_rev+1 WHERE id=NEW.user_id;
   UPDATE items SET rev=(SELECT items_rev FROM users WHERE id=NEW.user_id) WHERE id=NEW.id;

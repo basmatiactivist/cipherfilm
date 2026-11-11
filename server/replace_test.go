@@ -102,3 +102,36 @@ func TestDemoCannotReplacePictures(t *testing.T) {
 		}
 	}
 }
+
+// Replacing a thumbnail and preview that were already there (has_thumb and has_preview stay 1), even with one of the
+// same size, must still reach the other devices: the item comes back in the change list, or they keep the old pictures.
+func TestReplacingExistingPicturesShowsInTheChangeList(t *testing.T) {
+	e := newEnv(t)
+	admin, _ := e.setupAdmin("admin@x.org")
+	id := e.newItem(admin, 10)
+	admin.put("/api/items/"+id+"/segments/0", randBytes(int(cipherLen(10))))
+	admin.put("/api/items/"+id+"/thumb", randBytes(1000))
+	admin.put("/api/items/"+id+"/preview", randBytes(5000))
+	if code, _ := admin.do("POST", "/api/items/"+id+"/finalize", finalizeBody(), true); code != 200 {
+		t.Fatalf("finalize: %d", code)
+	}
+	for _, p := range []struct {
+		path string
+		size int
+	}{{"thumb", 1000}, {"preview", 5000}, {"thumb", 1200}, {"preview", 4000}} {
+		var rev0 int64
+		e.app.db.QueryRow(`SELECT rev FROM items WHERE id=?`, id).Scan(&rev0)
+		cur := admin.cursorOf("/api/items")
+		if code, _ := admin.put("/api/items/"+id+"/replace/"+p.path, randBytes(p.size)); code != 200 {
+			t.Fatalf("replace %s: %d", p.path, code)
+		}
+		var rev int64
+		e.app.db.QueryRow(`SELECT rev FROM items WHERE id=?`, id).Scan(&rev)
+		if rev <= rev0 {
+			t.Fatalf("replace %s (%d bytes): rev %d not after %d", p.path, p.size, rev, rev0)
+		}
+		if got := admin.since("/api/items", cur); !same(got.items, id) {
+			t.Fatalf("replace %s (%d bytes): change list %v", p.path, p.size, got.items)
+		}
+	}
+}

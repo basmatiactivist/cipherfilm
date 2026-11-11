@@ -184,7 +184,9 @@ func migrate(db *sql.DB) error {
 		}
 	}
 	rows.Close()
-	for _, col := range []string{"thumb_bytes", "preview_bytes", "favorite"} {
+	// items.aux_ver: counts replacements of a finished item's thumbnail or preview (items.go replaceAux), so the change
+	// list (since.go) shows the item again even when has_thumb/has_preview stay 1; adding it rewrites nothing
+	for _, col := range []string{"thumb_bytes", "preview_bytes", "favorite", "aux_ver"} {
 		if !have[col] {
 			if _, err := db.Exec(`ALTER TABLE items ADD COLUMN ` + col + ` INTEGER NOT NULL DEFAULT 0`); err != nil {
 				return err

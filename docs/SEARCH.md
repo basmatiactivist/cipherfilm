@@ -16,7 +16,8 @@ list from the server.
 
 ## Models
 
-Open models, downloaded by the phone once (about 250 MB, by default only on Wi-Fi) directly from Hugging Face, where
+Open models, downloaded by the phone once (about 250 MB, by default only on Wi-Fi), after the person agreed in a
+question that says what, how big, from whom and what Hugging Face learns (docs/MODELS.md "Asked first"), directly from Hugging Face, where
 they are published, at URLs pinned to a commit. Each file's URL, SHA-256 and size are in `server/models.json`, the one
 list the server and every app use; the app checks size and SHA-256 before it opens a file. A dropped or stalled
 download continues with HTTP Range. Hugging Face sees the phone's IP address, nothing about the photos (docs/MODELS.md).
@@ -184,11 +185,13 @@ from the decrypted thumbnail or preview in the browser.
   someone already has joins the face, or its group, to them.
 - People: named people, then groups not named yet (from three photos); a person's page shows their photos, with
   Rename and Select all (as on an album's page) for the usual selection actions.
-- **Search by what is in a photo:** the browser downloads the active model's text encoder and the tokenizer once from
+- **Search by what is in a photo:** after the person agreed (the first search, or Account › Search, asks; per
+  browser, `web/src/search/consent.ts`), the browser downloads the active model's text encoder and the tokenizer once from
   Hugging Face (`web/src/search/content.worker.ts`; ONNX Runtime Web in a worker, checked against the same SHA-256,
   kept in the browser's cache), turns the words into a vector and ranks the stored image vectors, as the apps do.
   Account › Search shows the model and, for people an admin allowed it, the "Explicit search" switch for the account.
-  Sign-out deletes the cached models.
+  It also says when the model was downloaded and turns search off in this browser, deleting the model and the yes.
+  Sign-out deletes the cached models and the yes.
 - Without index entries the People item is not shown, and a photo's details, an empty search and Account › Search say
   to turn on search in the Android or Mac app.
 - Everything (vectors, faces, groups, names, crops) is dropped at sign-out and when the tab is closed or reloaded.
@@ -212,7 +215,8 @@ made-up entries, which could make a photo show up in a search where it doesn't b
 ## When it runs
 
 - **While the app is open and unlocked:** opens the encrypted copy of the index on the phone first (search works at
-  once), then downloads the models if needed, fetches the entries other devices made,
+  once), then downloads the models if needed (only with the person's yes for those files; otherwise search waits for
+  it, phase `consent`), fetches the entries other devices made,
   then indexes every photo and video in the library that has none (from the decrypted preview, two at a time).
 - **In the background** (the backup's WorkManager task, about every 15 minutes when Android allows; by default only
   while charging): photos on the phone that are in the library but not indexed yet are indexed from the phone's

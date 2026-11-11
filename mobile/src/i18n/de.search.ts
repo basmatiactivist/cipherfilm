@@ -71,8 +71,8 @@ export const deSearch: Record<string, string> = {
   "LAION CLIP, {size}. Also finds explicit content.": "LAION CLIP, {size}. Findet auch explizite Inhalte.",
   "Standard search": "Standardsuche",
   "Turn off search?": "Suche ausschalten?",
-  "The models are removed from this phone. You can also delete the search data on all your devices, including the names of people.":
-    "Die Modelle werden von diesem Handy entfernt. Sie können auch die Suchdaten auf allen Ihren Geräten löschen, einschließlich der Namen von Personen.",
+  "The models are deleted from this phone; turning search on again asks before downloading them. You can also delete the search data on all your devices, including the names of people.":
+    "Die Modelle werden von diesem Handy gelöscht; wenn Sie die Suche wieder einschalten, werden Sie vor dem Herunterladen erneut gefragt. Sie können auch die Suchdaten auf allen Ihren Geräten löschen, einschließlich der Namen von Personen.",
   "Turn off": "Ausschalten",
   "Turn off and delete data": "Ausschalten und Daten löschen",
 
@@ -157,6 +157,28 @@ export const deSearch: Record<string, string> = {
   "screenshots": "Screenshots",
   "\"{q}\"": "„{q}“",
   "named \"{q}\"": "Name enthält „{q}“",
+  // the question before the models are downloaded (modelConsent.tsx, search/models.ts)
+  "Download the search models?": "Suchmodelle herunterladen?",
+  "Search runs on this phone with open models. The app downloads them once for this phone: {what}, {size} in all.":
+    "Die Suche läuft auf diesem Handy mit offenen Modellen. Die App lädt sie einmal für dieses Handy herunter: {what}, insgesamt {size}.",
+  "They come from Hugging Face (huggingface.co and its CDN, *.hf.co), where these models are published. Hugging Face sees this phone's IP address and that it downloaded these public files. It gets no photos, faces, search words or account data.":
+    "Sie kommen von Hugging Face (huggingface.co und dessen CDN, *.hf.co), wo diese Modelle veröffentlicht sind. Hugging Face sieht die IP-Adresse dieses Handys und dass es diese öffentlichen Dateien heruntergeladen hat. Es erhält keine Fotos, Gesichter, Suchbegriffe oder Kontodaten.",
+  "Each file is checked (SHA-256) before it is used.": "Jede Datei wird vor der Verwendung geprüft (SHA-256).",
+  "The download waits for Wi-Fi.": "Der Download wartet auf WLAN.",
+  "You're not on Wi-Fi: this uses mobile data.": "Sie sind nicht im WLAN: Das verbraucht mobile Daten.",
+  "Turning search off deletes the models again.": "Wenn Sie die Suche ausschalten, werden die Modelle wieder gelöscht.",
+  "Download and turn on": "Herunterladen und einschalten",
+  "the search model and the face models": "das Suchmodell und die Gesichtsmodelle",
+  "the search model": "das Suchmodell",
+  "Search needs your OK to download the models.": "Die Suche braucht Ihr OK, um die Modelle herunterzuladen.",
+  "Waiting for your OK to download the models ({size})": "Wartet auf Ihr OK, um die Modelle herunterzuladen ({size})",
+  "Download…": "Herunterladen…",
+  "Hugging Face sees this phone's IP address, nothing of your photos. You're asked before anything is downloaded.":
+    "Hugging Face sieht die IP-Adresse dieses Handys, nichts von Ihren Fotos. Sie werden gefragt, bevor etwas heruntergeladen wird.",
+  "Models downloaded from Hugging Face on {date}, {size}.": "Modelle von Hugging Face heruntergeladen am {date}, {size}.",
+  "Models downloaded from Hugging Face, {size}.": "Modelle von Hugging Face heruntergeladen, {size}.",
+  "Search waits for your OK to download the models ({size}). Tap to see what is downloaded.":
+    "Die Suche wartet auf Ihr OK, um die Modelle herunterzuladen ({size}). Tippen Sie, um zu sehen, was heruntergeladen wird.",
   "Hugging Face is a trademark of Hugging Face, Inc. Cipherfilm is not affiliated with or endorsed by Hugging Face.":
     "Hugging Face ist eine Marke der Hugging Face, Inc. Cipherfilm steht in keiner Verbindung zu Hugging Face und wird nicht von ihr unterstützt.",
 };

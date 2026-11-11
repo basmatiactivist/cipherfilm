@@ -159,6 +159,7 @@ function Status({ p }: { p: Progress }) {
   const th = useAppTheme();
   if (p.phase === "ready" || p.phase === "off") return null;
   const text = p.phase === "download" ? t("Downloading the search models · {done} of {total}", { done: mb(p.done), total: mb(p.total) })
+    : p.phase === "consent" ? t("Search waits for your OK to download the models ({size}). Tap to see what is downloaded.", { size: mb(p.total) })
     : p.phase === "waitWifi" ? (p.total ? t("Waiting for Wi-Fi to download the search models ({size}).", { size: mb(p.total) }) : t("Waiting for Wi-Fi to download the search models."))
     : p.phase === "loading" ? (p.total ? t("Getting search ready · {done} of {total}", { done: num(p.done), total: num(p.total) }) : p.message ? `${p.message}…` : t("Getting search ready…"))
     : p.phase === "indexing" ? t("Indexing for search · {done} of {total}", { done: num(p.done), total: num(p.total) })

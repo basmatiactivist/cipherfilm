@@ -67,9 +67,18 @@ test.describe.serial("search by what is in a photo", () => {
     await expect(page.locator(".tile").first()).toBeVisible({ timeout: 30_000 });
     const all = await page.locator(".tile").count();
     const search = page.getByLabel("Search your photos");
-    // ranked like Immich: every photo with a vector, best match first, no day headings; photos without one don't show
+    // nothing goes to Hugging Face before the yes (docs/MODELS.md): the first search asks
+    const hf: string[] = [];
+    page.on("request", (r) => { if (/^https:\/\/([\w-]+\.)*(huggingface\.co|hf\.co)\//.test(r.url())) hf.push(r.url()); });
     await search.fill("dog");
+    await expect(page.getByRole("heading", { name: "Download the search model?" })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("huggingface.co and its CDN")).toBeVisible();
+    await page.waitForTimeout(1000);
+    expect(hf).toEqual([]);
+    await page.getByRole("button", { name: "Download and turn on" }).click();
+    // ranked like Immich: every photo with a vector, best match first, no day headings; photos without one don't show
     await expect(page.locator(".tile")).toHaveCount(3, { timeout: 120_000 }); // the first search downloads the 64 MB model
+    expect(hf.length).toBeGreaterThan(0);
     await expect(page.locator(".tile").first()).toHaveAttribute("data-id", items[0].id);
     await expect(page.locator(".dayhead")).toHaveCount(0);
     await search.fill("city at night");
@@ -82,6 +91,7 @@ test.describe.serial("search by what is in a photo", () => {
     await page.getByRole("menuitem", { name: "Account" }).click();
     await page.getByText("Search", { exact: true }).click();
     await expect(page.getByText("3 photos can be found by what is in them")).toBeVisible();
+    await expect(page.getByText(/Search model downloaded from Hugging Face on .*, \\d+ MB\./)).toBeVisible();
     await expect(page.getByRole("switch", { name: "Explicit search" })).toHaveCount(0); // not allowed for carol
 
     // leave carol's library as it was
@@ -123,6 +133,7 @@ test.describe.serial("search by what is in a photo", () => {
 
     const search = page.getByLabel("Search your photos");
     await search.fill("dog");
+    await page.getByRole("button", { name: "Download and turn on" }).click(); // a new browser: asked first
     // the search is debounced, so the library still shows every tile at first; wait for the one result
     await expect(page.locator(".tile")).toHaveCount(1, { timeout: 240_000 }); // the 254 MB model, once
     await expect(page.locator(`.tile[data-id="${item}"]`)).toBeVisible();

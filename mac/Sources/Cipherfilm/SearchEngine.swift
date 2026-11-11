@@ -9,7 +9,9 @@ import CipherfilmCore
 
 @MainActor @Observable
 final class SearchEngine {
-  enum Phase: Equatable { case off, download, loading, indexing, waitPower, ready, error }
+  /** consent: the models (or some) aren't here and the person hasn't agreed to download them yet (ModelStore,
+   *  docs/MODELS.md); total is the download's size. Nothing is fetched until they do. */
+  enum Phase: Equatable { case off, consent, download, loading, indexing, waitPower, ready, error }
   var phase: Phase = .off
   var done = 0
   var total = 0
@@ -106,6 +108,11 @@ final class SearchEngine {
       let clip = clip, reader = !indexes, standardToo = clip.keepsStandard(indexes: indexes)
       step = "Downloading the search models"
       if !models.have(faces: faces, clip: clip, reader: reader) {
+        // asked first (a model update, explicit search, faces or indexing here need new files): nothing goes out before
+        if !models.unagreed(faces: faces, clip: clip, reader: reader).isEmpty {
+          phase = .consent; done = 0; total = Int(models.missingBytes(faces: faces, clip: clip, reader: reader)); message = nil
+          return
+        }
         phase = .download; done = 0; total = Int(models.missingBytes(faces: faces, clip: clip, reader: reader)); message = nil; rate = 0; rateAt = nil; retry = nil
         try await models.download(faces: faces, clip: clip, reader: reader) { p in Task { @MainActor in self.downloaded(p) } }
         guard live(vault) else { return }
@@ -253,6 +260,8 @@ final class SearchEngine {
         }
       }
     } catch is CancellationError {
+    } catch let e as NeedsConsent {
+      if live(vault) { phase = .consent; done = 0; total = Int(e.bytes); message = nil }
     } catch {
       if live(vault) { phase = .error; message = "\(step): \(error.localizedDescription) Trying again in a minute." }
       // try again in a while (offline, server busy)
@@ -366,6 +375,26 @@ final class SearchEngine {
   func downloadSize(_ clip: ClipModel, faces: Bool) -> String? {
     let n = models.missingBytes(faces: faces, clip: clip, reader: !(AppModel.shared.me?.mayIndex ?? true))
     return n == 0 ? nil : "about \(max(1, Int((Double(n) / 1e6).rounded()))) MB"
+  }
+
+  /** What a setting would download that the person hasn't agreed to yet: the question to ask first, or nil when none
+   *  is needed. reader: nil for this Mac's role now. */
+  func consentAsk(_ clip: ClipModel, faces: Bool, reader: Bool? = nil) -> ModelConsentAsk? {
+    let r = reader ?? !(AppModel.shared.me?.mayIndex ?? true)
+    guard !models.unagreed(faces: faces, clip: clip, reader: r).isEmpty else { return nil }
+    return ModelConsentAsk(clip: clip, faces: faces, reader: r, bytes: models.missingBytes(faces: faces, clip: clip, reader: r))
+  }
+
+  /** The question for what this run waits for (phase consent). */
+  func pendingAsk() -> ModelConsentAsk {
+    let faces = runFaces, reader = !indexes
+    return ModelConsentAsk(clip: clip, faces: faces, reader: reader, bytes: models.missingBytes(faces: faces, clip: clip, reader: reader))
+  }
+
+  /** The yes; a run that waited for it goes on. */
+  func agree(_ a: ModelConsentAsk) {
+    models.agree(faces: a.faces, clip: a.clip, reader: a.reader)
+    if phase == .consent { restart() }
   }
 
   /** "Downloading search models · 40 of 250 MB · 280 KB/s, about 13 min left", or why it is waiting. */
@@ -799,4 +828,16 @@ enum Power {
           let type = IOPSGetProvidingPowerSourceType(info)?.takeUnretainedValue() as String? else { return false }
     return type == kIOPSBatteryPowerValue
   }
+}
+
+/** What the question before a model download is about (ModelConsentSheet). */
+struct ModelConsentAsk: Identifiable, Equatable {
+  let clip: ClipModel
+  let faces: Bool
+  let reader: Bool
+  let bytes: Int64
+  var id: String { "\(clip.rawValue)-\(faces)-\(reader)" }
+
+  /** Which models, in words, by what they are for (files and sizes come from the model list, whichever model). */
+  var what: String { Models.needed(faces: faces, clip: clip, reader: reader).contains { $0.faces } ? "the search model and the face models" : "the search model" }
 }

@@ -202,6 +202,11 @@ enum DebugDriver {
     m.settings.indexOnBattery = true
     // where explicit search is allowed, turning search on asks for the model first; standard here
     m.turnOnSearch(explicit: m.me?.user.nsfw == true ? false : nil)
+    // nothing is downloaded before the yes (docs/MODELS.md): with fresh models search waits for it; then the driver
+    // gives it, as the person would in the question
+    _ = await wait("search starts", timeout: 120) { m.search.phase != .off && m.search.phase != .loading }
+    if env["CF_FRESH_MODELS"] == "1" { check(m.search.phase == .consent, "search waits for the yes before downloading the models") }
+    if m.search.phase == .consent { m.search.agree(m.search.pendingAsk()) }
     let tIndex = Date()
     var sawError: String?, retries = 0, sawRate = 0.0, lastRetry = false, reasons: [String] = []
     _ = await wait("search ready", timeout: 1800) {

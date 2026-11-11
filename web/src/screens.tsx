@@ -8,8 +8,10 @@ import { setMemoriesOn, useMemoriesOn } from "./memories/setting";
 import { Loader, Loading } from "./loader";
 import { BackupReport, backupState } from "./backup";
 import { explicitChosen, indexChecked, loadPeople, refreshIndex, searchFamily, setExplicit } from "./people/people";
-import { vectorCount } from "./search/content";
-import { TEXT_MODELS } from "./search/rank";
+import { forgetContentModels, loadModel, vectorCount } from "./search/content";
+import { adoptCached, agreeModels, downloaded, mb, modelsAgreed, useModelConsent } from "./search/consent";
+import { ModelConsent } from "./search/consentui";
+import { TEXT_MODELS, TOKENIZER } from "./search/rank";
 import * as tf from "./twofactor";
 import { Card, ErrorLine, Field, KeepButton, NewPasswordFields, Submit, VersionLine, fmtGB, passwordProblem, useAction } from "./components";
 
@@ -463,14 +465,44 @@ function SearchPanel() {
   const allowed = !!mem.me?.user.nsfw;
   const family = searchFamily();
   const n = vectorCount(family), other = vectorCount(family === "mcs2" ? "laionb32" : "mcs2");
+  // the search model from Hugging Face: asked before it is downloaded, shown when it is here (search/consent.ts)
+  useModelConsent();
+  const [adopted, setAdopted] = useState(false);
+  useEffect(() => { adoptCached().then(() => setAdopted(true)); }, []);
+  const [ask, setAsk] = useState(false);
+  const [loading, setLoading] = useState<string | null>(null);
+  const model = useAction();
+  const got = downloaded();
+  const agreed = modelsAgreed(family);
+  const yes = () => model.run(async () => {
+    agreeModels(family);
+    setAsk(false);
+    setLoading("Downloading the search model…");
+    try { await loadModel(family, (done, total) => setLoading(`Downloading the search model: ${Math.round(done / 1e6)} of ${Math.round(total / 1e6)} MB…`)); } finally { setLoading(null); }
+  });
+  const off = () => model.run(async () => { await forgetContentModels(); setAsk(false); });
   return (
     <Acc icon="search" title="Search" sub="Find photos by what is in them">
       {!indexChecked() ? <Loading inline label="Checking…" /> : n === 0 && other === 0 ? (
         <p>To find photos by what's in them (dog, beach, birthday), <strong>turn on search in the Android or Mac app</strong> (Search and people). This browser then uses what the app found.</p>
       ) : (
-        <p>{n === 1 ? "1 photo" : `${n} photos`} can be found by what is in them. Combine with a date or a name, like “beach 2023” or “Anna cake”.{n === 0 && " Your Android or Mac app is still indexing them with the model you chose."} Runs in this browser; your search words never leave it. Downloads {Math.round(TEXT_MODELS[family].size / 1e6)} MB once from Hugging Face.</p>
+        <p>{n === 1 ? "1 photo" : `${n} photos`} can be found by what is in them. Combine with a date or a name, like “beach 2023” or “Anna cake”.{n === 0 && " Your Android or Mac app is still indexing them with the model you chose."} Runs in this browser; your search words never leave it. Needs a {mb(TEXT_MODELS[family].size + TOKENIZER.size)} model, downloaded once from Hugging Face after you agree.</p>
       )}
-      {indexChecked() && n + other > 0 && <p class="hint">Hugging Face sees this browser's IP address, nothing of your photos. Hugging Face is a trademark of Hugging Face, Inc. Cipherfilm is not affiliated with or endorsed by Hugging Face.</p>}
+      {adopted && (got || (indexChecked() && n + other > 0)) && (
+        got ? (
+          <>
+            <p class="hint">{got.at ? `Search model downloaded from Hugging Face on ${new Date(got.at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}, ${mb(got.bytes)}.` : `Search model downloaded from Hugging Face, ${mb(got.bytes)}.`} Hugging Face saw this device's IP address, nothing of your photos.</p>
+            {loading ? <Loading inline label={loading} /> : agreed ? (
+              <button class="btn secondary" disabled={model.busy} onClick={off}>Turn off and delete the model</button>
+            ) : <button class="btn" disabled={model.busy} onClick={() => setAsk(true)}>Download the model…</button>}
+          </>
+        ) : loading ? <Loading inline label={loading} /> : !ask && (
+          <button class="btn" disabled={model.busy} onClick={() => setAsk(true)}>Turn on search in this browser…</button>
+        )
+      )}
+      {ask && <ModelConsent family={family} busy={model.busy} onYes={yes} onLater={() => setAsk(false)} />}
+      <ErrorLine text={model.error} />
+      {indexChecked() && n + other > 0 && <p class="hint">Hugging Face is a trademark of Hugging Face, Inc. Cipherfilm is not affiliated with or endorsed by Hugging Face.</p>}
       {allowed && explicit !== null && (
         <>
           <label class="check">
@@ -482,7 +514,7 @@ function SearchPanel() {
               }} />
             Explicit search
           </label>
-          <p class="hint">Uses a model that also knows explicit content. <strong>This applies to all your devices:</strong> the indexing device (Account › Devices) indexes your whole library again, and search finds fewer photos until it's done. In this browser it's a {Math.round(TEXT_MODELS.laionb32.size / 1e6)} MB download, removed when you sign out.</p>
+          <p class="hint">Uses a model that also knows explicit content. <strong>This applies to all your devices:</strong> the indexing device (Account › Devices) indexes your whole library again, and search finds fewer photos until it's done. In this browser it's a {Math.round(TEXT_MODELS.laionb32.size / 1e6)} MB download from Hugging Face, asked first and removed when you sign out.</p>
           <ErrorLine text={error} />
         </>
       )}

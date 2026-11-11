@@ -8,6 +8,8 @@ version into the GitHub release notes, so a release cannot be published without 
 ## [Unreleased]
 
 ### Added
+- Web, Android, Mac: before the search models are downloaded from Hugging Face, the app asks: what, how big, from
+  whom and what Hugging Face sees. Turning search off deletes them; the settings show when they were downloaded.
 - Android and Mac: the admin area is in the apps too (Account › Administration on Android, Settings › Administration
   on the Mac): people and their usage, invites to share, storage limits, roles, disabling and deleting accounts,
   turning off someone's two-step sign-in, explicit search, the server's state and the activity log.

@@ -19,14 +19,16 @@ import { api, ApiError } from "../api";
 import { onWipe, refreshMe, session, type Me } from "../session";
 import { imageBytes, type Item } from "../library";
 import { fingerprint } from "../prints";
-import { downloadModels, downloadSize, dropOtherModels, family, haveModels, keepsStandard, modelPath, modelTag, STANDARD, tokenizerFile, toCompute, type Clip } from "./models";
+import { downloadModels, downloadSize, dropOtherModels, family, haveModels, keepsStandard, modelPath, modelTag, NeedsConsent, STANDARD, tokenizerFile, toCompute, unagreed, type Clip } from "./models";
 import { loadSettings, saveSettings, settingsDir, type SearchSettings } from "./settings";
 import { keepRunning, letGo, onlyHolder } from "../keepAlive";
 import { Tokenizer } from "./tokenizer";
 import { explicitSearchOffered } from "../store";
 import { t } from "../i18n";
 
-export type Phase = "off" | "waitWifi" | "download" | "loading" | "indexing" | "ready" | "error";
+/** consent: the models (or some of them) aren't here and the person hasn't agreed to download them yet (models.ts);
+ *  total is the download's size. Nothing is fetched until they do. */
+export type Phase = "off" | "consent" | "waitWifi" | "download" | "loading" | "indexing" | "ready" | "error";
 export interface Progress { phase: Phase; done: number; total: number; message?: string }
 
 let progress: Progress = { phase: "off", done: 0, total: 0 };
@@ -296,6 +298,8 @@ export async function startSearch(library: Item[]) {
     // for the background, which can't read the people document or ask the server
     if (st.clip !== want || st.indexes !== indexes) await saveSettings({ clip: want, indexes });
     if (!(await haveModels(st.faces, clip, indexes))) {
+      // asked first (a model update, explicit search, faces or indexing here need new files): nothing goes out before
+      if (unagreed(st.faces, clip, indexes).length) { set({ phase: "consent", done: 0, total: downloadSize(st.faces, clip, indexes), message: undefined }); return; }
       if (st.wifiOnly && !N.backupState().unmetered) { set({ phase: "waitWifi", done: 0, total: downloadSize(st.faces, clip, indexes), message: undefined }); return; }
       set({ phase: "download", done: 0, total: 1, message: undefined });
       hold(t("Downloading the search model"), "");
@@ -419,7 +423,8 @@ export async function startSearch(library: Item[]) {
     if (live()) set({ phase: "ready", done, total });
   } catch (e) {
     failed = true;
-    if (live()) set({ phase: "error", message: e instanceof Error ? e.message : String(e) });
+    if (e instanceof NeedsConsent) { if (live()) set({ phase: "consent", done: 0, total: e.bytes, message: undefined }); }
+    else if (live()) set({ phase: "error", message: e instanceof Error ? e.message : String(e) });
   } finally {
     if (run === mine) { release(); syncing = false; } // a newer run took over: it holds (or lets go) itself
     if (active === mine) {

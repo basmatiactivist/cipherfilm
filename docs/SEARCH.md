@@ -120,7 +120,9 @@ vector.
 signs one out (not this one: that is sign-out), `POST /api/me/sessions/end-others` all others; both are in the audit
 log. A signed-out device gets 401 at its next request and forgets the library as at sign-out. The device name is what
 the app sends as `X-CF-Device` at sign-in (Android: "<model> (Android app)", Mac: "<computer name> (Mac app)"),
-otherwise a guess from the browser's User-Agent ("Firefox on macOS"); it is only a label.
+otherwise a guess from the browser's User-Agent ("Firefox on macOS"); it is only a label. Account › Devices on the web,
+Android and the Mac shows the list. A new sign-in also leaves a notice for the devices signed in before it
+(`GET /api/me/notices`, `POST /api/me/notices/{id}/dismiss`, live topic `notices`; server/notices.go).
 
 **The model:** LAION's OpenCLIP ViT-B/32 (`laion2b_s34b_b79k`, MIT), trained on LAION-2B, where explicit images were
 tagged, not removed. Immich ships the same model for its smart search. Files (Immich's split ONNX export, commit

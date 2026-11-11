@@ -78,6 +78,9 @@ and visitors are signed out every hour. To keep your own photos, [run your own s
 - **Free up space.** Remove photos from the phone once they are in Cipherfilm.
 - **Locks itself.** Fingerprint unlock, automatic lock after a time you choose or when the screen turns off, and
   shake to lock and close.
+- **Two-step sign-in and your devices.** Optional codes from an authenticator app at every new sign-in, with one-time
+  recovery codes; a list of signed-in devices to sign out one or all others; a notice on your other devices when a
+  new one signs in.
 - **Mac app.** Keeps an export folder up to date, uploads watched folders and indexes for search in the background
   ([docs/MAC.md](docs/MAC.md)).
 - **Made for a small group.** Invite-only, a private library per person, storage limits, an admin area that never
@@ -143,7 +146,8 @@ controls the server could deliver modified JavaScript), is in [docs/THREAT_MODEL
 
 - Young software, written with the help of AI agents. Several rounds of AI-agent source audits found and fixed issues
   ([SECURITY.md](SECURITY.md)), but there has been **no independent human security review**.
-- No two-factor sign-in yet, and no sharing between people.
+- No sharing between people. Two-step sign-in uses authenticator-app codes (TOTP), which the server must be able to
+  check: whoever runs the server could make codes (it could also serve altered web code, see the threat model).
 - No server-side thumbnails or transcoding (the server can't see the content). iPhone HEVC videos don't play in every
   browser.
 - Not tested at large scale (tens of thousands of photos).

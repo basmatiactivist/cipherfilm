@@ -21,6 +21,9 @@ import { hasIndex, loadPeople, refreshIndex, searchFamily, usePeople } from "./p
 import { coalesce, startLive } from "./live";
 import { lazy } from "./lazy";
 import { Loading } from "./loader";
+import { findMemories, todayKey, type Memory } from "./memories/memories";
+import { useMemoriesOn } from "./memories/setting";
+import { MemoriesRow } from "./memories/ui";
 
 // Loaded when first shown; the lightbox is fetched ahead once the grid is up, so the first photo opens at once.
 const Lightbox = lazy(() => import("./lightbox").then((m) => m.Lightbox), () => <div class="lightbox lbwait"><Loading stage label="Opening the viewer…" /></div>);
@@ -390,7 +393,15 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const trashItemsShown = useMemo(() => match(trash ?? [], false), [trash, q]);
   const moreLeft = !!ranked && (view.n === "timeline" ? timelineAll : shownAll).length > limit;
   const [mapList, setMapList] = useState<Item[]>([]);
-  const lbList = view.n === "timeline" ? timelineItems : view.n === "trash" ? trashItemsShown : view.n === "map" ? mapList : shownItems;
+  // "On this day" (memories/): worked out here from the capture dates, again when the library or the day changes
+  const memOn = useMemoriesOn();
+  const today = todayKey();
+  const memories = useMemo(() => (memOn && items ? findMemories(items) : []), [items, memOn, today]);
+  // a memory's photos while the viewer shows them; dropped when it closes
+  const [memList, setMemList] = useState<Item[] | null>(null);
+  useEffect(() => { if (lb === null) setMemList(null); }, [lb]);
+  const openMemory = (m: Memory<Item>) => { setMemList(m.items); openLb(0); };
+  const lbList = memList ?? (view.n === "timeline" ? timelineItems : view.n === "trash" ? trashItemsShown : view.n === "map" ? mapList : shownItems);
   /** The photos on screen, in order: what select all, a range and the selection work on. */
   function listed() { return view.n === "trash" ? trashItemsShown : view.n === "album" || view.n === "person" || view.n === "favorites" ? shownItems : view.n === "timeline" ? timelineItems : []; }
   const selectAll = () => { setSelectMode(true); setSelected(new Set(listed().map((i) => i.id))); };
@@ -630,6 +641,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
               )}
               {q && content.status && <Loading inline={timelineItems.length > 0} label={content.status} />}
               {q && items && items.length > 0 && timelineItems.length === 0 && !content.status && <p class="small">Nothing matches “{searched.trim()}”. Search covers file names, dates (2023, March, 14.03.2023), cameras, albums and people{searchable ? ", and what's in your photos" : ""}.{!searchable && " To search by what's in photos (dog, beach), turn on search in the Android or Mac app."}</p>}
+              {!q && <MemoriesRow memories={memories} onOpen={openMemory} />}
               {items && items.length > 0 && albums.length > 0 && !selectMode && !q && <p class="small hint desktoponly">Tip: drag photos onto an album to file them.</p>}
               {timelineItems.length > 0 && <Timeline items={timelineItems} flat={!!ranked} selectMode={selectMode} selected={selected} onToggle={pick} onContext={(id, e) => setCtx({ x: e.clientX, y: e.clientY, kind: "item", id })} dragIds={dragIds} onOpen={(id) => openLb(timelineItems.findIndex((i) => i.id === id))} />}
             </>

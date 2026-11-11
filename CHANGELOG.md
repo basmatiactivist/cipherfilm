@@ -11,6 +11,8 @@ version into the GitHub release notes, so a release cannot be published without 
 - Android: the search index kept on the phone (both the standard and the explicit model's) was deleted with the
   cleanup of cached pictures after every library load, so search had to fetch and open the whole index again at each
   start. Both copies now stay; phones that lost them fetch them again once.
+- Mac: videos with the iPhone's location key in a meta box inside udta (as ffmpeg writes it) uploaded without
+  their place; the Mac app now reads it there too, like the web app and the upload tool.
 
 ## [2.6.1] - 2026-11-10
 

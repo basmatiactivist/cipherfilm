@@ -262,6 +262,9 @@ function TwoFactorPanel({ open }: { open?: boolean }) {
   const [codes, setCodes] = useState<string[]>([]);
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState("");
+  // once the person worked in it, the panel stays open when a step ends (it would close and hide the new state)
+  const [stay, setStay] = useState(false);
+  useEffect(() => { if (mode) setStay(true); }, [mode]);
   const { busy, error, setError, run } = useAction();
   const load = () => tf.status().then((s) => { setSt(s); if (mem.me) mem.me.two_factor = s.enabled; }, () => {});
   useEffect(() => { load(); }, []);
@@ -286,7 +289,7 @@ function TwoFactorPanel({ open }: { open?: boolean }) {
     );
   }
   return (
-    <Acc icon="key" title="Two-step sign-in" sub={on ? "On: a code from your app at every new sign-in" : "Off"} open={open || mode !== "" || undefined}>
+    <Acc icon="key" title="Two-step sign-in" sub={on ? "On: a code from your app at every new sign-in" : "Off"} open={open || stay || mode !== "" || undefined}>
       {!on && mode === "" && (
         <>
           <p>Ask for a 6-digit code from an authenticator app (such as Aegis, 2FAS or Google Authenticator) when you sign in on a new device or browser. Unlocking a device that is already signed in doesn't ask for it.</p>

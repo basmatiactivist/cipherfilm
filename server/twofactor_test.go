@@ -953,6 +953,9 @@ func TestBackgroundCheckIsNotActivity(t *testing.T) {
 	}
 	if last, exp := seen(); last == last0 || exp <= exp0 {
 		t.Fatalf("a normal request isn't activity: %d/%d -> %d/%d", last0, exp0, last, exp)
+	}
+}
+
 // A password step on an account with two-step sign-in never creates a session row, whatever happens to its pending
 // sign-in (wrong code, wrong recovery code, expired, worn out, pushed out, noticed as password_used); only a right
 // code does, exactly one. The device list (GET /api/me/sessions) is read from these rows.

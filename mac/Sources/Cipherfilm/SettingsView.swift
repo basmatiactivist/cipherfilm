@@ -48,6 +48,7 @@ struct GeneralSettings: View {
   @State private var signOut = false
   @State private var deleteAccount = false
   @State private var touchError: String?
+  @AppStorage("memoriesOn") private var memoriesOn = true
 
   var body: some View {
     @Bindable var agent = model.agent
@@ -65,6 +66,10 @@ struct GeneralSettings: View {
         Toggle("Map", isOn: Binding(get: { model.mapOn }, set: { model.mapOn = $0 }))
           .disabled(model.me == nil || model.me?.hasMap != true)
         if model.me != nil && model.me?.hasMap != true { Text("This server doesn't offer a map.").font(Typo.caption).foregroundStyle(.secondary) }
+      }
+      Divider()
+      Section_(title: "Memories", subtitle: "Photos from around today's date in earlier years, above Photos. Worked out on this Mac from the encrypted dates; the server learns nothing.") {
+        Toggle("Show “On this day”", isOn: $memoriesOn)
       }
       Divider()
       Section_(title: "Unlock with Touch ID", subtitle: "Your library's key is kept locked in this Mac's Secure Enclave. Changing your fingerprints turns it off. Your password always works.") {

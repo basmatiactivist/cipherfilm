@@ -238,8 +238,6 @@ export const deApp: Record<string, string> = {
   "No photos with a location yet": "Noch keine Fotos mit Ort",
   "Photos in this area": "Fotos in diesem Ausschnitt",
   "The map couldn't be loaded. Check the connection and try again later.": "Die Karte konnte nicht geladen werden. Prüfen Sie die Verbindung und versuchen Sie es später noch einmal.",
-  "{n} photo on the map": "{n} Foto auf der Karte",
-  "{n} photos on the map": "{n} Fotos auf der Karte",
   "Where this photo was taken": "Wo dieses Foto aufgenommen wurde",
   "the map server": "dem Kartenserver",
   "Show your photos on a map?": "Ihre Fotos auf einer Karte zeigen?",

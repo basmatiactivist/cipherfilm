@@ -166,12 +166,12 @@ export default function MapScreen() {
     openPanel();
   };
 
-  const inView = openPanel;
-
   return (
     <View style={{ flex: 1, backgroundColor: th.colors.background }}>
       <Appbar.Header style={{ backgroundColor: th.colors.background }}>
         <Appbar.Content title={t("Map")} titleStyle={text.page} />
+        {/* the photos in what the map shows (a cluster opens its photos once zoomed in): no bar over the map for it */}
+        {conf && on && located.length > 0 && !panel ? <Appbar.Action icon="photos" accessibilityLabel={t("Photos in this area")} onPress={openPanel} /> : null}
         <Appbar.Action icon="user" accessibilityLabel={t("Account")} onPress={() => router.push("/account")} />
       </Appbar.Header>
       {!conf ? (
@@ -221,10 +221,10 @@ export default function MapScreen() {
             ))}
           </MapView>
           )}
-          <View style={[st.bar, { backgroundColor: th.colors.surface, borderColor: th.colors.outlineVariant }]}>
-            <Text variant="labelLarge">{located.length === 0 ? t("No photos with a location yet") : tn(located.length, "{n} photo on the map", "{n} photos on the map")}</Text>
-            {located.length > 0 && <Button compact mode="contained-tonal" onPress={inView}>{t("Photos in this area")}</Button>}
-          </View>
+          {located.length === 0 && items ? (
+            <Text variant="bodySmall" pointerEvents="none"
+              style={[st.empty, { color: th.colors.onSurfaceVariant, textShadowColor: th.colors.surface }]}>{t("No photos with a location yet")}</Text>
+          ) : null}
           {failed && <Text style={[st.fail, { backgroundColor: th.colors.errorContainer, color: th.colors.onErrorContainer }]}>{t("The map couldn't be loaded. Check the connection and try again later.")}</Text>}
           {panel && (
             <View style={[st.panel, { backgroundColor: th.colors.background, borderColor: th.colors.outlineVariant }]}>
@@ -274,8 +274,8 @@ const st = StyleSheet.create({
   marker: { width: 52, height: 52, borderRadius: 26, borderWidth: 3, overflow: "visible", elevation: 4 },
   thumb: { width: 46, height: 46, borderRadius: 23, overflow: "hidden" },
   count: { position: "absolute", top: -6, right: -8, minWidth: 22, height: 22, paddingHorizontal: 6, borderRadius: 11, borderWidth: 2, alignItems: "center", justifyContent: "center" },
-  bar: { position: "absolute", top: 12, left: 12, right: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, paddingLeft: 12, paddingRight: 4, paddingVertical: 4, borderRadius: 12, borderWidth: 1 },
-  fail: { position: "absolute", top: 72, left: 12, right: 12, padding: 12, borderRadius: 12 },
+  empty: { position: "absolute", top: 12, left: 16, right: 16, textShadowRadius: 4, textShadowOffset: { width: 0, height: 0 } },
+  fail: { position: "absolute", top: 40, left: 12, right: 12, padding: 12, borderRadius: 12 },
   panel: { position: "absolute", left: 0, right: 0, bottom: 0, height: `${Math.round((1 - VISIBLE) * 100)}%`, borderTopLeftRadius: 20, borderTopRightRadius: 20, borderWidth: 1, overflow: "hidden" },
   panelHead: { flexDirection: "row", alignItems: "center", paddingLeft: 16, paddingTop: 8 },
 });

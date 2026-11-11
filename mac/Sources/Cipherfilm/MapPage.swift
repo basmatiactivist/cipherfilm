@@ -372,8 +372,9 @@ struct MapScreen: View {
     let located = model.items.filter { $0.location != nil }
     VStack(spacing: 0) {
       HStack(alignment: .bottom) {
-        PageTitle(title: "Map", subtitle: located.isEmpty ? "No photos with a location yet" : located.count == 1 ? "1 photo on the map" : "\(located.count) photos on the map")
-        if !located.isEmpty {
+        // no count of the photos on the map: only the quiet hint when there are none
+        PageTitle(title: "Map", subtitle: located.isEmpty ? "No photos with a location yet" : nil)
+        if !located.isEmpty && panel == nil {
           Button { Task { await inView() } } label: { Label("Photos in This Area", systemImage: "photo.on.rectangle") }
             .buttonStyle(SecondaryButton()).padding(.trailing, 28).padding(.bottom, 8)
             .help("List the photos inside what the map shows")

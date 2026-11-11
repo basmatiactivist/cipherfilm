@@ -7,7 +7,8 @@ import { Tile } from "../grid";
 import { Icon } from "../icons";
 import { Loading } from "../loader";
 import { fmtGB } from "../components";
-import { hasIndex, refreshIndex, searchFamily } from "../people/people";
+import { hasIndex, refreshIndex } from "../people/people";
+import { FAMILY as family } from "../search/rank";
 import { hasVector, scorePairs } from "../search/content";
 import { bytesOf, chosenWith, findGroups, similarCheck, type Candidate, type Found, type Group } from "./duplicates";
 
@@ -36,7 +37,7 @@ export function Duplicates(p: { items: Item[] | null; demo: boolean; retention: 
     const items = p.items;
     (async () => {
       await refreshIndex().catch(() => {}); // what the apps indexed since; without it, only exact duplicates
-      const family = searchFamily(); // the explicit model only where the account chose it and an admin allowed it
+      // every photo with a vector, explicit or not: a cleanup tool, not search (docs/SEARCH.md "Explicit content")
       const cands = items.flatMap((it) => candidateOf(it) ?? []);
       return findGroups(cands, (id) => hasVector(id, family), hasIndex() ? (a, b) => scorePairs(family, a, b) : null);
     })().then((f) => { if (alive) { setFound(f); setError(""); } },

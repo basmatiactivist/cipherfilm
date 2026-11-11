@@ -28,26 +28,35 @@ beforeEach(() => { store.clear(); cached.clear(); posted.length = 0; fetches.len
 
 describe("asking before the search model is downloaded (web)", () => {
   it("without a yes, search asks the worker for nothing and fetches nothing", async () => {
-    await expect(content.contentSearch("dog", "mcs2")).rejects.toBeInstanceOf(consent.NeedsConsent);
-    await expect(content.loadModel("mcs2")).rejects.toBeInstanceOf(consent.NeedsConsent);
+    await expect(content.contentSearch("dog", "laionb32", true)).rejects.toBeInstanceOf(consent.NeedsConsent);
+    await expect(content.loadModel("laionb32")).rejects.toBeInstanceOf(consent.NeedsConsent);
     expect(posted.filter((r) => r.t === "search")).toEqual([]);
     expect(fetches).toEqual([]);
   });
 
   it("the yes is kept (per device), covers exactly that model's files, and lets search run", async () => {
-    consent.agreeModels("mcs2");
-    expect(consent.modelsAgreed("mcs2")).toBe(true);
-    expect(consent.modelsAgreed("laionb32")).toBe(false); // explicit search's model asks again
-    expect(JSON.parse(store.get("cf-models-ok")).sha).toEqual([TEXT_MODELS.mcs2.sha256, TOKENIZER.sha256]);
-    await content.contentSearch("dog", "mcs2");
-    expect(posted.find((r) => r.t === "search")).toMatchObject({ q: "dog", family: "mcs2", allow: true });
-    expect(consent.downloaded()).toMatchObject({ bytes: TEXT_MODELS.mcs2.size + TOKENIZER.size });
+    expect(consent.modelsAgreed("laionb32")).toBe(false);
+    consent.agreeModels("laionb32");
+    expect(consent.modelsAgreed("laionb32")).toBe(true);
+    expect(JSON.parse(store.get("cf-models-ok")).sha).toEqual([TEXT_MODELS.laionb32.sha256, TOKENIZER.sha256]);
+    await content.contentSearch("dog", "laionb32", true);
+    expect(posted.find((r) => r.t === "search")).toMatchObject({ q: "dog", family: "laionb32", allow: true, filtered: true });
+    expect(consent.downloaded()).toMatchObject({ bytes: TEXT_MODELS.laionb32.size + TOKENIZER.size });
     expect(consent.downloaded().at).toBeGreaterThan(0);
+  });
+
+  it("a yes to the files of the model before (MobileCLIP) doesn't cover the new one", () => {
+    // what an earlier version stored after the yes to MobileCLIP's text model and tokenizer
+    store.set("cf-models-ok", JSON.stringify({ at: 1, sha: ["f8aaa97cf17fbadd78b0bd6d5f6a1c57f712402cacc3055ea92c1a3331357dfe", "72ed5c96db5729294468543e4bc75fce14ca63f58e37300290189ba1c1e52b85"] }));
+    expect(consent.modelsAgreed("laionb32")).toBe(false);
+    // one who had explicit search's text model (the same file) is asked only for the new tokenizer
+    store.set("cf-models-ok", JSON.stringify({ at: 1, sha: [TEXT_MODELS.laionb32.sha256] }));
+    expect(consent.modelsAgreed("laionb32")).toBe(false);
   });
 
   it("a model update (another SHA-256) asks again", () => {
     store.set("cf-models-ok", JSON.stringify({ at: 1, sha: ["0".repeat(64), TOKENIZER.sha256] }));
-    expect(consent.modelsAgreed("mcs2")).toBe(false);
+    expect(consent.modelsAgreed("laionb32")).toBe(false);
   });
 
   it("files downloaded before the question existed count as a yes, without a date", async () => {
@@ -55,7 +64,7 @@ describe("asking before the search model is downloaded (web)", () => {
     const fake = new Uint8Array(TOKENIZER.size); // not the real file: its hash differs, so it doesn't count
     await c.put(`/api/models/${TOKENIZER.file}`, new Response(fake));
     await consent.adoptCached();
-    expect(consent.modelsAgreed("mcs2")).toBe(false);
+    expect(consent.modelsAgreed("laionb32")).toBe(false);
     expect(store.has("cf-models-ok")).toBe(false);
     // the real hash: stand in a digest that matches
     const real = vi.spyOn(crypto.subtle, "digest").mockImplementation(async () => Uint8Array.from(TOKENIZER.sha256.match(/../g).map((h) => parseInt(h, 16))).buffer);
@@ -66,26 +75,31 @@ describe("asking before the search model is downloaded (web)", () => {
   });
 
   it("turning off withdraws the yes and deletes the files", async () => {
-    consent.agreeModels("mcs2");
+    consent.agreeModels("laionb32");
     await caches.open(MODEL_CACHE);
     await content.forgetContentModels();
-    expect(consent.modelsAgreed("mcs2")).toBe(false);
+    expect(consent.modelsAgreed("laionb32")).toBe(false);
     expect(cached.has(MODEL_CACHE)).toBe(false);
     expect(consent.downloaded()).toBeNull();
   });
 
   it("signing out withdraws it too", () => {
-    consent.agreeModels("mcs2");
+    consent.agreeModels("laionb32");
     content.clearContent(true);
-    expect(consent.modelsAgreed("mcs2")).toBe(false);
+    expect(consent.modelsAgreed("laionb32")).toBe(false);
   });
 
-  it("switching models withdraws the yes for the one whose file is deleted", async () => {
-    consent.agreeModels("mcs2");
+  it("the files of earlier versions: LAION's text model keeps its bytes under the new name, MobileCLIP's go", async () => {
+    const c = await caches.open(MODEL_CACHE);
+    await c.put("/api/models/nsfw-laion-b32-text.onnx", new Response("laion"));
+    await c.put("/api/models/mobileclip-s2-text.onnx", new Response("mcs2"));
+    await c.put("/api/models/mobileclip-s2-tokenizer.json", new Response("tok"));
     consent.agreeModels("laionb32");
-    await content.contentSearch("dog", "mcs2");
-    expect(consent.modelsAgreed("laionb32")).toBe(false);
-    expect(consent.modelsAgreed("mcs2")).toBe(true);
+    await content.contentSearch("dog", "laionb32", true);
+    const keys = [...cached.get(MODEL_CACHE).keys()];
+    expect(keys).toEqual([`/api/models/${TEXT_MODELS.laionb32.file}`]);
+    expect(await (await c.match(`/api/models/${TEXT_MODELS.laionb32.file}`)).text()).toBe("laion");
+    expect(fetches).toEqual([]);
   });
 });
 
@@ -95,7 +109,7 @@ describe("the worker without the yes", () => {
     const out: any[] = [];
     globalThis.self = { location: { origin: "" }, postMessage: (m) => out.push(m), onmessage: null };
     await import("./content.worker");
-    await self.onmessage({ origin: "", data: { t: "search", id: 1, q: "dog", family: "mcs2" } });
+    await self.onmessage({ origin: "", data: { t: "search", id: 1, q: "dog", family: "laionb32" } });
     expect(fetches).toEqual([]);
     expect(out.at(-1)).toEqual({ id: 1, t: "error", error: "The search model isn't downloaded yet." });
   });

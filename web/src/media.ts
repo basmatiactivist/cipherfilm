@@ -1,3 +1,4 @@
+import type { Edit, Orig } from "./edit/edit";
 import { fileVideoLocation } from "./places/videoLocation";
 
 export const THUMB_PX = 640; // sharp enough for a wide photo stretched across a row on a 2x screen
@@ -17,6 +18,10 @@ export interface ItemMeta {
   make?: string;
   model?: string;
   gps?: { lat: number; lon: number };
+  /** turned and cropped (edit/edit.ts); the encrypted original stays as it was */
+  edit?: Edit;
+  /** the date and place before the person changed them */
+  orig?: Orig;
 }
 
 export const isHeic = (f: Pick<File, "type" | "name">): boolean => /^image\/hei[cf]/.test(f.type) || /\.(heic|heif)$/i.test(f.name);
@@ -49,7 +54,7 @@ export async function readMeta(f: File, dims?: { width: number; height: number; 
   return meta;
 }
 
-interface Decoded { source: CanvasImageSource; width: number; height: number; duration?: number; close: () => void }
+export interface Decoded { source: CanvasImageSource; width: number; height: number; duration?: number; close: () => void }
 
 /** HEIC photos are a few MB; anything this large is not decoded for a thumbnail (it still uploads). */
 const HEIC_MAX_BYTES = 256 * 1024 * 1024;

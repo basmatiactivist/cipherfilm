@@ -391,6 +391,15 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const moreLeft = !!ranked && (view.n === "timeline" ? timelineAll : shownAll).length > limit;
   const [mapList, setMapList] = useState<Item[]>([]);
   const lbList = view.n === "timeline" ? timelineItems : view.n === "trash" ? trashItemsShown : view.n === "map" ? mapList : shownItems;
+  // after an edit the photo may move (a new date) or leave the list (its place removed on the map): the viewer stays on it
+  const follow = useRef<{ id: string; old?: Item } | null>(null);
+  useEffect(() => {
+    const f = follow.current;
+    if (!f || lb === null) return;
+    const i = lbList.findIndex((x) => x.id === f.id);
+    if (i >= 0 && lbList[i] !== f.old) { follow.current = null; if (i !== lb) setLb(i); }
+    else if (i < 0) { follow.current = null; if (lb >= lbList.length) closeLb(); }
+  }, [lbList]);
   /** The photos on screen, in order: what select all, a range and the selection work on. */
   function listed() { return view.n === "trash" ? trashItemsShown : view.n === "album" || view.n === "person" || view.n === "favorites" ? shownItems : view.n === "timeline" ? timelineItems : []; }
   const selectAll = () => { setSelectMode(true); setSelected(new Set(listed().map((i) => i.id))); };
@@ -751,6 +760,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
 
       {lb !== null && libraryView && lbList[lb] && (
         <Lightbox items={lbList} index={lb} onIndex={setLb} onClose={closeLb} people={people} onPerson={(key) => { closeLb(); openPerson(key); }} onMap={() => { closeLb(); go({ n: "map" }); }}
+          onEdited={view.n === "trash" ? undefined : (id) => { follow.current = { id, old: lbList.find((x) => x.id === id) }; refreshItems(); }}
           onFavorite={view.n === "trash" ? undefined : (it) => favorite([it.id], !it.favorite)}
           action={view.n === "trash"
             ? { label: "Restore", run: async (it) => { await restore([it.id]); closeLb(); setTimeout(() => document.getElementById("main")?.focus(), 60); } }

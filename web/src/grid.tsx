@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/ho
 import { memo } from "preact/compat";
 import type { Item } from "./items";
 import { cachedThumb, dropImage, thumbUrl, wantImage } from "./cache";
+import { pictureKey } from "./edit/edit";
 import { Icon } from "./icons";
 
 export interface Mods { range: boolean; multi: boolean }
@@ -22,17 +23,22 @@ const aspect = (it: Item): number => (it.broken ? 1 : it.meta?.width && it.meta?
 
 export function Tile(p: { item: Item; selectMode: boolean; selected: boolean; onOpen: (m: Mods) => void; onToggle: (m: Mods) => void; dragIds?: () => string[]; w?: number; onContext?: (e: MouseEvent) => void; plain?: boolean; onShown?: (id: string) => void }) {
   const it = p.item;
-  const [url, setUrl] = useState<string | undefined>(() => cachedThumb(it.id));
+  const [url, setUrl] = useState<string | undefined>(() => cachedThumb(it));
   const [failed, setFailed] = useState(false);
+  // a turned or cropped photo has a new thumbnail: the tile loads it (and keeps the old one until it is there)
+  const pic = pictureKey(it.id, it.meta);
+  const shown = useRef(url ? pic : "");
   // a tile with nothing to wait for (no thumbnail, or one that failed) counts as shown at once
   useEffect(() => { if (!it.has_thumb || it.broken || failed) p.onShown?.(it.id); }, [it.id, failed]);
   useEffect(() => {
-    if (url || !it.has_thumb || it.broken) return;
+    if (shown.current === pic || !it.has_thumb || it.broken) return;
+    const hit = cachedThumb(it);
+    if (hit) { shown.current = pic; setUrl(hit); return; }
     let alive = true;
     wantImage("thumb", it.id);
-    thumbUrl(it).then((u) => alive && setUrl(u), (e) => alive && e?.message !== "cancelled" && setFailed(true));
+    thumbUrl(it).then((u) => { if (alive) { shown.current = pic; setUrl(u); } }, (e) => alive && e?.message !== "cancelled" && setFailed(true));
     return () => { alive = false; dropImage("thumb", it.id); };
-  }, [it.id]);
+  }, [pic]);
   const name = it.meta?.name ?? "Unreadable item";
   if (p.plain) {
     // a cover inside another control: no button of its own

@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   dragCrop, drawPlan, isEdited, MIN_CROP, normEdit, normOrig, normRect, normTurn, pictureKey, placeChanged, ratioRect, reverted,
-  rotateRect, sameEdit, sourceRect, turn, turnedSize, versionName, withDate, withPicture, withPlace, type Rect,
+  editedName, rotateRect, sameEdit, sourceRect, turn, turnedSize, versionName, withDate, withPicture, withPlace, type EditableMeta, type Rect,
 } from "./edit";
 
+const bare = (capture_ts: number): EditableMeta => ({ capture_ts });
 const close = (a: Rect, b: Rect) => { for (const k of ["x", "y", "w", "h"] as const) expect(a[k]).toBeCloseTo(b[k], 3); };
 
 describe("checking what other devices wrote", () => {
@@ -120,7 +121,7 @@ describe("dragging the crop frame", () => {
 });
 
 describe("date and place", () => {
-  const base = { name: "a.jpg", capture_ts: 1000, gps: { lat: 47.37, lon: 8.54 } };
+  const base: EditableMeta & { name: string } = { name: "a.jpg", capture_ts: 1000, gps: { lat: 47.37, lon: 8.54 } };
   it("keeps the originals at the first change, and only then", () => {
     const a = withDate(base, 5000.4);
     expect(a.capture_ts).toBe(5000);
@@ -137,7 +138,7 @@ describe("date and place", () => {
     const gone = withPlace(moved, null);
     expect(gone).not.toHaveProperty("gps");
     expect(placeChanged(gone)).toBe(true);
-    const none = withPlace({ capture_ts: 1 }, { lat: 1, lon: 2 });
+    const none = withPlace(bare(1), { lat: 1, lon: 2 });
     expect(none.orig).toEqual({ gps: null });
     expect(() => withPlace(base, { lat: 91, lon: 0 })).toThrow();
   });
@@ -147,7 +148,7 @@ describe("date and place", () => {
     m = reverted(m);
     expect(m).toEqual(base);
     expect(isEdited(m)).toBe(false);
-    const none = reverted(withPlace({ capture_ts: 1 }, { lat: 1, lon: 2 }));
+    const none = reverted(withPlace(bare(1), { lat: 1, lon: 2 }));
     expect(none).toEqual({ capture_ts: 1 });
   });
   it("ignores originals that aren't", () => {
@@ -164,12 +165,21 @@ describe("the picture version", () => {
     expect(pictureKey("ab", { edit: { rot: 0, v: "x1" } })).toBe("ab"); // no edit: the original's
   });
   it("is stored with the edit, or dropped with it", () => {
-    expect(withPicture({ capture_ts: 1 }, { rot: 180 }, "v").edit).toEqual({ rot: 180, v: "v" });
-    expect(withPicture({ capture_ts: 1, edit: { rot: 90 } }, { rot: 0 }, "v")).not.toHaveProperty("edit");
+    expect(withPicture(bare(1), { rot: 180 }, "v").edit).toEqual({ rot: 180, v: "v" });
+    expect(withPicture({ ...bare(1), edit: { rot: 90 } }, { rot: 0 }, "v")).not.toHaveProperty("edit");
   });
   it("is short and safe for file names", () => {
     const v = versionName(new Uint8Array([0, 255, 35, 36, 200, 7, 9]));
     expect(v).toMatch(/^[0-9a-z]{1,12}$/);
     expect(normEdit({ rot: 90, v })?.v).toBe(v);
+  });
+});
+
+describe("the edited copy's name", () => {
+  it("is a JPEG next to the original's name", () => {
+    expect(editedName("beach.heic")).toBe("beach (edited).jpg");
+    expect(editedName("IMG_1.JPG")).toBe("IMG_1 (edited).jpg");
+    expect(editedName("no extension")).toBe("no extension (edited).jpg");
+    expect(editedName(".jpg")).toBe("photo (edited).jpg");
   });
 });

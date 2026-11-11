@@ -218,7 +218,7 @@ export function withPlace<M extends EditableMeta>(meta: M, gps: Gps | null): M {
   if (gps && !validGps(gps)) throw new Error("not a place");
   const m = { ...meta, orig: { ...normOrig(meta.orig) } };
   if (!("gps" in m.orig)) m.orig.gps = validGps(meta.gps) ? { lat: meta.gps.lat, lon: meta.gps.lon } : null;
-  if (gps) m.gps = { lat: Math.round(gps.lat * 1e6) / 1e6, lon: Math.round(gps.lon * 1e6) / 1e6 };
+  if (gps) m.gps = { lat: gps.lat, lon: gps.lon };
   else delete m.gps;
   return tidy(m);
 }
@@ -246,3 +246,6 @@ export function reverted<M extends EditableMeta>(meta: M): M {
 /** A short name for a new version of the thumbnail and preview, from random bytes (crypto.getRandomValues on the web,
  *  libsodium's randombytes_buf in the app). */
 export const versionName = (random: Uint8Array): string => Array.from(random.subarray(0, 6), (x) => x.toString(36).padStart(2, "0")).join("").slice(0, 12);
+
+/** The file name of an edited copy: "beach.heic" is "beach (edited).jpg". */
+export const editedName = (name: string): string => `${name.replace(/\.[^./\\]{1,8}$/, "") || "photo"} (edited).jpg`;

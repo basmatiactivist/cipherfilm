@@ -73,7 +73,7 @@ main.appmain { max-width: none; padding: 0; }
 /* forms and buttons */
 .field { margin: 0 0 var(--space-4); }
 .field label { display: block; margin-bottom: var(--space-1); font-weight: 600; }
-input[type="text"], input[type="email"], input[type="password"], textarea, .linkbox input {
+input[type="text"], input[type="email"], input[type="password"], input[type="datetime-local"], textarea, .linkbox input {
   width: 100%; min-height: var(--touch); padding: 9px var(--space-3); font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--rule-strong); border-radius: var(--radius-control);
 }
 input::placeholder, textarea::placeholder { color: var(--faint); }
@@ -488,3 +488,28 @@ kbd { display: inline-block; padding: 1px 7px; font: inherit; font-size: var(--t
 .mapconsent { max-width: 560px; margin: var(--space-6) auto; display: grid; gap: var(--space-3); justify-items: start; }
 .mapconsent h2 { margin: 0; }
 .mapconsent p { margin: 0; }
+
+/* the editor (edit/editor.tsx): the lightbox's stage and side panel, with a crop frame over the turned photo */
+.editor .edstage { padding: var(--space-4); touch-action: none; }
+.edpic { position: relative; overflow: hidden; line-height: 0; user-select: none; }
+.edpic canvas { display: block; width: 100%; height: 100%; }
+.edframe { position: absolute; box-sizing: border-box; border: 1px solid var(--on-stage); box-shadow: 0 0 0 100vmax color-mix(in srgb, var(--stage) 62%, transparent); cursor: move; touch-action: none; }
+.edframe:focus-visible { outline: 2px solid var(--on-stage); outline-offset: 2px; }
+.edh { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%; background: var(--on-stage); border: 2px solid var(--stage); touch-action: none; }
+.edh.nw { left: 0; top: 0; cursor: nwse-resize; } .edh.n { left: 50%; top: 0; cursor: ns-resize; } .edh.ne { left: 100%; top: 0; cursor: nesw-resize; }
+.edh.e { left: 100%; top: 50%; cursor: ew-resize; } .edh.se { left: 100%; top: 100%; cursor: nwse-resize; } .edh.s { left: 50%; top: 100%; cursor: ns-resize; }
+.edh.sw { left: 0; top: 100%; cursor: nesw-resize; } .edh.w { left: 0; top: 50%; cursor: ew-resize; }
+.edratios { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: center; width: 100%; }
+.edratios .btn[aria-pressed="true"] { background: var(--teal-tint); border-color: var(--teal); }
+.edpanel input[type="datetime-local"] { width: 100%; }
+.edplace { margin: 0 0 var(--space-2); font-weight: 600; }
+.edfound { list-style: none; margin: var(--space-2) 0; padding: 0; display: grid; gap: 2px; }
+.edfound .link { text-align: left; padding: 6px 0; }
+.edpanel .row { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
+.edpanel .pickmap { height: 240px; }
+.edactions { margin-top: var(--space-5); }
+.edrevert { display: block; margin: var(--space-4) 0 var(--space-2); }
+@media (max-width: 860px) {
+  .lightbox.editor[open] { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(200px, 1fr) auto auto; overflow: auto; }
+  .editor .edpanel { position: static; grid-column: 1; grid-row: auto; width: auto; }
+}

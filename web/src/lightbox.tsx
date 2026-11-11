@@ -2,7 +2,9 @@ import { Icon } from "./icons";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Item, fetchOriginal } from "./items";
 import { lazy } from "./lazy";
-import { downloadOriginal } from "./downloads";
+import { downloadEdited, downloadOriginal } from "./downloads";
+import { normEdit } from "./edit/edit";
+import { canEdit } from "./edit/apply";
 import { BLOB_LIMIT, forgetStream, prepareStream, streamingAvailable } from "./player";
 import { playMime } from "./sw-range";
 import { cachedPreview, cachedThumb, previewUrl, thumbUrl } from "./cache";
@@ -43,12 +45,14 @@ function VideoPlayer({ item }: { item: Item }) {
   if (err) return <p class="lbmsg">{err}</p>;
   if (!src) return <Loading stage label={status} />;
   return (
-    <video key={src} src={src} controls playsInline preload="metadata" poster={cachedThumb(item.id)} aria-label={item.meta?.name}
+    <video key={src} src={src} controls playsInline preload="metadata" poster={cachedThumb(item)} aria-label={item.meta?.name}
       onError={() => setErr("This video can't be played here. This browser may not support its format (iPhone videos often use HEVC), or it couldn't be verified. Download the original instead.")} />
   );
 }
 
-export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number) => void; onClose: () => void; action?: { label: string; run: (it: Item) => Promise<void> }; people?: { all: Group[]; ready: boolean }; onPerson?: (key: string) => void; onFavorite?: (it: Item) => void; onMap?: () => void }) {
+const Editor = lazy(() => import("./edit/editor").then((m) => m.Editor), () => null);
+
+export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number) => void; onClose: () => void; action?: { label: string; run: (it: Item) => Promise<void> }; people?: { all: Group[]; ready: boolean }; onPerson?: (key: string) => void; onFavorite?: (it: Item) => void; onMap?: () => void; onEdited?: (id: string) => void }) {
   const dlg = useRef<HTMLDialogElement>(null);
   const startX = useRef<number | null>(null);
   const it = p.items[p.index];
@@ -56,6 +60,15 @@ export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number)
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [info, setInfo] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const editable = !!p.onEdited && canEdit(it);
+  const edited = !!normEdit(it.meta?.edit);
+  // an edited photo downloads as edited; the original is in the details (and Shift+D)
+  const download = (original = false) => {
+    if (busy) return;
+    setBusy(true);
+    (edited && !original ? downloadEdited(it) : downloadOriginal(it)).catch((x) => setErr(x instanceof Error ? x.message : "Couldn't download.")).finally(() => setBusy(false));
+  };
 
   // on close, focus goes to the tile of the photo last shown (the one opened may be far away by then), else to the page
   const shownId = useRef(it.id);
@@ -75,7 +88,7 @@ export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number)
   }, []);
 
   useEffect(() => {
-    setUrl(cachedPreview(it.id) ?? cachedThumb(it.id));
+    setUrl(cachedPreview(it) ?? cachedThumb(it));
     setErr("");
     let alive = true;
     if (!it.broken && (it.kind === "image" || it.kind === "video")) {
@@ -94,9 +107,10 @@ export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number)
   return (
     <dialog ref={dlg} class="lightbox" aria-label={`${name}, ${p.index + 1} of ${p.items.length}`}
       onCancel={(e) => { e.preventDefault(); if (info) setInfo(false); else p.onClose(); }}
-      onKeyDown={(e) => { if ((e.target as HTMLElement | null)?.closest?.("input, textarea")) return; if (e.key === "ArrowLeft") go(-1); else if (e.key === "ArrowRight") go(1); else if (e.key === "i" && !e.metaKey && !e.ctrlKey) setInfo((v) => !v);
+      onKeyDown={(e) => { if (editing || (e.target as HTMLElement | null)?.closest?.("input, textarea")) return; if (e.key === "ArrowLeft") go(-1); else if (e.key === "ArrowRight") go(1); else if (e.key === "i" && !e.metaKey && !e.ctrlKey) setInfo((v) => !v);
         else if (e.key === "f" && !e.metaKey && !e.ctrlKey && !e.altKey && p.onFavorite && !it.broken) p.onFavorite(it);
-        else if (e.key === "d" && !e.ctrlKey && !e.metaKey && !e.altKey && !it.broken && !busy) { setBusy(true); downloadOriginal(it).catch((x) => setErr(x instanceof Error ? x.message : "Couldn't download.")).finally(() => setBusy(false)); }
+        else if ((e.key === "d" || e.key === "D") && !e.ctrlKey && !e.metaKey && !e.altKey && !it.broken) download(e.shiftKey)
+        else if (e.key === "e" && !e.ctrlKey && !e.metaKey && !e.altKey && editable) setEditing(true);
         else if ((e.key === "Delete" || e.key === "Backspace") && p.action?.label === "Move to trash" && !busy) { e.preventDefault(); setBusy(true); p.action.run(it).catch((x) => { setErr(x instanceof Error ? x.message : "That didn't work."); setBusy(false); }); } }}>
       <div class="lbtop">
         <button class="lbbtn" onClick={p.onClose} aria-label="Close"><Icon name="back" /></button>
@@ -107,8 +121,11 @@ export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number)
           </button>
         )}
         <button class="lbbtn" aria-label="Show info" aria-pressed={info} onClick={() => setInfo((v) => !v)}><Icon name="info" /></button>
+        {editable && (
+          <button class="lbbtn" aria-label="Edit" title="Edit (E)" onClick={() => setEditing(true)}><Icon name="edit" /></button>
+        )}
         {!it.broken && (
-          <button class="lbbtn" aria-label="Download original" disabled={busy} onClick={async () => { setBusy(true); try { await downloadOriginal(it); } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't download."); } setBusy(false); }}>
+          <button class="lbbtn" aria-label={edited ? "Download edited photo" : "Download original"} title={edited ? "Download edited photo (D)" : "Download original (D)"} disabled={busy} onClick={() => download()}>
             <Icon name="download" />
           </button>
         )}
@@ -139,7 +156,7 @@ export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number)
         <div class="film" role="group" aria-label="Nearby photos">
           {strip.map(({ x, i }) => (
             <button key={x.id} aria-label={`Go to ${x.meta?.name ?? "item"}`} aria-current={i === p.index ? "true" : undefined} onClick={() => p.onIndex(i)}>
-              {cachedThumb(x.id) ? <img src={cachedThumb(x.id)} alt="" draggable={false} /> : null}
+              {cachedThumb(x) ? <img src={cachedThumb(x)} alt="" draggable={false} /> : null}
             </button>
           ))}
         </div>
@@ -155,11 +172,13 @@ export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number)
             {m?.gps && <div><dt>Location</dt><dd><PlaceName item={it} />{m.gps.lat.toFixed(4)}, {m.gps.lon.toFixed(4)}</dd></div>}
             {m?.gps && Number.isFinite(m.gps.lat) && Number.isFinite(m.gps.lon) && <MiniMap lat={m.gps.lat} lon={m.gps.lon} onShowMap={p.onMap} />}
             {m?.duration ? <div><dt>Length</dt><dd>{Math.round(m.duration)} s</dd></div> : null}
+            {edited && <div><dt>Edited</dt><dd>Turned or cropped. The original is kept. <button class="link" disabled={busy} onClick={() => download(true)}>Download original</button></dd></div>}
             {p.people && p.onPerson && !it.broken && <PhotoPeople item={it} all={p.people.all} ready={p.people.ready} onPerson={p.onPerson} />}
           </dl>
           <p class="small">Decrypted in your browser. The server never sees these details.</p>
         </aside>
       )}
+      {editing && <Editor key={it.id} item={it} onClose={() => setEditing(false)} onSaved={() => p.onEdited?.(it.id)} />}
     </dialog>
   );
 }

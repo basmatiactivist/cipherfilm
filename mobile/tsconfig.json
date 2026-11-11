@@ -14,6 +14,9 @@
       ],
       "@places/*": [
         "../web/src/places/*"
+      ],
+      "@memories/*": [
+        "../web/src/memories/*"
       ]
     }
   },
@@ -23,6 +26,7 @@
     "../web/src/crypto/*.ts",
     "../web/src/places/places.ts",
     "../web/src/places/videoLocation.ts",
+    "../web/src/memories/memories.ts",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
   ],

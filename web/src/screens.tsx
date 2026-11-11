@@ -4,6 +4,7 @@ import { api } from "./api";
 import * as auth from "./auth";
 import { mem } from "./state";
 import { mapProvider, PRIVACY_URL, setMapOn, useMapOn } from "./map/consent";
+import { setMemoriesOn, useMemoriesOn } from "./memories/setting";
 import { Loader, Loading } from "./loader";
 import { BackupReport, backupState } from "./backup";
 import { explicitChosen, indexChecked, loadPeople, refreshIndex, searchFamily, setExplicit } from "./people/people";
@@ -160,6 +161,7 @@ export function Account({ open }: { open?: string }) {
       {!mem.me!.demo && <DevicesPanel open={open === "devices"} />}
       <SearchPanel />
       {mem.me!.map && <MapPanel />}
+      <MemoriesPanel />
       <StoragePanel />
       {!mem.me!.demo && <DeleteAccount />}
       <VersionLine server={mem.me!.server_version} />
@@ -178,6 +180,16 @@ function MapPanel() {
     <Acc icon="map" title="Map" sub={on ? "On in this browser" : "Off"}>
       <label class="check"><input type="checkbox" checked={on} onChange={(e) => setMapOn((e.target as HTMLInputElement).checked)} /> Show the map and the small maps in a photo's details</label>
       <p class="hint">Your photos on a map. Map images from {mapProvider() || "the map server"}; what it sees is in the <a href={PRIVACY_URL} target="_blank" rel="noopener noreferrer">privacy policy</a>.</p>
+    </Acc>
+  );
+}
+
+function MemoriesPanel() {
+  const on = useMemoriesOn();
+  return (
+    <Acc icon="photos" title="Memories" sub={on ? "On in this browser" : "Off in this browser"}>
+      <label class="check"><input type="checkbox" checked={on} onChange={(e) => setMemoriesOn((e.target as HTMLInputElement).checked)} /> Show “On this day” above the timeline</label>
+      <p class="hint">Photos from around today's date in earlier years. Worked out in this browser from the encrypted dates; the server learns nothing about it.</p>
     </Acc>
   );
 }

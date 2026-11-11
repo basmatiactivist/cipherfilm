@@ -11,8 +11,10 @@ const vectors = path.resolve(__dirname, "../tools/decrypt/testdata");
 const server = path.resolve(__dirname, "../server");
 // the place names for the map (web/src/places: the reader and its .bin, bundled as an asset)
 const webPlaces = path.resolve(__dirname, "../web/src/places");
+// "On this day": the selection rules (web/src/memories/memories.ts, plain TypeScript)
+const webMemories = path.resolve(__dirname, "../web/src/memories");
 
-config.watchFolders = [webCrypto, vectors, server, webPlaces];
+config.watchFolders = [webCrypto, vectors, server, webPlaces, webMemories];
 config.resolver.assetExts = [...config.resolver.assetExts, "bin"];
 config.resolver.nodeModulesPaths = [path.resolve(__dirname, "node_modules")];
 const resolve = config.resolver.resolveRequest;

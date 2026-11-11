@@ -35,6 +35,8 @@ interface Props {
   onRefresh: () => void;
   /** shown above the grid when nothing is selected */
   header: ReactNode;
+  /** scrolls with the grid, above its first day (the memories row) */
+  top?: ReactNode;
   empty: ReactNode;
   /** extra space below the grid, e.g. for a navigation bar */
   bottom?: number;
@@ -67,7 +69,7 @@ const Row = memo(function Row(p: { row: Item[]; size: number; selecting: boolean
 /** What the first load of each place says. */
 const opening = (within: string): string | undefined => ({ search: t("Searching…"), trash: t("Opening the trash…"), person: t("Loading people…") } as Record<string, string>)[within];
 
-export function Gallery({ items, error, loading, onRefresh, header, empty, bottom = 0, fab, nav, extraAction, actions, album, flat, within }: Props) {
+export function Gallery({ items, error, loading, onRefresh, header, top, empty, bottom = 0, fab, nav, extraAction, actions, album, flat, within }: Props) {
   const th = useAppTheme();
   const inset = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
@@ -254,7 +256,7 @@ export function Gallery({ items, error, loading, onRefresh, header, empty, botto
         renderItem={({ item: row }) => (
           <Row row={row} size={size} selecting={selecting} sel={row.map((it) => (selected.has(it.id) ? "1" : "0")).join("")} onPress={press} onLongPress={hold} onShown={shown} />
         )}
-        ListHeaderComponent={error ? <View style={{ paddingTop: 8 }}><Problem>{error}</Problem></View> : undefined}
+        ListHeaderComponent={error || top ? <>{error ? <View style={{ paddingTop: 8 }}><Problem>{error}</Problem></View> : null}{top}</> : undefined}
         ListEmptyComponent={items && !error ? <>{empty}</> : !items && !error ? <Loading label={opening(within ?? "") ?? (album ? t("Opening the album…") : t("Opening your library…"))} /> : undefined}
         initialNumToRender={12}
         maxToRenderPerBatch={6}

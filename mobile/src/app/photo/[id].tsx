@@ -50,7 +50,7 @@ export default function Viewer() {
   // opened from an album: swiping stays inside it
   const [list, setList] = useState(() => {
     const all = libraryItems().filter((i) => !i.broken);
-    if (within) { // search results or a person: in that order
+    if (within) { // search results, a person or a memory: in that order
       const byId = new Map(all.map((i) => [i.id, i]));
       const l = viewerList().map((x) => byId.get(x)).filter((i): i is Item => !!i);
       if (l.length) return l;

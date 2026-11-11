@@ -456,6 +456,7 @@ struct Detail: View {
     } else if items.isEmpty {
       Spacer(); EmptyState(icon: empty.0, title: empty.1, text: empty.2); Spacer()
     } else {
+      if title == "Photos" { MemoriesRow(items: items) }
       PhotoGrid(items: items, selection: selection) { it, list in nav.viewer = ViewerState(ids: list.map(\.id), index: list.firstIndex(of: it) ?? 0) }
     }
   }

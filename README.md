@@ -75,6 +75,8 @@ and visitors are signed out every hour. To keep your own photos, [run your own s
   Coordinates stay encrypted and are only read on your devices. Place names come from a file inside the apps, so
   naming a place sends nothing anywhere; the map is off until you turn it on, and what its tile server sees is in
   [docs/MAP.md](docs/MAP.md).
+- **On this day.** Photos from around today's date in earlier years at the top of your library, picked on the device
+  from the encrypted capture dates.
 - **Free up space.** Remove photos from the phone once they are in Cipherfilm.
 - **Locks itself.** Fingerprint unlock, automatic lock after a time you choose or when the screen turns off, and
   shake to lock and close.

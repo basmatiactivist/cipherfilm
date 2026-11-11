@@ -28,6 +28,8 @@ version into the GitHub release notes, so a release cannot be published without 
 - Devices under Account on Android and the Mac too (the web had it): see where you're signed in and sign out one or
   all other devices. Your other devices show a notice when a new one signs in, and when an admin turned off two-step
   sign-in.
+- "On this day": above Photos, the web, Android and Mac apps show a card for each earlier year with photos from
+  around today's date. Worked out on the device; the server learns nothing. Turn it off in Account (Settings on Mac).
 
 ## [2.6.1] - 2026-11-10
 

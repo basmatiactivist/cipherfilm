@@ -57,6 +57,12 @@ build notes: `mac/README.md`.
   the automatic grouping put it with someone else (on the Mac; the phone still follows only the grouping there).
 - **Notifications** when an upload, a watched-folder run, the first export or the first full index finishes: how many,
   never names. Settings › General turns them off.
+- **Administration** (Settings › Administration, shown to administrators only, never to a public demo login): the web's
+  admin area. People with their usage and last sign-in, invites (copy or share the link, revoke), storage limits and
+  the default one, making someone an administrator or a regular user, disabling, enabling and deleting accounts,
+  turning off someone's two-step sign-in, the explicit-search permission, the server's state with the off-site backup
+  report, and the activity log. Deleting, disabling, role changes and turning off two-step sign-in ask first. The
+  server checks every request (`CipherfilmCore/Admin.swift` sends exactly the web's).
 
 ## Working with the window closed
 

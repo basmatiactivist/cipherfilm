@@ -90,7 +90,7 @@ and visitors are signed out every hour. To keep your own photos, [run your own s
 - **Mac app.** Keeps an export folder up to date, uploads watched folders and indexes for search in the background
   ([docs/MAC.md](docs/MAC.md)).
 - **Made for a small group.** Invite-only, a private library per person, storage limits, an admin area that never
-  shows anyone's photos.
+  shows anyone's photos, on the web and in the Android and Mac apps.
 - **Light to run.** One Docker container with SQLite; about 35 MB of RAM when idle, fine on a 1–2 vCPU / 2 GB server.
 - **Your data stays yours.** Plain backups with one script, and a standalone tool that decrypts everything from the
   data folder without the server ([docs/TOOLS.md](docs/TOOLS.md)).

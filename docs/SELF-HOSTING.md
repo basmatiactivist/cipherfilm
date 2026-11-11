@@ -198,3 +198,8 @@ only on the server your administrator runs.
 ## Admin area
 
 **Admin** (visible to administrators only) shows who is on the server and how much they use, last sign-in per person, open invites (revocable), a default storage limit for new people, per-person limits, role changes (make someone an administrator or a regular user), server status (disk, data size, signed-in devices, last backup) and a log of recent admin actions. None of it exposes photos, album names or file names.
+
+The same is in the apps for administrators: on Android under **Account › Administration** (an invite link goes out
+through the share sheet), on the Mac under **Settings › Administration**. They use the same API; the server checks
+every request, so a regular account or a public demo login gets "not found" whatever an app shows. The Google Play
+build leaves out the explicit-search permission (manage it on the web or the Mac).

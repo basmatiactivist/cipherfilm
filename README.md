@@ -75,6 +75,8 @@ and visitors are signed out every hour. To keep your own photos, [run your own s
   Coordinates stay encrypted and are only read on your devices. Place names come from a file inside the apps, so
   naming a place sends nothing anywhere; the map is off until you turn it on, and what its tile server sees is in
   [docs/MAP.md](docs/MAP.md).
+- **Simple editing.** Turn and crop photos, fix when and where a photo or video was taken, on the web and Android;
+  the original is never changed and "Revert to original" brings it back ([docs/EDITING.md](docs/EDITING.md)).
 - **Free up space.** Remove photos from the phone once they are in Cipherfilm.
 - **Locks itself.** Fingerprint unlock, automatic lock after a time you choose or when the screen turns off, and
   shake to lock and close.
@@ -161,6 +163,7 @@ Don't rely on it where losing or leaking the data would be catastrophic, and kee
 | [CRYPTO.md](docs/CRYPTO.md) · [THREAT_MODEL.md](docs/THREAT_MODEL.md) | the encryption and what it does and doesn't protect |
 | [SEARCH.md](docs/SEARCH.md) · [MODELS.md](docs/MODELS.md) | on-device search and the models it uses |
 | [MAP.md](docs/MAP.md) | the map, place names, and using your own map server |
+| [EDITING.md](docs/EDITING.md) | turning, cropping, and changing a photo's date and place |
 | [MAC.md](docs/MAC.md) | the Mac app |
 | [RELEASING.md](docs/RELEASING.md) | how releases are built and signed |
 

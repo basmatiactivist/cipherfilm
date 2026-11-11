@@ -73,6 +73,8 @@ ad for every chunk = "seg" || itemId || u32(i) || u32(segment_count) || u64(tota
 - Independent segments give: parallel and resumable upload, retry per segment, and random access (a Range request maps to segment + chunk offsets, so video seeking works).
 - Thumbnail and preview: single-shot AEAD, `ad = "thumb"|"preview" || itemId` (single-shot AEAD via the wrap format, so the label and owner are joined with a NUL byte).
 - Metadata: JSON (`name`, `mime`, `capture_ts`, `width`, `height`, `duration`, GPS, EXIF subset, `size`, `segment_count`, `content_hash`) padded to a multiple of 256 B (small leak reduction), single-shot AEAD under `metaKey`, `ad = "meta" || itemId`.
+  Edits (docs/EDITING.md) add the optional `edit` (turn, crop, picture version) and `orig` (date and place before the
+  person changed them); the thumbnail and preview made for an edit replace the old ones under the same subkeys and `ad`.
 
 Failure policy: any AEAD failure aborts decryption for that object, nothing is rendered, and the UI shows a "could not be verified" placeholder.
 

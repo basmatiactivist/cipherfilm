@@ -701,3 +701,43 @@ func TestRecoveryKeepsTheCodeCount(t *testing.T) {
 		t.Fatal("a password change kept the code count")
 	}
 }
+
+// A notice can be dismissed only by a session that is shown it: whoever signed in with a stolen password can't take
+// down the notice about their own sign-in from the real person's devices, nor, from a second sign-in (even in the
+// same second), the notice about their first.
+func TestNoticesAreDismissedOnlyWhereTheyAreShown(t *testing.T) {
+	e := newEnv(t)
+	clk := e.pinClock()
+	admin, ab := e.setupAdmin("admin@x.org")
+	clk.tick(time.Second)
+	thief := e.login("admin@x.org", ab)
+	thief2 := e.login("admin@x.org", ab) // the same second
+	_, out := admin.do("GET", "/api/me/notices", nil, false)
+	l := out["notices"].([]any)
+	if len(l) != 2 {
+		t.Fatalf("notices: %v", out)
+	}
+	newer := int64(l[0].(map[string]any)["id"].(float64)) // about thief2
+	older := int64(l[1].(map[string]any)["id"].(float64)) // about thief
+	for _, x := range []struct {
+		c  *client
+		id int64
+	}{{thief, older}, {thief2, newer}, {thief2, older}} {
+		if code, _ := x.c.do("POST", "/api/me/notices/"+itoa(x.id)+"/dismiss", nil, true); code != 404 {
+			t.Fatalf("dismissed notice %d from a session it isn't shown on: %d", x.id, code)
+		}
+	}
+	if _, out := admin.do("GET", "/api/me/notices", nil, false); len(out["notices"].([]any)) != 2 {
+		t.Fatalf("taken down: %v", out)
+	}
+	// the earlier sign-in is shown the later one, and may dismiss it
+	if code, _ := thief.do("POST", "/api/me/notices/"+itoa(newer)+"/dismiss", nil, true); code != 200 {
+		t.Fatalf("dismiss a later sign-in: %d", code)
+	}
+	if code, _ := admin.do("POST", "/api/me/notices/"+itoa(older)+"/dismiss", nil, true); code != 200 {
+		t.Fatalf("dismiss on the device that was signed in before: %d", code)
+	}
+	if _, out := admin.do("GET", "/api/me/notices", nil, false); len(out["notices"].([]any)) != 0 {
+		t.Fatalf("left: %v", out)
+	}
+}

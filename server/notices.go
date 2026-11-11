@@ -10,8 +10,16 @@ import (
 // on the devices that were signed in before it, never on the new one itself) and two-step sign-in turned off by an
 // administrator (shown on every device, also ones that sign in afterwards: the person who lost their phone signs in
 // anew). They arrive through the live-update stream ("notices") and GET /api/me/notices. Dismissing one, on any
-// device, dismisses it for the account. Only what the session list already shows is stored: the device's own label
-// and the time; never an IP address or a place.
+// device that is shown it, dismisses it for the account. Only what the session list already shows is stored: the
+// device's own label and the time; never an IP address or a place.
+//
+// Who is shown, and so may dismiss, a notice (shownTo): never the session it is about, and a sign-in only the sessions
+// from before it. "Before" is the order of the sign-in notices themselves (ids), not the second a session started:
+// two sign-ins in the same second would otherwise each be shown, and could take down, the other's. So someone who
+// signs in with a stolen password can't dismiss the notice about that sign-in, from that session or any later one;
+// what the real person's devices show of it goes only when one of them dismisses it (or after noticesKept newer ones
+// or noticesAge). Limits: a session can dismiss the notices about every later sign-in, also later ones of the same
+// person (it can't tell them apart), and an administrator's reset is shown to, and dismissable by, every session.
 
 const (
 	noticeSignIn         = "sign_in"
@@ -43,6 +51,12 @@ func (a *App) noticeSignIn(u *user, s *session, r *http.Request) {
 	a.notify(u.ID, noticeSignIn, deviceName(r), s.Pub)
 }
 
+// shownTo is the condition for the notices the session s is shown, with its arguments (after the notice's user_id).
+func shownTo(u *user, s *session) (string, []any) {
+	return `dismissed=0 AND session_pub<>? AND (kind<>'sign_in' OR (at>=? AND id > COALESCE((SELECT MAX(o.id) FROM notices o
+		WHERE o.user_id=? AND o.kind='sign_in' AND o.session_pub=? AND o.session_pub<>''), 0)))`, []any{s.Pub, s.Created, u.ID, s.Pub}
+}
+
 func (a *App) listNotices(w http.ResponseWriter, r *http.Request, u *user, s *session) {
 	out := []map[string]any{}
 	if a.isDemo(u) {
@@ -50,8 +64,9 @@ func (a *App) listNotices(w http.ResponseWriter, r *http.Request, u *user, s *se
 		return
 	}
 	// a sign-in is news only to devices that were signed in before it; an admin's reset to every device
-	rows, err := a.db.Query(`SELECT id,kind,device,at FROM notices WHERE user_id=? AND dismissed=0 AND session_pub<>?
-		AND (kind<>'sign_in' OR at>=?) ORDER BY id DESC LIMIT 20`, u.ID, s.Pub, s.Created)
+	cond, args := shownTo(u, s)
+	rows, err := a.db.Query(`SELECT id,kind,device,at FROM notices WHERE user_id=? AND `+cond+` ORDER BY id DESC LIMIT 20`,
+		append([]any{u.ID}, args...)...)
 	if err != nil {
 		fail(w, 500, "server error")
 		return
@@ -73,7 +88,9 @@ func (a *App) dismissNotice(w http.ResponseWriter, r *http.Request, u *user, s *
 		fail(w, 404, "not found")
 		return
 	}
-	res, err := a.db.Exec(`UPDATE notices SET dismissed=1 WHERE id=? AND user_id=?`, id, u.ID)
+	// only one this session is shown (shownTo)
+	cond, args := shownTo(u, s)
+	res, err := a.db.Exec(`UPDATE notices SET dismissed=1 WHERE id=? AND user_id=? AND `+cond, append([]any{id, u.ID}, args...)...)
 	if rowsAffected(res, err) != 1 {
 		fail(w, 404, "not found")
 		return

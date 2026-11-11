@@ -134,6 +134,9 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   saveToLibrary(path: string, name: string, mime: string): Promise<string>;
   /** country names in a language ("CH" → "Schweiz" for "de"), from Android's own translations */
   countryNames(codes: string[], lang: string): Record<string, string>;
+  /** The language the app shows now (BCP 47): the per-app language from Android 13, else the phone's. It changes
+   *  while the app runs: the activity handles locale changes itself (plugins/withConfigChanges.js). */
+  appLocale?(): string | null;
   trashFromLibrary(uris: string[]): Promise<boolean>;
 }
 

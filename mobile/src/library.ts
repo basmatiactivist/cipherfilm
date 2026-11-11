@@ -200,14 +200,20 @@ export async function loadCachedLibrary(): Promise<Item[] | null> {
   } catch { return null; }
 }
 
-/** Drops cached images of items that are gone, and all but the newest previews. */
+/** The search index's copies in the same folder (search/engine.ts): the server's entries per model family
+ *  (index-<family>.json) and the opened index (index-<family>.bin). Both families stay: while explicit search is on,
+ *  the phone that indexes keeps MobileCLIP's entries next to LAION's, and the Play build only ever reads MobileCLIP's. */
+const SEARCH_COPY = /^index-[a-z0-9][a-z0-9._-]{0,63}\.(json|bin)$/;
+
+/** Drops cached images of items that are gone, and all but the newest previews. Only images: the list and the search
+ *  index's copies stay (deleting those made every start fetch and open the whole index again). */
 export function pruneCache(ids: Set<string>) {
   const dir = userDir();
   if (!dir?.exists) return;
   const previews: File[] = [];
   try {
     for (const f of dir.list()) {
-      if (!(f instanceof File) || f.name === "list.json") continue;
+      if (!(f instanceof File) || f.name === "list.json" || SEARCH_COPY.test(f.name)) continue;
       const m = /^(thumb|preview)-([0-9a-f]{32})$/.exec(f.name);
       if (!m || !ids.has(m[2])) f.delete();
       else if (m[1] === "preview") previews.push(f);

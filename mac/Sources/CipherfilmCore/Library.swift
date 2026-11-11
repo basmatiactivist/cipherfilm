@@ -408,16 +408,17 @@ public final class Vault: @unchecked Sendable {
 
   // ---- albums: names encrypted under the master key, bound to the album id ----
 
-  private struct RawAlbum: Decodable { let id: String; let name_enc: String; let item_ids: [String] }
+  /** The albums, kept current with ?since (AlbumSync.swift): after the first load only the albums that changed. */
+  public let albumSync = AlbumSync()
 
   public func loadAlbums() async throws -> [Album] {
-    struct R: Decodable { let albums: [RawAlbum] }
     let m = try masterKey()
-    let r = try await api.get(R.self, "/api/albums")
-    return r.albums.map { a in
-      if let n = try? Crypto.decryptAlbumName(B64.decode(a.name_enc), master: m, albumId: a.id) { return Album(id: a.id, name: n, itemIds: a.item_ids, broken: false) }
-      return Album(id: a.id, name: "Unreadable album", itemIds: a.item_ids, broken: true)
-    }
+    return try await albumSync.load(get: { [api] in try await api.json("GET", $0) }, decrypt: { raw in
+      raw.map { a in
+        if let n = try? Crypto.decryptAlbumName(B64.decode(a.name_enc), master: m, albumId: a.id) { return Album(id: a.id, name: n, itemIds: a.item_ids, broken: false) }
+        return Album(id: a.id, name: "Unreadable album", itemIds: a.item_ids, broken: true)
+      }
+    })
   }
 
   public func createAlbum(_ name: String) async throws -> Album {

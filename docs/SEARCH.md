@@ -87,6 +87,9 @@ before.
 - An item counts as done only when both of its entries are current. An item missing one of them (MobileCLIP's were
   deleted by apps before this change, which dropped them when explicit search was turned on) gets only that one made
   again: one image model pass, the faces taken from its other entry.
+- On the phone, the copies of both families' entries (`cf-ct/<user id>/index-<family>.json` and `.bin`) stay next to
+  each other; the cleanup of cached pictures leaves them alone (until 2.6.1 it deleted them after every library
+  load, so each start fetched the whole index again).
 - So a device notices entries deleted on the server since its last visit, the first page of `GET /api/index` carries
   `count`, the number of the family's entries in all; a device whose cached copy holds more fetches the family again
   from the start and makes again what is missing.

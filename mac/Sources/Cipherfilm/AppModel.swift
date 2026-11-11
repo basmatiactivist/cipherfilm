@@ -367,7 +367,7 @@ final class AppModel {
     if !quiet { loading = true }
     defer { loading = false }
     do {
-      // only what changed since the last load (ListSync.swift); the albums are small and come whole
+      // only what changed since the last load (ListSync.swift, AlbumSync.swift)
       async let l = vault.syncLibrary()
       async let a = vault.loadAlbums()
       let (r, al) = try await (l, a)

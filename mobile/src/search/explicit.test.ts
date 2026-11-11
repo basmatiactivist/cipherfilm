@@ -170,4 +170,20 @@ describe("the indexing phone with explicit search on", () => {
     expect(st.opens.every((o) => o.clip === "mobileclip-s2" && o.also === null)).toBe(true);
     expect(st.puts.map((p) => p.model)).toEqual([M]);
   });
+
+  it("switching explicit search on and off keeps MobileCLIP's entries, on the server and in the copy here", async () => {
+    const copy = () => JSON.parse(st.files.get("file:///cache/cf-ct/alice/index-mcs2.json") ?? "{}").entries ?? {};
+    st.explicit = false;
+    await engine.startSearch(lib([A, B]));
+    expect(Object.keys(copy()).sort()).toEqual([A, B]);
+    st.explicit = true; // on: LAION's are added, MobileCLIP's stay
+    await engine.startSearch(lib([A, B]));
+    expect(st.server.mcs2.length).toBe(2);
+    expect(Object.keys(copy()).sort()).toEqual([A, B]);
+    st.explicit = false; st.puts = []; st.analyzed = []; // off again: nothing to make again
+    await engine.startSearch(lib([A, B]));
+    expect(st.puts).toEqual([]);
+    expect(st.deletes.some((d) => d.includes("mcs2"))).toBe(false);
+    expect(Object.keys(copy()).sort()).toEqual([A, B]);
+  });
 });

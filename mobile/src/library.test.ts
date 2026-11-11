@@ -18,7 +18,8 @@ vi.mock("expo-file-system", () => {
     constructor(parent: unknown, name: string) { this.uri = `${pathOf(parent)}/${name}`; }
     get exists() { return [...st.files.keys()].some((k) => k.startsWith(this.uri + "/")); }
     create() {}
-    list() { return []; }
+    // the files right in this folder (pruneCache)
+    list() { return [...st.files.keys()].filter((k) => k.startsWith(this.uri + "/") && !k.slice(this.uri.length + 1).includes("/")).map((k) => new File(this.uri, k.slice(this.uri.length + 1))); }
   }
   class File {
     uri: string;
@@ -27,6 +28,9 @@ vi.mock("expo-file-system", () => {
     get parentDirectory() { return new Directory(this.uri.slice(0, this.uri.lastIndexOf("/")), ""); }
     async text() { return st.files.get(this.uri)!; }
     async write(v: string) { st.files.set(this.uri, v); }
+    get name() { return this.uri.slice(this.uri.lastIndexOf("/") + 1); }
+    get modificationTime() { return 0; }
+    delete() { st.files.delete(this.uri); }
   }
   return { Directory, File, Paths: { cache: "/cache" } };
 });
@@ -157,5 +161,15 @@ describe("the library on the phone", () => {
     const r = await lib.loadTrash();
     expect(ids(r.items)).toEqual([B]);
     expect(r.retentionDays).toBe(30);
+  });
+
+  it("pruning the cache keeps the search index's copies of both model families (explicit search, the Play build)", async () => {
+    const lib = await import("./library");
+    const dir = "/cache/cf-ct/alice";
+    for (const f of ["list.json", "index-mcs2.json", "index-mcs2.bin", "index-laionb32.json", "index-laionb32.bin",
+      `thumb-${A}`, `preview-${A}`, `thumb-${B}`, `preview-${B}`, ".index-mcs2.bin.tmp", "stray"]) st.files.set(`${dir}/${f}`, "x");
+    lib.pruneCache(new Set([A]));
+    expect([...st.files.keys()].map((k) => k.slice(dir.length + 1)).sort()).toEqual(
+      ["index-laionb32.bin", "index-laionb32.json", "index-mcs2.bin", "index-mcs2.json", "list.json", `preview-${A}`, `thumb-${A}`].sort());
   });
 });

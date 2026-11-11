@@ -716,6 +716,7 @@ func (a *App) janitor() {
 		a.sweepStale()
 		a.purgeExpiredTrash()
 		a.pruneTombstones()
+		a.pruneAlbumTombstones()
 		a.sweepOrphans()
 		time.Sleep(time.Hour)
 	}

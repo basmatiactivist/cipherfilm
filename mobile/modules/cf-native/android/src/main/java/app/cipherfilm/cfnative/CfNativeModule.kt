@@ -113,6 +113,13 @@ class CfNativeModule : Module() {
         .filterValues { it.isNotBlank() }
     }
 
+    /** The app's language as the configuration has it now (per-app language or the phone's), read at each call: the
+     *  activity isn't recreated when it changes (withConfigChanges.js), so the JavaScript side asks again (i18n.ts). */
+    Function("appLocale") {
+      val ctx = appContext.currentActivity ?: appContext.reactContext
+      ctx?.resources?.configuration?.locales?.takeIf { !it.isEmpty }?.get(0)?.toLanguageTag()
+    }
+
     // ---- automatic lock (AutoLock.kt) ----
     Function("lockAfter") { ms: Double -> AutoLock.schedule(ms.toLong()) }
     Function("lockCancel") { AutoLock.cancel() }

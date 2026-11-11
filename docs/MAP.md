@@ -8,7 +8,8 @@ apps. A photo's details show the place's name and a small map of its spot. Searc
 
 - **Coordinates.** A photo's or video's location is part of its encrypted metadata (`gps` in `meta_enc`,
   docs/CRYPTO.md), written by the app or tool that uploaded it: from a photo's EXIF, from a video's `udta/©xyz` (Android,
-  most cameras) or its `com.apple.quicktime.location.ISO6709` key (iPhone). The server stores it encrypted and never
+  most cameras) or its `com.apple.quicktime.location.ISO6709` key (iPhone: a meta box in `moov`; ffmpeg and other tools
+  put it in a meta box in `udta`, which every app reads too). The server stores it encrypted and never
   sees it. The apps decrypt it with the rest of the metadata and draw and cluster the photos on the device.
 - **Android reads the originals.** From Android 10 the phone hands an app copies without the location unless it holds
   "where photos were taken" (ACCESS_MEDIA_LOCATION); the photo picker behind the Upload button does the same. The app

@@ -653,3 +653,51 @@ func TestPendingStoreKeepsFewPerAccount(t *testing.T) {
 func mustJSON(v any) string { b, _ := json.Marshal(v); return string(b) }
 
 func itoa(n int64) string { b, _ := json.Marshal(n); return string(b) }
+
+// Whoever has the recovery key can set a new password, but must not be able to wipe the account's code count with it
+// over and over: a recovery ends the pending sign-ins (issued for the old password) and keeps the count. A password
+// change (from a session that passed the code step) still clears it.
+func TestRecoveryKeepsTheCodeCount(t *testing.T) {
+	e := newEnv(t)
+	clk := e.pinClock()
+	admin, ab := e.setupAdmin("admin@x.org")
+	secret, _ := e.enable2FA(admin, ab)
+	clk.tick(30 * time.Second)
+	u, _ := e.app.userByEmail("admin@x.org")
+	for i := 0; i < totpAcctMax; i++ {
+		e.app.totpAcct.take("2fa|" + u.ID)
+	}
+	c := e.client()
+	p := e.passwordStep(c, "admin@x.org", ab)
+
+	_, out := c.do("POST", "/api/auth/recover/start", map[string]string{"email": "admin@x.org", "recovery_auth": ab["recovery_verifier"].(string)}, false)
+	nb := bundle()
+	fin := map[string]any{"ticket": out["ticket"], "new_auth": nb["auth"], "new_kdf": nb["kdf"], "new_wrapped_master_pw": nb["wrapped_master_pw"],
+		"new_wrapped_master_recovery": nb["wrapped_master_recovery"], "new_recovery_verifier": nb["recovery_verifier"]}
+	if code, out := c.do("POST", "/api/auth/recover/finish", fin, false); code != 200 {
+		t.Fatalf("recover: %d %v", code, out)
+	}
+	if e.app.totpAcct.allowed("2fa|" + u.ID) {
+		t.Fatal("a recovery cleared the code count")
+	}
+	if r := c.post("/api/auth/login/2fa", map[string]any{"pending": p, "code": codeAt(t, secret, clk.at)}); r.code != 401 || r.body["code"] != "two_factor_expired" {
+		t.Fatalf("pending sign-in survived the recovery: %d %v", r.code, r.body)
+	}
+	// the password change of a signed-in device clears it
+	e.app.totpAcct.clear("2fa|" + u.ID)
+	nc := e.client()
+	np := e.passwordStep(nc, "admin@x.org", nb)
+	if r := nc.post("/api/auth/login/2fa", map[string]any{"pending": np, "code": codeAt(t, secret, clk.at)}); r.code != 200 {
+		t.Fatalf("sign in after recovery: %d %v", r.code, r.body)
+	}
+	for i := 0; i < totpAcctMax; i++ {
+		e.app.totpAcct.take("2fa|" + u.ID)
+	}
+	pb := bundle()
+	if code, out := nc.do("POST", "/api/auth/password", map[string]any{"current_auth": nb["auth"], "new_auth": pb["auth"], "new_kdf": pb["kdf"], "new_wrapped_master_pw": pb["wrapped_master_pw"]}, true); code != 200 {
+		t.Fatalf("password change: %d %v", code, out)
+	}
+	if !e.app.totpAcct.allowed("2fa|" + u.ID) {
+		t.Fatal("a password change kept the code count")
+	}
+}

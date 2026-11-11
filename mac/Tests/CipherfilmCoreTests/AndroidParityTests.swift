@@ -17,7 +17,9 @@ private func cosine(_ a: [Float], _ b: [Float]) -> Float {
 @Suite struct AndroidParityTests {
   @Test(.enabled(if: enabled)) func entriesMatchAndroid() async throws {
     let api = API(base: try API.origin(env["CF_TEST_SERVER"]!))
-    let (me, master) = try await Account.login(api: api, email: env["CF_TEST_EMAIL"] ?? "tester@example.org", password: env["CF_TEST_PASSWORD"]!)
+    guard case .done(let me, let master) = try await Account.login(api: api, email: env["CF_TEST_EMAIL"] ?? "tester@example.org", password: env["CF_TEST_PASSWORD"]!) else {
+      Issue.record("the test account has two-step sign-in on"); return
+    }
     let vault = Vault(api: api, me: me, masterKey: master)
     let items = try await vault.loadLibrary()
     struct Page: Decodable { struct E: Decodable { let item_id: String; let data_enc: String }; let entries: [E]; let next: String? }

@@ -1,0 +1,179 @@
+// Two-step sign-in (server/twofactor.go), the account's signed-in devices and the notices the server keeps for them
+// (server/notices.go). Unlocking a Mac that is already signed in never asks for a code: it never asks the server.
+import Foundation
+
+/** How a sign-in went: done, or the password was right and the account wants a code first. */
+public enum SignIn: Sendable {
+  case done(Me, Data)
+  case code(CodeStep)
+}
+
+/** A sign-in waiting for its code. It holds the key the password made (to open the account's master key once the
+ *  server answers with it) in memory only, until the code step finishes or is abandoned; then it is zeroed. */
+public final class CodeStep: @unchecked Sendable {
+  public let email: String
+  let pending: String
+  public let expires: Date
+  private let lock = NSLock()
+  private var kek: Data?
+
+  static let expiredError = APIError(status: 401, message: "This sign-in expired. Sign in again with your password.", code: "two_factor_expired")
+
+  /** A step from the password answer, or nil when the answer is anything but "two_factor_required". */
+  init?(_ e: APIError, email: String, kek: Data, now: Date = Date()) {
+    guard e.code == "two_factor_required", let p = e.pending, !p.isEmpty else { return nil }
+    self.email = email
+    self.pending = p
+    self.kek = Data(kek) // a copy: the caller zeroes its own
+    self.expires = now.addingTimeInterval(300)
+  }
+
+  var key: Data? { lock.withLock { kek } }
+  public var abandoned: Bool { key == nil }
+
+  /** Forgets the key (start over, expired, or the sign-in finished). */
+  public func abandon() {
+    lock.withLock {
+      if var k = kek { Sodium.memzero(&k) }
+      kek = nil
+    }
+  }
+
+  deinit { abandon() }
+}
+
+public enum TwoFactor {
+  static let wrongCode = "That code isn't right. Check the time on your phone, or use a recovery code."
+
+  /** A code as typed: spaces and dashes out. Recovery codes keep their letters (the server reads them in any case). */
+  public static func clean(_ code: String) -> String {
+    code.filter { !$0.isWhitespace && $0 != "-" }
+  }
+
+  /** Whether what was typed has the shape of a code: six digits, or (recovery) sixteen letters and digits. */
+  public static func ready(_ code: String, recovery: Bool) -> Bool {
+    let c = clean(code)
+    if recovery { return c.count == 16 && c.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) } }
+    return c.count == 6 && c.allSatisfy { $0.isASCII && $0.isNumber }
+  }
+
+  /** The secret in groups of four, for typing into an authenticator by hand. */
+  public static func grouped(_ secret: String) -> String {
+    stride(from: 0, to: secret.count, by: 4).map { i in
+      let a = secret.index(secret.startIndex, offsetBy: i)
+      return String(secret[a..<secret.index(a, offsetBy: min(4, secret.count - i))])
+    }.joined(separator: " ")
+  }
+
+  public struct Status: Decodable, Sendable, Equatable {
+    public let enabled: Bool
+    public let recovery_codes_left: Int
+    /** false for the public demo login */
+    public let available: Bool
+  }
+
+  public struct Setup: Decodable, Sendable, Equatable {
+    public let secret: String
+    /** otpauth://totp/…: what the QR code holds */
+    public let uri: String
+  }
+
+  struct Codes: Decodable { let recovery_codes: [String] }
+
+  public static func status(api: API) async throws -> Status { try await api.get(Status.self, "/api/me/2fa") }
+
+  /** A new secret to show (not on until a code from it is confirmed). */
+  public static func setup(api: API, me: Me, password: String) async throws -> Setup {
+    let proof = try Account.proof(me: me, password: password)
+    return try JSONDecoder().decode(Setup.self, from: try await api.json("POST", "/api/me/2fa/setup", body: ["current_auth": proof]))
+  }
+
+  /** Turns it on with a code from the new secret; returns the ten recovery codes, shown only now. */
+  public static func enable(api: API, code: String) async throws -> [String] {
+    try JSONDecoder().decode(Codes.self, from: try await friendly { try await api.json("POST", "/api/me/2fa/enable", body: ["code": clean(code)]) }).recovery_codes
+  }
+
+  public static func disable(api: API, me: Me, password: String, code: String) async throws {
+    let proof = try Account.proof(me: me, password: password)
+    _ = try await friendly { try await api.json("POST", "/api/me/2fa/disable", body: ["current_auth": proof, "code": clean(code)]) }
+  }
+
+  /** New recovery codes; the old ones stop working. */
+  public static func newCodes(api: API, me: Me, password: String, code: String) async throws -> [String] {
+    let proof = try Account.proof(me: me, password: password)
+    return try JSONDecoder().decode(Codes.self, from: try await friendly { try await api.json("POST", "/api/me/2fa/recovery-codes", body: ["current_auth": proof, "code": clean(code)]) }).recovery_codes
+  }
+
+  private static func friendly(_ f: () async throws -> Data) async throws -> Data {
+    do { return try await f() } catch let e as APIError where e.code == "wrong_code" {
+      throw APIError(status: e.status, message: wrongCode, code: e.code)
+    }
+  }
+}
+
+/** One signed-in device of the account (Settings › Security). */
+public struct Device: Decodable, Sendable, Equatable, Identifiable {
+  public let id: String
+  public let device: String
+  public let created_at: Int64
+  public let last_seen: Int64
+  public let current: Bool
+  public let indexer: Bool
+
+  public var name: String { device.isEmpty ? "Unknown device" : device }
+
+  public static func list(api: API) async throws -> [Device] {
+    struct L: Decodable { let sessions: [Device] }
+    return try await api.get(L.self, "/api/me/sessions").sessions
+  }
+
+  /** Signs that device out: its next request fails and it deletes what it keeps of the library. */
+  public static func signOut(api: API, id: String) async throws {
+    guard id.utf8.count == 24, id.utf8.allSatisfy({ (0x30...0x39).contains($0) || (0x61...0x66).contains($0) }) else {
+      throw APIError(status: -1, message: "That device can't be signed out from here.")
+    }
+    _ = try await api.json("DELETE", "/api/me/sessions/\(id)")
+  }
+
+  public static func signOutOthers(api: API) async throws {
+    _ = try await api.json("POST", "/api/me/sessions/end-others")
+  }
+}
+
+/** Something the account's devices show once (a new sign-in, two-step sign-in turned off by an admin). Dismissing it
+ *  on any device dismisses it everywhere. */
+public struct Notice: Decodable, Sendable, Equatable, Identifiable {
+  public let id: Int64
+  public let kind: String
+  public let device: String
+  public let at: Int64
+
+  public init(id: Int64, kind: String, device: String, at: Int64) { self.id = id; self.kind = kind; self.device = device; self.at = at }
+
+  public static let kinds: Set<String> = ["sign_in", "2fa_reset"]
+  public var date: Date { Date(timeIntervalSince1970: TimeInterval(at)) }
+  /** a sign-in notice leads to the device list */
+  public var reviewDevices: Bool { kind == "sign_in" }
+
+  /** What the banner says; time is the moment as the app shows it. */
+  public func text(time: String) -> String {
+    switch kind {
+    case "sign_in": return "New sign-in: \(device.isEmpty ? "an unknown device" : device), \(time). Not you? Review devices."
+    default: return "An administrator turned off two-step sign-in for your account (\(time)). Turn it on again in Settings."
+    }
+  }
+
+  /** Only the kinds this app knows, newest first (a newer server may add others). */
+  public static func shown(_ list: [Notice]) -> [Notice] {
+    list.filter { kinds.contains($0.kind) }.sorted { $0.id > $1.id }
+  }
+
+  public static func load(api: API) async throws -> [Notice] {
+    struct L: Decodable { let notices: [Notice] }
+    return shown(try await api.get(L.self, "/api/me/notices").notices)
+  }
+
+  public static func dismiss(api: API, id: Int64) async throws {
+    _ = try await api.json("POST", "/api/me/notices/\(id)/dismiss")
+  }
+}

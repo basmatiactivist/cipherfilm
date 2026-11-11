@@ -8,9 +8,13 @@ public struct APIError: Error, LocalizedError, Sendable {
   public let message: String
   /** the server's machine-readable reason, where it gives one ("not_indexer") */
   public let code: String?
+  /** the token of a sign-in waiting for its two-step code ("two_factor_required"); nothing else carries one */
+  public let pending: String?
   public var errorDescription: String? { message }
   public static let offline = "Can't connect to the server. Check your connection and try again."
-  public init(status: Int, message: String, code: String? = nil) { self.status = status; self.message = message; self.code = code }
+  public init(status: Int, message: String, code: String? = nil, pending: String? = nil) {
+    self.status = status; self.message = message; self.code = code; self.pending = pending
+  }
 }
 
 /** The server's ids (accounts, items, albums): 16 random bytes in lowercase hex. An id goes into file names and
@@ -57,6 +61,8 @@ public struct Me: Codable, Sendable {
   /** the server's public demo login (DEMO_ACCOUNTS): it reads and searches, every change is refused */
   public let demo: Bool?
   public var isDemo: Bool { demo == true }
+  /** two-step sign-in is on for the account (missing from servers before it) */
+  public let two_factor: Bool?
   /** The map tab's base map (docs/MAP.md, server/mapconf.go): MapLibre style URLs, tried in order. Missing when the
    *  operator turned the map off (MAP_STYLE=off) and from servers before the map. */
   public let map: MapStyles?
@@ -223,7 +229,7 @@ public final class API: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any]
     // a body that isn't the server's JSON (a proxy's error page, or a server too old for this request) gets the status
     let fb = obj == nil ? "The server answered \(status)\(status == 404 ? " (not found; the server may be older than this app)" : status == 502 || status == 504 ? " (the server behind the proxy isn't answering)" : "")." : fallback
-    return APIError(status: status, message: Self.sentence(obj?["error"] as? String ?? fb), code: obj?["code"] as? String)
+    return APIError(status: status, message: Self.sentence(obj?["error"] as? String ?? fb), code: obj?["code"] as? String, pending: obj?["pending"] as? String)
   }
 
   /** A JSON request; body is encoded with JSONSerialization or Encodable. */
@@ -473,16 +479,54 @@ public struct TestCA: @unchecked Sendable {
 #endif
 
 public enum Account {
-  /** Sign-in: the server's KDF settings for the address, then the password's auth key; returns the session and master key. */
-  public static func login(api: API, email: String, password: String) async throws -> (Me, Data) {
+  /** Sign-in: the server's KDF settings for the address, then the password's auth key. Returns the session and master
+   *  key, or, for an account with two-step sign-in, the code step (the server sent no session and no keys yet). */
+  public static func login(api: API, email: String, password: String) async throws -> SignIn {
     let e = Crypto.normEmail(email)
     let kdf = try await api.get(KdfParams.self, "/api/auth/params?email=" + (e.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? e))
     try Crypto.assertSaneKdf(kdf)
     var (auth, kek) = try Crypto.deriveFromPassword(password, kdf)
     defer { Sodium.memzero(&auth); Sodium.memzero(&kek) }
-    let me = try JSONDecoder().decode(Me.self, from: try await api.json("POST", "/api/auth/login", body: ["email": e, "auth": B64.encode(auth)]))
+    let body: Data
+    do {
+      body = try await api.json("POST", "/api/auth/login", body: ["email": e, "auth": B64.encode(auth)])
+    } catch let err as APIError {
+      if let step = CodeStep(err, email: e, kek: kek) { return .code(step) }
+      throw err
+    }
+    let me = try JSONDecoder().decode(Me.self, from: body)
     api.csrf = me.csrf
-    return (me, try Crypto.unlockMasterKey(email: e, kek: kek, wrappedMasterPw: me.wrapped_master_pw))
+    return .done(me, try Crypto.unlockMasterKey(email: e, kek: kek, wrappedMasterPw: me.wrapped_master_pw))
+  }
+
+  /** The second step of a sign-in: the code from the authenticator app or a recovery code. A wrong code may be tried
+   *  again with the same step; an expired one (APIError code "two_factor_expired") needs the password again. */
+  public static func finish(api: API, step: CodeStep, code: String) async throws -> (Me, Data) {
+    guard let kek = step.key else { throw CodeStep.expiredError }
+    let body: Data
+    do {
+      body = try await api.json("POST", "/api/auth/login/2fa", body: ["pending": step.pending, "code": TwoFactor.clean(code)])
+    } catch let err as APIError {
+      if err.code == "two_factor_expired" { step.abandon(); throw CodeStep.expiredError }
+      if err.code == "wrong_code" { throw APIError(status: err.status, message: TwoFactor.wrongCode, code: err.code) }
+      throw err
+    }
+    let me = try JSONDecoder().decode(Me.self, from: body)
+    api.csrf = me.csrf
+    defer { step.abandon() }
+    return (me, try Crypto.unlockMasterKey(email: step.email, kek: kek, wrappedMasterPw: me.wrapped_master_pw))
+  }
+
+  /** The password's auth key (the proof the server checks for account changes), after checking the password here
+   *  first: a typo shows before anything is sent. */
+  public static func proof(me: Me, password: String) throws -> String {
+    try Crypto.assertSaneKdf(me.kdf)
+    var (auth, kek) = try Crypto.deriveFromPassword(password, me.kdf)
+    defer { Sodium.memzero(&auth); Sodium.memzero(&kek) }
+    do { var key = try Crypto.unlockMasterKey(email: me.user.email, kek: kek, wrappedMasterPw: me.wrapped_master_pw); Sodium.memzero(&key) } catch {
+      throw APIError(status: -1, message: "That password isn't right.")
+    }
+    return B64.encode(auth)
   }
 
   /** After a restart the session cookie is still valid: only the password is needed for the keys. */

@@ -122,6 +122,9 @@ func (c *client) post(path string, body any) rawResp {
 	c.e.t.Helper()
 	bb, _ := json.Marshal(body)
 	req, _ := http.NewRequest("POST", c.e.srv.URL+path, bytes.NewReader(bb))
+	if c.host != "" {
+		req.Host = c.host
+	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-CF-Device", "Test phone (Android app)")
 	resp, err := c.c.Do(req)
@@ -239,7 +242,8 @@ func TestTwoFactorSignInGivesNothingBeforeTheCode(t *testing.T) {
 		t.Fatalf("cookies before the code: %v", r.header.Values("Set-Cookie"))
 	}
 	for k := range r.body {
-		if k != "error" && k != "code" && k != "pending" && k != "expires_in" {
+		// totp, passkey: which second steps the account has, told only after the right password
+		if k != "error" && k != "code" && k != "pending" && k != "expires_in" && k != "totp" && k != "passkey" {
 			t.Fatalf("password step answered %q", k)
 		}
 	}

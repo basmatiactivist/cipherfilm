@@ -65,6 +65,8 @@ func (a *App) handler() http.Handler {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		io.WriteString(w, "User-agent: *\nDisallow: /api/\n")
 	})
+	// Android asks this before it lets the app use a passkey of this server's name (passkeys.go)
+	root.HandleFunc("GET /.well-known/assetlinks.json", a.assetLinks)
 	root.Handle("/", newStatic(sub))
 	return bodyLimit(a.hostGuard(securityHeaders(root)))
 }

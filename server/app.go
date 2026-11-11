@@ -51,6 +51,9 @@ type App struct {
 	pending    *pendingStore    // sign-ins waiting for their second step (twofactor.go)
 	totpAcct   *limiter         // second-step codes per account, short window (twofactor.go)
 	totpDay    *limiter         // second-step codes per account, per day
+	android    androidApps      // the apps that may use this server's passkeys (passkeys.go)
+	waProof    *challengeStore  // passkey challenges of signed-in sessions, answered instead of a code
+	waReg      *challengeStore  // passkeys being added, per session
 	resMu      sync.Mutex       // guards reserved
 	auxMu      sync.Mutex       // pairs a thumbnail or preview count with its file
 	reserved   map[string]int64 // in-flight upload bytes per user
@@ -79,10 +82,11 @@ type user struct {
 	Indexer                                string // the session (pub id) that computes the search index, or ""
 	TOTPSecret, TOTPPending                string // encrypted (twofactor.go); "" = none
 	TOTPLast                               int64  // the last time step a code was accepted for
+	Passkeys                               int    // how many passkeys it has (passkeys.go)
 }
 
-// twoFactor: the account signs in with a code from an authenticator app after the password.
-func (u *user) twoFactor() bool { return u.TOTPSecret != "" }
+// twoFactor: the account signs in with a code from an authenticator app, or a passkey, after the password.
+func (u *user) twoFactor() bool { return u.TOTPSecret != "" || u.Passkeys > 0 }
 
 // Pub names a session in the device list (the cookie's hash stays on the server).
 type session struct {
@@ -119,6 +123,10 @@ func newApp(dataDir string) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	android, err := androidSetting(os.Getenv("ANDROID_APP_PACKAGES"), os.Getenv("ANDROID_APP_CERTS"))
+	if err != nil {
+		return nil, err
+	}
 	dummy, _ := hashSecret(b64.EncodeToString(randBytes(32)))
 	a := &App{
 		db: db, dataDir: dataDir, secret: secret, dummyHash: dummy,
@@ -136,6 +144,9 @@ func newApp(dataDir string) (*App, error) {
 		pending:    newPendingStore(),
 		totpAcct:   newLimiter(totpAcctWin, totpAcctMax),
 		totpDay:    newLimiter(24*time.Hour, totpDayMax),
+		android:    android,
+		waProof:    newChallengeStore(),
+		waReg:      newChallengeStore(),
 		now:        time.Now,
 		reserved:   map[string]int64{},
 		lists:      map[string]chan struct{}{},
@@ -360,8 +371,9 @@ func (a *App) lookupSession(token string) (*user, *session, error) {
 
 func (a *App) userBy(where string, arg any) (*user, error) {
 	var u user
-	err := a.db.QueryRow(`SELECT id,email,role,status,kdf,auth_hash,pubkey,wrapped_master_pw,wrapped_master_recovery,wrapped_privkey,recovery_hash,created_at,nsfw,indexer,totp_secret,totp_pending,totp_last FROM users WHERE `+where, arg).
-		Scan(&u.ID, &u.Email, &u.Role, &u.Status, &u.KDF, &u.AuthHash, &u.Pubkey, &u.WrappedMasterPW, &u.WrappedMasterRecovery, &u.WrappedPrivkey, &u.RecoveryHash, &u.CreatedAt, &u.NSFW, &u.Indexer, &u.TOTPSecret, &u.TOTPPending, &u.TOTPLast)
+	err := a.db.QueryRow(`SELECT id,email,role,status,kdf,auth_hash,pubkey,wrapped_master_pw,wrapped_master_recovery,wrapped_privkey,recovery_hash,created_at,nsfw,indexer,totp_secret,totp_pending,totp_last,
+		(SELECT COUNT(*) FROM passkeys p WHERE p.user_id=users.id) FROM users WHERE `+where, arg).
+		Scan(&u.ID, &u.Email, &u.Role, &u.Status, &u.KDF, &u.AuthHash, &u.Pubkey, &u.WrappedMasterPW, &u.WrappedMasterRecovery, &u.WrappedPrivkey, &u.RecoveryHash, &u.CreatedAt, &u.NSFW, &u.Indexer, &u.TOTPSecret, &u.TOTPPending, &u.TOTPLast, &u.Passkeys)
 	if err != nil {
 		return nil, err
 	}

@@ -127,6 +127,19 @@ CREATE TABLE IF NOT EXISTS recovery_codes (
   code_hash TEXT NOT NULL,
   PRIMARY KEY (user_id, code_hash)
 );
+-- passkeys (passkeys.go), a second step instead of a code: cred_id is the credential id (base64url), rp_id the name it
+-- was made for, cred the credential record sealed under a key derived from the server's secret file
+CREATE TABLE IF NOT EXISTS passkeys (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  cred_id TEXT NOT NULL UNIQUE,
+  rp_id TEXT NOT NULL,
+  cred TEXT NOT NULL,
+  name TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  last_used_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS passkeys_user ON passkeys(user_id, rp_id);
 -- what the person's devices show once (notices.go): a new sign-in, two-step sign-in turned off by an admin, a password
 -- step without a right code; kind is checked in notices.go (a CHECK here would need a table rebuild for every new one)
 CREATE TABLE IF NOT EXISTS notices (

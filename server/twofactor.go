@@ -11,6 +11,7 @@ import (
 	"encoding/base32"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -216,7 +217,8 @@ func (a *App) useCode(u *user, code string) bool {
 	}
 	// only a code of the current enrolment: turning two-step sign-in off deletes them, but a request already on its
 	// way must not use one after it was turned on again
-	res, err := a.db.Exec(`DELETE FROM recovery_codes WHERE user_id=? AND code_hash=? AND EXISTS (SELECT 1 FROM users WHERE id=? AND totp_secret=? AND totp_secret<>'')`,
+	res, err := a.db.Exec(`DELETE FROM recovery_codes WHERE user_id=? AND code_hash=? AND EXISTS (SELECT 1 FROM users WHERE id=? AND totp_secret=?
+		AND (totp_secret<>'' OR EXISTS (SELECT 1 FROM passkeys WHERE user_id=users.id)))`,
 		u.ID, a.recoveryHash(u.ID, n), u.ID, u.TOTPSecret)
 	return rowsAffected(res, err) == 1
 }
@@ -241,8 +243,9 @@ type pendingSignIn struct {
 	userID, authHash string
 	created, expires time.Time
 	tries            int
-	busy             bool  // a code for it is being checked
-	notice           int64 // its password_used notice (notices.go), deleted if it finishes
+	busy             bool         // a code for it is being checked
+	notice           int64        // its password_used notice (notices.go), deleted if it finishes
+	wa               *waChallenge // its passkey challenge (passkeys.go), used up by the next check
 }
 
 type pendingStore struct {
@@ -321,7 +324,33 @@ func (p *pendingStore) claim(tokHash string, now time.Time) (pendingSignIn, erro
 		return pendingSignIn{}, errPendingBusy
 	}
 	x.busy = true
-	return *x, nil
+	out := *x
+	x.wa = nil // a passkey challenge is answered once, rightly or not
+	return out, nil
+}
+
+// peek says whether a pending sign-in is open, without claiming it.
+func (p *pendingStore) peek(tokHash string, now time.Time) (pendingSignIn, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	x := p.m[tokHash]
+	if x == nil || now.After(x.expires) {
+		p.lost(tokHash, now)
+		return pendingSignIn{}, false
+	}
+	return *x, true
+}
+
+// setChallenge gives a pending sign-in a new passkey challenge in place of its previous one.
+func (p *pendingStore) setChallenge(tokHash string, ch *waChallenge, now time.Time) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	x := p.m[tokHash]
+	if x == nil || now.After(x.expires) {
+		return false
+	}
+	x.wa = ch
+	return true
 }
 
 // done ends a check: used is true when the code was right (the pending sign-in is gone, single use), counted when
@@ -391,7 +420,7 @@ func (p *pendingStore) count() int {
 
 // startPending answers the password step of a sign-in to an account with two-step sign-in: a pending token, nothing
 // else. If no right code follows, the account's devices are told (passwordUsedNotice).
-func (a *App) startPending(w http.ResponseWriter, u *user) {
+func (a *App) startPending(w http.ResponseWriter, r *http.Request, u *user) {
 	tok := randToken()
 	now := a.now()
 	if !a.pending.add(sha256hex(tok), &pendingSignIn{userID: u.ID, authHash: u.AuthHash, created: now, expires: now.Add(pendingTTL)}, now) {
@@ -399,8 +428,9 @@ func (a *App) startPending(w http.ResponseWriter, u *user) {
 		return
 	}
 	a.pending.setNotice(sha256hex(tok), a.passwordUsedNotice(u))
+	// which second steps the account has (only told after the right password): an authenticator app, a passkey here
 	writeJSON(w, http.StatusUnauthorized, map[string]any{"error": twoFactorMsg, "code": twoFactorRequired, "pending": tok,
-		"expires_in": int(pendingTTL.Seconds())})
+		"expires_in": int(pendingTTL.Seconds()), "totp": u.TOTPSecret != "", "passkey": a.hasPasskeysHere(r, u)})
 }
 
 // ---- routes ----
@@ -411,18 +441,20 @@ func (a *App) twoFactorRoutes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/me/2fa/setup", a.auth(false, a.twoFactorSetup))
 	m.HandleFunc("POST /api/me/2fa/enable", a.auth(false, a.twoFactorEnable))
 	m.HandleFunc("POST /api/me/2fa/disable", a.auth(false, a.twoFactorDisable))
+	m.HandleFunc("POST /api/me/2fa/totp/remove", a.auth(false, a.twoFactorRemoveTOTP))
 	m.HandleFunc("POST /api/me/2fa/recovery-codes", a.auth(false, a.twoFactorNewCodes))
 	m.HandleFunc("DELETE /api/admin/users/{id}/2fa", a.auth(true, a.adminResetTwoFactor))
 }
 
 type login2faReq struct {
-	Pending string `json:"pending"`
-	Code    string `json:"code"`
+	Pending string          `json:"pending"`
+	Code    string          `json:"code"`
+	Passkey json.RawMessage `json:"passkey"` // a passkey's answer to POST /api/auth/login/2fa/passkey's challenge
 }
 
 const pendingGone = "this sign-in expired; sign in again with your password"
 
-// login2fa is the second step of a sign-in: the pending token from the password step and a code.
+// login2fa is the second step of a sign-in: the pending token from the password step and a code or a passkey's answer.
 func (a *App) login2fa(w http.ResponseWriter, r *http.Request) {
 	var req login2faReq
 	if !readJSON(w, r, &req) {
@@ -453,7 +485,13 @@ func (a *App) login2fa(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 401, map[string]string{"error": pendingGone, "code": "two_factor_expired"})
 		return
 	}
-	if !a.useCode(u, req.Code) {
+	if hasPasskey(req.Passkey) {
+		if !a.usePasskey(r, u, p.wa, req.Passkey) {
+			a.pending.done(h, false, true, a.now())
+			writeJSON(w, 401, map[string]string{"error": "that passkey wasn't accepted", "code": "wrong_passkey"})
+			return
+		}
+	} else if !a.useCode(u, req.Code) {
 		a.pending.done(h, false, true, a.now())
 		writeJSON(w, 401, map[string]string{"error": "that code isn't right", "code": "wrong_code"})
 		return
@@ -482,15 +520,43 @@ func (a *App) recoveryCodesLeft(userID string) int {
 }
 
 func (a *App) twoFactorStatus(w http.ResponseWriter, r *http.Request, u *user, s *session) {
-	out := map[string]any{"enabled": u.twoFactor(), "recovery_codes_left": 0, "available": !a.isDemo(u)}
+	out := map[string]any{"enabled": u.twoFactor(), "recovery_codes_left": 0, "available": !a.isDemo(u),
+		"totp": u.TOTPSecret != "", "passkeys": u.Passkeys}
 	if u.twoFactor() {
 		out["recovery_codes_left"] = a.recoveryCodesLeft(u.ID)
 	}
 	writeJSON(w, 200, out)
 }
 
+// proofReq is what a change to two-step sign-in sends: the password proof and, where a second step is asked for too,
+// a code (authenticator or recovery) or a passkey's answer to POST /api/me/2fa/passkey's challenge.
 type proofReq struct {
-	CurrentAuth string `json:"current_auth"`
+	CurrentAuth string          `json:"current_auth"`
+	Code        string          `json:"code"`
+	Passkey     json.RawMessage `json:"passkey"`
+}
+
+func hasPasskey(raw json.RawMessage) bool { return len(raw) > 0 && string(raw) != "null" }
+
+// secondFactor checks the second step sent with a change to two-step sign-in: a code (used up) or a passkey's answer
+// to this session's challenge. Counted like a code at sign-in.
+func (a *App) secondFactor(w http.ResponseWriter, r *http.Request, u *user, s *session, req proofReq) bool {
+	at, ok := reserve(a.codeSlots(u.ID)...)
+	if !ok {
+		fail(w, 429, "too many attempts, try later")
+		return false
+	}
+	if hasPasskey(req.Passkey) {
+		if !a.usePasskey(r, u, a.waProof.take(s.IDHash, a.now()), req.Passkey) {
+			writeJSON(w, 403, map[string]string{"error": "that passkey wasn't accepted", "code": "wrong_passkey"})
+			return false
+		}
+	} else if !a.useCode(u, req.Code) {
+		writeJSON(w, 403, map[string]string{"error": "that code isn't right", "code": "wrong_code"})
+		return false
+	}
+	at.success()
+	return true
 }
 
 // checkPassword verifies the password proof sent with a change to two-step sign-in, counted like a password change.
@@ -518,8 +584,12 @@ func (a *App) twoFactorSetup(w http.ResponseWriter, r *http.Request, u *user, s 
 	if !readJSON(w, r, &req) || !a.checkPassword(w, u, "2fa-setup", req.CurrentAuth) {
 		return
 	}
-	if u.twoFactor() {
+	if u.TOTPSecret != "" {
 		fail(w, http.StatusConflict, "two-step sign-in is already on")
+		return
+	}
+	// two-step sign-in already on with a passkey: adding an authenticator app needs a second step too
+	if u.twoFactor() && !a.secondFactor(w, r, u, s, req) {
 		return
 	}
 	secret := randBytes(20) // 160 bits, as RFC 4226 recommends
@@ -538,8 +608,9 @@ type codeReq struct {
 	Code string `json:"code"`
 }
 
-// twoFactorEnable turns two-step sign-in on once a code from the new secret is right, and returns the recovery codes:
-// the only time they are shown.
+// twoFactorEnable turns the authenticator app on once a code from the new secret is right. If it is the account's first
+// second step, it returns the recovery codes: the only time they are shown (with a passkey already there, the account
+// keeps the codes it has).
 func (a *App) twoFactorEnable(w http.ResponseWriter, r *http.Request, u *user, s *session) {
 	if a.isDemo(u) {
 		fail(w, 403, demoRefused)
@@ -549,7 +620,7 @@ func (a *App) twoFactorEnable(w http.ResponseWriter, r *http.Request, u *user, s
 	if !readJSON(w, r, &req) {
 		return
 	}
-	if u.twoFactor() {
+	if u.TOTPSecret != "" {
 		fail(w, http.StatusConflict, "two-step sign-in is already on")
 		return
 	}
@@ -586,24 +657,35 @@ func (a *App) twoFactorEnable(w http.ResponseWriter, r *http.Request, u *user, s
 		fail(w, http.StatusConflict, "start the setup again")
 		return
 	}
-	if a.replaceCodes(tx, u.ID, codes) != nil || tx.Commit() != nil {
+	var keys int
+	if tx.QueryRow(`SELECT COUNT(*) FROM passkeys WHERE user_id=?`, u.ID).Scan(&keys) != nil {
+		fail(w, 500, "server error")
+		return
+	}
+	if keys > 0 {
+		codes = nil
+	} else if a.replaceCodes(tx, u.ID, codes) != nil {
+		fail(w, 500, "server error")
+		return
+	}
+	if tx.Commit() != nil {
 		fail(w, 500, "server error")
 		return
 	}
 	at.success()
+	if codes == nil {
+		a.audit(u.Email, "added an authenticator app", u.Email, "")
+		writeJSON(w, 200, map[string]any{"ok": true})
+		return
+	}
 	a.audit(u.Email, "turned on two-step sign-in", u.Email, "")
 	writeJSON(w, 200, map[string]any{"recovery_codes": codes})
 }
 
-type proofCodeReq struct {
-	CurrentAuth string `json:"current_auth"`
-	Code        string `json:"code"`
-}
-
 // proofAndCode checks what turning two-step sign-in off or making new recovery codes needs: the password proof and a
-// current code (or a recovery code, which is used up).
-func (a *App) proofAndCode(w http.ResponseWriter, r *http.Request, u *user, what string) bool {
-	var req proofCodeReq
+// current code (or a recovery code, which is used up, or a passkey).
+func (a *App) proofAndCode(w http.ResponseWriter, r *http.Request, u *user, s *session, what string) bool {
+	var req proofReq
 	if !readJSON(w, r, &req) || !a.checkPassword(w, u, what, req.CurrentAuth) {
 		return false
 	}
@@ -611,22 +693,12 @@ func (a *App) proofAndCode(w http.ResponseWriter, r *http.Request, u *user, what
 		fail(w, http.StatusConflict, "two-step sign-in is off")
 		return false
 	}
-	at, ok := reserve(a.codeSlots(u.ID)...)
-	if !ok {
-		fail(w, 429, "too many attempts, try later")
-		return false
-	}
-	if !a.useCode(u, req.Code) {
-		writeJSON(w, 403, map[string]string{"error": "that code isn't right", "code": "wrong_code"})
-		return false
-	}
-	at.success()
-	return true
+	return a.secondFactor(w, r, u, s, req)
 }
 
-// twoFactorDisable turns two-step sign-in off; the recovery codes go with it.
+// twoFactorDisable turns two-step sign-in off: the authenticator app, the passkeys and the recovery codes go.
 func (a *App) twoFactorDisable(w http.ResponseWriter, r *http.Request, u *user, s *session) {
-	if !a.proofAndCode(w, r, u, "2fa-off") {
+	if !a.proofAndCode(w, r, u, s, "2fa-off") {
 		return
 	}
 	if !a.turnOff(r.Context(), u.ID, u.TOTPSecret) {
@@ -637,30 +709,85 @@ func (a *App) twoFactorDisable(w http.ResponseWriter, r *http.Request, u *user, 
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
-// turnOff removes the account's authenticator secret and recovery codes; with secret, only if it is still that one.
+// turnOff removes the account's authenticator secret, passkeys and recovery codes; with secret, only if it is still
+// that one. False when two-step sign-in was off.
 func (a *App) turnOff(ctx context.Context, userID, secret string) bool {
 	tx, err := a.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false
 	}
 	defer tx.Rollback()
-	res, err := tx.Exec(`UPDATE users SET totp_secret='', totp_pending='', totp_last=0 WHERE id=? AND totp_secret<>'' AND (?='' OR totp_secret=?)`, userID, secret, secret)
-	if rowsAffected(res, err) != 1 {
+	var on int
+	if tx.QueryRow(`SELECT (totp_secret<>'') + (SELECT COUNT(*) FROM passkeys WHERE user_id=users.id) FROM users WHERE id=? AND (?='' OR totp_secret=?)`,
+		userID, secret, secret).Scan(&on) != nil || on == 0 {
 		return false
 	}
-	if _, err := tx.Exec(`DELETE FROM recovery_codes WHERE user_id=?`, userID); err != nil {
-		return false
+	for _, q := range []string{
+		`UPDATE users SET totp_secret='', totp_pending='', totp_last=0 WHERE id=?`,
+		`DELETE FROM recovery_codes WHERE user_id=?`,
+		`DELETE FROM passkeys WHERE user_id=?`,
+	} {
+		if _, err := tx.Exec(q, userID); err != nil {
+			return false
+		}
 	}
 	if tx.Commit() != nil {
 		return false
 	}
 	a.pending.dropUser(userID, a.now())
+	a.waProof.dropUser(userID)
+	a.waReg.dropUser(userID)
 	return true
+}
+
+// twoFactorRemoveTOTP removes the authenticator app and keeps the passkeys; without a passkey it is the same as
+// turning two-step sign-in off.
+func (a *App) twoFactorRemoveTOTP(w http.ResponseWriter, r *http.Request, u *user, s *session) {
+	if !a.proofAndCode(w, r, u, s, "2fa-off") {
+		return
+	}
+	if u.TOTPSecret == "" {
+		fail(w, http.StatusConflict, "no authenticator app is set up")
+		return
+	}
+	tx, err := a.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		fail(w, 500, "server error")
+		return
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(`UPDATE users SET totp_secret='', totp_pending='', totp_last=0 WHERE id=? AND totp_secret=?`, u.ID, u.TOTPSecret)
+	if rowsAffected(res, err) != 1 {
+		fail(w, http.StatusConflict, "two-step sign-in changed meanwhile; try again")
+		return
+	}
+	var keys int
+	if tx.QueryRow(`SELECT COUNT(*) FROM passkeys WHERE user_id=?`, u.ID).Scan(&keys) != nil {
+		fail(w, 500, "server error")
+		return
+	}
+	if keys == 0 {
+		if _, err := tx.Exec(`DELETE FROM recovery_codes WHERE user_id=?`, u.ID); err != nil {
+			fail(w, 500, "server error")
+			return
+		}
+	}
+	if tx.Commit() != nil {
+		fail(w, 500, "server error")
+		return
+	}
+	if keys == 0 {
+		a.pending.dropUser(u.ID, a.now())
+		a.audit(u.Email, "turned off two-step sign-in", u.Email, "")
+	} else {
+		a.audit(u.Email, "removed the authenticator app", u.Email, "")
+	}
+	writeJSON(w, 200, map[string]any{"ok": true, "two_factor": keys > 0})
 }
 
 // twoFactorNewCodes replaces the recovery codes (the old ones stop working) and shows the new ones once.
 func (a *App) twoFactorNewCodes(w http.ResponseWriter, r *http.Request, u *user, s *session) {
-	if !a.proofAndCode(w, r, u, "2fa-codes") {
+	if !a.proofAndCode(w, r, u, s, "2fa-codes") {
 		return
 	}
 	codes := newRecoveryCodes()

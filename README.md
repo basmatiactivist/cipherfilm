@@ -86,7 +86,7 @@ and visitors are signed out every hour. To keep your own photos, [run your own s
   shake to lock and close. On Android, screenshots and the recent-apps preview are blocked unless you allow them.
 - **Two-step sign-in and your devices.** Optional codes from an authenticator app at every new sign-in, with one-time
   recovery codes; a list of signed-in devices to sign out one or all others; a notice on your other devices when a
-  new one signs in.
+  new one signs in, also as a notification on Android and the Mac while the app is closed (no push service).
 - **Mac app.** Keeps an export folder up to date, uploads watched folders and indexes for search in the background
   ([docs/MAC.md](docs/MAC.md)).
 - **Made for a small group.** Invite-only, a private library per person, storage limits, an admin area that never

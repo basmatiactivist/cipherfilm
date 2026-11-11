@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -229,5 +230,61 @@ func TestOwnSignOutsDoNotFlushTheActivityLog(t *testing.T) {
 	}
 	if invites != 2 {
 		t.Fatalf("admin entries shown: %d", invites)
+	}
+}
+
+// The notices table of the development versions had a CHECK on kind; it is rebuilt without one, keeping the rows and
+// the id counter (the apps remember dismissed ids: an id must not come again), once.
+func TestNoticesTableLosesItsCheck(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "app.db")
+	db, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := strings.Replace(schema, "  kind TEXT NOT NULL,\n", "  kind TEXT NOT NULL CHECK (kind IN ('sign_in','2fa_reset')),\n", 1)
+	if old == schema {
+		t.Fatal("the schema's notices table changed: update this test")
+	}
+	for _, q := range []string{
+		old,
+		`INSERT INTO users(id,email,role,kdf,auth_hash,pubkey,wrapped_master_pw,wrapped_master_recovery,wrapped_privkey,recovery_hash,created_at) VALUES ('u1','a@x.org','admin','','','','','','','',1)`,
+		`INSERT INTO notices(user_id,kind,device,session_pub,at,dismissed) VALUES ('u1','sign_in','Phone','p1',5,0), ('u1','2fa_reset','','',6,1), ('u1','sign_in','x','',7,0)`,
+		`DELETE FROM notices WHERE at=7`, // pruned: its id is not to come again
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(q, err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO notices(user_id,kind,at) VALUES ('u1','password_used',8)`); err == nil {
+		t.Fatal("the old table took a new kind")
+	}
+	db.Close()
+	for i := 0; i < 2; i++ { // and again at the next start
+		db, err := openDB(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var def string
+		db.QueryRow(`SELECT sql FROM sqlite_master WHERE name='notices'`).Scan(&def)
+		if strings.Contains(def, "CHECK") {
+			t.Fatalf("still: %s", def)
+		}
+		var n, idx int
+		db.QueryRow(`SELECT COUNT(*) FROM notices WHERE (id=1 AND kind='sign_in' AND device='Phone' AND session_pub='p1' AND at=5 AND dismissed=0)
+			OR (id=2 AND kind='2fa_reset' AND dismissed=1)`).Scan(&n)
+		db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='notices_user'`).Scan(&idx)
+		if n != 2 || idx != 1 {
+			t.Fatalf("rows %d, index %d", n, idx)
+		}
+		if i == 0 {
+			res, err := db.Exec(`INSERT INTO notices(user_id,kind,at) VALUES ('u1','password_used',8)`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if id, _ := res.LastInsertId(); id != 4 {
+				t.Fatalf("new id %d: an old one again", id)
+			}
+		}
+		db.Close()
 	}
 }

@@ -404,8 +404,8 @@ func TestRestoreKeepsLaterTwoFactorChanges(t *testing.T) {
 	e.app.notify(bu.ID, noticeTwoFactorReset, "", "")
 	type state struct {
 		secret, pending string
-		last           int64
-		codes          int
+		last            int64
+		codes           int
 	}
 	read := func(a *App, email string) (s state) {
 		u, _ := a.userByEmail(email)

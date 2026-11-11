@@ -806,3 +806,102 @@ func TestTwoFactorSetupCodeAsTypedAndNewCodesLogged(t *testing.T) {
 		t.Fatalf("new recovery codes logged %d times", n)
 	}
 }
+
+func shownKinds(t *testing.T, c *client) []string {
+	t.Helper()
+	_, out := c.do("GET", "/api/me/notices", nil, false)
+	var k []string
+	for _, x := range out["notices"].([]any) {
+		k = append(k, x.(map[string]any)["kind"].(string))
+	}
+	return k
+}
+
+// A password step on an account with two-step sign-in that isn't followed by a right code (it expired, wore out, or
+// was pushed out by newer ones) is shown to the account's devices once the pending sign-in can no longer finish:
+// whoever has the password could otherwise keep the real person's sign-ins from finishing without a trace. One that
+// finished shows nothing more than the new sign-in. At most one such notice an hour.
+func TestUnfinishedPasswordStepIsNoticed(t *testing.T) {
+	e := newEnv(t)
+	clk := e.pinClock()
+	admin, ab := e.setupAdmin("admin@x.org")
+	secret, _ := e.enable2FA(admin, ab)
+	clk.tick(30 * time.Second)
+	count := func() (n int) {
+		for _, k := range shownKinds(t, admin) {
+			if k == noticePasswordUsed {
+				n++
+			}
+		}
+		return
+	}
+
+	// finished: nothing
+	c := e.client()
+	p := e.passwordStep(c, "admin@x.org", ab)
+	if r := c.post("/api/auth/login/2fa", map[string]any{"pending": p, "code": codeAt(t, secret, clk.at)}); r.code != 200 {
+		t.Fatalf("code: %d", r.code)
+	}
+	clk.tick(pendingTTL + time.Second)
+	if n := count(); n != 0 {
+		t.Fatalf("a finished sign-in left %d notices", n)
+	}
+
+	// not finished: shown once it has expired, not before
+	e.passwordStep(e.client(), "admin@x.org", ab)
+	clk.tick(pendingTTL / 2)
+	if n := count(); n != 0 {
+		t.Fatal("shown while it can still finish")
+	}
+	// another one within the hour, then the real person signs in: still one notice, and it stays
+	e.passwordStep(e.client(), "admin@x.org", ab)
+	clk.tick(30 * time.Second)
+	c = e.client()
+	p = e.passwordStep(c, "admin@x.org", ab)
+	if r := c.post("/api/auth/login/2fa", map[string]any{"pending": p, "code": codeAt(t, secret, clk.at)}); r.code != 200 {
+		t.Fatalf("code: %d", r.code)
+	}
+	clk.tick(pendingTTL + time.Second)
+	if n := count(); n != 1 {
+		t.Fatalf("%d notices, want 1", n)
+	}
+	_, out := admin.do("GET", "/api/me/notices", nil, false)
+	for _, x := range out["notices"].([]any) {
+		if n := x.(map[string]any); n["kind"] == noticePasswordUsed && n["device"] != "" {
+			t.Fatalf("notice: %v", n)
+		}
+	}
+	// a later sign-in sees it too (it is about the account, not about a session)
+	clk.tick(time.Second)
+	nc := e.client()
+	np := e.passwordStep(nc, "admin@x.org", ab)
+	clk.tick(30 * time.Second)
+	if r := nc.post("/api/auth/login/2fa", map[string]any{"pending": np, "code": codeAt(t, secret, clk.at)}); r.code != 200 {
+		t.Fatalf("code: %d", r.code)
+	}
+	if k := shownKinds(t, nc); len(k) != 1 || k[0] != noticePasswordUsed { // the earlier sign-ins aren't news to it
+		t.Fatalf("on a later device: %v", k)
+	}
+
+	// an hour on: a pending sign-in pushed out by newer ones counts too, even when one of those finishes
+	clk.tick(time.Hour)
+	for _, x := range []*client{admin, nc} {
+		_, out := x.do("GET", "/api/me/notices", nil, false)
+		for _, n := range out["notices"].([]any) {
+			x.do("POST", "/api/me/notices/"+itoa(int64(n.(map[string]any)["id"].(float64)))+"/dismiss", nil, true)
+		}
+	}
+	for i := 0; i < pendingPer; i++ {
+		e.passwordStep(e.client(), "admin@x.org", ab)
+	}
+	clk.tick(30 * time.Second)
+	c = e.client()
+	p = e.passwordStep(c, "admin@x.org", ab)
+	if r := c.post("/api/auth/login/2fa", map[string]any{"pending": p, "code": codeAt(t, secret, clk.at)}); r.code != 200 {
+		t.Fatalf("code: %d", r.code)
+	}
+	clk.tick(pendingTTL + time.Second)
+	if n := count(); n != 1 {
+		t.Fatalf("pushed-out sign-ins: %d notices, want 1", n)
+	}
+}

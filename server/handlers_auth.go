@@ -598,7 +598,7 @@ func (a *App) recoverFinish(w http.ResponseWriter, r *http.Request) {
 	a.revokeTickets(t.userID)
 	// the pending sign-ins were issued for the old password; the code count stays: the recovery key alone (with no
 	// code) must not let anyone wipe it again and again and so guess more codes than the limits allow
-	a.pending.dropUser(t.userID)
+	a.pending.dropUser(t.userID, a.now())
 	a.live.recheck(t.userID)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }

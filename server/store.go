@@ -2,7 +2,9 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -125,11 +127,12 @@ CREATE TABLE IF NOT EXISTS recovery_codes (
   code_hash TEXT NOT NULL,
   PRIMARY KEY (user_id, code_hash)
 );
--- what the person's devices show once (notices.go): a new sign-in, two-step sign-in turned off by an admin
+-- what the person's devices show once (notices.go): a new sign-in, two-step sign-in turned off by an admin, a password
+-- step without a right code; kind is checked in notices.go (a CHECK here would need a table rebuild for every new one)
 CREATE TABLE IF NOT EXISTS notices (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  kind TEXT NOT NULL CHECK (kind IN ('sign_in','2fa_reset')),
+  kind TEXT NOT NULL,
   device TEXT NOT NULL DEFAULT '',
   session_pub TEXT NOT NULL DEFAULT '',
   at INTEGER NOT NULL,
@@ -277,6 +280,9 @@ func migrate(db *sql.DB) error {
 	if _, err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS sessions_pub ON sessions(pub)`); err != nil {
 		return err
 	}
+	if err := migrateNotices(db); err != nil {
+		return err
+	}
 	// item_index.model: one entry per item and model family, so entries of the standard and the explicit model don't
 	// overwrite each other (before 1.9.0 an item had one entry; those keep the family '' and are read as either)
 	icols, err := tableCols(db, "item_index")
@@ -312,6 +318,54 @@ func migrate(db *sql.DB) error {
 		}
 	}
 	return nil
+}
+
+// migrateNotices rebuilds the notices table of 2.5.0's development versions without the CHECK on kind, so a new kind
+// (password_used) can be stored; the rows and the AUTOINCREMENT counter are kept (the apps remember dismissed ids, so
+// an id must never come again). Once rebuilt, it finds no CHECK and does nothing.
+func migrateNotices(db *sql.DB) error {
+	var def string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='notices'`).Scan(&def); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	if !strings.Contains(strings.ToUpper(def), "CHECK") {
+		return nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var seq int64
+	tx.QueryRow(`SELECT COALESCE(MAX(seq),0) FROM sqlite_sequence WHERE name='notices'`).Scan(&seq)
+	for _, q := range []string{
+		`DROP TABLE IF EXISTS notices_new`,
+		`CREATE TABLE notices_new (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  device TEXT NOT NULL DEFAULT '',
+  session_pub TEXT NOT NULL DEFAULT '',
+  at INTEGER NOT NULL,
+  dismissed INTEGER NOT NULL DEFAULT 0
+)`,
+		`INSERT INTO notices_new(id,user_id,kind,device,session_pub,at,dismissed) SELECT id,user_id,kind,device,session_pub,at,dismissed FROM notices`,
+		`DROP TABLE notices`,
+		`ALTER TABLE notices_new RENAME TO notices`,
+		`CREATE INDEX IF NOT EXISTS notices_user ON notices(user_id, id)`,
+		`DELETE FROM sqlite_sequence WHERE name='notices'`,
+	} {
+		if _, err := tx.Exec(q); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(`INSERT INTO sqlite_sequence(name,seq) SELECT 'notices', MAX(?, COALESCE((SELECT MAX(id) FROM notices),0))`, seq); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func tableCols(db *sql.DB, table string) (map[string]bool, error) {

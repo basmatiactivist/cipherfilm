@@ -7,6 +7,8 @@ COPY web/package.json web/package-lock.json ./
 RUN npm ci --ignore-scripts
 # the search models' list, shared with the server (web/src/search/rank.ts)
 COPY server/models.json /server/models.json
+# the explicit-content filter's concepts, shared with the apps (web/src/search/explicit.ts)
+COPY server/explicit-filter.json /server/explicit-filter.json
 COPY web/ ./
 # the same version as the server binary, shown under Account (vite.config.ts)
 ARG VERSION=dev

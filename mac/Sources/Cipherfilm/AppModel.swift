@@ -541,18 +541,10 @@ final class AppModel {
     }
   }
 
-  /** Turns search on; where an admin allowed explicit search, with the model the person chose (nil: not asked). */
-  func turnOnSearch(explicit: Bool?) {
+  /** Turns search on (one model for everyone; explicit search, where allowed, is a switch in Settings). */
+  func turnOnSearch() {
     settings.searchAsked = true
-    guard let explicit, let vault else { settings.search = true; return }
-    Task {
-      do {
-        try await search.choose(explicit: explicit, vault: vault)
-        settings.search = true
-      } catch {
-        alert = "Couldn't turn on search: \(error.localizedDescription)"
-      }
-    }
+    settings.search = true
   }
 
   /** The library changed: the background work gets the new list. */

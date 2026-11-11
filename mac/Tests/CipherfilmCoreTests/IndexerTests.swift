@@ -37,11 +37,11 @@ private func me(_ session: String?, _ indexer: String?, id: String = "0123456789
   }
 
   @Test func readerDownloadsTextOnly() {
-    #expect(Models.needed(faces: true, clip: .mobileclip, reader: true).map(\.name) == ["mobileclip-s2-text.onnx", "mobileclip-s2-tokenizer.json"])
-    #expect(Models.needed(faces: true, clip: .laion, reader: true).map(\.name) == ["nsfw-laion-b32-text.onnx", "mobileclip-s2-tokenizer.json"])
-    #expect(ClipModel.mobileclip.family == "mcs2" && ClipModel.laion.family == "laionb32")
+    #expect(Models.needed(faces: true, clip: .clip, reader: true).map(\.name) == ["clip-b32-text.onnx", "clip-b32-tokenizer.json"])
+    #expect(Models.needed(faces: true).map(\.name) == ["clip-b32-vision.onnx", "clip-b32-text.onnx", "clip-b32-tokenizer.json", "yunet-2023mar.onnx", "sface-2021dec.onnx"])
+    #expect(ClipModel.clip.family == "laionb32")
     // the family is the tag up to "+" or "/", as the server cuts it
-    #expect(ClipModel.laion.tag.hasPrefix(ClipModel.laion.family + "+") && ClipModel.mobileclip.tagNoFaces.hasPrefix(ClipModel.mobileclip.family + "/"))
+    #expect(ClipModel.clip.tag.hasPrefix(ClipModel.clip.family + "+") && ClipModel.clip.tagNoFaces.hasPrefix(ClipModel.clip.family + "/"))
   }
 
   @Test func deviceName() {

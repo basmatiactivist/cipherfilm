@@ -20,6 +20,8 @@ public final class SearchIndex: @unchecked Sendable {
   private var rows: [String: Int] = [:]
   private var ids: [String] = []
   private var vecs: [Float] = []
+  /** per row: how explicit the photo looks (Explicit.score), worked out when its vector comes in */
+  private var explicit: [Float] = []
 
   private struct FaceRec { let key: String; let item: String; let emb: [Float]; let score: Float; let size: Float; let box: [Double] }
   private var faces: [String: FaceRec] = [:]
@@ -29,7 +31,7 @@ public final class SearchIndex: @unchecked Sendable {
   public init() {}
 
   public func clear() {
-    lock.withLock { rows = [:]; ids = []; vecs = []; faces = [:]; faceOrder = []; facesByItem = [:] }
+    lock.withLock { rows = [:]; ids = []; vecs = []; explicit = []; faces = [:]; faceOrder = []; facesByItem = [:] }
   }
 
   public var count: (items: Int, faces: Int) { lock.withLock { (ids.count, faces.count) } }
@@ -41,10 +43,12 @@ public final class SearchIndex: @unchecked Sendable {
     lock.withLock {
       if let clip, clip.count == Vision.clipDim * 2 {
         let v = Vision.unhalf(clip)
+        let x = Explicit.score(v, image: true)
         if let r = rows[item] {
           vecs.replaceSubrange((r * Vision.clipDim)..<((r + 1) * Vision.clipDim), with: v)
+          explicit[r] = x
         } else {
-          rows[item] = ids.count; ids.append(item); vecs += v
+          rows[item] = ids.count; ids.append(item); vecs += v; explicit.append(x)
         }
       }
       dropFaces(of: item)
@@ -75,17 +79,25 @@ public final class SearchIndex: @unchecked Sendable {
       if row != last { // move the last row into the gap
         let moved = ids[last]
         vecs.replaceSubrange((row * Vision.clipDim)..<((row + 1) * Vision.clipDim), with: vecs[(last * Vision.clipDim)..<((last + 1) * Vision.clipDim)])
+        explicit[row] = explicit[last]
         ids[row] = moved; rows[moved] = row
       }
       ids.removeLast()
       vecs.removeLast(Vision.clipDim)
+      explicit.removeLast()
     }
   }
 
-  /** Items whose image vector is closest to the query vector, best first. */
-  public func search(_ q: [Float], limit: Int, minScore: Double) -> [Hit] {
+  /** Items whose image vector is closest to the query vector, best first; filtered: without those that look explicit
+   *  (docs/SEARCH.md "Explicit content"). */
+  public func search(_ q: [Float], limit: Int, minScore: Double, filtered: Bool = false) -> [Hit] {
     guard q.count == Vision.clipDim else { return [] }
-    return lock.withLock { top(q, limit, minScore, nil) }
+    return lock.withLock { top(q, limit, minScore, nil, filtered) }
+  }
+
+  /** Whether filtered search leaves this item out. */
+  public func hidden(_ item: String) -> Bool {
+    lock.withLock { rows[item].map { !(explicit[$0] < Explicit.imageThreshold) } ?? false }
   }
 
   /** Items that look like this one. */
@@ -96,7 +108,7 @@ public final class SearchIndex: @unchecked Sendable {
     }
   }
 
-  private func top(_ q: [Float], _ limit: Int, _ minScore: Double, _ skip: String?) -> [Hit] {
+  private func top(_ q: [Float], _ limit: Int, _ minScore: Double, _ skip: String?, _ filtered: Bool = false) -> [Hit] {
     var scores = [Float](repeating: 0, count: ids.count)
     vecs.withUnsafeBufferPointer { v in
       q.withUnsafeBufferPointer { qp in
@@ -108,7 +120,7 @@ public final class SearchIndex: @unchecked Sendable {
         }
       }
     }
-    return ids.indices.filter { Double(scores[$0]) >= minScore && ids[$0] != skip }.sorted { scores[$0] > scores[$1] }.prefix(limit)
+    return ids.indices.filter { Double(scores[$0]) >= minScore && ids[$0] != skip && !(filtered && !(explicit[$0] < Explicit.imageThreshold)) }.sorted { scores[$0] > scores[$1] }.prefix(limit)
       .map { Hit(id: ids[$0], score: Double(scores[$0])) }
   }
 

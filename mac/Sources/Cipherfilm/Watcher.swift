@@ -120,8 +120,8 @@ final class Watcher {
     if task != nil { again = true; return }
     guard let api, let userId, let pkB64 = settings.pubkey, let pk = try? B64.decode(pkB64) else { return }
     let folders = settings.watched
-    let faces = settings.faces, search = settings.search, explicit = settings.explicitSeen
-    var clip = ClipModel.mobileclip
+    let faces = settings.faces, search = settings.search
+    let clip = ClipModel.clip
     var indexes = true
     let gen = generation
     running = true; problem = nil
@@ -131,11 +131,10 @@ final class Watcher {
       // only this scan's own state: after a stop a newer scan may already be running
       defer { Task { @MainActor in guard gen == self.generation else { return }; self.task = nil; self.running = false; self.current = nil; if self.again { self.again = false; self.scan() } } }
       do {
-        struct MeLite: Decodable { struct U: Decodable { let id: String; let nsfw: Bool? }; let user: U; let csrf: String; let session_id: String?; let indexer: String? }
+        struct MeLite: Decodable { struct U: Decodable { let id: String }; let user: U; let csrf: String; let session_id: String?; let indexer: String? }
         let me = try JSONDecoder().decode(MeLite.self, from: try await api.json("GET", "/api/me"))
         guard me.user.id == userId else { problem = "Signed in with another account. Turn on watched folders again."; return }
         api.csrf = me.csrf
-        clip = ClipModel.choose(allowed: me.user.nsfw == true, explicit: explicit)
         // only the indexing device computes entries (docs/SEARCH.md); on the others the new photo waits for it
         indexes = (me.indexer ?? "").isEmpty || me.indexer == me.session_id
       } catch let e as APIError {

@@ -34,7 +34,8 @@ public final class CodeStep: @unchecked Sendable {
   /** Forgets the key (start over, expired, or the sign-in finished). */
   public func abandon() {
     lock.withLock {
-      if var k = kek { Sodium.memzero(&k) }
+      // in place: a `var k = kek` copy would make memzero zero a fresh copy and leave the key's own bytes as they were
+      if kek != nil { Sodium.memzero(&kek!) }
       kek = nil
     }
   }

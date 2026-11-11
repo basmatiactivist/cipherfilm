@@ -207,6 +207,7 @@ class CfNativeModule : Module() {
     Function("thumbKeys") { ids: List<String>, keys: ByteArray -> Thumbs.putKeys(ids, keys) }
     Function("thumbsPrefetch") { ids: List<String> -> Thumbs.prefetch(ids) }
     Function("thumbsClearImages") { Thumbs.clearBitmaps() }
+    Function("thumbsForget") { ids: List<String> -> Thumbs.forget(ids) }
     Function("forgetThumbs") { Thumbs.clear() }
     View(CfThumbView::class) {
       Name("CfThumbView")

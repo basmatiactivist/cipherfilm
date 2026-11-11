@@ -11,8 +11,10 @@ const vectors = path.resolve(__dirname, "../tools/decrypt/testdata");
 const server = path.resolve(__dirname, "../server");
 // the place names for the map (web/src/places: the reader and its .bin, bundled as an asset)
 const webPlaces = path.resolve(__dirname, "../web/src/places");
+// the editing rules (turn, crop, date and place) shared with the web app
+const webEdit = path.resolve(__dirname, "../web/src/edit");
 
-config.watchFolders = [webCrypto, vectors, server, webPlaces];
+config.watchFolders = [webCrypto, vectors, server, webPlaces, webEdit];
 config.resolver.assetExts = [...config.resolver.assetExts, "bin"];
 config.resolver.nodeModulesPaths = [path.resolve(__dirname, "node_modules")];
 const resolve = config.resolver.resolveRequest;

@@ -14,6 +14,9 @@
       ],
       "@places/*": [
         "../web/src/places/*"
+      ],
+      "@edit/*": [
+        "../web/src/edit/*"
       ]
     }
   },
@@ -23,6 +26,8 @@
     "../web/src/crypto/*.ts",
     "../web/src/places/places.ts",
     "../web/src/places/videoLocation.ts",
+    "../web/src/edit/edit.ts",
+    "../web/src/edit/exif.ts",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
   ],

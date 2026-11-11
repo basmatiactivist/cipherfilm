@@ -30,6 +30,7 @@ services:
     working_dir: /e2e
     volumes:
       - ./e2e:/e2e
+      - ./server/explicit-filter.json:/server/explicit-filter.json:ro   # the explicit filter's concepts (zzzzzzzzcontent.spec.ts)
     environment:
       BASE_URL: https://cipherfilm.test
       SETUP_TOKEN: ${SETUP_TOKEN:-}

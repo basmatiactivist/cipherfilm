@@ -131,7 +131,7 @@ test.describe.serial("search by what is in a photo", () => {
     const search = page.getByLabel("Search your photos");
     await search.fill("dog");
     const ok = page.getByRole("button", { name: "Download and turn on" });
-    if (await ok.isVisible({ timeout: 5_000 }).catch(() => false)) await ok.click(); // a new browser: asked first
+    if (await ok.waitFor({ timeout: 10_000 }).then(() => true, () => false)) await ok.click(); // a new browser: asked first
     // filtered: the explicit photo is left out, and explicit words find nothing
     await expect(page.locator(".tile")).toHaveCount(1, { timeout: 240_000 });
     await expect(page.locator(`.tile[data-id="${items[0].id}"]`)).toBeVisible();

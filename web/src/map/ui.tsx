@@ -284,3 +284,39 @@ export function MiniMap(p: { lat: number; lon: number; onShowMap?: () => void })
   if (!conf) return mem.me?.map && p.onShowMap ? <button class="link" onClick={p.onShowMap}>Show on the map</button> : null;
   return <div ref={box} class="minimap" role="img" aria-label="Where this photo was taken" />;
 }
+
+/** Picking a photo's place on the map (docs/EDITING.md): a click or tap puts the pin there. It opens where the photo
+ *  already is, or on the whole world; like every map here, only once the person turned the map on. */
+export function PickMap(p: { lat?: number; lon?: number; onPick: (lat: number, lon: number) => void }) {
+  const on = useMapOn();
+  const conf = on ? mem.me?.map : undefined;
+  const box = useRef<HTMLDivElement>(null);
+  const pick = useRef(p.onPick);
+  pick.current = p.onPick;
+  useEffect(() => {
+    if (!conf || !box.current) return;
+    const styles = dark() ? conf.dark : conf.light;
+    const at = p.lat !== undefined && p.lon !== undefined;
+    let tried = 0, loaded = false;
+    const m = new MapLibre({
+      container: box.current, style: styles[0], center: at ? [p.lon!, p.lat!] : WORLD, zoom: at ? 11 : 1, maxZoom: 17,
+      attributionControl: { compact: true }, dragRotate: false, pitchWithRotate: false, touchPitch: false,
+    });
+    m.touchZoomRotate.disableRotation();
+    m.addControl(new NavigationControl({ showCompass: false }), "top-right");
+    m.on("style.load", () => { loaded = true; box.current?.querySelector(".maplibregl-ctrl-attrib")?.classList.remove("maplibregl-compact-show"); });
+    m.on("error", () => { if (!loaded && tried + 1 < styles.length) { tried++; m.setStyle(styles[tried]); } });
+    const pin = document.createElement("span");
+    pin.className = "mappin";
+    const marker = new Marker({ element: pin });
+    if (at) marker.setLngLat([p.lon!, p.lat!]).addTo(m);
+    m.on("click", (e) => {
+      const { lat, lng } = e.lngLat.wrap();
+      marker.setLngLat([lng, lat]).addTo(m);
+      pick.current(lat, lng);
+    });
+    return () => m.remove();
+  }, [conf]);
+  if (!conf) return null;
+  return <div ref={box} class="minimap pickmap" role="application" aria-label="Map: click where the photo was taken" />;
+}

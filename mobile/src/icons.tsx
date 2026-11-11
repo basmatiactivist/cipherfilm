@@ -22,6 +22,8 @@ const paths = {
   albums: <><Rect x="3" y="7" width="14" height="14" rx="2.5" /><Path d="M7 3h12a2 2 0 0 1 2 2v12" /></>,
   more: <><Circle cx="12" cy="5" r="1.4" /><Circle cx="12" cy="12" r="1.4" /><Circle cx="12" cy="19" r="1.4" /></>,
   edit: <><Path d="M4 20h4L19 9l-4-4L4 16z" /><Path d="M13.5 6.5l4 4" /></>,
+  turnLeft: <><Rect x="9" y="11" width="11" height="9" rx="2" /><Path d="M13 4H9a5 5 0 0 0-5 5v4" /><Path d="M1.5 10.5L4 13l2.5-2.5" /></>,
+  turnRight: <><Rect x="4" y="11" width="11" height="9" rx="2" /><Path d="M11 4h4a5 5 0 0 1 5 5v4" /><Path d="M17.5 10.5L20 13l2.5-2.5" /></>,
   minus: <><Rect x="3" y="3" width="18" height="18" rx="3" /><Path d="M8 12h8" /></>,
   share: <><Circle cx="18" cy="5.5" r="2.5" /><Circle cx="6" cy="12" r="2.5" /><Circle cx="18" cy="18.5" r="2.5" /><Path d="M8.2 10.8l7.6-4.1M8.2 13.2l7.6 4.1" /></>,
   folderPlus: <><Path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><Path d="M12 11v5M9.5 13.5h5" /></>,

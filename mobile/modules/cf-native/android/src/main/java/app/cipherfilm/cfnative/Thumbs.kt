@@ -121,6 +121,22 @@ internal object Thumbs {
     notifyViews()
   }
 
+  // how often each item's thumbnail was made anew (an edit, docs/EDITING.md): a view showing an older one loads it again
+  private val versions = ConcurrentHashMap<String, Int>()
+  fun version(id: String): Int = versions[id] ?: 0
+
+  /** These items have new thumbnails on the server: the bitmap and the encrypted copy here go, and the views showing
+   *  them load the new one. */
+  fun forget(ids: List<String>) {
+    val d = dir
+    for (id in ids) {
+      versions.compute(id) { _, v -> (v ?: 0) + 1 }
+      bitmaps.remove(id)
+      if (d != null && Regex("^[0-9a-f]{32}$").matches(id)) disk.execute { File(d, "thumb-$id").delete() }
+    }
+    notifyViews()
+  }
+
   /** Drops the decoded bitmaps only (the shake gesture, leaving the account screen). */
   fun clearBitmaps() {
     bitmaps.evictAll()

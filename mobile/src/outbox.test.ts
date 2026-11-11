@@ -40,6 +40,14 @@ vi.mock("@crypto/file", () => ({ decryptSegment: () => new Uint8Array(4) }));
 const wipes = vi.hoisted(() => [] as ((how: string) => void)[]);
 vi.mock("./session", () => ({ onWipe: (f: (how: string) => void) => { wipes.push(f); }, session: () => ({ masterKey: new Uint8Array(32) }) }));
 vi.mock("./autolock", () => ({ away: (f: () => Promise<unknown>) => f() }));
+// an edited photo leaves as the edited copy (edit.ts, a stand-in here): written like the others, as a JPEG
+vi.mock("./edit", () => ({
+  editedCopyTo: async (dir: { uri: string }, it: { meta: { name: string } }) => {
+    const path = `${dir.uri}/${it.meta.name.replace(/\.\w+$/, "")} (edited).jpg`;
+    disk.set(path, 10);
+    return { uri: path, name: path.slice(path.lastIndexOf("/") + 1), delete: () => disk.delete(path) };
+  },
+}));
 
 const item = (id: string, segments = 2) => ({ id, size: 4 * segments, segment_count: segments, kind: "image", itemKey: new Uint8Array(32), meta: { name: `${id}.jpg`, mime: "image/jpeg" } }) as never;
 const plaintext = () => [...disk.entries()].filter(([, n]) => n >= 0).map(([k]) => k);
@@ -74,6 +82,22 @@ describe("save to phone", () => {
     await expect(saveItems([item("a")], () => {})).rejects.toThrow("offline");
     expect(native.saved).toEqual([]);
     expect(disk.size).toBe(0);
+  });
+});
+
+describe("edited photos", () => {
+  const edited = (id: string) => ({ ...(item(id) as object), meta: { name: `${id}.heic`, mime: "image/heic", edit: { rot: 90, v: "x" } } }) as never;
+  it("leave the app as edited, unless the original is asked for", async () => {
+    const { saveItems, prepareShare } = await import("./outbox");
+    await saveItems([edited("a"), item("b")], () => {});
+    expect(native.saved).toEqual(["/cache/cf-out/save/a (edited).jpg", "/cache/cf-out/save/b.jpg"]);
+    native.saved = [];
+    await saveItems([edited("a")], () => {}, { original: true });
+    expect(native.saved).toEqual(["/cache/cf-out/save/a.heic"]);
+    expect(disk.size).toBe(0);
+    const ready = await prepareShare([edited("c")], () => {});
+    await ready.send();
+    expect(native.shared[0]).toMatch(/c \(edited\)\.jpg$/);
   });
 });
 

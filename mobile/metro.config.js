@@ -14,9 +14,11 @@ const webPlaces = path.resolve(__dirname, "../web/src/places");
 // duplicates and similar photos: the grouping, shared with the web app (web/src/cleanup/duplicates.ts)
 // "On this day": the selection rules (web/src/memories/memories.ts, plain TypeScript)
 const webCleanup = path.resolve(__dirname, "../web/src/cleanup");
+// the editing rules (turn, crop, date and place) shared with the web app
+const webEdit = path.resolve(__dirname, "../web/src/edit");
 const webMemories = path.resolve(__dirname, "../web/src/memories");
 
-config.watchFolders = [webCrypto, vectors, server, webPlaces, webMemories, webCleanup];
+config.watchFolders = [webCrypto, vectors, server, webPlaces, webMemories, webCleanup, webEdit];
 config.resolver.assetExts = [...config.resolver.assetExts, "bin"];
 config.resolver.nodeModulesPaths = [path.resolve(__dirname, "node_modules")];
 const resolve = config.resolver.resolveRequest;

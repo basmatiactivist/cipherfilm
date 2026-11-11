@@ -16,10 +16,24 @@ import { t } from "./i18n";
 import { ThumbBatcher } from "./thumbbatch";
 import { kindOf } from "./kind";
 import { ListSync, type Page } from "./sync";
+import { normEdit, normOrig, pictureKey, type Edit, type Orig } from "@edit/edit";
 
 export interface ItemMeta {
   name: string; mime: string; size: number; lastModified: number; capture_ts: number;
   width?: number; height?: number; duration?: number; make?: string; model?: string; gps?: { lat: number; lon: number };
+  /** turned and cropped (@edit/edit); the encrypted original stays as it was */
+  edit?: Edit;
+  /** the date and place before the person changed them */
+  orig?: Orig;
+}
+
+/** What an edit says is checked like the rest: what doesn't make sense is dropped, not trusted. */
+export function checkedMeta(m: ItemMeta): ItemMeta {
+  const edit = normEdit(m.edit), orig = normOrig(m.orig);
+  if (edit) m.edit = edit; else delete m.edit;
+  if (orig) m.orig = orig; else delete m.orig;
+  if (Number.isFinite(m.capture_ts)) m.capture_ts = Math.round(m.capture_ts);
+  return m;
 }
 
 export interface Item {
@@ -53,9 +67,11 @@ function decrypt(s: Sodium, master: Uint8Array, pair: () => KeyPair, x: any): It
   }
   try {
     it.itemKey = unwrapAnyItemKey(s, unb64(s, x.wrapped_item_key), master, pair, x.id);
-    it.meta = decryptMeta<ItemMeta>(s, unb64(s, x.meta_enc), it.itemKey, x.id);
+    it.meta = checkedMeta(decryptMeta<ItemMeta>(s, unb64(s, x.meta_enc), it.itemKey, x.id));
     if (it.meta.size !== it.size) throw new Error("size mismatch");
     it.kind = kindOf(it.meta);
+    // turned or cropped on some device since: the pictures kept here are the old ones
+    if (k?.meta && pictureKey(x.id, k.meta) !== pictureKey(x.id, it.meta)) forgetPictures(x.id);
     known.set(x.id, { w: x.wrapped_item_key, m: x.meta_enc, master, key: it.itemKey, meta: it.meta });
   } catch {
     it.broken = true;
@@ -237,9 +253,20 @@ class Lru {
     while (this.m.size > this.max) this.m.delete(this.m.keys().next().value!);
   }
   clear() { this.m.clear(); }
+  /** every entry of one item, whatever picture version */
+  forget(id: string) { for (const k of [...this.m.keys()]) if (k === id || k.startsWith(id + ".")) this.m.delete(k); }
 }
 
 const previews = new Lru(12);
+
+/** The thumbnail and preview of an item were made anew (an edit): the copies kept here go, on disk, in memory and in
+ *  the native thumbnails, and the screens showing them load the new ones. */
+export function forgetPictures(id: string) {
+  previews.forget(id);
+  const dir = userDir();
+  if (dir && ID.test(id)) for (const kind of ["thumb", "preview"]) try { const f = new File(dir, `${kind}-${id}`); if (f.exists) f.delete(); } catch { /* only a cache */ }
+  try { N.thumbsForget?.([id]); } catch { /* an older native module: its bitmaps go at the next lock */ }
+}
 const inflight = new Map<string, Promise<string>>();
 
 // Downloads run a dozen at a time, newest request first; one nobody wants any more by its turn is skipped.
@@ -282,9 +309,9 @@ export const thumbBytes = (it: Item) => (it.itemKey && it.has_thumb ? plainBytes
 
 /** The viewer's sharp picture, as a data: URI; the newest dozen stay in memory. */
 export function previewUri(it: Item): Promise<string> {
-  const hit = previews.get(it.id);
+  const key = pictureKey(it.id, it.meta); // a new version after an edit
+  const hit = previews.get(key);
   if (hit) return Promise.resolve(hit);
-  const key = it.id;
   let p = inflight.get(key);
   if (!p) {
     p = (async () => {
@@ -292,7 +319,7 @@ export function previewUri(it: Item): Promise<string> {
       const uri = "data:image/jpeg;base64," + N.base64(plain);
       plain.fill(0);
       if (!session().masterKey) throw new Error(t("Unlock your library first.")); // locked while this was loading
-      previews.set(it.id, uri);
+      previews.set(key, uri);
       return uri;
     })().finally(() => inflight.delete(key));
     inflight.set(key, p);

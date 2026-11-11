@@ -20,6 +20,9 @@
       ],
       "@cleanup/*": [
         "../web/src/cleanup/*"
+      ],
+      "@edit/*": [
+        "../web/src/edit/*"
       ]
     }
   },
@@ -31,6 +34,8 @@
     "../web/src/places/videoLocation.ts",
     "../web/src/memories/memories.ts",
     "../web/src/cleanup/duplicates.ts",
+    "../web/src/edit/edit.ts",
+    "../web/src/edit/exif.ts",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
   ],

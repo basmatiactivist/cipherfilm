@@ -6,6 +6,7 @@ import { normEmail } from "./crypto/account";
 import { decodeImage, decodeVideoFrame, ItemMeta, kindOf, kindOfMeta, PREVIEW_PX, readMeta, THUMB_PX, thumbsInWorker, toJpeg } from "./media";
 import { mem } from "./state";
 import { ListSync, type Page } from "./sync";
+import { normEdit, normOrig } from "./edit/edit";
 
 export interface Item {
   id: string;
@@ -46,6 +47,10 @@ function wellFormed(m: ItemMeta, createdAt: number): ItemMeta {
   if (typeof m.name !== "string") m.name = "item";
   if (typeof m.mime !== "string") m.mime = "";
   if (!Number.isFinite(m.capture_ts)) m.capture_ts = Number.isFinite(m.lastModified) ? m.lastModified : createdAt * 1000;
+  // what an edit says is checked like the rest (edit/edit.ts); what doesn't make sense is dropped, not trusted
+  const edit = normEdit(m.edit), orig = normOrig(m.orig);
+  if (edit) m.edit = edit; else delete m.edit;
+  if (orig) m.orig = orig; else delete m.orig;
   return m;
 }
 

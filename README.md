@@ -77,6 +77,8 @@ and visitors are signed out every hour. To keep your own photos, [run your own s
   [docs/MAP.md](docs/MAP.md).
 - **On this day.** Photos from around today's date in earlier years at the top of your library, picked on the device
   from the encrypted capture dates.
+- **Simple editing.** Turn and crop photos, fix when and where a photo or video was taken, on the web and Android;
+  the original is never changed and "Revert to original" brings it back ([docs/EDITING.md](docs/EDITING.md)).
 - **Free up space.** Remove photos from the phone once they are in Cipherfilm.
 - **Duplicates and similar photos.** Find photos uploaded twice and bursts of nearly the same shot, worked out on
   your device, and move the extras to the trash (web and Android).
@@ -169,6 +171,7 @@ Don't rely on it where losing or leaking the data would be catastrophic, and kee
 | [CRYPTO.md](docs/CRYPTO.md) · [THREAT_MODEL.md](docs/THREAT_MODEL.md) | the encryption and what it does and doesn't protect |
 | [SEARCH.md](docs/SEARCH.md) · [MODELS.md](docs/MODELS.md) | on-device search and the models it uses |
 | [MAP.md](docs/MAP.md) | the map, place names, and using your own map server |
+| [EDITING.md](docs/EDITING.md) | turning, cropping, and changing a photo's date and place |
 | [MAC.md](docs/MAC.md) | the Mac app |
 | [RELEASING.md](docs/RELEASING.md) | how releases are built and signed |
 

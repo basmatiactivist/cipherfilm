@@ -6,6 +6,7 @@
 import { Directory, File, Paths } from "expo-file-system";
 import { b64, getSodium } from "@crypto/sodium";
 import { encryptMeta } from "@crypto/item";
+import { placeChanged } from "@edit/edit";
 import N, { type PhoneMedia } from "../modules/cf-native/src/CfNativeModule";
 import { api } from "./api";
 import { onWipe, session } from "./session";
@@ -64,7 +65,7 @@ export async function matchOnPhone(items: Item[], media: PhoneMedia[]): Promise<
 /** Items that could still get a location: finished, decrypted, a photo or video, none yet, not looked at before. */
 export function lacking(items: Item[], done: Set<string>): Item[] {
   return items.filter((it) => !it.broken && !it.trashed_at && it.meta && it.itemKey && (it.kind === "image" || it.kind === "video")
-    && !coords(it) && !done.has(it.id));
+    && !coords(it) && !done.has(it.id) && !placeChanged(it.meta)); // not where the person set or removed the place
 }
 
 let running: Promise<number> | null = null;

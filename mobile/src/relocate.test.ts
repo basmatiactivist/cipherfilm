@@ -26,6 +26,8 @@ describe("adding where photos were taken afterwards", () => {
       item("e", "doc.pdf", 10, { kind: "other" }),
       item("f", "VID_1.mp4", 10, { kind: "video" }),
       item("g", "IMG_5.jpg", 10),
+      // the person removed its place (editing): it stays without one
+      item("h", "IMG_6.jpg", 10, { meta: { name: "IMG_6.jpg", mime: "image/jpeg", size: 10, lastModified: 1, capture_ts: 1, orig: { gps: { lat: 1, lon: 2 } } } }),
     ];
     expect(lacking(items, new Set(["g"])).map((i) => i.id)).toEqual(["a", "f"]);
   });

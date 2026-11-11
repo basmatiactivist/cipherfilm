@@ -32,6 +32,12 @@ version into the GitHub release notes, so a release cannot be published without 
   around today's date. Worked out on the device; the server learns nothing. Turn it off in Account (Settings on Mac).
 - Web and Android: "Duplicates and similar photos" finds photos uploaded more than once and bursts of nearly the same
   shot, on your device, suggests which to keep and moves the rest to the trash (restorable for 30 days).
+- Editing on the web and Android: turn photos, crop them (free or in common shapes), and change when and where a photo
+  or video was taken (search a town, or pick the spot on the map). The original is never changed; downloads, shares and
+  saves give the edited photo with its date and place, the original stays one click away, and "Revert to original"
+  brings everything back. The Mac shows edits made elsewhere.
+- Server: `PUT /api/items/{id}/replace/thumb` and `/replace/preview` store the new encrypted pictures of an edited
+  photo (owner only, counted toward the storage limit; refused for the public demo).
 
 ## [2.6.1] - 2026-11-10
 

@@ -122,6 +122,9 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   /** the item keys, 32 bytes each in the order of `ids` (zeroed by the caller after) */
   thumbKeys(ids: string[], keys: Bytes): void;
   thumbsPrefetch(ids: string[]): void;
+  /** These items have new thumbnails (an edit): the bitmaps and cached copies go, the views load the new ones. Optional:
+   *  an app with an older native module simply shows the old ones until the next lock. */
+  thumbsForget?(ids: string[]): void;
   thumbsClearImages(): void;
   forgetThumbs(): void;
   /** an https page in the browser, never an app that claims the address; false when nothing could open it */

@@ -41,6 +41,16 @@ export async function downloadOriginal(it: Item): Promise<void> {
   setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
+/** The photo as edited (turned, cropped), drawn here from the original at full size, with its date and place in the
+ *  EXIF (edit/apply.ts). The original stays available (downloadOriginal). */
+export async function downloadEdited(it: Item): Promise<void> {
+  const { editedCopy } = await import("./edit/apply");
+  const { editedName } = await import("./edit/edit");
+  const url = URL.createObjectURL(await editedCopy(it));
+  clickDownload(url, safeName(editedName(it.meta?.name ?? "photo")));
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
+
 /** Several items as one ZIP (stored, not compressed: photos and videos don't shrink). */
 export async function downloadItems(items: Item[], zipName: string): Promise<void> {
   const ok = items.filter((i) => !i.broken);

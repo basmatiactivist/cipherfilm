@@ -73,6 +73,8 @@ func (a *App) itemRoutes(m *http.ServeMux) {
 	m.HandleFunc("PUT /api/items/{id}/segments/{n}", a.auth(false, a.putSegment))
 	m.HandleFunc("PUT /api/items/{id}/thumb", a.auth(false, a.putAux("thumb", maxThumbBytes, "has_thumb")))
 	m.HandleFunc("PUT /api/items/{id}/preview", a.auth(false, a.putAux("preview", maxPreviewBytes, "has_preview")))
+	m.HandleFunc("PUT /api/items/{id}/replace/thumb", a.auth(false, a.replaceAux("thumb", maxThumbBytes, "has_thumb")))
+	m.HandleFunc("PUT /api/items/{id}/replace/preview", a.auth(false, a.replaceAux("preview", maxPreviewBytes, "has_preview")))
 	m.HandleFunc("POST /api/items/{id}/finalize", a.auth(false, a.finalizeItem))
 	m.HandleFunc("PUT /api/items/{id}/meta", a.auth(false, a.putMeta))
 	m.HandleFunc("GET /api/items/{id}/segments/{n}", a.auth(false, a.getBlob("seg")))
@@ -410,6 +412,61 @@ func (a *App) putAux(name string, max int64, col string) func(http.ResponseWrite
 			fail(w, 500, "server error")
 			return
 		}
+		writeJSON(w, 200, map[string]bool{"ok": true})
+	}
+}
+
+// replaceAux replaces the thumbnail or preview of a finished item: an app made new ones after the person turned or
+// cropped the photo (docs/EDITING.md). The encrypted original is never touched. Only the owner's own items that are
+// not in the trash; the same size checks as at upload, and the difference counts toward the storage limit (with the
+// disk blocks the file takes, as finalize charged them). The other devices see the change in the change list.
+func (a *App) replaceAux(name string, max int64, col string) func(http.ResponseWriter, *http.Request, *user, *session) {
+	bytesCol := strings.TrimPrefix(col, "has_") + "_bytes"
+	return func(w http.ResponseWriter, r *http.Request, u *user, s *session) {
+		it, ok := a.owned(w, r, u)
+		if !ok {
+			return
+		}
+		if it.State != "ready" {
+			fail(w, 409, "this upload isn't finished")
+			return
+		}
+		release, ok := a.reserveBytes(u.ID, max+diskBlock)
+		if !ok {
+			fail(w, 413, "this would go over your storage limit")
+			return
+		}
+		defer release()
+		bodyDeadline(w, uploadReadTime)
+		r.Body = http.MaxBytesReader(w, r.Body, max+1)
+		tmp, got, err := writeStaged(a.itemDir(it.ID), r.Body, func(n int64) bool { return n >= 1+24+16 && n <= max })
+		if err != nil { // nothing was written; the earlier one stays
+			a.cleanupIfGone(it.ID)
+			fail(w, 400, "invalid upload")
+			return
+		}
+		defer os.Remove(tmp) // a no-op once it has been renamed
+		a.auxMu.Lock()
+		defer a.auxMu.Unlock()
+		var old int64
+		if err := a.db.QueryRow(`SELECT `+bytesCol+` FROM items WHERE id=? AND user_id=?`, it.ID, u.ID).Scan(&old); err != nil {
+			a.cleanupIfGone(it.ID)
+			fail(w, 404, "not found")
+			return
+		}
+		grow := got + blockSlack(got) - old - blockSlack(old)
+		res, err := a.db.Exec(`UPDATE items SET `+col+`=1, stored_bytes=MAX(0, stored_bytes+?), `+bytesCol+`=? WHERE id=? AND user_id=? AND state='ready' AND trashed_at IS NULL AND `+bytesCol+`=?`,
+			grow, got, it.ID, u.ID, old)
+		if rowsAffected(res, err) != 1 {
+			a.cleanupIfGone(it.ID)
+			fail(w, 409, "the item changed meanwhile")
+			return
+		}
+		if err := os.Rename(tmp, filepath.Join(a.itemDir(it.ID), name)); err != nil {
+			fail(w, 500, "server error")
+			return
+		}
+		a.changed(u.ID, tItems)
 		writeJSON(w, 200, map[string]bool{"ok": true})
 	}
 }

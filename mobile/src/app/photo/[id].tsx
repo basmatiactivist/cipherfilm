@@ -5,7 +5,9 @@ import { Image } from "expo-image";
 import { Button, Dialog, IconButton, Modal, Portal, ProgressBar, Snackbar, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { previewUri, when, type Item } from "../../library";
-import { libraryItems, refreshLibrary, setFavorite } from "../../libraryStore";
+import { libraryItems, refreshLibrary, setFavorite, useLibrary } from "../../libraryStore";
+import { canEdit } from "../../edit";
+import { normEdit, pictureKey } from "@edit/edit";
 import { viewerList } from "../../viewerList";
 import { faceUri, facesIn, nameFace, type FaceInPhoto } from "../../search/people";
 import { NameDialog } from "../albums";
@@ -61,6 +63,13 @@ export default function Viewer() {
     return all.filter((i) => ids.has(i.id));
   });
   const [start] = useState(() => Math.max(0, list.findIndex((i) => i.id === id)));
+  // the library changed (an edit here or on another device): the pages show the items as they are now, in place
+  const { items: libNow } = useLibrary();
+  useEffect(() => {
+    if (!libNow) return;
+    const byId = new Map(libNow.map((i) => [i.id, i]));
+    setList((l) => { let diff = false; const n = l.map((i) => { const x = byId.get(i.id); if (x && x !== i) { diff = true; return x; } return i; }); return diff ? n : l; });
+  }, [libNow]);
   const [index, setIndex] = useState(start);
   // the page width changes when the phone turns (or a window is resized): the pager is put back on the same photo,
   // instead of staying at the old offset between two photos
@@ -122,13 +131,14 @@ export default function Viewer() {
       setBusy(null);
     }
   };
-  const share = async () => {
+  // an edited photo leaves the app as edited; its original from the details (Info)
+  const share = async (original?: boolean) => {
     let ready: { send: () => Promise<boolean> } | undefined;
-    await run(t("Preparing to share"), async (p) => { ready = await prepareShare([current], p); });
+    await run(t("Preparing to share"), async (p) => { ready = await prepareShare([current], p, { original }); });
     if (ready) await ready.send();
   };
-  const save = () => run(t("Saving to this phone"), async (p) => {
-    await saveItems([current], p);
+  const save = (original?: boolean) => run(t("Saving to this phone"), async (p) => {
+    await saveItems([current], p, { original });
     return current.kind === "video" ? t("Saved to Movies › Cipherfilm.") : t("Saved to Pictures › Cipherfilm.");
   });
   const intoAlbum = (a: Album) => run(t("Adding to the album"), async () => {
@@ -207,14 +217,15 @@ export default function Viewer() {
         <Animated.View pointerEvents={chrome ? "auto" : "none"} importantForAccessibility={chrome ? "auto" : "no-hide-descendants"}
           onLayout={(e) => setBarHeight(e.nativeEvent.layout.height)}
           style={[st.actions, { opacity: shown, paddingBottom: inset.bottom + 8, paddingLeft: inset.left, paddingRight: inset.right }]}>
-          <Action icon="share" label={t("Share")} onPress={share} />
+          <Action icon="share" label={t("Share")} onPress={() => share()} />
           <Action icon={isFav ? "heartOn" : "heart"} label={t("Favorite")} onPress={toggleFav} on={isFav} />
+          {canEdit(current) ? <Action icon="edit" label={t("Edit")} onPress={() => router.push({ pathname: "/edit/[id]", params: { id: current.id } })} /> : null}
           <Action icon="folderPlus" label={t("Add to album")} onPress={() => setPicker(true)} />
-          <Action icon="download" label={t("Save")} onPress={save} />
+          <Action icon="download" label={t("Save")} onPress={() => save()} />
           <Action icon="trash" label={t("action|Trash")} onPress={trash} />
         </Animated.View>
       ) : null}
-      {current ? <Info item={current} visible={info} onClose={() => setInfo(false)} /> : null}
+      {current ? <Info item={current} visible={info} onClose={() => setInfo(false)} onOriginal={(how) => { setInfo(false); if (how === "share") share(true); else save(true); }} /> : null}
       <Portal>
         <Dialog visible={!!busy} dismissable={false}>
           <Dialog.Content>
@@ -269,7 +280,7 @@ function Page({ item, width, height, inset, active, onZoom, chrome, onTap, onChr
     let live = true;
     if (item.has_preview) previewUri(item).then((u) => { if (live) { setUri(u); setSharp(true); } }, () => { if (live) setFailed(true); });
     return () => { live = false; };
-  }, [item.id]);
+  }, [pictureKey(item.id, item.meta)]); // a new one after an edit
   const loading = ready ? buffering : !sharp && !failed && !!item.has_preview;
   useEffect(() => { onLoading(item.id, loading); }, [loading]);
   useEffect(() => () => onLoading(item.id, false), [item.id]);
@@ -358,12 +369,12 @@ function Zoomable({ width, height, active, onZoom, onTap, children }: { width: n
   );
 }
 
-function Info({ item, visible, onClose }: { item: Item; visible: boolean; onClose: () => void }) {
+function Info({ item, visible, onClose, onOriginal }: { item: Item; visible: boolean; onClose: () => void; onOriginal: (how: "share" | "save") => void }) {
   const th = useAppTheme();
   const inset = useSafeAreaInsets();
   const m = item.meta;
   const [place, setPlace] = useState("");
-  useEffect(() => { setPlace(""); if (visible) placeName(item).then(setPlace, () => {}); }, [item.id, visible]);
+  useEffect(() => { setPlace(""); if (visible) placeName(item).then(setPlace, () => {}); }, [item.id, visible, m?.gps?.lat, m?.gps?.lon]);
   const at = coords(item);
   const rows: [string, string | undefined][] = [
     [t("Taken"), fmtWhen(when(item))],
@@ -382,6 +393,18 @@ function Info({ item, visible, onClose }: { item: Item; visible: boolean; onClos
             <Text variant="bodyMedium" style={{ flex: 1 }} selectable>{v}</Text>
           </View>
         ))}
+        {normEdit(m?.edit) ? (
+          <View style={st.row}>
+            <Text variant="labelMedium" style={{ color: th.colors.onSurfaceVariant, width: 72 }}>{t("Edited")}</Text>
+            <View style={{ flex: 1 }}>
+              <Text variant="bodyMedium">{t("Turned or cropped. The original is kept.")}</Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", marginLeft: -12 }}>
+                <Button mode="text" compact onPress={() => onOriginal("share")}>{t("Share original")}</Button>
+                <Button mode="text" compact onPress={() => onOriginal("save")}>{t("Save original")}</Button>
+              </View>
+            </View>
+          </View>
+        ) : null}
         {visible && at ? <MiniMap lat={at.lat} lon={at.lon} /> : null}
         {visible ? <InPhoto item={item} onClose={onClose} /> : null}
         <Text variant="bodySmall" style={{ color: th.colors.onSurfaceVariant, marginTop: 12 }}>{t("Only you can read these details. The server stores them encrypted.")}</Text>

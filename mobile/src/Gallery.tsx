@@ -17,6 +17,7 @@ import { prepareShare, saveItems } from "./outbox";
 import { setViewerList } from "./viewerList";
 import { radius, text } from "./tokens";
 import { Loading } from "./Loader";
+import { Veil } from "./veil";
 import { locale, t, tn } from "./i18n";
 
 const GAP = 4;
@@ -121,22 +122,17 @@ export function Gallery({ items, error, loading, onRefresh, header, top, empty, 
     });
   }, [items, cols, flat]);
 
-  // The first screen appears only once its pictures are decoded: the list arrives before the thumbnails, and a grid
-  // of empty tiles in the meantime looks broken. Until then the list is laid out and loads, invisible, under the
-  // loading badge; at most VEIL_MAX, so one slow or missing thumbnail can't hold the library back.
+  // The first screen appears only once its pictures are decoded, at most VEIL_MAX later (veil.ts)
   const [veiled, setVeiled] = useState(true);
-  const seen = useRef(new Set<string>());
-  const waiting = useRef<Set<string> | null>(null);
-  const shown = useCallback((id: string) => { seen.current.add(id); const w = waiting.current; if (w && w.delete(id) && !w.size) setVeiled(false); }, []);
+  const veiler = useRef<Veil | null>(null);
+  veiler.current ??= new Veil(() => setVeiled(false), VEIL_MAX);
+  const shown = useCallback((id: string) => veiler.current!.shown(id), []);
   useEffect(() => {
-    if (!veiled || !items || waiting.current) return;
+    if (!items) return;
     const rowsOnScreen = Math.ceil(height / Math.max(1, size)) + 1;
-    const first = sections.flatMap((sec) => sec.data).slice(0, rowsOnScreen).flat();
-    waiting.current = new Set(first.filter((it) => it.has_thumb && !it.broken && !seen.current.has(it.id)).map((it) => it.id));
-    if (!waiting.current.size) { setVeiled(false); return; }
-    const tm = setTimeout(() => setVeiled(false), VEIL_MAX);
-    return () => clearTimeout(tm);
-  }, [items, sections, veiled]);
+    veiler.current!.update(sections.flatMap((sec) => sec.data).slice(0, rowsOnScreen).flat());
+  }, [items, sections]);
+  useEffect(() => () => veiler.current?.dispose(), []);
   const veil = veiled && !!items && items.length > 0;
 
   // a long press starts (or extends) the selection, with the system's own long-press vibration

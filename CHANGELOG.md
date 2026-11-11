@@ -36,6 +36,9 @@ version into the GitHub release notes, so a release cannot be published without 
   default; Account › Security notifications (Android) and Settings › Security (Mac) turn it off. The web app can do
   the same while its tab is open in the background, if you turn it on under Account › Devices.
 ### Fixed
+- Android: the library could stay behind its loading badge for minutes after unlocking (seen on the first unlock
+  after an update) when photos changed on another device since the last visit; it now shows after 12 seconds at
+  the latest.
 - Android: several notices (new sign-ins) no longer stack up as large cards above the photos: one banner says
   "3 new sign-ins (latest: …)", with "Review devices" and "Dismiss all".
 - Android: the search index kept on the phone (both the standard and the explicit model's) was deleted with the

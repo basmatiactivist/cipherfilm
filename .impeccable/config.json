@@ -11,6 +11,15 @@
         ],
         "createdAt": "2026-11-02T09:07:33.727Z",
         "reason": "Chevron edge band is the confirmed Par Avion signature move (brief: .impeccable/surfaces/web-src-main-tsx.md); user confirmed the direction, patterned strip not a side-tab accent"
+      },
+      {
+        "rule": "cream-palette",
+        "value": "*",
+        "files": [
+          "mac/Sources/Cipherfilm/Resources/map/map.html"
+        ],
+        "createdAt": "2026-11-09T16:27:20.293Z",
+        "reason": "Claude: background is Cipherfilm's paper-deep token (#F3EEE5, design/tokens/tokens.json), the brand palette shared by all apps"
       }
     ]
   }

@@ -119,6 +119,23 @@ CREATE TABLE IF NOT EXISTS setup_state (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   token_hash TEXT NOT NULL
 );
+-- two-step sign-in (twofactor.go): one row per unused recovery code, keyed HMAC of the code; a used one is deleted
+CREATE TABLE IF NOT EXISTS recovery_codes (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code_hash TEXT NOT NULL,
+  PRIMARY KEY (user_id, code_hash)
+);
+-- what the person's devices show once (notices.go): a new sign-in, two-step sign-in turned off by an admin
+CREATE TABLE IF NOT EXISTS notices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('sign_in','2fa_reset')),
+  device TEXT NOT NULL DEFAULT '',
+  session_pub TEXT NOT NULL DEFAULT '',
+  at INTEGER NOT NULL,
+  dismissed INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS notices_user ON notices(user_id, id);
 `
 
 func openDB(path string) (*sql.DB, error) {
@@ -218,6 +235,21 @@ func migrate(db *sql.DB) error {
 	// users.indexer: the one device (session pub id) that computes the search index; the others only read it
 	if !userCols["indexer"] {
 		if _, err := db.Exec(`ALTER TABLE users ADD COLUMN indexer TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
+	// two-step sign-in (twofactor.go): totp_secret is the authenticator secret while it is on, totp_pending one shown
+	// but not yet confirmed with a code (both encrypted under a key derived from the server's secret file, '' = none),
+	// totp_last the last time step a code was accepted for (a code is never accepted twice)
+	for _, col := range []string{"totp_secret", "totp_pending"} {
+		if !userCols[col] {
+			if _, err := db.Exec(`ALTER TABLE users ADD COLUMN ` + col + ` TEXT NOT NULL DEFAULT ''`); err != nil {
+				return err
+			}
+		}
+	}
+	if !userCols["totp_last"] {
+		if _, err := db.Exec(`ALTER TABLE users ADD COLUMN totp_last INTEGER NOT NULL DEFAULT 0`); err != nil {
 			return err
 		}
 	}

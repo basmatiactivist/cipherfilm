@@ -48,6 +48,9 @@ type App struct {
 	demoReqs   *demoBuckets     // requests of demo accounts, per source (demo.go)
 	demoSignIn *limiter         // sign-ins to demo accounts, per source (demo.go)
 	tickets    sync.Map         // recovery tickets: token hash -> ticket
+	pending    *pendingStore    // sign-ins waiting for their second step (twofactor.go)
+	totpAcct   *limiter         // second-step codes per account, short window (twofactor.go)
+	totpDay    *limiter         // second-step codes per account, per day
 	resMu      sync.Mutex       // guards reserved
 	auxMu      sync.Mutex       // pairs a thumbnail or preview count with its file
 	reserved   map[string]int64 // in-flight upload bytes per user
@@ -74,12 +77,18 @@ type user struct {
 	CreatedAt                              int64
 	NSFW                                   bool   // the admin allows search of explicit content
 	Indexer                                string // the session (pub id) that computes the search index, or ""
+	TOTPSecret, TOTPPending                string // encrypted (twofactor.go); "" = none
+	TOTPLast                               int64  // the last time step a code was accepted for
 }
+
+// twoFactor: the account signs in with a code from an authenticator app after the password.
+func (u *user) twoFactor() bool { return u.TOTPSecret != "" }
 
 // Pub names a session in the device list (the cookie's hash stays on the server).
 type session struct {
 	IDHash, UserID, CSRF, Pub string
-	renewed                   bool // its expiry moved forward: the cookie is sent again with the new lifetime
+	Created                   int64 // when this device signed in
+	renewed                   bool  // its expiry moved forward: the cookie is sent again with the new lifetime
 }
 
 func newApp(dataDir string) (*App, error) {
@@ -124,6 +133,9 @@ func newApp(dataDir string) (*App, error) {
 		loginDev:   newLimiter(15*time.Minute, 20),
 		demoReqs:   newDemoBuckets(),
 		demoSignIn: newLimiter(demoSignInWin, demoSignIns),
+		pending:    newPendingStore(),
+		totpAcct:   newLimiter(totpAcctWin, totpAcctMax),
+		totpDay:    newLimiter(24*time.Hour, totpDayMax),
 		now:        time.Now,
 		reserved:   map[string]int64{},
 		lists:      map[string]chan struct{}{},
@@ -328,6 +340,7 @@ func (a *App) lookupSession(token string) (*user, *session, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	s.Created = created
 	if now > exp || now-last > int64(sessionIdle.Seconds()) {
 		a.db.Exec(`DELETE FROM sessions WHERE id_hash=?`, h)
 		return nil, nil, errors.New("expired")
@@ -347,8 +360,8 @@ func (a *App) lookupSession(token string) (*user, *session, error) {
 
 func (a *App) userBy(where string, arg any) (*user, error) {
 	var u user
-	err := a.db.QueryRow(`SELECT id,email,role,status,kdf,auth_hash,pubkey,wrapped_master_pw,wrapped_master_recovery,wrapped_privkey,recovery_hash,created_at,nsfw,indexer FROM users WHERE `+where, arg).
-		Scan(&u.ID, &u.Email, &u.Role, &u.Status, &u.KDF, &u.AuthHash, &u.Pubkey, &u.WrappedMasterPW, &u.WrappedMasterRecovery, &u.WrappedPrivkey, &u.RecoveryHash, &u.CreatedAt, &u.NSFW, &u.Indexer)
+	err := a.db.QueryRow(`SELECT id,email,role,status,kdf,auth_hash,pubkey,wrapped_master_pw,wrapped_master_recovery,wrapped_privkey,recovery_hash,created_at,nsfw,indexer,totp_secret,totp_pending,totp_last FROM users WHERE `+where, arg).
+		Scan(&u.ID, &u.Email, &u.Role, &u.Status, &u.KDF, &u.AuthHash, &u.Pubkey, &u.WrappedMasterPW, &u.WrappedMasterRecovery, &u.WrappedPrivkey, &u.RecoveryHash, &u.CreatedAt, &u.NSFW, &u.Indexer, &u.TOTPSecret, &u.TOTPPending, &u.TOTPLast)
 	if err != nil {
 		return nil, err
 	}
@@ -386,7 +399,7 @@ func (a *App) startSession(w http.ResponseWriter, r *http.Request, userID, authH
 	if u, uerr := a.userByID(userID); uerr == nil {
 		a.setDevice(w, u)
 	}
-	return &session{IDHash: sha256hex(tok), UserID: userID, CSRF: csrf, Pub: pub}, nil
+	return &session{IDHash: sha256hex(tok), UserID: userID, CSRF: csrf, Pub: pub, Created: now.Unix()}, nil
 }
 
 func setSessionCookie(w http.ResponseWriter, tok string) {

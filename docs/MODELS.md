@@ -20,6 +20,24 @@ app read it when they are built; the Mac app has the same values, and a test (`m
 fails if they differ; the server uses it to answer older apps (below). A device checks every file's size and SHA-256
 before it opens it, so a later change upstream, or anything else on the way, can't slip in.
 
+**Asked first:** Hugging Face is a third party, so no device fetches anything from it before the person agreed, on
+that device. Before any model download (turning search on, faces, explicit search, indexing on this device, a new
+model after an update, the web app's text model for search words) the app says what is downloaded (the models and
+their total size, from this list, for the files that device needs), from whom (Hugging Face, `huggingface.co` and its
+CDN `*.hf.co`), what Hugging Face learns (below), that it happens once per device and that every file is checked
+(SHA-256), with the buttons "Download and turn on" and "Not now". The yes is kept on the device (any account) for the
+exact files, by SHA-256: other files (explicit search's model, the face models, a model changed in a release) ask
+again. Without it nothing is fetched: the one download function of each app refuses (`mobile/src/search/models.ts`
+`fetchAll`, `mac/.../Search.swift` `ModelStore.download`, `web/src/search/content.ts` and its worker), search waits
+("Waiting for your OK"), and there is no prefetch, HEAD request or background download (the background indexers
+never download). Withdrawing: turning search off deletes the models on Android and in the browser, and offers it on
+the Mac ("Turn Off on This Mac" always does); the yes goes with them, as it does with a model removed when switching
+models. Signing out of the web app deletes its model and the yes. Models already downloaded by an older version count
+as agreed (they aren't downloaded again); the search settings show "Models downloaded from Hugging Face on <date>,
+N MB" (the date from the files, or from the yes). Where the yes is kept: next to the models (`models/consent.json`)
+on Android and the Mac, `localStorage` `cf-models-ok` in the browser. On Android the question also says when the
+download waits for Wi-Fi ("Download models only on Wi-Fi", on by default) or uses mobile data.
+
 **What Hugging Face learns:** the device's IP address, that it downloaded these public files, and an ordinary
 user agent. No cookie, account, photo, search word or anything about the library goes there; the downloads carry no
 referrer. The web app's Content-Security-Policy allows `connect-src` to `https://huggingface.co` and `https://*.hf.co`

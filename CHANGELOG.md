@@ -5,6 +5,12 @@ All notable changes to Cipherfilm are listed here. The format follows
 [Semantic Versioning](https://semver.org/). The release workflow copies the section of the tagged
 version into the GitHub release notes, so a release cannot be published without an entry here.
 
+## [Unreleased]
+
+### Added
+- Server: a ready-made private setup in your tailnet (Tailscale, your own name, Kopia backups, optional Portainer)
+  in `deploy/tailnet`, the same one the project's own server runs; guide in docs/TAILNET.md.
+
 ## [2.6.1] - 2026-11-10
 
 Photos and videos keep where they were taken, however they are uploaded, and what arrived without it gets it.

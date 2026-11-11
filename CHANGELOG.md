@@ -5,6 +5,13 @@ All notable changes to Cipherfilm are listed here. The format follows
 [Semantic Versioning](https://semver.org/). The release workflow copies the section of the tagged
 version into the GitHub release notes, so a release cannot be published without an entry here.
 
+## [Unreleased]
+
+### Fixed
+- Android: the search index kept on the phone (both the standard and the explicit model's) was deleted with the
+  cleanup of cached pictures after every library load, so search had to fetch and open the whole index again at each
+  start. Both copies now stay; phones that lost them fetch them again once.
+
 ## [2.6.1] - 2026-11-10
 
 Photos and videos keep where they were taken, however they are uploaded, and what arrived without it gets it.

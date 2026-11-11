@@ -23,7 +23,7 @@ vi.mock("../../modules/cf-native/src/CfNativeModule", () => ({
 const store = vi.hoisted(() => ({ play: false }));
 vi.mock("../store", () => ({ explicitSearchOffered: () => !store.play }));
 
-const { downloadModels, downloadSize, dropOtherModels, MODELS, needed, toCompute } = await import("./models");
+const { agreeModels, downloadModels, downloadSize, dropOtherModels, MODELS, needed, toCompute } = await import("./models");
 const all = () => MODELS.map((m) => `file:///docs/models/${m.name}`);
 
 describe("dropOtherModels", () => {
@@ -63,6 +63,7 @@ describe("where the models come from", () => {
   });
 
   it("downloads from the pinned URLs", async () => {
+    agreeModels(false, "mobileclip-s2");
     await downloadModels(false, "mobileclip-s2", () => {});
     expect(fetched).toEqual(MODELS.filter((m) => !m.faces && m.clip !== "laion-b32").map((m) => m.url));
   });
@@ -71,6 +72,7 @@ describe("where the models come from", () => {
     store.play = true;
     await expect(downloadModels(true, "laion-b32", () => {})).rejects.toThrow(/isn't available/);
     expect(fetched).toEqual([]);
+    agreeModels(false, "mobileclip-s2");
     await downloadModels(false, "mobileclip-s2", () => {});
     expect(fetched.some((u) => u.includes("laion"))).toBe(false);
   });
@@ -112,6 +114,7 @@ describe("indexing with LAION", () => {
 
   it("the Play build still never downloads the explicit model", async () => {
     files.clear(); fetched.length = 0; store.play = true;
+    agreeModels(true, "mobileclip-s2");
     await downloadModels(true, "mobileclip-s2", () => {});
     expect(fetched.some((u) => u.includes("laion"))).toBe(false);
     store.play = false;

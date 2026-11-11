@@ -13,6 +13,8 @@ const st = vi.hoisted(() => ({
   wipe: (() => {}) as (how?: "locked" | "ended") => void,
   have: true, // the models are on the phone
   download: null as Promise<void> | null, // a model download, until it resolves
+  downloads: 0, // downloadModels calls
+  unagreed: [] as string[], // files the person hasn't agreed to download (models.ts)
   holds: [] as string[], // the foreground service: "hold search", "let go search"
   master: new Uint8Array(32).fill(7) as Uint8Array | null,
   gate: null as Promise<void> | null, // holds indexLoad until released
@@ -86,7 +88,8 @@ vi.mock("./settings", () => ({
 }));
 vi.mock("./models", () => ({
   haveModels: async () => st.have, modelPath: () => "/doc/models", family: () => "mcs2", modelTag: (_c: string, f: boolean) => (f ? "mcs2+faces/2" : "mcs2/2"),
-  dropOtherModels: () => [], downloadModels: async () => { await st.download; st.have = true; }, downloadSize: () => 0, tokenizerFile: () => ({ text: async () => "{}" }),
+  dropOtherModels: () => [], downloadModels: async () => { st.downloads++; await st.download; st.have = true; }, downloadSize: () => 207e6,
+  unagreed: () => st.unagreed, NeedsConsent: class extends Error {}, tokenizerFile: () => ({ text: async () => "{}" }),
   STANDARD: "mobileclip-s2", keepsStandard: () => false, toCompute: () => [],
 }));
 vi.mock("./tokenizer", () => ({ Tokenizer: class { encode() { return [1]; } } }));
@@ -97,7 +100,7 @@ const lib = (ids: string[]) => ids.map((id) => ({ id, kind: "image", size: 1, se
 describe("search after unlocking", () => {
   beforeEach(() => {
     st.wipe(); // as a lock does
-    Object.assign(st, { copy: null, loads: [], saves: [], calls: [], opened: 0, visionOpens: [], master: new Uint8Array(32).fill(7), gate: null, entries: [], have: true, download: null, holds: [] });
+    Object.assign(st, { copy: null, loads: [], saves: [], calls: [], opened: 0, visionOpens: [], master: new Uint8Array(32).fill(7), gate: null, entries: [], have: true, download: null, holds: [], downloads: 0, unagreed: [] });
     st.vision = { clip: null, dir: null, text: false, image: false, faces: false, also: null };
   });
 
@@ -156,6 +159,19 @@ describe("search after unlocking", () => {
     expect(st.opened).toBe(1);
     expect(engine.searchReady()).toBe(true);
     expect(st.saves).toHaveLength(1);
+  });
+
+  it("without the yes nothing is downloaded: search waits for it, and goes on after it", async () => {
+    st.have = false;
+    st.unagreed = ["mobileclip-s2-vision.onnx"];
+    await engine.startSearch(lib(["a"]));
+    expect(st.downloads).toBe(0);
+    expect(st.holds).toEqual([]);
+    expect(engine.searchProgress()).toMatchObject({ phase: "consent", total: 207e6 });
+    st.unagreed = [];
+    await engine.startSearch(lib(["a"]));
+    expect(st.downloads).toBe(1);
+    expect(engine.searchProgress().phase).not.toBe("consent");
   });
 
   it("a lock doesn't end a model download: the service is held until it is done", async () => {

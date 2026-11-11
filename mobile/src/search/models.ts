@@ -60,6 +60,73 @@ export const downloadSize = (faces: boolean, clip: Clip, indexes = true) =>
 
 let checked = new Set<string>(); // verified this run: the hash is computed once per start
 
+// ---- the yes to download (docs/MODELS.md) ----
+// Hugging Face is a third party: it sees this phone's IP address. So nothing is fetched from there before the person
+// agreed, for the exact files (their SHA-256): explicit search's model, the face models or a new model in a later
+// release ask again. The answer is this phone's (any account), kept next to the models, so deleting them (turning
+// search off) withdraws it. Files already here, downloaded before this question existed, need no yes: they aren't
+// downloaded again.
+
+/** at: when the yes was given; null when the files were found already downloaded */
+interface Agreed { at: number | null; sha: string[] }
+const consentFile = () => new File(modelDir(), "consent.json");
+let agreed: Agreed | null | undefined; // undefined: not read yet
+const consentSubs = new Set<() => void>();
+export const onConsentChange = (f: () => void) => { consentSubs.add(f); return () => { consentSubs.delete(f); }; };
+
+function readAgreed(): Agreed | null {
+  if (agreed !== undefined) return agreed;
+  try {
+    const f = consentFile();
+    const v = f.exists ? JSON.parse(f.textSync()) : null;
+    agreed = v && Array.isArray(v.sha) ? { at: typeof v.at === "number" ? v.at : null, sha: v.sha.filter((x: unknown) => typeof x === "string") } : null;
+  } catch { agreed = null; }
+  return agreed;
+}
+
+function writeAgreed(v: Agreed | null) {
+  agreed = v;
+  try {
+    if (v) { modelDir().create({ intermediates: true, idempotent: true }); consentFile().write(JSON.stringify(v)); }
+    else if (consentFile().exists) consentFile().delete();
+  } catch { /* kept for this run */ }
+  consentSubs.forEach((f) => f());
+}
+
+const onPhone = (m: Model) => checked.has(m.name) || new File(modelDir(), m.name).exists;
+
+/** What a download would fetch that the person hasn't agreed to: empty when nothing needs asking. (After haveModels,
+ *  which removes a file with the wrong hash, a model update shows here as a missing file.) */
+export const unagreed = (faces: boolean, clip: Clip, indexes = true) => {
+  const a = readAgreed();
+  return needed(faces, clip, indexes).filter((m) => !onPhone(m) && !a?.sha.includes(m.sha256));
+};
+
+/** The yes: what using these settings needs may be downloaded. */
+export function agreeModels(faces: boolean, clip: Clip, indexes = true) {
+  const a = readAgreed();
+  writeAgreed({ at: Date.now(), sha: [...new Set([...(a?.sha ?? []), ...needed(faces, clip, indexes).map((m) => m.sha256)])] });
+}
+
+/** For the search settings: when the models on this phone were downloaded and how big they are; null when none.
+ *  Models from before this question was asked are taken as agreed, dated by their files. */
+export function modelsOnPhone(): { at: number | null; bytes: number } | null {
+  const here = MODELS.filter((m) => new File(modelDir(), m.name).exists);
+  if (!here.length) return null;
+  let a = readAgreed();
+  if (!a || here.some((m) => !a!.sha.includes(m.sha256))) {
+    const times = here.map((m) => { try { return new File(modelDir(), m.name).modificationTime ?? null; } catch { return null; } }).filter((x): x is number => !!x);
+    a = { at: a?.at ?? (times.length ? Math.min(...times) : null), sha: [...new Set([...(a?.sha ?? []), ...here.map((m) => m.sha256)])] };
+    writeAgreed(a);
+  }
+  return { at: a.at, bytes: here.reduce((n, m) => n + m.size, 0) };
+}
+
+/** Thrown by downloadModels for a file the person hasn't agreed to download. */
+export class NeedsConsent extends Error {
+  constructor(readonly bytes: number) { super(t("Search needs your OK to download the models.")); }
+}
+
 export async function haveModels(faces: boolean, clip: Clip, indexes = true): Promise<boolean> {
   for (const m of needed(faces, clip, indexes)) {
     if (checked.has(m.name)) continue;
@@ -92,12 +159,25 @@ export function dropOtherModels(clip: Clip, indexes = true): string[] {
     for (const p of [".part"]) try { const f = new File(modelDir(), m.name + p); if (f.exists) f.delete(); } catch { /* next time */ }
     checked.delete(m.name);
   }
+  // what went is asked for again before it comes back
+  const a = readAgreed();
+  if (gone.length && a) writeAgreed({ ...a, sha: a.sha.filter((x) => !MODELS.some((m) => gone.includes(m.name) && m.sha256 === x)) });
   return gone;
 }
 
 async function fetchAll(faces: boolean, clip: Clip, indexes: boolean, onProgress: (done: number, total: number) => void) {
   // the Play build never offers explicit search, so it never fetches that model, whatever asked for it (store.ts)
   if (clip !== "mobileclip-s2" && !explicitSearchOffered()) throw new Error(t("Explicit search isn't available in this version."));
+  // nothing goes to Hugging Face without the yes, whatever asked for it (above): a file already here with the right
+  // hash isn't downloaded and needs none
+  const a = readAgreed();
+  const ask: Model[] = [];
+  for (const m of needed(faces, clip, indexes)) {
+    if (checked.has(m.name) || a?.sha.includes(m.sha256)) continue;
+    if (new File(modelDir(), m.name).exists && (await N.checkModel(path(m), m.sha256))) { checked.add(m.name); continue; }
+    ask.push(m);
+  }
+  if (ask.length) throw new NeedsConsent(ask.reduce((n, m) => n + m.size, 0));
   modelDir().create({ intermediates: true, idempotent: true });
   const list = needed(faces, clip, indexes).filter((m) => !checked.has(m.name));
   const total = list.reduce((n, m) => n + m.size, 0);
@@ -118,10 +198,12 @@ async function fetchAll(faces: boolean, clip: Clip, indexes: boolean, onProgress
   }
 }
 
+/** Turning search off: the models go, and with them the yes to download them (asked again next time). */
 export function deleteModels() {
   N.visionClose();
   checked = new Set();
   try { const d = modelDir(); if (d.exists) d.delete(); } catch { /* best effort */ }
+  writeAgreed(null);
 }
 
 export const tokenizerFile = () => new File(modelDir(), "mobileclip-s2-tokenizer.json");

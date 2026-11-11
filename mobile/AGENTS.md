@@ -31,7 +31,7 @@ Run the typecheck and the unit tests (`npm test`, Vitest) before declaring any t
 
 ## Building
 
-This project does not use EAS or over-the-air updates. Release builds are made by `.github/workflows/android.yml`: `npx expo prebuild --platform android`, then Gradle (`assembleRelease` for the GitHub APK, `bundleRelease` with `CF_STORE=play` for the Google Play bundle), signed by `plugins/withReleaseSigning` from `CF_KEYSTORE`. `app.config.js` sets the version from `CF_VERSION` and for `CF_STORE=play` drops the battery-exemption permission and explicit search. Locally: `npx expo run:android`, or `make play-aab VERSION=X.Y.Z` for the Play bundle (docs/RELEASING.md). Test against the throwaway server in `dev/` (`dev/compose.yaml`, `dev/account.mts`), never a real one.
+This project does not use EAS or over-the-air updates. Release builds are made by `.github/workflows/android.yml`: `npx expo prebuild --platform android`, then Gradle (`assembleRelease` for the GitHub APK, `bundleRelease` with `CF_STORE=play` for the Google Play bundle), signed by `plugins/withReleaseSigning` from `CF_KEYSTORE`. `app.config.js` sets the version from `CF_VERSION` and for `CF_STORE=play` drops the battery-exemption permission and the explicit-search switch (search always filtered). Locally: `npx expo run:android`, or `make play-aab VERSION=X.Y.Z` for the Play bundle (docs/RELEASING.md). Test against the throwaway server in `dev/` (`dev/compose.yaml`, `dev/account.mts`), never a real one.
 
 ## Rules
 

@@ -91,13 +91,12 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   // search on the phone, see android/.../Vision.kt, SearchIndex.kt, Models.kt
   downloadModel(url: string, path: string, sha256: string, size: number): Promise<boolean>;
   checkModel(path: string, sha256: string): Promise<boolean>;
-  /** clip: "mobileclip-s2" or "laion-b32" (explicit search, docs/SEARCH.md) */
-  /** indexes = false: only the text model (a phone that only searches); also: a second image model to run on every
-   *  photo (MobileCLIP next to LAION on the phone that indexes, docs/SEARCH.md "Explicit search"), or null */
-  visionOpen(dir: string, faces: boolean, clip: string, indexes: boolean, also: string | null): Promise<void>;
+  /** clip: "clip-b32" (docs/SEARCH.md) */
+  /** indexes = false: only the text model (a phone that only searches) */
+  visionOpen(dir: string, faces: boolean, clip: string, indexes: boolean): Promise<void>;
   visionClose(): void;
   /** what visionOpen has open (dir is the model folder's path) */
-  visionState(): { clip: string | null; dir: string | null; text: boolean; image: boolean; faces: boolean; also: string | null };
+  visionState(): { clip: string | null; dir: string | null; text: boolean; image: boolean; faces: boolean };
   /** clips: the open image models to run (the main one, the second one, or both) */
   visionAnalyze(jpeg: Bytes, faces: boolean, clips: string[]): Promise<Analysis>;
   visionText(ids: number[]): Promise<Bytes>;
@@ -112,7 +111,12 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   indexSave(path: string, key: Bytes, ad: Bytes, extra: string): Promise<void>;
   /** Replaces the index with that copy and returns its extra; null (index unchanged) if none or it doesn't open. */
   indexLoad(path: string, key: Bytes, ad: Bytes, faces: boolean): Promise<string | null>;
-  indexSearch(query: Bytes, limit: number, minScore: number): Promise<Hit[]>;
+  /** The explicit-content filter's concepts (docs/SEARCH.md "Explicit content", @websearch/explicit): their text
+   *  vectors (float16, one after the other), which are explicit and which are worded for images, and the threshold.
+   *  Each item's score is worked out when its vector comes in (and for all at once here). */
+  indexConcepts(vecs: Bytes, explicit: boolean[], image: boolean[], threshold: number): Promise<void>;
+  /** filtered: items whose explicit score reaches the threshold are left out */
+  indexSearch(query: Bytes, limit: number, minScore: number, filtered: boolean): Promise<Hit[]>;
   indexSimilar(item: string, limit: number, minScore: number): Promise<Hit[]>;
   indexFacesOf(item: string): { key: string; box: number[]; score: number }[];
   /** for each item, whether it has an image vector */

@@ -1,7 +1,8 @@
 import { currentLang } from "./i18n";
 // Which build this is: "play" for Google Play (built with CF_STORE=play), "github" for the APK on GitHub releases
 // (Obtainium). app.config.js puts it into the app's config (extra.store) at build time. The Play build never offers
-// the explicit search model (docs/SEARCH.md; the server's permission for it stays as it is) and doesn't ask Android
+// explicit search: its search always leaves explicit photos and words out (docs/SEARCH.md "Explicit content"; the
+// server's permission stays as it is; the model and the index are the same for every build), and doesn't ask Android
 // directly for the battery exemption (no REQUEST_IGNORE_BATTERY_OPTIMIZATIONS in its manifest).
 export type Store = "play" | "github";
 
@@ -19,7 +20,7 @@ export function buildStore(): Store {
 }
 
 export const isPlayBuild = () => buildStore() === "play";
-/** Whether this build may offer explicit search where an admin allowed it. */
+/** Whether this build may offer explicit search (search without the explicit-content filter) where an admin allowed it. */
 export const explicitSearchOffered = () => !isPlayBuild();
 
 /** The app's privacy policy (Google Play wants it reachable inside the app, before and after sign-in), in the

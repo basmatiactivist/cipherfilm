@@ -23,6 +23,9 @@
       ],
       "@edit/*": [
         "../web/src/edit/*"
+      ],
+      "@websearch/*": [
+        "../web/src/search/*"
       ]
     }
   },
@@ -36,6 +39,8 @@
     "../web/src/cleanup/duplicates.ts",
     "../web/src/edit/edit.ts",
     "../web/src/edit/exif.ts",
+    "../web/src/search/explicit.ts",
+    "../web/src/search/rank.ts",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
   ],

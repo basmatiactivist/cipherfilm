@@ -1,4 +1,4 @@
-// CLIP's byte-level BPE tokenizer (the one MobileCLIP uses), read from the model's tokenizer.json: lowercase, split
+// CLIP's byte-level BPE tokenizer (the one LAION's ViT-B/32 uses), read from the model's tokenizer.json: lowercase, split
 // into words, numbers and punctuation, then merge byte pairs in rank order. Context of 77: start, at most 75, end.
 
 const START = 49406, END = 49407, MAX = 77;

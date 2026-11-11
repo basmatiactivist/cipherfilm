@@ -1,8 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Turning explicit search on keeps MobileCLIP's entries on the server: devices that can't use explicit search (the
-// Play build, an older app) search with them, and the indexing device keeps them current (docs/SEARCH.md).
-// Turning it off frees LAION's.
+// Explicit search on or off changes only what search shows (docs/SEARCH.md "Explicit content"): nothing on the server
+// is deleted either way.
 const st = vi.hoisted(() => ({ doc: {} as Record<string, unknown>, calls: [] as string[] }));
 vi.mock("../../modules/cf-native/src/CfNativeModule", () => ({ default: {} }));
 vi.mock("@crypto/search", () => ({ decryptPeople: () => st.doc, encryptPeople: (_s: unknown, d: Record<string, unknown>) => { st.doc = d; return new Uint8Array(41); } }));
@@ -28,11 +27,11 @@ describe("explicit search on and off", () => {
     expect(deletes()).toEqual([]);
   });
 
-  it("off: LAION's entries go, MobileCLIP's stay", async () => {
+  it("off: nothing is deleted either (one model and one index for everyone; only what search shows changes)", async () => {
     st.doc = { v: 1, people: [], explicit: true };
     await setExplicit(false);
     expect(st.doc.explicit).toBeUndefined();
-    expect(deletes()).toEqual(["DELETE /api/index?model=laionb32"]);
+    expect(deletes()).toEqual([]);
   });
 
   it("unchanged: nothing is deleted", async () => {

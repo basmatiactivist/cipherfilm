@@ -20,8 +20,6 @@ export interface SearchSettings {
   /** the question after unlocking was answered */
   asked: boolean;
   server?: string; userId?: string; pubkey?: string;
-  /** the model the account uses (written by the app; the background, without the master key, follows it) */
-  clip?: "mobileclip-s2" | "laion-b32";
   /** false: another device computes the index, this phone only searches (the background then does nothing) */
   indexes?: boolean;
 }

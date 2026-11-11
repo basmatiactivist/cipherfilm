@@ -14,14 +14,51 @@ internal object SearchIndex {
   private val rows = HashMap<String, Int>()
   private val ids = ArrayList<String>()
   private var vecs = FloatArray(1024 * Vision.CLIP_DIM)
+  /** per row: how explicit the photo looks (docs/SEARCH.md "Explicit content"), NaN until the concepts are known */
+  private var explicit = FloatArray(1024) { Float.NaN }
+
+  // The explicit-content filter's concepts (web/src/search/explicit.ts, the same numbers): text vectors, which are
+  // explicit, which are worded for images; kept across clear() (they belong to the app, not the account).
+  private var conceptVecs: Array<FloatArray> = emptyArray()
+  private var conceptExplicit = BooleanArray(0)
+  private var hideFrom = Float.POSITIVE_INFINITY
 
   private class FaceRec(val key: String, val item: String, val emb: FloatArray, val score: Float, val size: Float, val box: List<Double>)
   private val faces = LinkedHashMap<String, FaceRec>()
   private val facesByItem = HashMap<String, MutableList<String>>()
 
   @Synchronized fun clear() {
-    rows.clear(); ids.clear(); vecs = FloatArray(1024 * Vision.CLIP_DIM)
+    rows.clear(); ids.clear(); vecs = FloatArray(1024 * Vision.CLIP_DIM); explicit = FloatArray(1024) { Float.NaN }
     faces.clear(); facesByItem.clear()
+  }
+
+  /** vecs: float16 vectors one after the other; only those worded for images (image[k]) score photos. Works out every
+   *  item's score again. */
+  @Synchronized fun concepts(vecs: ByteArray, isExplicit: List<Boolean>, image: List<Boolean>, threshold: Double) {
+    val n = minOf(isExplicit.size, image.size, vecs.size / (Vision.CLIP_DIM * 2))
+    val keep = (0 until n).filter { image[it] }
+    conceptVecs = keep.map { k -> Vision.normalize(Vision.unhalf(vecs.copyOfRange(k * Vision.CLIP_DIM * 2, (k + 1) * Vision.CLIP_DIM * 2))) }.toTypedArray()
+    conceptExplicit = BooleanArray(keep.size) { isExplicit[keep[it]] }
+    hideFrom = threshold.toFloat()
+    for (r in ids.indices) explicit[r] = score(r)
+  }
+
+  /** The closest explicit concept's cosine minus the closest neutral one's, for the vector in row r. */
+  private fun score(r: Int): Float {
+    if (conceptVecs.isEmpty()) return Float.NaN
+    val o = r * Vision.CLIP_DIM
+    var n = 0f
+    for (i in 0 until Vision.CLIP_DIM) n += vecs[o + i] * vecs[o + i]
+    val len = kotlin.math.sqrt(n).takeIf { it > 0f } ?: 1f
+    var e = Float.NEGATIVE_INFINITY; var neutral = Float.NEGATIVE_INFINITY
+    for (k in conceptVecs.indices) {
+      val c = conceptVecs[k]
+      var d = 0f
+      for (i in 0 until Vision.CLIP_DIM) d += vecs[o + i] * c[i]
+      d /= len
+      if (conceptExplicit[k]) { if (d > e) e = d } else if (d > neutral) neutral = d
+    }
+    return e - neutral
   }
 
   @Synchronized fun count() = mapOf("items" to ids.size, "faces" to faces.size)
@@ -36,9 +73,11 @@ internal object SearchIndex {
       val v = Vision.unhalf(clip)
       val row = rows[item] ?: ids.size.also { r ->
         if ((r + 1) * Vision.CLIP_DIM > vecs.size) vecs = vecs.copyOf(vecs.size * 2)
+        if (r + 1 > explicit.size) explicit = explicit.copyOf(explicit.size * 2).also { it.fill(Float.NaN, explicit.size) }
         ids.add(item); rows[item] = r
       }
       System.arraycopy(v, 0, vecs, row * Vision.CLIP_DIM, Vision.CLIP_DIM)
+      explicit[row] = score(row)
     }
     facesByItem.remove(item)?.forEach { faces.remove(it) }
     itemFaces.forEachIndexed { k, f ->
@@ -58,6 +97,7 @@ internal object SearchIndex {
     if (row != last) { // move the last row into the gap
       val moved = ids[last]
       System.arraycopy(vecs, last * Vision.CLIP_DIM, vecs, row * Vision.CLIP_DIM, Vision.CLIP_DIM)
+      explicit[row] = explicit[last]
       ids[row] = moved; rows[moved] = row
     }
     ids.removeAt(last)
@@ -80,28 +120,29 @@ internal object SearchIndex {
     }
   }
 
-  /** Items whose image vector is closest to the query vector (float32), best first. */
-  @Synchronized fun search(query: ByteArray, limit: Int, minScore: Double): List<Map<String, Any>> {
+  /** Items whose image vector is closest to the query vector (float32), best first; filtered: without those that
+   *  look explicit (score at or above the threshold; one not scored yet, before the concepts came, is left out too). */
+  @Synchronized fun search(query: ByteArray, limit: Int, minScore: Double, filtered: Boolean): List<Map<String, Any>> {
     val q = Vision.unfloats(query)
     if (q.size != Vision.CLIP_DIM) return emptyList()
-    return top(q, limit, minScore, null)
+    return top(q, limit, minScore, null, filtered)
   }
 
   /** Items that look like this one. */
   @Synchronized fun similar(item: String, limit: Int, minScore: Double): List<Map<String, Any>> {
     val row = rows[item] ?: return emptyList()
     val q = vecs.copyOfRange(row * Vision.CLIP_DIM, (row + 1) * Vision.CLIP_DIM)
-    return top(q, limit, minScore, item)
+    return top(q, limit, minScore, item, false)
   }
 
-  private fun top(q: FloatArray, limit: Int, minScore: Double, skip: String?): List<Map<String, Any>> {
+  private fun top(q: FloatArray, limit: Int, minScore: Double, skip: String?, filtered: Boolean): List<Map<String, Any>> {
     val scores = FloatArray(ids.size)
     for (r in ids.indices) {
       var s = 0f; val o = r * Vision.CLIP_DIM
       for (i in 0 until Vision.CLIP_DIM) s += vecs[o + i] * q[i]
       scores[r] = s
     }
-    return ids.indices.filter { scores[it] >= minScore && ids[it] != skip }.sortedByDescending { scores[it] }.take(limit)
+    return ids.indices.filter { scores[it] >= minScore && ids[it] != skip && !(filtered && !(explicit[it] < hideFrom)) }.sortedByDescending { scores[it] }.take(limit)
       .map { mapOf("id" to ids[it], "score" to scores[it].toDouble()) }
   }
 
@@ -291,6 +332,8 @@ internal object SearchIndex {
     }
     clear()
     ids.addAll(newIds); rows.putAll(newRows); vecs = newVecs
+    explicit = FloatArray(maxOf(1024, n)) { Float.NaN }
+    for (r in 0 until n) explicit[r] = score(r)
     faces.putAll(newFaces); facesByItem.putAll(newByItem)
     return extra
   }

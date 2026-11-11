@@ -159,8 +159,8 @@ class CfNativeModule : Module() {
       }
     }
     AsyncFunction("checkModel") Coroutine { path: String, sha256: String -> withContext(Lanes.files) { Models.check(File(path), sha256) } }
-    AsyncFunction("visionOpen") Coroutine { dir: String, faces: Boolean, clip: String, indexes: Boolean, also: String? ->
-      withContext(Lanes.vision) { Vision.open(dir, faces, clip, indexes, also) }
+    AsyncFunction("visionOpen") Coroutine { dir: String, faces: Boolean, clip: String, indexes: Boolean ->
+      withContext(Lanes.vision) { Vision.open(dir, faces, clip, indexes) }
     }
     // after the jobs already asked for (an analysis still running finishes first); doesn't wait for them
     Function("visionClose") { Lanes.visionExecutor.execute { Vision.close() } }
@@ -180,7 +180,10 @@ class CfNativeModule : Module() {
     Function("indexClear") { SearchIndex.clear() }
     AsyncFunction("indexSave") Coroutine { path: String, key: ByteArray, ad: ByteArray, extra: String -> withContext(Lanes.index) { SearchIndex.save(path, key, ad, extra) } }
     AsyncFunction("indexLoad") Coroutine { path: String, key: ByteArray, ad: ByteArray, faces: Boolean -> withContext(Lanes.index) { SearchIndex.load(path, key, ad, faces) } }
-    AsyncFunction("indexSearch") Coroutine { query: ByteArray, limit: Int, minScore: Double -> withContext(Lanes.index) { SearchIndex.search(query, limit, minScore) } }
+    AsyncFunction("indexConcepts") Coroutine { vecs: ByteArray, explicit: List<Boolean>, image: List<Boolean>, threshold: Double ->
+      withContext(Lanes.index) { SearchIndex.concepts(vecs, explicit, image, threshold) }
+    }
+    AsyncFunction("indexSearch") Coroutine { query: ByteArray, limit: Int, minScore: Double, filtered: Boolean -> withContext(Lanes.index) { SearchIndex.search(query, limit, minScore, filtered) } }
     AsyncFunction("indexSimilar") Coroutine { item: String, limit: Int, minScore: Double -> withContext(Lanes.index) { SearchIndex.similar(item, limit, minScore) } }
     Function("indexFacesOf") { item: String -> SearchIndex.facesOf(item) }
     // duplicates and similar photos: which items have a vector, and the cosine of pairs (src/app/duplicates.tsx)

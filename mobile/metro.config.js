@@ -17,8 +17,10 @@ const webCleanup = path.resolve(__dirname, "../web/src/cleanup");
 // the editing rules (turn, crop, date and place) shared with the web app
 const webEdit = path.resolve(__dirname, "../web/src/edit");
 const webMemories = path.resolve(__dirname, "../web/src/memories");
+// the explicit-content filter of search (web/src/search/explicit.ts, its concepts in server/explicit-filter.json)
+const webSearch = path.resolve(__dirname, "../web/src/search");
 
-config.watchFolders = [webCrypto, vectors, server, webPlaces, webMemories, webCleanup, webEdit];
+config.watchFolders = [webCrypto, vectors, server, webPlaces, webMemories, webCleanup, webEdit, webSearch];
 config.resolver.assetExts = [...config.resolver.assetExts, "bin"];
 config.resolver.nodeModulesPaths = [path.resolve(__dirname, "node_modules")];
 const resolve = config.resolver.resolveRequest;

@@ -19,7 +19,8 @@ import { api, ApiError } from "../api";
 import { onWipe, refreshMe, session, type Me } from "../session";
 import { imageBytes, type Item } from "../library";
 import { fingerprint } from "../prints";
-import { downloadModels, downloadSize, dropOtherModels, family, haveModels, keepsStandard, modelPath, modelTag, NeedsConsent, STANDARD, tokenizerFile, toCompute, unagreed, type Clip } from "./models";
+import { CLIP, downloadModels, downloadSize, dropOtherModels, family, haveModels, LEGACY_FAMILY, legacyFaces, modelPath, modelTag, NeedsConsent, tokenizerFile, toCompute, unagreed, type Clip } from "./models";
+import { conceptData, IMAGE_THRESHOLD, queryBlocked, unfiltered } from "@websearch/explicit";
 import { loadSettings, saveSettings, settingsDir, type SearchSettings } from "./settings";
 import { keepRunning, letGo, onlyHolder } from "../keepAlive";
 import { Tokenizer } from "./tokenizer";
@@ -42,11 +43,7 @@ const tags = new Map<string, string>();
 /** Which of the server's entries each item's index is from (a stamp of its ciphertext): a changed one is opened again. */
 const seen = new Map<string, string>();
 const stamp = (enc: string) => enc.slice(-24);
-/** The same for MobileCLIP's entries, on the phone that indexes with LAION (it keeps them current for the devices
- *  that can't use explicit search, docs/SEARCH.md): only which there are, they are not searched here. */
-const stdTags = new Map<string, string>();
-const stdSeen = new Map<string, string>();
-const forgetTags = () => { tags.clear(); seen.clear(); stdTags.clear(); stdSeen.clear(); };
+const forgetTags = () => { tags.clear(); seen.clear(); };
 let wipes = 0; // counts locks: a copy still loading when the library locks is dropped
 let pair: KeyPair | null = null;
 let run: { cancelled: boolean } | null = null;
@@ -63,32 +60,45 @@ export const searchReady = () => ready;
 export const indexesHere = (me: Me | null) => !me?.indexer || !me.session_id || me.indexer === me.session_id;
 let indexes = true;
 export const thisPhoneIndexes = () => indexes;
-// the model in use: MobileCLIP, or LAION for explicit search (docs/SEARCH.md); entries of the other one are made again
-let clip: Clip = "mobileclip-s2";
+// the model: one for everyone (docs/SEARCH.md "One model"); entries an older app made with MobileCLIP are made again
+const clip: Clip = CLIP;
 export const activeClip = () => clip;
 const good = (tag: string | undefined, faces: boolean) => tag === modelTag(clip, true) || (!faces && tag === modelTag(clip, false));
 /** What this phone still computes for an item: nothing on a phone that only searches. */
-const missing = (id: string, faces: boolean) => (indexes ? toCompute(tags.get(id), stdTags.get(id), faces, clip) : []);
+const missing = (id: string, faces: boolean) => (indexes ? toCompute(tags.get(id), faces, clip) : []);
 
-/** The account's model: LAION only if an admin allowed explicit search and the person chose it (in the people document,
- *  so all their devices use one index); MobileCLIP otherwise. */
-export async function accountClip(): Promise<Clip> {
+/** Whether search leaves out explicit photos and words (docs/SEARCH.md "Explicit content"): yes until the account is
+ *  known, and always in the Play build. */
+let filtered = true;
+export const searchFiltered = () => filtered;
+
+/** Whether this account's search is filtered: unless an admin allowed explicit search, the person chose it (in the
+ *  people document, for all their devices) and this build offers it (never the Play build, src/store.ts). */
+export async function accountFiltered(): Promise<boolean> {
   const { me, masterKey } = session();
-  // the Play build never uses it (src/store.ts): it searches with MobileCLIP whatever the account chose
-  if (!me?.user.nsfw || !explicitSearchOffered() || !masterKey) return "mobileclip-s2";
+  if (!me?.user.nsfw || !explicitSearchOffered() || !masterKey) return true;
   const s = await getSodium();
   try {
     const r = await api<{ data_enc: string }>("GET", "/api/me/blobs/people");
-    return decryptPeople<{ explicit?: boolean }>(s, unb64(s, r.data_enc), masterKey, me.user.id).explicit ? "laion-b32" : "mobileclip-s2";
+    const chosen = decryptPeople<{ explicit?: boolean }>(s, unb64(s, r.data_enc), masterKey, me.user.id).explicit === true;
+    return !unfiltered({ allowed: true, chosen, offered: true });
   } catch (e) {
-    if (e instanceof ApiError && e.status === 404) return "mobileclip-s2";
+    if (e instanceof ApiError && e.status === 404) return true;
     throw e;
   }
 }
 
+/** The filter's concepts go to the native index once per start (they belong to the app; a lock keeps them). */
+let concepts: Promise<void> | null = null;
+const giveConcepts = () => {
+  concepts ??= (async () => { const c = conceptData(); await N.indexConcepts(c.vecs, c.explicit, c.image, IMAGE_THRESHOLD); })()
+    .catch((e) => { concepts = null; throw e; });
+  return concepts;
+};
+
 // ---- the server's entries, kept encrypted in the cache folder so a start needs only what changed ----
 
-// one per model family: the server keeps both models' entries apart, and so does this copy
+// one per model family: the server keeps them apart (MobileCLIP's, left from before, are read for their faces only)
 const cacheFile = (fam: string) => {
   const id = session().me?.user.id;
   return id && /^[0-9A-Za-z_-]{1,64}$/.test(id) ? new File(new Directory(Paths.cache, "cf-ct"), id, `index-${fam}.json`) : null;
@@ -110,8 +120,7 @@ async function writeCache(c: Cache, fam = family(clip)) {
 }
 
 /** Adds what the server has for a family since the cache's last visit. When it has fewer entries than the cache, some
- *  were deleted there (an older app dropped MobileCLIP's when explicit search was turned on): the cache
- *  starts over. True when the cache now holds all of the server's entries and nothing else (it started from none).
+ *  were deleted there (MobileCLIP's go as the new ones are made): the cache starts over. True when the cache now holds all of the server's entries and nothing else (it started from none).
  *  A server that doesn't count yet is taken at its word. */
 async function fetchEntries(cache: Cache, fam: string): Promise<boolean> {
   if (cache.since === 0) cache.entries = {}; // from none: the server sends them all, and nothing stays that it lost
@@ -136,7 +145,9 @@ function put(s: Sodium, id: string, e: IndexEntry, faces: boolean, enc: string) 
   fs.forEach((f, i) => embs.set(unb64(s, f.emb).subarray(0, 256), i * 256));
   tags.set(id, e.m);
   seen.set(id, stamp(enc));
-  return N.indexPut(id, e.clip ? unb64(s, e.clip) : null, fs.map((f) => f.box), fs.map((f) => f.score), embs);
+  // a vector of another model (MobileCLIP's, from an older app) doesn't compare with this one's: kept out until made again
+  const vec = e.clip && family(clip) === e.m.split(/[+/]/)[0] ? unb64(s, e.clip) : null;
+  return N.indexPut(id, vec, fs.map((f) => f.box), fs.map((f) => f.score), embs);
 }
 
 // ---- the opened index, kept encrypted on the phone between unlocks ----
@@ -164,10 +175,9 @@ function saveCopy(master: Uint8Array): Promise<void> {
     if (session().masterKey !== master || !ready) return;
     const at = await copyPlace(master);
     if (!at) return;
-    const items: Record<string, [string, string]> = {}, std: Record<string, [string, string]> = {};
+    const items: Record<string, [string, string]> = {};
     for (const [id, tag] of tags) items[id] = [tag, seen.get(id) ?? ""];
-    for (const [id, tag] of stdTags) std[id] = [tag, stdSeen.get(id) ?? ""];
-    try { await N.indexSave(at.path, at.key, at.ad, JSON.stringify({ v: 1, items, ...(stdTags.size ? { std } : {}) })); } catch { /* only a cache */ } finally { at.key.fill(0); }
+    try { await N.indexSave(at.path, at.key, at.ad, JSON.stringify({ v: 1, items })); } catch { /* only a cache */ } finally { at.key.fill(0); }
   });
   return saving.catch(() => {});
 }
@@ -182,10 +192,9 @@ async function loadCopy(master: Uint8Array, faces: boolean): Promise<boolean> {
   if (gen !== wipes || session().masterKey !== master) { if (extra !== null) N.indexClear(); return false; } // locked meanwhile
   if (extra === null) return false;
   try {
-    const c = JSON.parse(extra) as { v: number; items: Record<string, [string, string]>; std?: Record<string, [string, string]> };
+    const c = JSON.parse(extra) as { v: number; items: Record<string, [string, string]> };
     forgetTags();
     for (const [id, [tag, st]] of Object.entries(c.items)) { tags.set(id, tag); seen.set(id, st); }
-    for (const [id, [tag, st]] of Object.entries(c.std ?? {})) { stdTags.set(id, tag); stdSeen.set(id, st); }
     return true;
   } catch {
     N.indexClear(); forgetTags();
@@ -205,12 +214,10 @@ function openVision(st: SearchSettings, all: boolean): Promise<void> {
 async function openNow(st: SearchSettings, all: boolean) {
   const v = N.visionState();
   const same = v.clip === clip && v.dir === modelPath().replace(/\/+$/, "");
-  // the phone that indexes with LAION runs MobileCLIP's image model on every photo too
-  const also = keepsStandard(clip, indexes) ? STANDARD : null;
-  if (same && (all ? v.image && v.text && v.faces === st.faces && (v.also ?? null) === also : v.text)) return;
+  if (same && (all ? v.image && v.text && v.faces === st.faces : v.text)) return;
   // a phone that indexes opens everything at once; text only closes the image side, so only when it isn't open
   const image = all || (same && v.image);
-  await N.visionOpen(modelPath(), st.faces, clip, image, image ? also : null);
+  await N.visionOpen(modelPath(), st.faces, clip, image);
 }
 
 let syncing = false;
@@ -224,9 +231,8 @@ export function warmSearch(): Promise<void> {
     const st = await loadSettings();
     const master = session().masterKey;
     if (!st.enabled || !master || ready || syncing) return;
-    const want = st.clip ?? clip;
-    if (want !== clip) { N.indexClear(); forgetTags(); changed++; clip = want; }
     set({ phase: "loading", done: 0, total: 0, message: undefined });
+    await giveConcepts().catch(() => {}); // before any vector comes in: each is scored as it does
     const text = (async () => { if (await haveModels(st.faces, clip, false)) await openVision(st, false); })().catch(() => {});
     const got = await loadCopy(master, st.faces);
     if (got && !ready && session().masterKey === master) {
@@ -289,14 +295,15 @@ export async function startSearch(library: Item[]) {
     const s = await getSodium();
     // the account as it is now: an admin may have allowed explicit search, another device may index since
     const now = await refreshMe().catch(() => me) ?? me;
-    const want = await accountClip();
+    const f = await accountFiltered();
     if (!live()) return;
+    if (f !== filtered) { filtered = f; changed++; }
     indexes = indexesHere(now);
-    // the other model's vectors don't compare, and its files go at once (not only when the new one downloads)
-    if (want !== clip) { N.indexClear(); N.visionClose(); forgetTags(); ready = false; changed++; clip = want; }
+    await giveConcepts();
     dropOtherModels(clip, indexes);
-    // for the background, which can't read the people document or ask the server
-    if (st.clip !== want || st.indexes !== indexes) await saveSettings({ clip: want, indexes });
+    dropOldCopies();
+    // for the background, which can't ask the server
+    if (st.indexes !== indexes) await saveSettings({ indexes });
     if (!(await haveModels(st.faces, clip, indexes))) {
       // asked first (a model update, explicit search, faces or indexing here need new files): nothing goes out before
       if (unagreed(st.faces, clip, indexes).length) { set({ phase: "consent", done: 0, total: downloadSize(st.faces, clip, indexes), message: undefined }); return; }
@@ -344,10 +351,8 @@ export async function startSearch(library: Item[]) {
     }
     for (const id of [...tags.keys()]) if (!ids.has(id)) { tags.delete(id); seen.delete(id); N.indexRemove(id); touched = true; }
     ready = true; changed++;
-    // next to LAION's, the phone that indexes keeps MobileCLIP's entries complete: which there are
-    const std = keepsStandard(clip, indexes) ? await pullStandard(s, ids, live) : null;
     if (!live()) return;
-    if (touched || std?.touched) await saveCopy(master);
+    if (touched) await saveCopy(master);
     await opening;
     if (!live()) return;
     // for the background; not waited for: indexing starts at once (one write at a time, the newest list last)
@@ -359,6 +364,10 @@ export async function startSearch(library: Item[]) {
     // what has no entry yet: newest first; only on the phone that indexes (the others take what it stores)
     if (!indexes) { await remembering; set({ phase: "ready", done: tags.size, total: ids.size, message: undefined }); return; }
     const todo = library.filter((i) => eligible(i) && missing(i.id, st.faces).length);
+    // MobileCLIP's entries left from before (docs/SEARCH.md "One model"): their faces go into the new entries, so no
+    // face is looked for twice and the people document's names stay with them; only while something is missing
+    const legacy = todo.length ? await fetchLegacy() : null;
+    if (!live()) return;
     let total = ids.size;
     let done = total - todo.length;
     set({ phase: todo.length ? "indexing" : "ready", done, total, message: undefined });
@@ -386,17 +395,16 @@ export async function startSearch(library: Item[]) {
         const it = todo.shift()!;
         try {
           const want = missing(it.id, st.faces);
-          const entries = await analyzeItem(s, it, st.faces, want, cache, std?.cache);
-          for (const [k, entry] of entries.entries()) {
+          const entries = await analyzeItem(s, it, st.faces, want, legacy);
+          for (const entry of entries) {
             if (!live()) return;
             const enc = b64(s, sealIndexEntry(s, entry, pk, it.id));
             await api("PUT", `/api/items/${it.id}/index`, { data_enc: enc, model: entry.m }); // the tag, see docs/SEARCH.md
             if (!live()) return; // locked or signed out while it was sent: the index was emptied and stays so
-            if (want[k] === clip) {
-              cache.entries[it.id] = enc;
-              await put(s, it.id, entry, st.faces, enc);
-              changed++;
-            } else { std!.cache.entries[it.id] = enc; stdTags.set(it.id, entry.m); stdSeen.set(it.id, stamp(enc)); }
+            cache.entries[it.id] = enc;
+            if (legacy) delete legacy.entries[it.id]; // the server replaced it
+            await put(s, it.id, entry, st.faces, enc);
+            changed++;
           }
         } catch (e) {
           if ((e as { status?: number }).status === 0) throw e; // offline: stop, try again later
@@ -404,19 +412,22 @@ export async function startSearch(library: Item[]) {
         }
         done++;
         if (++since % 10 === 0) set({ done });
-        if (since % 50 === 0) { await writeCache(cache); if (std) await writeCache(std.cache, family(STANDARD)); remember(); }
+        if (since % 50 === 0) { await writeCache(cache); if (legacy) await writeCache(legacy, LEGACY_FAMILY); remember(); }
         if (since % 200 === 0) await saveCopy(master);
       }
     };
     await Promise.all([work(), work()]);
     await writeCache(cache);
-    if (std) await writeCache(std.cache, family(STANDARD));
     if (since) await saveCopy(master);
+    // everything has the new model's entry: what is left of MobileCLIP's goes (photos it can't index, or no longer
+    // there), on the server and here
+    if (legacy && live() && !notIndexer && !library.some((i) => eligible(i) && missing(i.id, st.faces).length)) await dropLegacy();
+    else if (legacy) await writeCache(legacy, LEGACY_FAMILY);
     remember();
     await remembering;
     if (again && !queued) queued = lib; // the photos that went away meanwhile, and entries made elsewhere: once more
     if (notIndexer) { // another device became the indexer meanwhile: this phone only searches from now on
-      indexes = false; await saveSettings({ indexes: false }); dropOtherModels(clip, false); N.visionOpen(modelPath(), st.faces, clip, false, null).catch(() => {});
+      indexes = false; await saveSettings({ indexes: false }); dropOtherModels(clip, false); N.visionOpen(modelPath(), st.faces, clip, false).catch(() => {});
       if (live()) set({ phase: "ready", done: tags.size, total });
       return;
     }
@@ -457,33 +468,37 @@ export async function indexHere(library: Item[]) {
   await startSearch(library);
 }
 
-/**
- * MobileCLIP's entries on the server, on the phone that indexes with LAION: which items have one and from which model
- * (only the tag is read, the vectors aren't searched here); like the active model's, only what changed is opened.
- */
-async function pullStandard(s: Sodium, ids: Set<string>, live: () => boolean) {
-  const fam = family(STANDARD);
-  const cache = await readCache(fam);
-  let touched = await fetchEntries(cache, fam);
-  await writeCache(cache, fam);
-  let n = 0;
-  for (const id of [...stdTags.keys()]) if (!ids.has(id) || !cache.entries[id]) { stdTags.delete(id); stdSeen.delete(id); touched = true; }
-  for (const [id, enc] of Object.entries(cache.entries)) {
-    if (!live()) break;
-    if (!ids.has(id) || stdSeen.get(id) === stamp(enc)) continue;
-    try { stdTags.set(id, openIndexEntry(s, unb64(s, enc), pair!, id).m); stdSeen.set(id, stamp(enc)); } catch { delete cache.entries[id]; stdTags.delete(id); stdSeen.delete(id); }
-    touched = true;
-    if (++n % BATCH === 0) await pause();
-  }
-  return { cache, touched };
+/** MobileCLIP's entries on the server (left from before the one model), fetched only by the phone that indexes, while
+ *  photos are missing the new entry; null when there are none. */
+async function fetchLegacy(): Promise<Cache | null> {
+  try {
+    const c = await readCache(LEGACY_FAMILY);
+    await fetchEntries(c, LEGACY_FAMILY);
+    await writeCache(c, LEGACY_FAMILY);
+    return Object.keys(c.entries).length ? c : null;
+  } catch { return null; /* the faces are found again */ }
 }
 
-/** The entries an item is missing (want: their models). Its faces are found once: when only one of its two entries
- *  is missing, they are taken from the other, so both list the same faces (the people document names them by place). */
-async function analyzeItem(s: Sodium, it: Item, faces: boolean, want: Clip[], cache: Cache, std: Cache | undefined) {
-  const other = faces && std && want.length === 1 ? (want[0] === clip ? std : cache).entries[it.id] : undefined;
+async function dropLegacy() {
+  try { await api("DELETE", `/api/index?model=${LEGACY_FAMILY}`); } catch { return; /* next time */ }
+  try { const f = cacheFile(LEGACY_FAMILY); if (f?.exists) f.delete(); } catch { /* only a cache */ }
+}
+
+/** The opened index of MobileCLIP's entries an earlier version kept: it doesn't open with this model. */
+function dropOldCopies() {
+  const id = session().me?.user.id;
+  if (!id || !/^[0-9A-Za-z_-]{1,64}$/.test(id)) return;
+  try { const f = new File(new Directory(Paths.cache, "cf-ct"), id, `index-${LEGACY_FAMILY}.bin`); if (f.exists) f.delete(); } catch { /* next time */ }
+}
+
+/** The entries an item is missing (want: their models). Faces in its MobileCLIP entry (from before) are taken over,
+ *  not looked for again: the people document names faces by their place in an entry. */
+async function analyzeItem(s: Sodium, it: Item, faces: boolean, want: Clip[], legacy: Cache | null) {
+  const old = faces ? legacy?.entries[it.id] : undefined;
   let known: IndexEntry["faces"];
-  try { if (other) known = openIndexEntry(s, unb64(s, other), pair!, it.id).faces; } catch { /* found again */ }
+  try {
+    if (old) { const e = openIndexEntry(s, unb64(s, old), pair!, it.id); if (legacyFaces(e.m)) known = e.faces ?? []; }
+  } catch { /* found again */ }
   return analyzeBytes(await imageBytes(it), faces, want, known);
 }
 
@@ -495,7 +510,7 @@ export async function analyzeBytes(bytes: Uint8Array, faces: boolean, models: Cl
   try {
     a = await N.visionAnalyze(bytes, faces && !known, models);
   } catch (e) {
-    if ((e as { code?: string } | null)?.code === "ERR_UNUSABLE_IMAGE") return models.map((m) => ({ v: 1, m: modelTag(m, faces), ...(faces ? { faces: [] } : {}) }));
+    if ((e as { code?: string } | null)?.code === "ERR_UNUSABLE_IMAGE") return models.map((m) => ({ v: 1, m: modelTag(m, faces), ...(faces ? { faces: known ?? [] } : {}) }));
     throw e;
   } finally {
     bytes.fill(0);
@@ -536,14 +551,21 @@ async function rememberForBackground(library: Item[], st: SearchSettings, live: 
 let tokenizer: Tokenizer | null = null;
 
 /** Every indexed item, best match for the words first: ranked like Immich's smart search, with no cut-off (the list
- *  shows page by page as it scrolls; filters narrow it in search/query.ts). */
+ *  shows page by page as it scrolls; filters narrow it in search/query.ts). Filtered (docs/SEARCH.md "Explicit
+ *  content"): words close to explicit content find nothing, and photos that look explicit are left out. */
 export async function textSearch(q: string, limit = 100_000): Promise<Hit[]> {
   if (!ready) return [];
   await openVision(await loadSettings(), false); // (the background closes the models when it ran while the app was away)
+  await giveConcepts();
   tokenizer ??= new Tokenizer(JSON.parse(await tokenizerFile().text()));
   const vec = await N.visionText(tokenizer.encode(q));
-  return N.indexSearch(vec, limit, -1);
+  const f = filtered;
+  if (f && queryBlocked(floats(vec))) return [];
+  return N.indexSearch(vec, limit, -1, f);
 }
+
+/** little-endian float32 bytes (the native text vector) as numbers */
+const floats = (b: Uint8Array) => new Float32Array(Uint8Array.from(b).buffer);
 
 /** Duplicates and similar photos (app/duplicates.tsx): which items have a vector of the model in use, and the cosine
  *  of pairs (NaN where one has none). Nothing while search isn't ready on this phone. */

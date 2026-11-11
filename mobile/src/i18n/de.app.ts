@@ -110,7 +110,7 @@ export const deApp: Record<string, string> = {
   "Removes your account from this phone": "Entfernt Ihr Konto von diesem Handy",
   "Delete account": "Konto löschen",
   "Deletes your account and all your photos": "Löscht Ihr Konto und alle Ihre Fotos",
-  "Photos are encrypted on this phone before upload. The server only stores encrypted data. Change your password, invite people and make a new recovery key in Cipherfilm in the browser.": "Fotos werden vor dem Hochladen auf diesem Handy verschlüsselt. Der Server speichert nur verschlüsselte Daten. Passwort ändern, Personen einladen und einen neuen Wiederherstellungsschlüssel erstellen können Sie in Cipherfilm im Browser.",
+  "Photos are encrypted on this phone before upload. The server only stores encrypted data. Change your password and make a new recovery key in Cipherfilm in the browser.": "Fotos werden vor dem Hochladen auf diesem Handy verschlüsselt. Der Server speichert nur verschlüsselte Daten. Passwort ändern und einen neuen Wiederherstellungsschlüssel erstellen können Sie in Cipherfilm im Browser.",
   "About": "Info",
   "App version": "App-Version",
   "Unknown": "Unbekannt",

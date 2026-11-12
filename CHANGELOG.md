@@ -31,8 +31,8 @@ version into the GitHub release notes, so a release cannot be published without 
 - Android: Account › "Allow screenshots" lets this phone take screenshots and screen recordings of the app and show
   it in the recent apps. Off by default, so the app stays blocked as before; the change applies at once.
 - Android and Mac: a new sign-in to your account (and the other security notices) also arrives as a notification
-  while the app is closed or in the background, at most once each; the lock screen shows only "New sign-in to
-  Cipherfilm". No push service is used: the app asks your server itself (Android about every 15 minutes). On by
+  while the app is closed or in the background, at most once each; on Android it never shows on the lock screen (the
+  device and time appear once the phone is unlocked), whatever the phone's setting for notification content. No push service is used: the app asks your server itself (Android about every 15 minutes). On by
   default; Account › Security notifications (Android) and Settings › Security (Mac) turn it off. The web app can do
   the same while its tab is open in the background, if you turn it on under Account › Devices.
 - Mac: when another device indexes your photos and some aren't indexed yet, Settings › Search & People and an empty
@@ -40,6 +40,9 @@ version into the GitHub release notes, so a release cannot be published without 
   for its OK to download the models after an update).
 
 ### Fixed
+- Web and Android: a photo whose place you removed or changed (or whose date you changed) downloads, shares and saves
+  with the place and date as you set them, also when it wasn't turned or cropped; "Download original", "Share
+  original" and "Save original" still give the file as uploaded.
 - Android: the library could stay behind its loading badge for minutes after unlocking (seen on the first unlock
   after an update) when photos changed on another device since the last visit; it now shows after 12 seconds at
   the latest.

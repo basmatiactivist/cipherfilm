@@ -13,7 +13,7 @@ import type { Item } from "./library";
 import { onWipe, session } from "./session";
 import { away } from "./autolock";
 import { t } from "./i18n";
-import { normEdit } from "@edit/edit";
+import { leavesAs } from "@edit/edit";
 
 export const OUT = () => new Directory(Paths.cache, "cf-out");
 const KEEP_FOR = 15 * 60 * 1000;
@@ -76,13 +76,22 @@ export async function decryptTo(dir: Directory, it: Item, used: Set<string>, onB
 
 const mimeOf = (it: Item) => it.meta?.mime || (it.kind === "video" ? "video/mp4" : it.kind === "image" ? "image/jpeg" : "application/octet-stream");
 
-/** Photos that were turned or cropped leave the app as edited (a JPEG made here, edit.ts), unless the original is asked
- *  for; everything else as the original. */
-const asEdited = (it: Item, original?: boolean) => !original && it.kind === "image" && !!normEdit(it.meta?.edit) && it.size <= 200 * 1024 * 1024; // edit.ts EDIT_LIMIT
+/** How a photo leaves the app unless the original is asked for (@edit/edit leavesAs): turned or cropped as edited (a
+ *  JPEG made here, edit.ts); with only its date or place changed as its own JPEG with the metadata as set ("retag", a
+ *  removed place is in no part of the file) or, in another format, drawn anew as a JPEG; everything else (videos too)
+ *  as the original. Photos over the edit limit leave as the original. */
+export function leaving(it: Item, original?: boolean): "edited" | "retag" | "redraw" | "original" {
+  if (original || it.size > 200 * 1024 * 1024) return "original"; // edit.ts EDIT_LIMIT
+  return leavesAs(it.kind, it.meta);
+}
 // (edit.ts, with the image manipulator, is loaded only when an edited photo leaves the app)
-const copyOf = async (dir: Directory, it: Item, used: Set<string>, onBytes: (n: number) => void, original?: boolean) =>
-  asEdited(it, original) ? (await import("./edit")).editedCopyTo(dir, it, used, onBytes) : decryptTo(dir, it, used, onBytes);
-const mimeOut = (it: Item, original?: boolean) => (asEdited(it, original) ? "image/jpeg" : mimeOf(it));
+const copyOf = async (dir: Directory, it: Item, used: Set<string>, onBytes: (n: number) => void, original?: boolean) => {
+  const how = leaving(it, original);
+  if (how === "original") return decryptTo(dir, it, used, onBytes);
+  const edit = await import("./edit");
+  return how === "retag" ? edit.retaggedCopyTo(dir, it, used, onBytes) : edit.editedCopyTo(dir, it, used, onBytes);
+};
+const mimeOut = (it: Item, original?: boolean) => (leaving(it, original) === "original" ? mimeOf(it) : "image/jpeg");
 
 /** Decrypts the items for sharing; send() then opens Android's share sheet with them. */
 export async function prepareShare(items: Item[], onProgress: (done: number, total: number) => void, opts?: { original?: boolean }): Promise<{ send: () => Promise<boolean> }> {

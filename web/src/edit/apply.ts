@@ -8,7 +8,7 @@ import { fetchOriginal, type Item } from "../items";
 import { decodeImage, PREVIEW_PX, THUMB_PX, type Decoded, type ItemMeta } from "../media";
 import { mem } from "../state";
 import { drawPlan, normEdit, sameEdit, versionName, withPicture, type Edit } from "./edit";
-import { withExif } from "./exif";
+import { retagJpeg, withExif } from "./exif";
 
 /** The largest photo that is edited in the browser (it is decoded whole). */
 export const EDIT_LIMIT = 200 * 1024 * 1024;
@@ -88,6 +88,19 @@ export async function saveEdit(it: Item, next: ItemMeta, decoded?: Decoded | nul
     }
   }
   await storeMeta(it, meta);
+}
+
+/** A photo whose date or place changed (not turned or cropped): its own JPEG bytes with the metadata as last set
+ *  (exif.ts retagJpeg: a removed place is in no part of the file). One it can't read as a JPEG is drawn anew. */
+export async function retaggedCopy(it: Item, onProgress?: (done: number, total: number) => void): Promise<Blob> {
+  const bytes = new Uint8Array(await (await fetchOriginal(it, onProgress)).arrayBuffer());
+  try {
+    return new Blob([retagJpeg(bytes, { ts: it.meta?.capture_ts, gps: it.meta?.gps }) as BlobPart], { type: "image/jpeg" });
+  } catch {
+    return editedCopy(it);
+  } finally {
+    bytes.fill(0);
+  }
 }
 
 /** The photo as edited, at full size, as a JPEG with the date and place (as last set) in its EXIF. */

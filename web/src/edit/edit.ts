@@ -195,6 +195,17 @@ export const placeChanged = (m: Pick<EditableMeta, "orig"> | undefined) => !!m &
 /** Anything changed: the picture, the date or the place. */
 export const isEdited = (m: Pick<EditableMeta, "edit" | "orig"> | undefined) => !!m && (!!normEdit(m.edit) || !!normOrig(m.orig));
 
+/** How a photo leaves the app unless its original is asked for (docs/EDITING.md): "edited" when it was turned or
+ *  cropped (drawn anew); "retag" when only its date or place changed and it is a JPEG (its own bytes, with the metadata
+ *  as last set: a removed place is not handed out in the file); "redraw" for such a change in another image format
+ *  (drawn anew as a JPEG with the metadata as set); "original" otherwise (also for videos, whose place stays in the file). */
+export function leavesAs(kind: string, m: (Pick<EditableMeta, "edit" | "orig"> & { mime?: string; name?: string }) | undefined): "edited" | "retag" | "redraw" | "original" {
+  if (kind !== "image" || !m) return "original";
+  if (normEdit(m.edit)) return "edited";
+  if (!normOrig(m.orig)) return "original";
+  return m.mime === "image/jpeg" || (!m.mime && /\.jpe?g$/i.test(m.name ?? "")) ? "retag" : "redraw";
+}
+
 /** The key thumbnails and previews are cached under: it changes whenever new ones are made for an edit. */
 export function pictureKey(id: string, m: Pick<EditableMeta, "edit"> | undefined): string {
   const v = normEdit(m?.edit)?.v;

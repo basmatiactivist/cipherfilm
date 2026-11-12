@@ -8,7 +8,7 @@ import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import { b64, getSodium } from "@crypto/sodium";
 import { encryptMeta, encryptPreview, encryptThumb } from "@crypto/item";
 import { editedName, normEdit, sameEdit, turnedSize, versionName, withPicture, type Edit } from "@edit/edit";
-import { withExif } from "@edit/exif";
+import { retagJpeg, withExif } from "@edit/exif";
 import N from "../modules/cf-native/src/CfNativeModule";
 import { api, ApiError, putBytes } from "./api";
 import { forgetPictures, type Item, type ItemMeta } from "./library";
@@ -172,6 +172,26 @@ export async function saveEdit(it: Item, next: ItemMeta, onStep?: (label: string
   const s = await getSodium();
   await api("PUT", `/api/items/${it.id}/meta`, { meta_enc: b64(s, encryptMeta(s, meta, it.itemKey, it.id)) });
   if (newPictures) forgetPictures(it.id);
+}
+
+/** For sharing and saving a photo whose date or place changed (not turned or cropped): its own JPEG bytes with the
+ *  metadata as last set (@edit/exif retagJpeg: a removed place is in no part of the file), under its own name. One it
+ *  can't read as a JPEG is drawn anew (editedCopyTo). */
+export async function retaggedCopyTo(dir: Directory, it: Item, used: Set<string>, onBytes: (n: number) => void): Promise<File> {
+  const f = await decryptTo(dir, it, used, onBytes);
+  let bytes: Uint8Array | undefined, out: Uint8Array | undefined;
+  try {
+    bytes = await f.bytes();
+    out = retagJpeg(bytes, { ts: it.meta?.capture_ts, gps: it.meta?.gps });
+    f.write(out);
+    return f;
+  } catch {
+    try { f.delete(); } catch { /* gone */ }
+    return editedCopyTo(dir, it, used, () => {});
+  } finally {
+    bytes?.fill(0);
+    out?.fill(0);
+  }
 }
 
 /** For sharing and saving: the photo as edited, at full size (up to SOURCE_MAX), a JPEG with the date and place as last

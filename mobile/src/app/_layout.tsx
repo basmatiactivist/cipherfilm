@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { AppState, StatusBar, useColorScheme } from "react-native";
-import { Stack, router, useSegments } from "expo-router";
+import { Stack, router, useRootNavigationState, useSegments } from "expo-router";
 import { PaperProvider } from "react-native-paper";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import * as SystemUI from "expo-system-ui";
@@ -17,6 +17,7 @@ import { liveUnlocked } from "../live";
 import { startLiveSync } from "../liveSync";
 import { refreshLang, useLang } from "../i18n";
 import { onNoticeOpen, takeNoticeOpen } from "../noticeOpen";
+import { mustLeave, routeNames } from "../privateRoutes";
 
 // expo-image keeps decoded pictures (the viewer's previews, faces) in its memory cache beyond the
 // session that decrypted them: dropped at every lock and sign-out, and once more after the screens that showed them
@@ -28,8 +29,6 @@ onWipe(() => {
 });
 
 const themes = { light: paperTheme(light, false), dark: paperTheme(dark, true) };
-// screens that show the library: none stays on screen while it is locked
-const PRIVATE = new Set(["library", "albums", "album", "photo", "account", "trash", "backup", "search", "people", "person", "favorites", "free-space", "search-settings", "map", "two-step", "devices", "duplicates", "admin"]);
 
 export default function Root() {
   const theme = useColorScheme() === "dark" ? themes.dark : themes.light;
@@ -46,15 +45,19 @@ export default function Root() {
   // what other devices change shows here while the app is on screen and unlocked (live.ts)
   useEffect(() => { liveUnlocked(phase === "unlocked"); }, [phase]);
   const segments = useSegments();
+  const nav = useRootNavigationState();
   // A new language renders every screen again: they read their words with t() while rendering, and the navigator
   // keeps its screens from rendering again on their own. Keyed by the language, the navigator mounts anew and takes
   // up the navigation state it had (the same screens, in the same order, with their parameters); what a screen held
   // only in itself (a scroll position, a half-typed name) starts over.
   const lang = useLang();
+  // The whole stack goes, not only the screen on top: one further down (the map with its photo markers, a photo) would
+  // stay mounted under the unlock screen, one Back away.
   useEffect(() => {
-    const top = segments[0] as string | undefined;
-    if (phase !== "unlocked" && phase !== "starting" && PRIVATE.has(top ?? "")) router.replace("/");
-  }, [phase, segments]);
+    if (!mustLeave(phase, [segments[0] as string | undefined, ...routeNames(nav)])) return;
+    if (router.canDismiss()) router.dismissAll();
+    router.replace("/");
+  }, [phase, segments, nav]);
   // a tap on a notice's notification (noticeOpen.ts): Devices, once the library is unlocked (on top of the library)
   useEffect(() => {
     if (phase !== "unlocked") return;

@@ -1,3 +1,4 @@
+// @ts-nocheck: runs in Node (vitest), where the app's types have no node:fs
 import { describe, expect, it } from "vitest";
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";

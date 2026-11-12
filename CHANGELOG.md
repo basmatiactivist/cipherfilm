@@ -62,6 +62,9 @@ version into the GitHub release notes, so a release cannot be published without 
   demo reset doesn't run until it is finished, so the replaced data in `.previous/` is never dropped.
 - Server: `ANDROID_APP_CERTS`, `ANDROID_APP_PACKAGES` and `MAP_STYLE` set in `.env` now reach the app (compose.yaml
   didn't pass them on); `make prod-config` checks that every server setting does.
+- Tailnet setup: Portainer's admin password now comes from a file named in `.env` (`PORTAINER_ADMIN_PASSWORD_FILE`),
+  so a fresh Portainer can't be claimed by someone else; docs/TAILNET.md shows Tailscale access rules that keep
+  Kopia's UI and Portainer to the owner's devices.
 
 ### Changed
 - Search uses one open model for everyone, in every app and build: LAION's CLIP ViT-B/32 (MIT), the model explicit

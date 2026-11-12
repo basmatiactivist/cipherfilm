@@ -58,7 +58,7 @@ prod-config: ## validate the production compose files
 	  "$$t/compose.tailscale.yaml:$$t/compose.kopia.yaml:$$t/compose.domain.yaml" \
 	  "$$t/compose.tailscale.yaml:$$t/compose.kopia.yaml:$$t/compose.domain.yaml:$$t/compose.portainer.yaml"; do \
 	  echo "== compose.yaml:$$o"; COMPOSE_FILE="compose.yaml:$$o" PUBLIC_HOSTS=photos.example.com TS_AUTHKEY=x \
-	  KOPIA_SERVER_PASSWORD=x DOMAIN=photos.example.com TS_DOMAIN=photos.example.ts.net CF_API_TOKEN=x \
+	  KOPIA_SERVER_PASSWORD=x PORTAINER_ADMIN_PASSWORD_FILE=/dev/null DOMAIN=photos.example.com TS_DOMAIN=photos.example.ts.net CF_API_TOKEN=x \
 	  docker compose config -q || exit 1; done; \
 	echo "== deploy/mac-local/compose.yaml"; docker compose -f deploy/mac-local/compose.yaml config -q || exit 1; \
 	scripts/check-compose-env.sh || exit 1; \

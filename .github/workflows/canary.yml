@@ -1,0 +1,353 @@
+name: Canary
+# Once a week, the latest release of Cipherfilm (its tag, not master) against the newest releases of what it runs on:
+# the newest stable Go and Node, the newest Playwright with its Chromium, Firefox and WebKit, the newest stable Android
+# version and the current Android beta (the app built for each and started on its emulator), the newest stable macOS
+# runner with the newest stable Xcode, and Google Play's target API rule. So a platform change that breaks the released
+# app shows up before the people using it see it. Not part of releasing: CI and release.yml keep their pinned versions.
+# A failing part opens an issue "Canary: <part>" (label canary); later runs comment while it fails and close it once it
+# passes again (docs/RELEASING.md).
+on:
+  schedule:
+    - cron: "17 4 * * 1"  # Mondays, 04:17 UTC
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: canary
+  cancel-in-progress: false
+env:
+  NDK: "30.0.16248370"  # the NDK and Gradle android.yml pins
+  NDK_ZIP: android-ndk-r30-linux.zip
+  NDK_SHA256: 753611f410d002cfcd3f3dc2ef49aad532089d3180b436c060a90bf0fcb64df2
+  GRADLE_DIST: gradle-9.4.1-bin.zip
+  GRADLE_SHA256: 2ab2958f2a1e51120c326cad6f385153bb11ee93b3c216c5fccebfdfbb7ec6cb
+jobs:
+  release:
+    # the latest published release's tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - id: tag
+        env: { GH_TOKEN: "${{ github.token }}", GH_REPO: "${{ github.repository }}" }
+        run: |
+          t=$(gh release view --json tagName --jq .tagName)
+          test -n "$t"
+          echo "tag=$t" | tee -a "$GITHUB_OUTPUT"
+
+  go:
+    needs: release
+    # the server and the decrypt tool with the newest stable Go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false, ref: "${{ needs.release.outputs.tag }}" }
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with: { go-version: stable, check-latest: true, cache: false }
+      - run: go version
+      - name: server
+        working-directory: server
+        run: mkdir -p static && go vet ./... && go test ./...
+      - name: decrypt tool
+        working-directory: tools/decrypt
+        run: go vet ./... && go test ./...
+
+  node:
+    needs: release
+    # the web app and the Android app's TypeScript with the newest Node release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false, ref: "${{ needs.release.outputs.tag }}" }
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with: { node-version: current, check-latest: true, package-manager-cache: false }
+      - run: node --version
+      - name: web
+        working-directory: web
+        run: npm ci --ignore-scripts && npm run build && npm test
+      - name: Android app's TypeScript
+        working-directory: mobile
+        run: npm ci --ignore-scripts && npx tsc --noEmit && npm test
+
+  browsers:
+    needs: release
+    # the end-to-end tests with the newest Playwright, so the newest Chromium, Firefox and WebKit (Safari's engine)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false, ref: "${{ needs.release.outputs.tag }}" }
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with: { node-version: "26", package-manager-cache: false }
+      - name: newest Playwright
+        id: pw
+        working-directory: e2e
+        run: |
+          v=$(npm view @playwright/test version)
+          npm install --save-exact --package-lock-only --ignore-scripts "@playwright/test@$v"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Playwright $v"
+      - name: end-to-end tests and leak check (${{ matrix.browser }})
+        env:
+          PLAYWRIGHT_VERSION: ${{ steps.pw.outputs.version }}
+          BROWSER: ${{ matrix.browser }}
+        run: |
+          E2E="docker compose -f compose.e2e.yaml"
+          $E2E --profile test down -v --remove-orphans
+          $E2E up -d --build --wait app proxy
+          SETUP_TOKEN="$($E2E logs app | grep -o 'token: .*' | tail -1 | cut -c8-)" $E2E run --rm -e BROWSER playwright
+          make leakcheck PLAYWRIGHT_VERSION="$PLAYWRIGHT_VERSION"
+      - name: keep screenshots and traces of failures
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with: { name: "canary-e2e-${{ matrix.browser }}", path: e2e/test-results, retention-days: 14 }
+
+  android-build:
+    # the release built for the newest stable Android version (compileSdk and targetSdk): x86_64 for the runner's
+    # emulator, debug-signed, never published
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      api: ${{ steps.api.outputs.api }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false, ref: "${{ needs.release.outputs.tag }}" }
+      # this workflow's own scripts (the release may be older than them)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false, path: canary-src, sparse-checkout: mobile/modules/cf-native/scripts }
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with: { distribution: temurin, java-version: "17" }
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with: { node-version: "26", package-manager-cache: false }
+      - name: newest stable Android version
+        id: api
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          list=$("$SDKM" --list 2>/dev/null)
+          # stable platforms are numbered (android-37 or android-37.0); previews have names
+          api=$(printf '%s\n' "$list" | grep -oE 'platforms;android-[0-9]+(\.[0-9]+)?\b' | sed 's/.*android-//' | cut -d. -f1 | sort -n | tail -1)
+          plat=$(printf '%s\n' "$list" | grep -oE "platforms;android-$api(\.[0-9]+)?\b" | sort -V | tail -1)
+          test -n "$api" && test -n "$plat"
+          yes | "$SDKM" --licenses >/dev/null
+          "$SDKM" --install "$plat" >/dev/null
+          echo "api=$api" | tee -a "$GITHUB_OUTPUT"
+      - name: Install the NDK (pinned hash)
+        run: |
+          cd "$RUNNER_TEMP"
+          curl -sSfO "https://dl.google.com/android/repository/$NDK_ZIP"
+          echo "$NDK_SHA256  $NDK_ZIP" | sha256sum -c - >/dev/null
+          unzip -q "$NDK_ZIP" && rm "$NDK_ZIP"
+          rm -rf "$ANDROID_HOME/ndk/$NDK" && mkdir -p "$ANDROID_HOME/ndk" && mv android-ndk-* "$ANDROID_HOME/ndk/$NDK"
+      - name: libsodium from the signed release (arm64-v8a and x86_64)
+        run: |
+          sudo apt-get install -y -qq minisign >/dev/null
+          CF_ABIS="arm64-v8a x86_64" ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$NDK" canary-src/mobile/modules/cf-native/scripts/build-libsodium.sh
+          mkdir -p mobile/modules/cf-native/android/src/main/jniLibs
+          cp -R canary-src/mobile/modules/cf-native/android/src/main/jniLibs/. mobile/modules/cf-native/android/src/main/jniLibs/
+      - name: native project for the newest Android version
+        env:
+          API: ${{ steps.api.outputs.api }}
+        run: |
+          (cd web && npm ci --ignore-scripts)
+          cd mobile && npm ci --ignore-scripts
+          CF_VERSION=0.0.1 npx expo prebuild --platform android --clean --no-install
+          # set before Expo's root plugin, which keeps values already set
+          sed -i "s/^apply plugin: \"expo-root-project\"/ext { compileSdkVersion = $API; targetSdkVersion = $API }\n&/" android/build.gradle
+          grep -q "targetSdkVersion = $API" android/build.gradle
+          props=android/gradle/wrapper/gradle-wrapper.properties
+          grep -qx "distributionUrl=https\\\\://services.gradle.org/distributions/$GRADLE_DIST" "$props" \
+            || { echo "the wrapper wants another Gradle: pin its hash here and in android.yml"; grep distributionUrl "$props"; exit 1; }
+          echo "distributionSha256Sum=$GRADLE_SHA256" >> "$props"
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+        with: { cache-disabled: true, validate-wrappers: true }
+      - name: Build the APK
+        working-directory: mobile/android
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=x86_64 --console=plain
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with: { name: canary-apk, path: mobile/android/app/build/outputs/apk/release/*.apk, retention-days: 3 }
+
+  android-run:
+    # the APK started on the newest stable Android version's emulator and on the current beta's (the next Android):
+    # it must come up without a crash. No beta out at the moment: that leg says so and passes.
+    needs: android-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        track: [stable, beta]
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with: { name: canary-apk, path: apk }
+      - name: emulator image
+        id: img
+        env:
+          TRACK: ${{ matrix.track }}
+          API: ${{ needs.android-build.outputs.api }}
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          list=$("$SDKM" --list 2>/dev/null)
+          if [ "$TRACK" = stable ]; then v="android-$API(\.[0-9]+)?"
+          else
+            # a beta has a name instead of a number (android-Baklava); CANARY is the daily build, not a beta
+            v=$(printf '%s\n' "$list" | grep -oE 'system-images;android-[A-Za-z][A-Za-z0-9]*;' | cut -d';' -f2 | grep -v CANARY | sort -u | tail -1)
+            [ -n "$v" ] || { echo "no Android beta at the moment"; echo "img=" >> "$GITHUB_OUTPUT"; exit 0; }
+          fi
+          img=$(printf '%s\n' "$list" | grep -oE "system-images;$v;google_apis(_playstore)?;x86_64" | sort -V | head -1)
+          test -n "$img"
+          yes | "$SDKM" --licenses >/dev/null
+          "$SDKM" --install "$img" emulator platform-tools >/dev/null
+          echo "img=$img" | tee -a "$GITHUB_OUTPUT"
+      - name: start it on the emulator
+        if: steps.img.outputs.img != ''
+        env:
+          IMG: ${{ steps.img.outputs.img }}
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd -n canary -k "$IMG" -d pixel_7 >/dev/null
+          "$ANDROID_HOME/emulator/emulator" -avd canary -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect > "$RUNNER_TEMP/emu.log" 2>&1 &
+          "$ADB" wait-for-device
+          for i in $(seq 1 120); do [ "$("$ADB" shell getprop sys.boot_completed | tr -d '\r')" = 1 ] && break; sleep 5; done
+          [ "$("$ADB" shell getprop sys.boot_completed | tr -d '\r')" = 1 ] || { tail -50 "$RUNNER_TEMP/emu.log"; echo "the emulator didn't boot"; exit 1; }
+          echo "emulator: Android $("$ADB" shell getprop ro.build.version.release | tr -d '\r'), API $("$ADB" shell getprop ro.build.version.sdk | tr -d '\r')"
+          "$ADB" install -r "$(ls apk/*.apk | head -1)"
+          "$ADB" logcat -c
+          "$ADB" shell monkey -p app.cipherfilm -c android.intent.category.LAUNCHER 1 >/dev/null
+          sleep 45
+          mkdir -p "$RUNNER_TEMP/out"
+          "$ADB" exec-out screencap -p > "$RUNNER_TEMP/out/screen.png" || true
+          "$ADB" logcat -d > "$RUNNER_TEMP/out/logcat.txt"
+          if grep -A30 "FATAL EXCEPTION" "$RUNNER_TEMP/out/logcat.txt" | grep -q "app.cipherfilm"; then
+            grep -A30 "FATAL EXCEPTION" "$RUNNER_TEMP/out/logcat.txt"; echo "the app crashed"; exit 1
+          fi
+          [ -n "$("$ADB" shell pidof app.cipherfilm | tr -d '\r')" ] || { echo "the app isn't running"; exit 1; }
+          echo "the app runs"
+      - name: keep the screen and the log
+        if: always() && steps.img.outputs.img != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with: { name: "canary-android-${{ matrix.track }}", path: "${{ runner.temp }}/out", retention-days: 14, if-no-files-found: ignore }
+
+  play-target:
+    needs: release
+    # Google Play takes updates only for apps that target at most one Android version behind the newest one (each year
+    # from the end of August; docs/play/REQUIREMENTS.md). The app's targetSdk is Expo's default unless set.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false, ref: "${{ needs.release.outputs.tag }}" }
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with: { node-version: "26", package-manager-cache: false }
+      - name: targetSdk against the newest stable Android version
+        run: |
+          (cd web && npm ci --ignore-scripts) >/dev/null
+          cd mobile && npm ci --ignore-scripts >/dev/null
+          newest=$("$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --list 2>/dev/null | grep -oE 'platforms;android-[0-9]+(\.[0-9]+)?\b' | sed 's/.*android-//' | cut -d. -f1 | sort -n | tail -1)
+          f=$(find node_modules/expo-modules-autolinking -name ExpoRootProjectPlugin.kt | head -1)
+          target=$(grep -oE 'getVersionOrDefault\("targetSdk", "[0-9]+"\)' "$f" | grep -oE '[0-9]+' | tail -1)
+          if grep -q targetSdkVersion app.json; then target=$(grep -oE '"targetSdkVersion": *[0-9]+' app.json | grep -oE '[0-9]+$'); fi
+          test -n "$newest" && test -n "$target"
+          echo "newest Android API $newest, the app targets $target"
+          if [ "$target" -lt $((newest - 1)) ]; then
+            echo "targetSdk $target is more than one version behind $newest: Google Play will refuse updates after its deadline. Update Expo or set targetSdkVersion."
+            exit 1
+          fi
+
+  mac-runner:
+    # the newest macOS runner GitHub offers as stable (not beta), from its runner images list
+    runs-on: ubuntu-latest
+    outputs:
+      label: ${{ steps.find.outputs.label }}
+    steps:
+      - id: find
+        run: |
+          n=$(curl -fsSL https://raw.githubusercontent.com/actions/runner-images/main/README.md \
+            | grep -i 'macos' | grep -vi 'beta\|deprecat' | grep -oE '`macos-[0-9]+`' | tr -d '`' | sed 's/macos-//' | sort -n | tail -1)
+          echo "label=macos-${n:-26}" | tee -a "$GITHUB_OUTPUT"
+
+  mac:
+    # the Mac app built and its tests with the newest macOS runner and the newest stable Xcode on it
+    needs: [release, mac-runner]
+    uses: ./.github/workflows/mac.yml
+    with:
+      version: "0.0.0"
+      runner: ${{ needs.mac-runner.outputs.label }}
+      ref: ${{ needs.release.outputs.tag }}
+
+  mac-deprecations:
+    # a macOS API the app uses that Apple newly marks deprecated: one day it goes. Known ones are listed in
+    # .github/canary/mac-deprecations.txt (a symbol per line); a new one fails until it is replaced or listed there.
+    needs: [release, mac-runner]
+    runs-on: ${{ needs.mac-runner.outputs.label }}
+    timeout-minutes: 30
+    defaults:
+      run: { working-directory: mac }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false, ref: "${{ needs.release.outputs.tag }}" }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false, path: canary-src, sparse-checkout: .github/canary }
+      - name: Newest Xcode on the runner
+        run: |
+          X=$(ls -d /Applications/Xcode_*.app | grep -v -i beta | sort -V | tail -1)
+          sudo xcode-select -s "$X"
+          xcodebuild -version; sw_vers
+      - name: ONNX Runtime (pinned release, checked against its SHA-256)
+        run: ./scripts/fetch-onnxruntime.sh
+      - name: MapLibre (web/package-lock.json)
+        working-directory: web
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: build and compare deprecations
+        run: |
+          swift build 2>&1 | tee "$RUNNER_TEMP/build.log"
+          grep -oE "'[A-Za-z_][A-Za-z0-9_.:()]*' (was|is) deprecated" "$RUNNER_TEMP/build.log" | cut -d"'" -f2 | sort -u > "$RUNNER_TEMP/now.txt" || true
+          grep -vE '^\s*(#|$)' ../canary-src/.github/canary/mac-deprecations.txt | sort -u > "$RUNNER_TEMP/known.txt"
+          new=$(comm -23 "$RUNNER_TEMP/now.txt" "$RUNNER_TEMP/known.txt")
+          echo "deprecated APIs in use:"; cat "$RUNNER_TEMP/now.txt"
+          if [ -n "$new" ]; then echo "newly deprecated:"; echo "$new"; exit 1; fi
+
+  report:
+    # one issue per failing part, kept up to date; closed once the part passes again
+    needs: [release, go, node, browsers, android-build, android-run, play-target, mac, mac-deprecations]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RESULTS: |
+            Finding the latest release ${{ needs.release.result }}
+            Go (server, decrypt tool) ${{ needs.go.result }}
+            Node (web, Android TypeScript) ${{ needs.node.result }}
+            Browsers (Chromium, Firefox, WebKit) ${{ needs.browsers.result }}
+            Android build (newest version) ${{ needs.android-build.result }}
+            Android on the emulator (newest version and beta) ${{ needs.android-run.result }}
+            Google Play target API ${{ needs.play-target.result }}
+            Mac app (newest macOS and Xcode) ${{ needs.mac.result }}
+            Mac deprecated APIs ${{ needs.mac-deprecations.result }}
+        run: |
+          gh label create canary --color FBCA04 --description "the weekly check against the newest platform releases" 2>/dev/null || true
+          printf '%s\n' "$RESULTS" | while read -r line; do
+            [ -z "$line" ] && continue
+            result=${line##* }; part=${line% *}; title="Canary: $part"
+            n=$(gh issue list --label canary --state open --limit 100 --json number,title --jq ".[] | select(.title == \"$title\") | .number" | head -1)
+            case "$result" in
+              failure)
+                if [ -n "$n" ]; then gh issue comment "$n" --body "Still failing: $RUN"
+                else gh issue create --label canary --title "$title" --body "The weekly check of the latest release against the newest platform releases fails here: $RUN
+
+          The run's log says what changed. This issue closes itself once the check passes again."; fi ;;
+              success)
+                [ -n "$n" ] && gh issue close "$n" --comment "Passes again: $RUN" ;;
+            esac
+            echo "$part: $result"
+          done

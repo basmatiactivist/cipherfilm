@@ -40,6 +40,19 @@ version into the GitHub release notes, so a release cannot be published without 
   for its OK to download the models after an update).
 
 ### Fixed
+- Android: locking or signing out closes every screen of the library, also the edit screen and screens further back
+  (such as the map), not only the one on top.
+- Android: release builds always block screenshots unless you allow them; only test builds made for the local test
+  server react to the e2e screenshot switch.
+- Two-step sign-in: "Add to authenticator app" (Android, web) and "Open in Passwords or Authenticator App" (Mac) only
+  open an `otpauth://totp/` address. Android uses a passkey only for the server it is set up with.
+- Map: the apps load only https map styles with a plain host name, the hosts the question before the map names; the
+  Account › Map switch also names VersaTiles, the default map's fallback. Mac: a photo's small map in its details loads
+  after "Show Map" for that photo, not for every photo while the details column is open.
+- Android and Mac: search models already on the device count as agreed only after their SHA-256 was checked, so a
+  changed model asks again. Mac: the models and the tokenizer are loaded from exactly the checked bytes.
+- Mac: locking or signing out also clears the export's and search's copy of the decrypted library; a video with a
+  malformed box size no longer crashes the app while its place is read.
 - Web and Android: every change of a photo's details (an edit, a new date or place) now carries a version, and the apps
   never go back to an older copy of the details the server might hand out (such a photo is never downloaded, shared or
   saved as the original by default). docs/THREAT_MODEL.md lists what this covers.

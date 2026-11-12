@@ -755,3 +755,71 @@ func TestCredentialChecksQueueOnlySoFar(t *testing.T) {
 	qcancel()
 	waitFor(0)
 }
+
+// One account's known browser can't grow the Argon2 queue without bound: it has at most knownInFlight checks waiting
+// (the rest get 503 at once), and those don't count in the queue that turns unknown browsers away.
+func TestKnownBrowserQueueIsBoundedPerAccount(t *testing.T) {
+	e := newEnv(t)
+	_, ab := e.setupAdmin("admin@x.org")
+	known := e.client()
+	if code, out := known.do("POST", "/api/auth/login", map[string]any{"email": "admin@x.org", "auth": ab["auth"]}, false); code != 200 {
+		t.Fatalf("login: %d %v", code, out)
+	}
+	for i := 0; i < cap(argonSlots); i++ {
+		argonSlots <- struct{}{}
+	}
+	held := true
+	free := func() {
+		if held {
+			held = false
+			for i := 0; i < cap(argonSlots); i++ {
+				<-argonSlots
+			}
+		}
+	}
+	t.Cleanup(free)
+	const n = 20
+	codes := make(chan int, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			bb, _ := json.Marshal(map[string]any{"email": "admin@x.org", "auth": ab["auth"]})
+			req, _ := http.NewRequest("POST", e.srv.URL+"/api/auth/login", bytes.NewReader(bb))
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := known.c.Do(req)
+			if err != nil {
+				codes <- 0
+				return
+			}
+			resp.Body.Close()
+			codes <- resp.StatusCode
+		}()
+	}
+	busy := 0
+	for end := time.Now().Add(5 * time.Second); busy < n-knownInFlight && time.Now().Before(end); {
+		select {
+		case c := <-codes:
+			if c != 503 {
+				t.Fatalf("answered while every slot was taken: %d", c)
+			}
+			busy++
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	if busy != n-knownInFlight || argonKnownWaiting.Load() != knownInFlight {
+		t.Fatalf("%d turned away, %d waiting; want %d and %d", busy, argonKnownWaiting.Load(), n-knownInFlight, knownInFlight)
+	}
+	if w := argonWaiting.Load(); w != 0 {
+		t.Fatalf("known browsers fill the unknown browsers' queue: %d", w)
+	}
+	free()
+	wg.Wait()
+	close(codes)
+	for c := range codes {
+		if c != 200 {
+			t.Fatalf("a waiting known sign-in: %d", c)
+		}
+	}
+}

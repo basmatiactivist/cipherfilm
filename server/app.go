@@ -45,6 +45,7 @@ type App struct {
 	loginIP    *limiter
 	loginAcct  *limiter         // per (account, source)
 	loginDev   *limiter         // per account, for browsers carrying a valid device cookie
+	knownBusy  inFlight         // credential checks of known browsers per account (device.go)
 	demoReqs   *demoBuckets     // requests of demo accounts, per source (demo.go)
 	demoSignIn *limiter         // sign-ins to demo accounts, per source (demo.go)
 	tickets    sync.Map         // recovery tickets: token hash -> ticket

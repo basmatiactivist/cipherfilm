@@ -205,6 +205,12 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 	if known {
 		// a browser that signed in before is limited per account, not per source (see device.go)
 		slots = []slot{{a.loginDev, "login|" + u.ID, true}}
+		release, ok := a.knownTurn(u.ID)
+		if !ok {
+			failBusy(w)
+			return
+		}
+		defer release()
 	}
 	at, ok := reserve(slots...)
 	if !ok {
@@ -510,6 +516,12 @@ func (a *App) recoverStart(w http.ResponseWriter, r *http.Request) {
 	if known {
 		// like login: a browser that signed in before is limited per account, not per source
 		slots = []slot{{a.loginDev, "recover|" + u.ID, true}}
+		release, ok := a.knownTurn(u.ID)
+		if !ok {
+			failBusy(w)
+			return
+		}
+		defer release()
 	}
 	at, ok := reserve(slots...)
 	if !ok {

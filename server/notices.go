@@ -10,7 +10,9 @@ import (
 // on the devices that were signed in before it, never on the new one itself), two-step sign-in turned off by an
 // administrator (shown on every device, also ones that sign in afterwards: the person who lost their phone signs in
 // anew), and, on an account with two-step sign-in, a password step that wasn't followed by a right code (shown on
-// every device once it can no longer finish). They arrive through the live-update stream ("notices") and GET /api/me/notices. Dismissing one, on any
+// every device once it can no longer finish), and the person's own changes to two-step sign-in (an authenticator app or
+// a passkey added or removed, new recovery codes, two-step sign-in turned off; shown on the other devices that were
+// signed in at the time). They arrive through the live-update stream ("notices") and GET /api/me/notices. Dismissing one, on any
 // device that is shown it, dismisses it for the account. Only what the session list already shows is stored: the
 // device's own label and the time; never an IP address or a place.
 //
@@ -27,13 +29,26 @@ const (
 	noticeTwoFactorReset = "2fa_reset"
 	// the password of an account with two-step sign-in was used, and no right code followed (passwordUsedNotice)
 	noticePasswordUsed = "password_used"
-	noticesKept        = 50
-	noticesAge         = 90 * 24 * time.Hour
-	passwordUsedEvery  = time.Hour // at most one such notice an hour per account
+	// the person changed their own two-step sign-in (factorNotice): shown on the account's other devices that were
+	// signed in at the time, so a change made with a stolen session and password doesn't go unseen
+	noticeTOTPAdded      = "totp_added"
+	noticeTOTPRemoved    = "totp_removed"
+	noticePasskeyAdded   = "passkey_added"
+	noticePasskeyRemoved = "passkey_removed"
+	noticeRecoveryCodes  = "recovery_codes"
+	noticeTwoFactorOff   = "2fa_off"
+	noticesKept          = 50
+	noticesAge           = 90 * 24 * time.Hour
+	passwordUsedEvery    = time.Hour // at most one such notice an hour per account
 )
 
 // the kinds a notice can have (checked here; the table has no CHECK, so a new kind needs no table rebuild)
-var noticeKinds = map[string]bool{noticeSignIn: true, noticeTwoFactorReset: true, noticePasswordUsed: true}
+var noticeKinds = map[string]bool{noticeSignIn: true, noticeTwoFactorReset: true, noticePasswordUsed: true,
+	noticeTOTPAdded: true, noticeTOTPRemoved: true, noticePasskeyAdded: true, noticePasskeyRemoved: true,
+	noticeRecoveryCodes: true, noticeTwoFactorOff: true}
+
+// factorKinds are the notices about the person's own changes to two-step sign-in (SQL list for shownTo).
+const factorKinds = `'totp_added','totp_removed','passkey_added','passkey_removed','recovery_codes','2fa_off'`
 
 func (a *App) noticeRoutes(m *http.ServeMux) {
 	m.HandleFunc("GET /api/me/notices", a.auth(false, a.listNotices))
@@ -112,13 +127,23 @@ func (a *App) noticeSignIn(u *user, s *session, r *http.Request) {
 	a.notify(u.ID, noticeSignIn, deviceName(r), s.Pub)
 }
 
+// factorNotice tells the account's other devices that two-step sign-in was changed from session s (named as in the
+// device list). Not on s itself, and not on devices that sign in afterwards: it is news to those signed in already.
+func (a *App) factorNotice(u *user, s *session, r *http.Request, kind string) {
+	if a.isDemo(u) {
+		return
+	}
+	a.notify(u.ID, kind, deviceName(r), s.Pub)
+}
+
 // shownTo is the condition for the notices the session s is shown, with its arguments (after the notice's user_id).
 // An unfinished password step (password_used) is shown to every session once its pending sign-in can't finish.
 func (a *App) shownTo(u *user, s *session) (string, []any) {
 	return `dismissed=0 AND session_pub<>? AND (kind<>'sign_in' OR (at>=? AND id > COALESCE((SELECT MAX(o.id) FROM notices o
 		WHERE o.user_id=? AND o.kind='sign_in' AND o.session_pub=? AND o.session_pub<>''), 0)))
-		AND (kind<>'password_used' OR at<=?) AND at>=?`, []any{s.Pub, s.Created, u.ID, s.Pub, a.now().Add(-pendingTTL).Unix(),
-		a.now().Add(-noticesAge).Unix()} // none older than noticesAge, even before the janitor has pruned it
+		AND (kind<>'password_used' OR at<=?) AND (kind NOT IN (` + factorKinds + `) OR at>=?) AND at>=?`,
+		[]any{s.Pub, s.Created, u.ID, s.Pub, a.now().Add(-pendingTTL).Unix(), s.Created,
+			a.now().Add(-noticesAge).Unix()} // none older than noticesAge, even before the janitor has pruned it
 }
 
 func (a *App) listNotices(w http.ResponseWriter, r *http.Request, u *user, s *session) {

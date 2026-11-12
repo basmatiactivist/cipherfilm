@@ -744,6 +744,7 @@ func (a *App) twoFactorEnable(w http.ResponseWriter, r *http.Request, u *user, s
 		return
 	}
 	at.success()
+	a.factorNotice(u, s, r, noticeTOTPAdded)
 	if codes == nil {
 		a.audit(u.Email, "added an authenticator app", u.Email, "")
 		writeJSON(w, 200, map[string]any{"ok": true})
@@ -777,6 +778,7 @@ func (a *App) twoFactorDisable(w http.ResponseWriter, r *http.Request, u *user, 
 		return
 	}
 	a.audit(u.Email, "turned off two-step sign-in", u.Email, "")
+	a.factorNotice(u, s, r, noticeTwoFactorOff)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
@@ -855,8 +857,10 @@ func (a *App) twoFactorRemoveTOTP(w http.ResponseWriter, r *http.Request, u *use
 		a.waProof.dropUser(u.ID)
 		a.waReg.dropUser(u.ID)
 		a.audit(u.Email, "turned off two-step sign-in", u.Email, "")
+		a.factorNotice(u, s, r, noticeTwoFactorOff)
 	} else {
 		a.audit(u.Email, "removed the authenticator app", u.Email, "")
+		a.factorNotice(u, s, r, noticeTOTPRemoved)
 	}
 	writeJSON(w, 200, map[string]any{"ok": true, "two_factor": keys > 0})
 }
@@ -884,6 +888,7 @@ func (a *App) twoFactorNewCodes(w http.ResponseWriter, r *http.Request, u *user,
 		return
 	}
 	a.audit(u.Email, "made new recovery codes", u.Email, "")
+	a.factorNotice(u, s, r, noticeRecoveryCodes)
 	writeJSON(w, 200, map[string]any{"recovery_codes": codes})
 }
 

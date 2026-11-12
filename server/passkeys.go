@@ -650,6 +650,7 @@ func (a *App) passkeyRegisterFinish(w http.ResponseWriter, r *http.Request, u *u
 	} else {
 		a.audit(u.Email, "added a passkey", u.Email, "")
 	}
+	a.factorNotice(u, s, r, noticePasskeyAdded)
 	out := map[string]any{"passkey": passkeyView{id, name, ch.rpID, true, now, 0}}
 	if first {
 		out["recovery_codes"] = codes
@@ -715,8 +716,10 @@ func (a *App) passkeyDelete(w http.ResponseWriter, r *http.Request, u *user, s *
 	}
 	if off {
 		a.audit(u.Email, "turned off two-step sign-in", u.Email, "passkey")
+		a.factorNotice(u, s, r, noticeTwoFactorOff)
 	} else {
 		a.audit(u.Email, "removed a passkey", u.Email, "")
+		a.factorNotice(u, s, r, noticePasskeyRemoved)
 	}
 	writeJSON(w, 200, map[string]any{"ok": true, "two_factor": !off})
 }

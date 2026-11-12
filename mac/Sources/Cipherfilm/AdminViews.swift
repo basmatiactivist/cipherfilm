@@ -100,7 +100,7 @@ struct AdminPeople: View {
         ProgressView().controlSize(.small)
       }
       Section_(title: "Invite someone", subtitle: "Cipherfilm doesn't send e-mail. Send the link yourself. It works once and expires after 7 days.") {
-        TextField("Their e-mail", text: $email).textContentType(.emailAddress).autocorrectionDisabled()
+        TextField("Invited person's e-mail address", text: $email).textContentType(.emailAddress).autocorrectionDisabled()
         TextField("Storage limit in GB (optional)", text: $gb)
         Text("Leave the limit empty for the default (\(accounts.map { Admin.limit($0.default_quota_bytes) } ?? "…")). 0 means no limit.")
           .font(Typo.caption).foregroundStyle(.secondary)
@@ -294,7 +294,7 @@ struct LimitSheet: View {
       }
     }
     .padding(24).frame(width: 420)
-    .onAppear { gb = String(Int((Double(current) / 1e9).rounded())) }
+    .onAppear { gb = Admin.gbText(current) }
   }
 
   private func go() {

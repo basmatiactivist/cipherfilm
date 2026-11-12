@@ -19,7 +19,7 @@ version into the GitHub release notes, so a release cannot be published without 
   password is still needed and still unlocks your photos. Add, rename and remove passkeys under Account › Two-step
   sign-in; a passkey alone can turn two-step sign-in on (with recovery codes, as for the app).
 - Setting up the authenticator app takes one tap: "Add to authenticator app" (Android, and on phones in the browser)
-  and "Open in Passwords or Authenticator App" (Mac) hand the account to the app; the key can be copied (Android and
+  and "Open in Password Manager or Authenticator App" (Mac) hand the account to the app; the key can be copied (Android and
   Mac clear it from the clipboard after a minute), and the recovery codes copied or shared.
 - Server: `/.well-known/assetlinks.json` lets the Android app use the server's passkeys; `ANDROID_APP_CERTS` and
   `ANDROID_APP_PACKAGES` name the apps (docs/SELF-HOSTING.md).
@@ -48,7 +48,7 @@ version into the GitHub release notes, so a release cannot be published without 
   (such as the map), not only the one on top.
 - Android: release builds always block screenshots unless you allow them; only test builds made for the local test
   server react to the e2e screenshot switch.
-- Two-step sign-in: "Add to authenticator app" (Android, web) and "Open in Passwords or Authenticator App" (Mac) only
+- Two-step sign-in: "Add to authenticator app" (Android, web) and "Open in Password Manager or Authenticator App" (Mac) only
   open an `otpauth://totp/` address. Android uses a passkey only for the server it is set up with.
 - Map: the apps load only https map styles with a plain host name, the hosts the question before the map names; the
   Account › Map switch also names VersaTiles, the default map's fallback. Mac: a photo's small map in its details loads
@@ -97,6 +97,13 @@ version into the GitHub release notes, so a release cannot be published without 
   notices go after 90 days, invites stop working when the session or administrator that made them loses access, at
   most 50 signed-in devices per account, and per-tailnet-user limits behind Tailscale Serve (`TRUST_TAILSCALE_HEADERS`).
 ### Changed
+- Mac: security notices no longer appear as a banner over the library. They collect behind a bell in the toolbar
+  (next to Lock) with a badge for new ones; the list says what happened, on which device and when, leads to Review
+  Devices or Two-Step Sign-In, and each notice (or all with Remove All) can be removed. macOS notifications stay.
+- Mac: the texts no longer name other companies' apps (password managers, authenticator apps).
+- Mac admin: storage limits keep their decimals in the editor (21.5 GB no longer shows as 21 and shrinks on save),
+  the invite field asks for the invited person's e-mail address, the uptime says "1 hour" and "1 day", and the
+  backup hint names `cipherfilm backup-report`.
 - Web: adding a passkey opens the browser's dialog right after the name and password, without a second button
   (it comes back only when the browser wants a tap of its own or the dialog was cancelled).
 - Web and Mac: the map opens on the region with the most photos (at region level, never street level), with those

@@ -93,6 +93,16 @@ import Testing
     #expect(Admin.badges(try user(role: "admin", status: "disabled", nsfw: true, twoFactor: true)) == ["admin", "disabled", "explicit search", "two-step sign-in"])
     #expect(Admin.badges(try user()) == ["user"])
     #expect(Admin.uptime(7200) == "2 hours")
+    #expect(Admin.uptime(3600) == "1 hour")
+    #expect(Admin.uptime(86400) == "1 day")
+    #expect(Admin.uptime(3 * 86400) == "3 days")
+    #expect(Admin.uptime(60) == "1 minute")
+    #expect(Admin.uptime(30) == "0 minutes")
+    #expect(Admin.gbText(21_500_000_000) == "21.5")
+    #expect(Admin.gbText(5_000_000_000) == "5")
+    #expect(Admin.gbText(0) == "0")
+    #expect(Admin.gbText(1_250_000_000) == "1.25")
+    #expect(try Admin.parseGB(Admin.gbText(21_500_000_000)) == 21_500_000_000)
   }
 
   @Test func backupState() throws {

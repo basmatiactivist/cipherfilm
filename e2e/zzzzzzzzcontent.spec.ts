@@ -59,8 +59,10 @@ test.describe.serial("search by what is in a photo", () => {
     const me = await (await page.request.get("/api/me")).json();
     const items = (await (await page.request.get("/api/items")).json()).items.filter((x: { kind: string }) => x.kind === "image").slice(0, 3);
     expect(items.length).toBe(3);
-    const rnd = Array.from({ length: 512 }, () => Math.random() - 0.5);
-    for (const [i, v] of [REF["dog"], REF["city at night"], rnd].entries()) await putEntry(page, me, items[i].id, "laionb32/1", v);
+    // the third: half of each, fixed (a random vector sometimes looks explicit to the search's filter and is left out)
+    const mix = REF["dog"].map((x, i) => x + REF["city at night"][i]);
+    const norm = Math.hypot(...mix);
+    for (const [i, v] of [REF["dog"], REF["city at night"], mix.map((x) => x / norm)].entries()) await putEntry(page, me, items[i].id, "laionb32/1", v);
 
     // a fresh sign-in reads the index; the settings say what can be searched
     await page.reload(); // stays unlocked: the tab keeps the key across a reload (web/src/keep.ts)

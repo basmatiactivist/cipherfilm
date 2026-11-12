@@ -2,9 +2,9 @@
 // Nothing changes until Save; the original always stays as it was, and "Revert to original" brings everything back.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PanResponder, ScrollView, StyleSheet, useColorScheme, useWindowDimensions, View } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams, useNavigation } from "expo-router";
 import { Image } from "expo-image";
-import { Button, Dialog, IconButton, List, Portal, ProgressBar, Text } from "react-native-paper";
+import { Button, IconButton, List, Portal, ProgressBar, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Camera, Map as MapView, ViewAnnotation } from "@maplibre/maplibre-react-native";
 import { dragCrop, isEdited, normEdit, normOrig, ratioRect, reverted, turn, turnedSize, withDate, withPlace, type Edit, type Gps, type Handle, type Rect } from "@edit/edit";
@@ -12,7 +12,7 @@ import { previewUri, type ItemMeta } from "../../library";
 import { libraryItems, refreshLibrary } from "../../libraryStore";
 import { canEdit, canEditPicture, closeOriginal, dateParts, openOriginal, parseDateTime, saveEdit, upright, type Opened, type Upright } from "../../edit";
 import { label, loadPlaces, type Place } from "../../places";
-import { Field, Problem, useAppTheme } from "../../ui";
+import { Field, Problem, useAppTheme, Dialog, useKeyboardHeight } from "../../ui";
 import { stage } from "../../tokens";
 import { t } from "../../i18n";
 import { useSession } from "../../session";
@@ -156,6 +156,24 @@ export default function EditScreen() {
   }, [edit, typedDate, gps, touched]);
   const changed = !!next && JSON.stringify(next) !== JSON.stringify(meta);
 
+  // leaving with changes not saved (Cancel, Android's back): asked first; saving leaves without asking
+  const navigation = useNavigation();
+  const leaving = useRef(false);
+  const [discard, setDiscard] = useState<null | (() => void)>(null);
+  useEffect(() => (navigation.addListener as unknown as (n: string, f: (e: { preventDefault: () => void; data: { action: unknown } }) => void) => () => void)("beforeRemove", (e) => {
+    if (leaving.current || !changed) return;
+    e.preventDefault();
+    setDiscard(() => () => { leaving.current = true; navigation.dispatch(e.data.action as never); });
+  }), [navigation, changed]);
+
+  // the place search's suggestions come below its field: while typing there, the page shows them above the keyboard
+  const kb = useKeyboardHeight();
+  const scroller = useRef<{ scrollToEnd: (o?: { animated?: boolean }) => void } | null>(null);
+  const [placeFocused, setPlaceFocused] = useState(false);
+  useEffect(() => {
+    if (placeFocused && kb) { const id = setTimeout(() => scroller.current?.scrollToEnd({ animated: true }), 50); return () => clearTimeout(id); }
+  }, [placeFocused, kb, found.length]);
+
   const save = async () => {
     if (!it || !next) return;
     setErr("");
@@ -163,6 +181,7 @@ export default function EditScreen() {
     try {
       await saveEdit(it, next, (label, progress) => setBusy({ label, progress }), opened);
       await refreshLibrary({ quiet: true }).catch(() => {});
+      leaving.current = true;
       router.back();
     } catch (e) {
       setErr(e instanceof Error ? e.message : t("Couldn't save the changes."));
@@ -187,7 +206,7 @@ export default function EditScreen() {
         <Text variant="titleMedium" style={st.title} numberOfLines={1}>{t("Edit")}</Text>
         <Button mode="contained" onPress={save} disabled={!changed || !!busy || (touched.date && typedDate === null)}>{t("Save")}</Button>
       </View>
-      <ScrollView scrollEnabled={!dragging} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: inset.bottom + 32 }}>
+      <ScrollView ref={scroller as never} scrollEnabled={!dragging} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: inset.bottom + 32 + kb }}>
         <View style={[st.stage, { minHeight: boxH + 32 }]}>
           {pictureTools && work ? (
             <View style={{ width: dispW, height: dispH, overflow: "hidden" }}>
@@ -242,7 +261,8 @@ export default function EditScreen() {
 
           <Text variant="titleSmall" style={st.head}>{t("Place")}</Text>
           <Text variant="bodyLarge" style={{ marginBottom: 8 }}>{gps ? (placeName || `${gps.lat.toFixed(4)}, ${gps.lon.toFixed(4)}`) : t("No place")}</Text>
-          <Field label={t("Search for a town or city")} value={query} onChangeText={setQuery} autoCapitalize="words" />
+          <Field label={t("Search for a town or city")} value={query} onChangeText={setQuery} autoCapitalize="words"
+            onFocus={() => setPlaceFocused(true)} onBlur={() => setPlaceFocused(false)} />
           {found.map((f, i) => (
             <List.Item key={i} title={placeLine(f)} titleNumberOfLines={2} onPress={() => place({ lat: f.lat, lon: f.lon })} left={(p) => <List.Icon {...p} icon="map" />} />
           ))}
@@ -263,6 +283,14 @@ export default function EditScreen() {
         </View>
       </ScrollView>
       <Portal>
+        <Dialog visible={!!discard} onDismiss={() => setDiscard(null)}>
+          <Dialog.Title>{t("Discard your changes?")}</Dialog.Title>
+          <Dialog.Content><Text variant="bodyMedium">{t("What you changed here isn't saved.")}</Text></Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setDiscard(null)}>{t("Keep editing")}</Button>
+            <Button textColor={th.colors.error} onPress={() => { const go = discard; setDiscard(null); go?.(); }}>{t("Discard")}</Button>
+          </Dialog.Actions>
+        </Dialog>
         <Dialog visible={!!busy} dismissable={false}>
           <Dialog.Content>
             <Text variant="bodyLarge" style={{ marginBottom: 12 }}>{busy?.label}…</Text>

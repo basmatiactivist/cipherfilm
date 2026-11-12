@@ -204,7 +204,7 @@ export default function SearchSettingsScreen() {
             default ("Optimized") lets it run, as the Backup screen says too (deviceState.ts backgroundUse) */}
         {s.background && (backgroundUse(device) === "restricted" || (ownBatteryRules() && !device.batteryExempt)) ? (
           <List.Item title={t("Run in the background")} descriptionNumberOfLines={4}
-            description={backgroundUse(device) === "restricted" ? t("Android stops indexing when the app is closed. In the app settings, open Battery and allow background usage.") : t("On Xiaomi phones: app settings › Battery saver › No restrictions.")}
+            description={backgroundUse(device) === "restricted" ? t("Android stops indexing when the app is closed. In the app settings, open Battery and allow background usage.") : t("On this phone: app settings › Battery saver › No restrictions.")}
             right={() => <Button mode="outlined" compact style={{ alignSelf: "center" }}
               onPress={() => { expectAway(); N.openAppSettings(); }}>{t("Open")}</Button>} />
         ) : null}

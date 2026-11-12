@@ -2,8 +2,8 @@
 // noticeCheck.ts reads the server and the phone and hands this what it found.
 //
 // A notice is shown at most once per phone: its id goes into the "seen" list as soon as it was shown as a
-// notification, or in the app as a banner (then no notification follows). Old ones (from before RECENT) are only
-// marked seen: a phone that was off for a week doesn't get a pile of them, the banner still shows them.
+// notification, or in the app behind the bell (then no notification follows). Old ones (from before RECENT) are only
+// marked seen: a phone that was off for a week doesn't get a pile of them, the notifications list still shows them.
 import { isTwoStepChange, type Notice, noticeText } from "./notices";
 import { t } from "./i18n";
 
@@ -30,7 +30,7 @@ export interface Plan {
 }
 
 /**
- * What to do with the server's list. In the foreground the banner shows them: nothing is shown as a notification
+ * What to do with the server's list. In the foreground the bell counts them: nothing is shown as a notification
  * then, and everything new is marked seen.
  */
 export function plan(list: Notice[], seen: Seen | null, server: string, now: number, foreground: boolean): Plan {
@@ -60,7 +60,7 @@ export function readSeen(v: unknown): Seen | null {
 }
 
 /**
- * The notification's words: the title, the text (what the banner says: the device's own label and the time) and
+ * The notification's words: the title, the text (what the notifications list says: the device's own label and the time) and
  * the public version the lock screen shows, which says nothing about the device or the time.
  */
 export function alertText(n: Notice): { title: string; text: string; publicTitle: string } {

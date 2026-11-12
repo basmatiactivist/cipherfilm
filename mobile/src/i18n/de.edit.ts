@@ -45,4 +45,8 @@ export const deEdit: Record<string, string> = {
   "This photo couldn't be opened for editing on this phone.": "Dieses Foto lässt sich auf diesem Handy nicht zum Bearbeiten öffnen.",
   "This photo couldn't be opened for editing on this phone. You can still change its date and place.": "Dieses Foto lässt sich auf diesem Handy nicht zum Bearbeiten öffnen. Datum und Ort kannst du trotzdem ändern.",
   "Couldn't save the edited photo: this server can't store edits yet. Ask whoever runs it to update it.": "Das bearbeitete Foto konnte nicht gespeichert werden: Dieser Server kann noch keine Bearbeitungen speichern. Bitte die Person, die ihn betreibt, ihn zu aktualisieren.",
+  "Discard your changes?": "Änderungen verwerfen?",
+  "What you changed here isn't saved.": "Was Sie hier geändert haben, ist nicht gespeichert.",
+  "Keep editing": "Weiter bearbeiten",
+  "Discard": "Verwerfen",
 };

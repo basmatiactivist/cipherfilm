@@ -11,7 +11,7 @@ import { Problem, useAppTheme } from "../ui";
 import { Icon } from "../icons";
 import { busyIcon } from "../Loader";
 import { useAction } from "../useAction";
-import { lastActive } from "../notices";
+import { deviceLabel, lastActive } from "../notices";
 import { NoticeAlertsHint } from "../NoticeAlertsSetting";
 import { text } from "../tokens";
 import { locale, t, tn } from "../i18n";
@@ -51,7 +51,7 @@ export default function Devices() {
         <NoticeAlertsHint />
         <Divider />
         {(list ?? []).map((d) => (
-          <List.Item key={d.id} title={d.device || t("Unknown device")} titleNumberOfLines={2} descriptionNumberOfLines={3}
+          <List.Item key={d.id} title={d.device ? deviceLabel(d.device) : t("Unknown device")} titleNumberOfLines={2} descriptionNumberOfLines={3}
             description={[d.current ? t("This phone") : lastActive(d.last_seen), t("signed in {date}", { date: day(d.created_at) }), d.indexer ? t("indexes your photos for search") : ""].filter(Boolean).join(" · ")}
             left={() => <View style={st.icon}><Icon name="phone" color={d.current ? th.colors.primary : th.colors.onSurfaceVariant} /></View>}
             right={d.current ? undefined : () => <Button compact onPress={() => setAsk(d)}>{t("Sign out")}</Button>}
@@ -65,7 +65,7 @@ export default function Devices() {
       </ScrollView>
       <Portal>
         <Dialog visible={ask !== null} onDismiss={close}>
-          <Dialog.Title>{ask === "others" ? tn(others, "Sign out {n} other device?", "Sign out {n} other devices?") : t("Sign out {device}?", { device: (ask && ask.device) || t("this device") })}</Dialog.Title>
+          <Dialog.Title>{ask === "others" ? tn(others, "Sign out {n} other device?", "Sign out {n} other devices?") : t("Sign out {device}?", { device: ask && typeof ask === "object" && ask.device ? deviceLabel(ask.device) : t("this device") })}</Dialog.Title>
           <Dialog.Content>
             <Text variant="bodyMedium">{t("It must sign in again, and deletes what it keeps of your library the next time it reaches the server.")}</Text>
             <Problem>{act.error}</Problem>

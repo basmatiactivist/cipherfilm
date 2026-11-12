@@ -3,16 +3,16 @@
 import { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { router } from "expo-router";
-import { Appbar, Button, Dialog, Divider, List, Portal, ProgressBar, Text } from "react-native-paper";
+import { Appbar, Button, Divider, List, Portal, ProgressBar, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Field, Problem, useAppTheme } from "../../ui";
+import { Field, Problem, useAppTheme, Dialog } from "../../ui";
 import { Icon } from "../../icons";
 import { busyIcon } from "../../Loader";
 import { useAction } from "../../useAction";
 import { useSession } from "../../session";
 import { text } from "../../tokens";
 import { locale, t } from "../../i18n";
-import { backupState, isAdmin, limitText, loadAccounts, loadStatus, noAccess, parseGB, type ServerStatus, setDefaultLimit, size, uptime } from "../../admin";
+import { backupState, isAdmin, limitText, loadAccounts, loadStatus, noAccess, gbField, limitToSave, type ServerStatus, setDefaultLimit, size, uptime } from "../../admin";
 
 export default function AdminServer() {
   const th = useAppTheme();
@@ -34,7 +34,7 @@ export default function AdminServer() {
   const [gb, setGb] = useState("");
   const act = useAction();
   const close = () => { if (!act.busy) { setEditing(false); act.setError(undefined); } };
-  const save = () => act.run(async () => { await setDefaultLimit(parseGB(gb)!); setEditing(false); await load(); });
+  const save = () => act.run(async () => { await setDefaultLimit(limitToSave(gb, gbField(def ?? 0), def ?? 0)); setEditing(false); await load(); });
 
   const backup = status ? backupState(status) : null;
   const used = status && status.disk_total_bytes > 0 ? (status.disk_total_bytes - status.disk_free_bytes) / status.disk_total_bytes : null;
@@ -62,7 +62,7 @@ export default function AdminServer() {
           <List.Item title={t("Default storage limit")} titleNumberOfLines={2} descriptionNumberOfLines={4}
             description={t("New people get {limit} unless the invite says otherwise. People who already joined keep their limit.", { limit: limitText(def) })}
             left={() => <View style={st.icon}><Icon name="cloud" color={th.colors.primary} /></View>}
-            right={() => <Button compact onPress={() => { setGb(String(Math.round(def / 1e9))); setEditing(true); }}>{t("Change")}</Button>} style={st.item} />
+            right={() => <Button compact onPress={() => { setGb(gbField(def)); setEditing(true); }}>{t("Change")}</Button>} style={st.item} />
         </>) : null}
         {status ? (<>
           <Divider />

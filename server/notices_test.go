@@ -157,3 +157,26 @@ func TestPasskeyChangesAreNoticedElsewhere(t *testing.T) {
 		t.Fatalf("on the device that made them: %v", got)
 	}
 }
+
+// An administrator's reset asks the person to turn two-step sign-in on again; once they do, the notice is gone on
+// every device.
+func TestResetNoticeGoesWhenTwoStepIsBackOn(t *testing.T) {
+	e := newEnv(t)
+	e.pinClock()
+	admin, _ := e.setupAdmin("admin@x.org")
+	bob, bb := e.acceptInvite(e.invite(admin, "bob@x.org"))
+	other := e.login("bob@x.org", bb)
+	ub, _ := e.app.userByEmail("bob@x.org")
+	e.app.notify(ub.ID, noticeTwoFactorReset, "", "")
+	if k := shownKinds(t, other); len(k) != 1 || k[0] != noticeTwoFactorReset {
+		t.Fatalf("before: %v", k)
+	}
+	e.enable2FA(bob, bb)
+	for _, c := range []*client{bob, other} {
+		for _, k := range shownKinds(t, c) {
+			if k == noticeTwoFactorReset {
+				t.Fatalf("the reset notice is still shown: %v", shownKinds(t, c))
+			}
+		}
+	}
+}

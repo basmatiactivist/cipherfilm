@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { setLang } from "./i18n";
-import { lastActive, noticeSummary, noticeText, visibleNotices, type Notice } from "./notices";
+import { deviceLabel, lastActive, noticeOpens, noticeText, unreadCount, visibleNotices, type Notice } from "./notices";
 
 describe("notices", () => {
   it("keeps known, well-formed, undismissed notices, newest first", () => {
@@ -47,11 +47,11 @@ describe("notices", () => {
     expect(w("2fa_off")).toMatch(/^Two-step sign-in was turned off on Firefox on Linux, .+\. Not you\?$/);
     expect(w("2fa_off", "")).toMatch(/turned off on an unknown device, /);
     setLang("de");
-    expect(w("passkey_added")).toMatch(/^Ein Passkey wurde zur Anmeldung in zwei Schritten hinzugefügt: Firefox on Linux, /);
+    expect(w("passkey_added")).toMatch(/^Ein Passkey wurde zur Anmeldung in zwei Schritten hinzugefügt: Firefox auf Linux, /);
     expect(w("recovery_codes", "")).toMatch(/^Neue Wiederherstellungscodes wurden erstellt: ein unbekanntes Gerät, /);
     setLang("en");
     for (const kind of ["totp_added", "totp_removed", "passkey_added", "passkey_removed", "recovery_codes", "2fa_off"] as const) {
-      expect(noticeSummary([{ id: 1, kind, device: "x", at }])?.open).toBe("two-step");
+      expect(noticeOpens(kind)).toBe("two-step");
     }
   });
 
@@ -65,51 +65,24 @@ describe("notices", () => {
     expect(lastActive(now - 10 * 86400, now)).toMatch(/2023/);
   });
 
-  describe("one banner for several", () => {
-    const sign = (id: number, at: number, device = "Chrome on macOS"): Notice => ({ id, kind: "sign_in", device, at });
+  it("words the server's device labels in the phone's language", () => {
+    setLang("de");
+    expect(deviceLabel("Chrome on macOS")).toBe("Chrome auf macOS");
+    expect(deviceLabel("OPPO CPH2791 (Android app)")).toBe("OPPO CPH2791 (Android-App)");
+    expect(deviceLabel("Upload tool")).toBe("Upload-Programm");
+    expect(deviceLabel("Something else")).toBe("Something else");
+    setLang("en");
+    expect(deviceLabel("Chrome on macOS")).toBe("Chrome on macOS");
+  });
 
-    it("shows nothing for no notices, and one notice as it is", () => {
-      setLang("en");
-      expect(noticeSummary([])).toBeNull();
-      const one = sign(1, 1_700_000_000);
-      expect(noticeSummary([one])).toEqual({ text: noticeText(one), open: "devices", ids: [1], many: false });
-      expect(noticeSummary([{ id: 2, kind: "2fa_reset", device: "", at: 1 }])?.open).toBe("two-step");
-      expect(noticeSummary([{ id: 3, kind: "password_used", device: "", at: 1 }])?.open).toBeNull();
-    });
-
-    it("counts several sign-ins in one line, with the newest", () => {
-      setLang("en");
-      const list = [sign(9, 1_700_000_300, "Chrome on macOS"), sign(8, 1_700_000_200, "Firefox on Linux"), sign(7, 1_700_000_100, "")];
-      const s = noticeSummary(list)!;
-      expect(s.text).toMatch(/^3 new sign-ins \(latest: Chrome on macOS, .+\)\. Not you\? Review devices\.$/);
-      expect(s).toMatchObject({ open: "devices", ids: [9, 8, 7], many: true });
-      expect(noticeSummary([sign(2, 2, ""), sign(1, 1)])!.text).toMatch(/latest: an unknown device/);
-      setLang("de");
-      expect(noticeSummary(list)!.text).toMatch(/^3 neue Anmeldungen \(zuletzt: Chrome on macOS, .+\)\. Nicht Sie\?/);
-      setLang("en");
-    });
-
-    it("puts the most urgent of mixed kinds first and counts the rest", () => {
-      setLang("en");
-      const reset: Notice = { id: 5, kind: "2fa_reset", device: "", at: 1_700_000_000 };
-      const used: Notice = { id: 6, kind: "password_used", device: "", at: 1_700_000_500 };
-      const s = noticeSummary([sign(9, 1_700_000_900), used, reset])!;
-      expect(s.text).toMatch(/^An administrator turned off two-step sign-in .* 2 more notices\.$/);
-      expect(s).toMatchObject({ open: "two-step", ids: [9, 6, 5], many: true });
-      // a password used and a sign-in: the password's sentence, and the devices to look at
-      const p = noticeSummary([sign(9, 1_700_000_900), used])!;
-      expect(p.text).toMatch(/^Your password was used .* 1 more notice\.$/);
-      expect(p.open).toBe("devices");
-      expect(noticeSummary([used, { ...used, id: 7 }])!.open).toBeNull();
-      // a second step removed elsewhere comes before a password used and a sign-in, and opens Two-step sign-in
-      const removed: Notice = { id: 10, kind: "totp_removed", device: "Chrome on macOS", at: 1_700_000_100 };
-      const added: Notice = { id: 11, kind: "passkey_added", device: "Chrome on macOS", at: 1_700_000_950 };
-      const c = noticeSummary([added, sign(9, 1_700_000_900), used, removed])!;
-      expect(c.text).toMatch(/^The authenticator app was removed .* 3 more notices\.$/);
-      expect(c.open).toBe("two-step");
-      expect(noticeSummary([added, sign(9, 1_700_000_900)])!.text).toMatch(/^A passkey was added /);
-      // turned off by its owner elsewhere is as urgent as by an administrator
-      expect(noticeSummary([removed, { id: 12, kind: "2fa_off", device: "", at: 1_700_000_000 }])!.text).toMatch(/^Two-step sign-in was turned off /);
-    });
+  it("says where each one leads, and how many are unread", () => {
+    expect(noticeOpens("sign_in")).toBe("devices");
+    expect(noticeOpens("2fa_reset")).toBe("two-step");
+    expect(noticeOpens("password_used")).toBeNull();
+    const list: Notice[] = [3, 2, 1].map((id) => ({ id, kind: "sign_in", device: "", at: id }));
+    expect(unreadCount(list, 0)).toBe(3);
+    expect(unreadCount(list, 2)).toBe(1);
+    expect(unreadCount(list, 3)).toBe(0);
+    expect(unreadCount([], 0)).toBe(0);
   });
 });

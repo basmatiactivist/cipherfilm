@@ -1,7 +1,7 @@
 // Where the map opens: the area holding the most photos, at region level. The photos are put into cells of 2° by 2°;
 // the fullest cell and its eight neighbours (about 6° across) are what the map shows first, never closer than
 // HOME_MAX_ZOOM, so the tile server sees a region (like "Switzerland"), not a street (docs/MAP.md).
-// The Mac app's map (mac/Sources/Cipherfilm/Resources/map/map.js) has the same function.
+// The Mac app's map (mac/Sources/Cipherfilm/Resources/map/map.js) has the same function; the Android app uses this one.
 export const HOME_MAX_ZOOM = 8;
 const CELL = 2;
 
@@ -26,4 +26,14 @@ export function homeBounds(points: { lat: number; lon: number }[]): Bounds | nul
     w = Math.min(w, p.lon); e = Math.max(e, p.lon); s = Math.min(s, p.lat); n = Math.max(n, p.lat);
   }
   return [[w, s], [e, n]];
+}
+
+/** The same area for a map that can't cap the zoom while fitting (Android's camera): never narrower than about two
+ *  degrees, so it stays at region level too. [west, south, east, north]. */
+export function homeBox(points: { lat: number; lon: number }[]): [number, number, number, number] | null {
+  const b = homeBounds(points);
+  if (!b) return null;
+  const [[w, s], [e, n]] = b;
+  const cx = (w + e) / 2, cy = (s + n) / 2, half = 1;
+  return [Math.min(w, cx - half), Math.max(-85, Math.min(s, cy - half)), Math.max(e, cx + half), Math.min(85, Math.max(n, cy + half))];
 }

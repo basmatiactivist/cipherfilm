@@ -11,7 +11,14 @@ let onRevoked: () => void = () => {};
 
 /** How this phone shows in the account's device list (web, Account › Devices); only a label. */
 // ASCII only: a header value with any other character makes the request fail before it is sent
-const DEVICE = `${String((Platform.constants as { Model?: string }).Model ?? "Android").replace(/[^\x20-\x7e]/g, "").slice(0, 60)} (Android app)`;
+// the phone's maker and model ("OPPO CPH2791"), never the name the person gave it in Android's settings (often theirs)
+const DEVICE = (() => {
+  const c = Platform.constants as { Model?: string; Brand?: string; Manufacturer?: string };
+  const model = String(c.Model ?? "Android");
+  const maker = String(c.Manufacturer || c.Brand || "");
+  const name = maker && !model.toLowerCase().startsWith(maker.toLowerCase()) ? `${maker.toUpperCase() === maker ? maker : maker[0].toUpperCase() + maker.slice(1)} ${model}` : model;
+  return `${name.replace(/[^\x20-\x7e]/g, "").slice(0, 60)} (Android app)`;
+})();
 
 export class ApiError extends Error {
   /** for logs: what the network layer said (a timeout, a refused connection), never shown as the message */

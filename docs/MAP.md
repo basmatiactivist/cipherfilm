@@ -42,7 +42,7 @@ sees the device's IP address and which areas and zoom levels are looked at, neve
 thumbnail or anything else from the library. To keep that small:
 
 - The map opens on the area that holds the most photos (2° cells, the fullest one and its neighbours), never closer
-  than zoom 8, with those photos in the panel beside it. So the tile server learns that region (like "Switzerland"),
+  than zoom 8 (on Android: at least about two degrees across), with those photos in the panel beside it (web, Mac). So the tile server learns that region (like "Switzerland"),
   not a street; anything closer is loaded only where the person zooms or moves to. With no located photo, it opens on
   the whole world.
 - A photo's small map in its details loads only when the details are opened (on the Mac, whose details column stays

@@ -54,7 +54,7 @@ export const deSearch: Record<string, string> = {
   "Run in the background": "Im Hintergrund ausführen",
   "Android stops indexing when the app is closed. In the app settings, open Battery and allow background usage.":
     "Android stoppt die Indexierung, wenn die App geschlossen ist. Öffnen Sie in den App-Einstellungen „Akku“ und erlauben Sie die Hintergrundnutzung.",
-  "On Xiaomi phones: app settings › Battery saver › No restrictions.": "Auf Xiaomi-Handys: App-Einstellungen › Energiesparmodus › Keine Einschränkungen.",
+  "On this phone: app settings › Battery saver › No restrictions.": "Auf diesem Handy: App-Einstellungen › Energiesparmodus › Keine Einschränkungen.",
   "Runs on this phone with open models (LAION's CLIP ViT-B/32 for content, YuNet and SFace for faces). Results are encrypted before they are stored and shared with your other devices. The server never learns what your photos show or who is in them. Photos only on the server are indexed while the app is open and unlocked.":
     "Läuft auf diesem Handy mit offenen Modellen (CLIP ViT-B/32 von LAION für Inhalte, YuNet und SFace für Gesichter). Die Ergebnisse werden verschlüsselt, bevor sie gespeichert und mit Ihren anderen Geräten geteilt werden. Der Server erfährt nie, was Ihre Fotos zeigen oder wer darauf ist. Fotos, die nur auf dem Server liegen, werden indexiert, während die App geöffnet und entsperrt ist.",
   "Turn off search?": "Suche ausschalten?",

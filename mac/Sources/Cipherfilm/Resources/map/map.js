@@ -23,7 +23,7 @@ const MAX_MARKERS = 120; // thumbnails drawn at once
 const WORLD_BOUNDS = [[-165, -50], [175, 70]];
 const HOME_MAX_ZOOM = 8;
 
-// Where the map opens, the same as the web app's (web/src/map/home.ts): photos in cells of 2° by 2°, the fullest cell
+// Where the map opens, the same as the web app's (web/src/places/home.ts): photos in cells of 2° by 2°, the fullest cell
 // and its eight neighbours (about 6° across), never closer than region level.
 function homeBounds(pts) {
   if (!pts.length) return null;

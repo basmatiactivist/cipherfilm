@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Keyboard } from "react-native";
 import { router } from "expo-router";
-import { Button, Dialog, Portal, Text } from "react-native-paper";
-import { Column, Field, type FieldHandle, Lead, Problem, Screen, Title, useAppTheme } from "../ui";
+import { Button, Portal, Text } from "react-native-paper";
+import { Column, Field, type FieldHandle, Lead, Problem, Screen, Title, useAppTheme, Dialog } from "../ui";
 import { CodeExpired, type CodeStep, declineBiometric, enableBiometric, login, offerBiometric, useSession } from "../session";
 import { cleanCode, codeReady, firstWay } from "../twoStep";
 import { passkeysSupported } from "../passkeys";

@@ -18,6 +18,7 @@ const paths = {
   cloud: <Path d="M7 18a4 4 0 0 1-.6-7.96A6 6 0 0 1 18 9.5a4.2 4.2 0 0 1 0 8.5z" />,
   restore: <><Path d="M4 12a8 8 0 1 0 3-6.2" /><Path d="M4 4v4h4" /></>,
   key: <><Circle cx="8" cy="15" r="4" /><Path d="M11 12l9-9M16 7l3 3" /></>,
+  bell: <><Path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2H4.5z" /><Path d="M10 20.5a2.2 2.2 0 0 0 4 0" /></>,
   user: <><Circle cx="12" cy="8.5" r="3.5" /><Path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7" /></>,
   albums: <><Rect x="3" y="7" width="14" height="14" rx="2.5" /><Path d="M7 3h12a2 2 0 0 1 2 2v12" /></>,
   more: <><Circle cx="12" cy="5" r="1.4" /><Circle cx="12" cy="12" r="1.4" /><Circle cx="12" cy="19" r="1.4" /></>,

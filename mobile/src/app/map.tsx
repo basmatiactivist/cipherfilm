@@ -1,8 +1,10 @@
 // The map tab (docs/MAP.md): photos as clustered thumbnails on a base map. Coordinates are decrypted on the phone and
 // thumbnails come from the native pipeline (ThumbView, by item id); the base map's server (OpenFreeMap by default, the
-// server's MAP_STYLE) only sees which map tiles are loaded. So the map opens on the whole world and never moves to
-// where the photos are by itself.
+// server's MAP_STYLE) only sees which map tiles are loaded. The map opens at region level on the area with the most
+// photos (web/src/places/home.ts, as on the web and the Mac), closer only where the person zooms in.
 import { useEffect, useMemo, useRef, useState } from "react";
+import { NoticesButton } from "../NoticesButton";
+import { homeBox } from "@places/home";
 import { Linking, ScrollView, StyleSheet, useColorScheme, View } from "react-native";
 import { Appbar, Button, IconButton, Text } from "react-native-paper";
 import { router } from "expo-router";
@@ -30,7 +32,7 @@ const MAX_ZOOM = 16; // zoomed in this far, a cluster's tap shows its photos ins
 const MAP_MAX = 19;
 const VISIBLE = 0.45; // the share of the map the open panel leaves free, at the top
 const MAX_MARKERS = 80;
-// the whole world, the same for everyone: never where the photos are (zoom 0 fits it on a phone in portrait)
+// the whole world, while no photo has a place (zoom 0 fits it on a phone in portrait)
 const WORLD_CENTER: [number, number] = [10, 25];
 
 type Marker = { key: string; lngLat: [number, number]; count: number; cluster?: number; id?: string; cover?: string };
@@ -59,6 +61,9 @@ export default function MapScreen() {
   }, [on, loaded]);
   const located = useMemo(() => (items ?? []).flatMap((it) => { const c = coords(it); return c ? [{ it, ...c }] : []; }), [items]);
   const byId = useMemo(() => new Map(located.map((l) => [l.it.id, l.it])), [located]);
+  // where the map opens: the region with the most photos (web/src/places/home.ts), the whole world without any;
+  // the same as the web and the Mac. The map's server sees that region, as the consent says
+  const home = useMemo(() => homeBox(located), [located.length > 0]); // eslint-disable-line react-hooks/exhaustive-deps
   const data = useMemo(() => ({
     type: "FeatureCollection" as const,
     features: located.map((l) => ({ type: "Feature" as const, geometry: { type: "Point" as const, coordinates: [l.lon, l.lat] }, properties: { id: l.it.id, ts: l.it.meta?.capture_ts ?? l.it.created_at * 1000 } })),
@@ -172,7 +177,8 @@ export default function MapScreen() {
         <Appbar.Content title={t("Map")} titleStyle={text.page} />
         {/* the photos in what the map shows (a cluster opens its photos once zoomed in): no bar over the map for it */}
         {conf && on && located.length > 0 && !panel ? <Appbar.Action icon="photos" accessibilityLabel={t("Photos in this area")} onPress={openPanel} /> : null}
-        <Appbar.Action icon="user" accessibilityLabel={t("Account")} onPress={() => router.push("/account")} />
+        <NoticesButton />
+              <Appbar.Action icon="user" accessibilityLabel={t("Account")} onPress={() => router.push("/account")} />
       </Appbar.Header>
       {!conf ? (
         <Text style={{ padding: 16, color: th.colors.onSurfaceVariant }}>{t("The map is turned off on this server.")}</Text>
@@ -184,7 +190,7 @@ export default function MapScreen() {
               <Icon name="map" size={28} color={th.colors.onPrimaryContainer} />
             </View>
             <Text variant="headlineSmall" accessibilityRole="header">{t("Show your photos on a map?")}</Text>
-            <Text variant="bodyLarge">{t("The map images come from {who}. That service sees this phone's IP address and which areas you look at. When you open a photo's details, a small map of its area is loaded too, so the service can tell roughly where that photo was taken.", { who: mapProviderLong() })}</Text>
+            <Text variant="bodyLarge">{t("The map images come from {who}. That service sees this phone's IP address and which areas you look at. When you open a photo's details, a small map of its area is loaded too, so the service can tell roughly where that photo was taken. The map opens on the region with most of your photos, so the service sees that region too.", { who: mapProviderLong() })}</Text>
             <Text variant="bodyLarge">{t("Your photos, and the list of where they were taken, stay encrypted and are drawn on this phone.")}</Text>
             <Text variant="bodyMedium" style={{ color: th.colors.onSurfaceVariant }}>
               {t("You can turn the map off again under Account › Map.")}{" "}
@@ -209,7 +215,7 @@ export default function MapScreen() {
             // the clusters at the new zoom are only queryable once a frame has been drawn fully after the move
             onRegionDidChange={() => { moved.current = true; refresh(); refillSoon(); }}
             onDidFinishRenderingFrameFully={() => { if (moved.current) { moved.current = false; refresh(); } }}>
-            <Camera ref={cam} initialViewState={{ center: WORLD_CENTER, zoom: 0 }} minZoom={0} maxZoom={MAP_MAX} />
+            <Camera ref={cam} initialViewState={home ? { bounds: home, padding: { top: 60, right: 60, bottom: 60, left: 60 } } : { center: WORLD_CENTER, zoom: 0 }} minZoom={0} maxZoom={MAP_MAX} />
             <GeoJSONSource ref={src} id={SOURCE} data={data} cluster clusterRadius={56} clusterMaxZoom={MAP_MAX} maxzoom={MAP_MAX + 1}
               clusterProperties={{ ts: ["max", ["get", "ts"]] }}>
               {/* the markers are native views; this layer only makes the clusters queryable (a radius of 0 or an opacity

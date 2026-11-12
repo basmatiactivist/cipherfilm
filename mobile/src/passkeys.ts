@@ -3,6 +3,7 @@
 import N from "../modules/cf-native/src/CfNativeModule";
 import { api, server } from "./api";
 import { passkeyFor, passkeyTrouble } from "./twoStep";
+import { rememberBrowser, viaBrowser, viaBrowserPasskey } from "./passkeyHandoff";
 import { t } from "./i18n";
 
 type J = Record<string, unknown>;
@@ -19,7 +20,11 @@ export function passkeyError(e: unknown): Error {
     case "none": return new Error(t("This phone has no passkey for this server. Use a code instead."));
     case "unsupported": return new Error(t("Passkeys need Android 14 or newer. Use a code instead."));
     case "server": return new Error(t("Android couldn't check this server for passkeys: it must be reachable from the internet by its https name. Use a code instead."));
-    default: return e instanceof Error ? e : new Error(String(e));
+    default: {
+      // never the bridge's own wording ("Call to function 'CfNative.passkeyGet' has been rejected. → Caused by: …")
+      const m = (e instanceof Error ? e.message : String(e)).split(/Caused by:\s*/).pop()?.replace(/\s*\[androidx[^\]]*\]/g, "").trim();
+      return new Error(m ? t("The passkey didn't work ({reason}). Try again, or use a code instead.", { reason: m }) : t("The passkey didn't work. Try again, or use a code instead."));
+    }
   }
 }
 
@@ -28,15 +33,25 @@ function ownServer(options: J, create: boolean) {
   if (!passkeyFor(options, create, server())) throw new Error(t("This server asked for a passkey of another site. Use a code instead."));
 }
 
-export async function getPasskey(options: J): Promise<J> {
-  ownServer(options, false);
-  try { return JSON.parse(await N.passkeyGet(JSON.stringify(options))) as J; } catch (e) { throw passkeyError(e); }
+/** Android's Credential Manager, or the browser for a server Android can't vouch for (passkeyHandoff.ts); a server
+ *  Android refuses is remembered and tried once more through the browser at once. */
+async function passkey(op: "get" | "create", options: J): Promise<J> {
+  ownServer(options, op === "create");
+  const srv = server();
+  if (await viaBrowser(srv)) {
+    try { return await viaBrowserPasskey(srv, op, options); } catch (e) { throw passkeyError(e); }
+  }
+  try {
+    return JSON.parse(op === "get" ? await N.passkeyGet(JSON.stringify(options)) : await N.passkeyCreate(JSON.stringify(options))) as J;
+  } catch (e) {
+    if (passkeyTrouble(e) !== "server") throw passkeyError(e);
+    rememberBrowser(srv);
+    try { return await viaBrowserPasskey(srv, op, options); } catch (e2) { throw passkeyError(e2); }
+  }
 }
 
-async function createPasskey(options: J): Promise<J> {
-  ownServer(options, true);
-  try { return JSON.parse(await N.passkeyCreate(JSON.stringify(options))) as J; } catch (e) { throw passkeyError(e); }
-}
+export const getPasskey = (options: J): Promise<J> => passkey("get", options);
+const createPasskey = (options: J): Promise<J> => passkey("create", options);
 
 export const list = () => api<{ passkeys: Passkey[]; available: boolean }>("GET", "/api/me/passkeys");
 export const remove = (id: string, proof: Proof) => api<{ two_factor: boolean }>("DELETE", `/api/me/passkeys/${encodeURIComponent(id)}`, proof);

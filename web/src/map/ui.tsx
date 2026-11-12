@@ -1,6 +1,6 @@
 // The map tab (docs/MAP.md): photos as clustered thumbnails on a base map. Coordinates and thumbnails are decrypted
 // on this device and drawn here; the base map's server (OpenFreeMap by default, the server's MAP_STYLE) only sees which
-// map tiles are loaded. The map opens on the area with the most photos at region level (map/home.ts), so the tile
+// map tiles are loaded. The map opens on the area with the most photos at region level (places/home.ts), so the tile
 // server learns that region; closer views are asked for only where the person zooms in. No cookies or referrer go with those requests (the server's
 // Referrer-Policy; MapLibre's requests are "same-origin", so this server's cookies never go to another host).
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
@@ -13,7 +13,7 @@ import { dropImage, thumbUrl, wantImage } from "../cache";
 import { Timeline } from "../grid";
 import type { Item } from "../items";
 import { areaTitle, located, type Located } from "./locations";
-import { HOME_MAX_ZOOM, homeBounds } from "./home";
+import { HOME_MAX_ZOOM, homeBounds } from "../places/home";
 import { mapProviderLong, PRIVACY_URL, setMapOn, useMapOn } from "./consent";
 
 setWorkerUrl(workerUrl);

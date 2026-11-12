@@ -4,9 +4,9 @@
 import { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
-import { Appbar, Button, Dialog, Divider, List, Portal, Text } from "react-native-paper";
+import { Appbar, Button, Divider, List, Portal, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Field, Problem, SwitchItem, useAppTheme } from "../../ui";
+import { Field, Problem, SwitchItem, useAppTheme, Dialog } from "../../ui";
 import { Icon, type IconName } from "../../icons";
 import { busyIcon } from "../../Loader";
 import { useAction } from "../../useAction";
@@ -15,7 +15,7 @@ import { explicitSearchOffered } from "../../store";
 import { text } from "../../tokens";
 import { t } from "../../i18n";
 import {
-  type AdminUser, badges, dateText, deleteUser, isAdmin, lastSeen, limitText, loadAccounts, noAccess, parseGB, resetTwoStep,
+  type AdminUser, badges, dateText, deleteUser, isAdmin, lastSeen, limitText, loadAccounts, noAccess, gbField, limitToSave, resetTwoStep,
   setAdmin, setEnabled, setExplicit, setLimit, usageLine,
 } from "../../admin";
 
@@ -79,7 +79,7 @@ export default function AdminUserPage() {
           <Divider />
           {self ? <Text variant="bodySmall" style={[st.block, { color: th.colors.onSurfaceVariant }]}>{t("This is you. Your own role, status and limit can only be changed by another administrator.")}</Text> : null}
           {!self ? <List.Item title={t("Storage limit")} description={limitText(u.quota_bytes)} left={icon("cloud")}
-            onPress={() => { setGb(u.quota_bytes ? String(Math.round(u.quota_bytes / 1e9)) : "0"); setAsk("limit"); }} style={st.item} /> : null}
+            onPress={() => { setGb(gbField(u.quota_bytes)); setAsk("limit"); }} style={st.item} /> : null}
           {/* off for everyone by default; the person still turns it on in their app. Never offered by the Play build. */}
           {explicitSearchOffered() ? <SwitchItem title={t("Allow explicit search")} description={t("Lets them turn off the filter that leaves explicit photos out of search. Off for everyone by default.")}
             left={icon("search")} value={u.nsfw} disabled={act.busy} onValueChange={(v) => run(() => setExplicit(u.id, v))} style={st.item} /> : null}
@@ -115,7 +115,7 @@ export default function AdminUserPage() {
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={close} disabled={act.busy}>{t("Cancel")}</Button>
-            <Button onPress={() => u && run(() => setLimit(u.id, parseGB(gb)!))} disabled={act.busy} icon={act.busy ? busyIcon : undefined}>{t("Save")}</Button>
+            <Button onPress={() => u && run(() => setLimit(u.id, limitToSave(gb, gbField(u.quota_bytes), u.quota_bytes)))} disabled={act.busy} icon={act.busy ? busyIcon : undefined}>{t("Save")}</Button>
           </Dialog.Actions>
         </Dialog>
       </Portal>

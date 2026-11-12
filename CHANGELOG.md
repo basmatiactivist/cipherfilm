@@ -97,6 +97,16 @@ version into the GitHub release notes, so a release cannot be published without 
   notices go after 90 days, invites stop working when the session or administrator that made them loses access, at
   most 50 signed-in devices per account, and per-tailnet-user limits behind Tailscale Serve (`TRUST_TAILSCALE_HEADERS`).
 ### Changed
+- Android: notifications behind a bell next to Account, with a badge for unread ones and a list to remove them, instead of
+  the banner over the photos. An administrator's reset notice goes away by itself once two-step sign-in is on again.
+- Android: passkeys work with servers only on a private network (Tailscale, a home LAN): the app uses the server's
+  `/passkey` page in the browser there, as the Mac app does, and a passkey error says what to do instead of showing the
+  system's message.
+- Android: the map opens on the region with the most photos, like the web and the Mac.
+- Android: dialogs with a field stay above the keyboard; Enter continues in the password dialog; the editor asks before
+  discarding changes and shows the place suggestions above the keyboard; storage limits keep their decimals; device
+  names are translated and include the maker; no brand names of other apps or phone makers in the texts; clearer
+  German for two-step sign-in, uptime and the invite field.
 - Web: adding a passkey opens the browser's dialog right after the name and password, without a second button
   (it comes back only when the browser wants a tap of its own or the dialog was cancelled).
 - Web and Mac: the map opens on the region with the most photos (at region level, never street level), with those

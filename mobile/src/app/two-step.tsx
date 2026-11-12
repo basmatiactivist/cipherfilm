@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Linking, ScrollView, Share, StyleSheet, View } from "react-native";
 import { router } from "expo-router";
-import { Appbar, Button, Dialog, Divider, List, Portal, Text } from "react-native-paper";
+import { Appbar, Button, Divider, List, Portal, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path, Rect } from "react-native-svg";
 import { encodeQR, qrPath } from "@crypto/qr";
@@ -13,7 +13,7 @@ import N from "../../modules/cf-native/src/CfNativeModule";
 import { api } from "../api";
 import { passwordProof, refreshMe, useSession } from "../session";
 import * as pk from "../passkeys";
-import { Field, Problem, useAppTheme } from "../ui";
+import { Field, Problem, useAppTheme, Dialog } from "../ui";
 import { Icon } from "../icons";
 import { busyIcon } from "../Loader";
 import { useAction } from "../useAction";
@@ -44,10 +44,12 @@ export default function TwoStep() {
   const [name, setName] = useState("");
   const page = useAction();
   const dialog = useAction();
-  const load = () => page.run(async () => {
+  const fetchStatus = async () => {
     setStatus(await api<Status>("GET", "/api/me/2fa"));
     setKeys((await pk.list().catch(() => ({ passkeys: [] as pk.Passkey[] }))).passkeys);
-  });
+  };
+  // (inside another page.run, fetchStatus itself: a nested run is skipped while the page is busy)
+  const load = () => page.run(fetchStatus);
   useEffect(() => { load(); }, []);
   const demo = !!me?.demo || status?.available === false;
   const on = !!status?.enabled;
@@ -94,7 +96,7 @@ export default function TwoStep() {
     setSetup(null);
     showCodes(r.recovery_codes);
     await refreshMe().catch(() => null);
-    await load();
+    await fetchStatus();
   });
   const methods = [totp ? t("a code from your authenticator app") : "", keys.length ? t("a passkey") : ""].filter(Boolean).join(t(" or "));
   const title = ask === "off" ? t("Turn off two-step sign-in?") : ask === "codes" ? t("New recovery codes") : ask === "addkey" ? t("Add a passkey")
@@ -162,7 +164,7 @@ export default function TwoStep() {
               </>
             ) : (
               <>
-                <List.Item title={t("Turn on with an authenticator app")} description={t("Aegis, 2FAS, Bitwarden, Google Authenticator…")} left={() => <View style={st.icon}><Icon name="lock" color={th.colors.primary} /></View>}
+                <List.Item title={t("Turn on with an authenticator app")} description={t("Any authenticator app or password manager")} left={() => <View style={st.icon}><Icon name="lock" color={th.colors.primary} /></View>}
                   onPress={() => setAsk("setup")} style={st.item} />
                 {canPasskey ? (
                   <List.Item title={t("Turn on with a passkey")} description={t("From your password manager or a security key")} left={() => <View style={st.icon}><Icon name="key" color={th.colors.primary} /></View>}
@@ -181,6 +183,8 @@ export default function TwoStep() {
             {ask && typeof ask === "object" && keys.length === 1 && !totp ? <Text variant="bodyMedium" style={{ marginBottom: 8 }}>{t("It's your only second step: two-step sign-in turns off.")}</Text> : null}
             {ask === "addkey" ? <Field label={t("Name")} value={name} onChangeText={setName} maxLength={64} /> : null}
             <Field label={t("Password")} value={password} onChangeText={setPassword} secureTextEntry textContentType="password" autoComplete="current-password" autoFocus={ask !== "addkey"}
+              // Enter goes on, where that needs only the password (not while a code is still to be typed)
+              returnKeyType="go" onSubmitEditing={() => { if (!second && password && !dialog.busy) confirm(false); }}
               hint={dialog.busy ? t("Checking your password…") : undefined} />
             {second ? <SecondStepFields step={step} ways={ways} /> : null}
             <Problem>{dialog.error}</Problem>
@@ -209,8 +213,8 @@ function SetupView({ setup, code, setCode, busy, onEnable }: { setup: Setup; cod
   const side = qr.size + 8; // with the quiet zone of four modules each side
   const [note, setNote] = useState<string | undefined>();
   const [copied, setCopied] = useState(false);
-  // the authenticator app is on this phone: the otpauth: address hands it the account in one tap (Aegis, 2FAS,
-  // Bitwarden, Google Authenticator, Proton Pass… register for it); the QR code and the key stay for anything else
+  // the authenticator app is on this phone: the otpauth: address hands it the account in one tap (authenticator apps
+  // and password managers register for it); the QR code and the key stay for anything else
   const addToApp = async () => {
     setNote(undefined);
     try {

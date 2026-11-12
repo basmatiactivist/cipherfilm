@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { AppState, Keyboard } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
-import { Button, Dialog, Portal, Text } from "react-native-paper";
-import { Column, Field, Lead, Problem, Screen, Title } from "../ui";
+import { Button, Portal, Text } from "react-native-paper";
+import { Column, Field, Lead, Problem, Screen, Title, Dialog } from "../ui";
 import { declineBiometric, enableBiometric, offerBiometric, signOut, unlockWithBiometric, unlockWithPassword, useSession } from "../session";
 import { useAction } from "../useAction";
 import { away } from "../autolock";

@@ -8,6 +8,8 @@ name: Dependabot
 # versions only arrive after a cooldown (.github/dependabot.yml). An update that touches a crypto or storage library
 # (libsodium and its bindings, x/crypto, SQLite) never merges by itself either, however small the version step: for
 # 0.x versions every step counts as "minor", and these define the encryption and the data format (docs/CRYPTO.md).
+# The same for the sign-in libraries: go-webauthn checks every passkey (and its CBOR, JWT and TPM parsers decode what
+# a passkey sends), and androidx.credentials asks Android for them (docs/THREAT_MODEL.md, Passkeys).
 #
 # This uses the plain pull_request trigger, as GitHub documents it for Dependabot: the job runs with the pull
 # request's own token and runs none of its code. Auto-merge needs "Allow auto-merge" and the branch rule with the
@@ -31,12 +33,12 @@ jobs:
     steps:
       - id: meta
         uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
-      # a group that contains a crypto or storage library waits for a person, whatever else it holds
+      # a group that contains a crypto, storage or sign-in library waits for a person, whatever else it holds
       - id: crypto
         env: { NAMES: "${{ steps.meta.outputs.dependency-names }}" }
         run: |
           if printf '%s\n' "$NAMES" | tr ',' '\n' | sed 's/^ *//; s/ *$//' \
-            | grep -qiE '^(libsodium(-wrappers(-sumo)?)?|@types/libsodium-wrappers(-sumo)?|golang\.org/x/crypto|modernc\.org/sqlite|net\.java\.dev\.jna:jna|(.*/)?swift-sodium)$'; then
+            | grep -qiE '^(libsodium(-wrappers(-sumo)?)?|@types/libsodium-wrappers(-sumo)?|golang\.org/x/crypto|modernc\.org/sqlite|net\.java\.dev\.jna:jna|(.*/)?swift-sodium|github\.com/go-webauthn/.+|github\.com/fxamacker/cbor(/v[0-9]+)?|github\.com/golang-jwt/jwt(/v[0-9]+)?|github\.com/google/go-tpm|androidx\.credentials:.+)$'; then
             echo "touches=true" >> "$GITHUB_OUTPUT"
           else
             echo "touches=false" >> "$GITHUB_OUTPUT"
@@ -57,5 +59,5 @@ jobs:
           gh pr merge "$PR" --disable-auto || echo "auto-merge was not on"
           gh pr edit "$PR" --remove-label automerge || true
           what="Major version update"; [ "$KIND" = version-update:semver-major ] || what="Update of a kind Dependabot couldn't classify (${KIND:-unknown})"
-          [ "$CRYPTO" != true ] || what="Update of a crypto or storage library (libsodium, x/crypto, JNA, SQLite)"
-          gh pr comment "$PR" --body "$what: not merged automatically. Read the changelogs, and for libsodium, x/crypto or sqlite check docs/CRYPTO.md and the test vectors before merging."
+          [ "$CRYPTO" != true ] || what="Update of a crypto, storage or sign-in library (libsodium, x/crypto, JNA, SQLite, go-webauthn and its parsers, androidx.credentials)"
+          gh pr comment "$PR" --body "$what: not merged automatically. Read the changelogs, and for libsodium, x/crypto or sqlite check docs/CRYPTO.md and the test vectors before merging; for the sign-in libraries run the passkey tests (server/passkeys_test.go)."

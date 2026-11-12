@@ -292,3 +292,32 @@ func TestDemoLoginsAreNotSharedByADeviceCookie(t *testing.T) {
 		t.Fatalf("another visitor was locked out: %d", code)
 	}
 }
+
+// On a demo server, another administrator (an app-store reviewer's account may be one, to show the admin area) can't
+// change the public demo login: not delete, disable, promote, re-limit it or reset its two-step sign-in. Other
+// accounts stay theirs to manage.
+func TestAdminsCantChangeTheDemoAccount(t *testing.T) {
+	e, admin, _, _, _ := demoEnv(t)
+	ud, _ := e.app.userByEmail("demo@x.org")
+	ub, _ := e.app.userByEmail("bob@x.org")
+	for _, c := range []struct {
+		method, path string
+		body         any
+	}{
+		{"PATCH", "/api/admin/users/" + ud.ID, map[string]any{"status": "disabled"}},
+		{"PATCH", "/api/admin/users/" + ud.ID, map[string]any{"role": "admin"}},
+		{"PATCH", "/api/admin/users/" + ud.ID, map[string]any{"quota_bytes": 1}},
+		{"DELETE", "/api/admin/users/" + ud.ID, nil},
+		{"DELETE", "/api/admin/users/" + ud.ID + "/2fa", nil},
+	} {
+		if code, out := admin.do(c.method, c.path, c.body, true); code != 403 {
+			t.Fatalf("%s %s: %d %v", c.method, c.path, code, out)
+		}
+	}
+	if after, _ := e.app.userByEmail("demo@x.org"); after == nil || after.Status != "active" || after.Role != "user" {
+		t.Fatalf("demo account changed: %+v", after)
+	}
+	if code, out := admin.do("PATCH", "/api/admin/users/"+ub.ID, map[string]any{"quota_bytes": 5_000_000_000}, true); code != 200 {
+		t.Fatalf("another account: %d %v", code, out)
+	}
+}

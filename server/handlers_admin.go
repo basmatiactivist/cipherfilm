@@ -107,6 +107,13 @@ func (a *App) adminGuard(w http.ResponseWriter, caller *user, target *user, remo
 		fail(w, http.StatusNotFound, "not found")
 		return false
 	}
+	// a public demo login (DEMO_ACCOUNTS) stays as the operator set it up: another admin on that server (an app-store
+	// reviewer's account, which may be one to show the admin area) can't delete, disable, re-limit or promote it. The
+	// server console still can.
+	if a.isDemo(target) {
+		fail(w, http.StatusForbidden, "the public demo account can't be changed here")
+		return false
+	}
 	if removesAdmin && target.Role == "admin" && target.Status == "active" {
 		var others int
 		a.db.QueryRow(`SELECT COUNT(*) FROM users WHERE role='admin' AND status='active' AND id<>?`, target.ID).Scan(&others)

@@ -52,6 +52,19 @@ version into the GitHub release notes, so a release cannot be published without 
   you come back to the app, without restarting it; the open screens stay.
 - Mac: videos with the iPhone's location key in a meta box inside udta (as ffmpeg writes it) uploaded without
   their place; the Mac app now reads it there too, like the web app and the upload tool.
+- Server: replacing a thumbnail or preview reserves its room before anything is written to disk, and the storage
+  check of one account no longer holds up uploads of the others.
+- Server: a restore over the same server's data keeps storage limits (and the default one for new people) and
+  explicit search as an administrator set them after the backup, like roles and disabled accounts.
+- Server: after a restore (also onto a new machine) new sign-in notices get ids the devices haven't seen before, so
+  the phones and the Mac announce them again instead of taking them for ones already shown.
+- Server: a restore whose last step failed is marked in the data: the server doesn't start and a second restore or
+  demo reset doesn't run until it is finished, so the replaced data in `.previous/` is never dropped.
+- Server: `ANDROID_APP_CERTS`, `ANDROID_APP_PACKAGES` and `MAP_STYLE` set in `.env` now reach the app (compose.yaml
+  didn't pass them on); `make prod-config` checks that every server setting does.
+- Tailnet setup: Portainer's admin password now comes from a file named in `.env` (`PORTAINER_ADMIN_PASSWORD_FILE`),
+  so a fresh Portainer can't be claimed by someone else; docs/TAILNET.md shows Tailscale access rules that keep
+  Kopia's UI and Portainer to the owner's devices.
 
 ### Changed
 - Search uses one open model for everyone, in every app and build: LAION's CLIP ViT-B/32 (MIT), the model explicit

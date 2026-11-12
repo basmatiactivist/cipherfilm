@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 // After a photo is turned or cropped, the apps replace its encrypted thumbnail and preview (docs/EDITING.md). Only a
 // finished item of the owner's, not in the trash; the size rules of an upload; the difference is charged; the other
@@ -190,5 +193,37 @@ func TestReplacingAPictureFromBeforeItWasCountedCreditsTheOldOne(t *testing.T) {
 	e.app.db.QueryRow(`SELECT stored_bytes, thumb_bytes FROM items WHERE id=?`, id).Scan(&stored, &th)
 	if stored != stored0 || th != 5000 {
 		t.Fatalf("stored_bytes %d (was %d), thumb_bytes %d", stored, stored0, th)
+	}
+}
+
+// At the storage limit nothing of a replacement reaches the disk before it is known to fit: a larger picture is
+// refused without a staged file, and one that takes no more room is still taken.
+func TestReplacingAtTheLimitStagesNothingOnDiskFirst(t *testing.T) {
+	e := newEnv(t)
+	admin, _ := e.setupAdmin("admin@x.org")
+	bob, _ := e.acceptInvite(e.invite(admin, "bob@x.org"))
+	id := e.newItem(bob, 10)
+	bob.put("/api/items/"+id+"/segments/0", randBytes(int(cipherLen(10))))
+	bob.put("/api/items/"+id+"/preview", randBytes(50000))
+	if code, _ := bob.do("POST", "/api/items/"+id+"/finalize", finalizeBody(), true); code != 200 {
+		t.Fatalf("finalize: %d", code)
+	}
+	e.app.db.Exec(`UPDATE users SET quota_bytes=(SELECT stored_bytes FROM items WHERE id=?) WHERE email='bob@x.org'`, id)
+	staged := func() int {
+		m, _ := filepath.Glob(filepath.Join(e.app.itemDir(id), ".tmp-*"))
+		return len(m)
+	}
+	for _, p := range []struct{ size, want int }{{maxPreviewBytes, 413}, {40000, 200}} {
+		seen := -1
+		code := bob.putDuring("/api/items/"+id+"/replace/preview", randBytes(p.size), func() { seen = staged() })
+		if code != p.want {
+			t.Fatalf("replace with %d bytes at the limit: %d, want %d", p.size, code, p.want)
+		}
+		if seen != 0 {
+			t.Fatalf("replace with %d bytes at the limit: %d staged file(s) while the body was read", p.size, seen)
+		}
+		if staged() != 0 {
+			t.Fatal("staged file left behind")
+		}
 	}
 }

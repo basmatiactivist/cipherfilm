@@ -2,8 +2,11 @@
 # Reachable ONLY in your tailnet at https://<TS_HOSTNAME>.<your-tailnet>.ts.net:9443 (Tailscale Serve); no host port,
 # no Funnel. Use it with the domain overlay and put it last:
 #   COMPOSE_FILE=...:deploy/tailnet/compose.domain.yaml:deploy/tailnet/compose.portainer.yaml
-# WARNING: Portainer has the Docker socket, so whoever signs in to it is root on this machine. Give it a strong
-# password and turn on its two-factor login. Without Portainer, `docker compose exec app cipherfilm help` does the same.
+# WARNING: Portainer has the Docker socket, so whoever signs in to it is root on this machine. Its admin password is
+# set at the first start from a file (PORTAINER_ADMIN_PASSWORD_FILE in .env, at least 12 characters, readable only by
+# you), so there is never a fresh Portainer waiting for whoever opens it first; sign in as "admin" and turn on its
+# two-factor login. Limit :9443 (and Kopia's :8443) to your own devices with a Tailscale access rule (docs/TAILNET.md).
+# Without Portainer, `docker compose exec app cipherfilm help` does the same.
 services:
   tailscale:
     environment:
@@ -19,12 +22,18 @@ services:
       - --bind=127.0.0.1:9000              # plain HTTP on loopback; Tailscale Serve adds HTTPS on :9443
       - --bind-https=127.0.0.1:9445        # its own HTTPS port, off the tailnet's :9443
       - --tunnel-addr=127.0.0.1            # no Edge agents
+      - --admin-password-file=/run/secrets/portainer_admin_password   # admin exists from the first start
+    secrets: [portainer_admin_password]
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data
     security_opt: ["no-new-privileges:true"]
     mem_limit: 256m
     pids_limit: 256
+
+secrets:
+  portainer_admin_password:
+    file: ${PORTAINER_ADMIN_PASSWORD_FILE:?set PORTAINER_ADMIN_PASSWORD_FILE in .env to a file with Portainer's admin password (docs/TAILNET.md)}
 
 volumes:
   portainer_data:

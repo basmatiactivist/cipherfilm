@@ -9,7 +9,7 @@ The plain [compose.yaml](../compose.yaml) stays the base; each overlay adds one 
 | `compose.tailscale.yaml` | Tailscale; HTTPS on `https://<TS_HOSTNAME>.<tailnet>.ts.net` via Tailscale Serve | `TS_AUTHKEY`, `TS_HOSTNAME`, `PUBLIC_HOSTS` |
 | `compose.kopia.yaml` | Kopia for off-site backups, UI on `:8443` in the tailnet | `KOPIA_SERVER_PASSWORD` |
 | `compose.domain.yaml` | your own name (e.g. `photos.example.com`) inside the tailnet, certificate via Cloudflare DNS | `DOMAIN`, `TS_DOMAIN`, `CF_API_TOKEN` |
-| `compose.portainer.yaml` | optional Portainer UI on `:9443` in the tailnet | — |
+| `compose.portainer.yaml` | optional Portainer UI on `:9443` in the tailnet | `PORTAINER_ADMIN_PASSWORD_FILE` |
 
 Pick them with `COMPOSE_FILE` in `.env`, base first, in this order:
 
@@ -34,8 +34,33 @@ read-only root file system, with memory and process limits.
   *Zone › DNS › Edit* for that one zone.
 - **kopia**: runs as the app's user, sees the data read-only, UI behind its own login on `127.0.0.1:51515`, HTTPS from
   Tailscale Serve on `:8443`.
-- **portainer** (optional): has the Docker socket, so **whoever signs in to Portainer is root on the host**. Strong
-  password and its two-factor login; leave the overlay out if `docker compose exec app cipherfilm …` over SSH is enough.
+- **portainer** (optional): has the Docker socket, so **whoever signs in to Portainer is root on the host**. Its admin
+  account exists from the first start (below), so no one else can claim a fresh Portainer; turn on its two-factor
+  login, and limit `:9443` to your own devices (access rules below). Leave the overlay out if
+  `docker compose exec app cipherfilm …` over SSH is enough.
+
+**Who may reach what.** Everything runs on one tailnet node, so by default every device that may reach the photos
+(`:443`) may also reach Kopia's UI (`:8443`) and Portainer (`:9443`). Each has its own login, but Kopia's UI can read
+and restore the backed-up (encrypted) files and Portainer is root on the host: only you should reach them. With
+Tailscale's default policy (everyone in the tailnet reaches everything) this matters as soon as you share the server
+with others. Tag the server (`tag:photos`, set with `--advertise-tags` or in the admin console) and replace the
+allow-all rule in the access controls (Tailscale admin console › Access controls) with rules like these, `you@example.com`
+being your own login:
+
+```json
+{
+  "tagOwners": { "tag:photos": ["autogroup:admin"] },
+  "grants": [
+    { "src": ["autogroup:member"], "dst": ["tag:photos"], "ip": ["tcp:443"] },
+    { "src": ["you@example.com"], "dst": ["tag:photos"], "ip": ["tcp:443", "tcp:8443", "tcp:9443"] }
+  ]
+}
+```
+
+Keep the rules your other devices need (your other grants) and check the result with the *Preview rules* tab: a
+family member's phone should show only `tag:photos:443`. If you want Kopia's UI apart from the photos altogether, run
+a second, small Tailscale container for it under its own node name and give only yourself access to that node; the
+overlay keeps it on the same node for simplicity.
 
 ## Setup
 
@@ -56,6 +81,18 @@ read-only root file system, with memory and process limits.
 **Own name.** Point an A record for `photos.example.com` at the server's tailnet address (100.x.y.z, DNS only, not
 proxied), add the domain overlay and `DOMAIN`, `TS_DOMAIN`, `CF_API_TOKEN`, and add the name to `PUBLIC_HOSTS`
 (comma-separated). The name resolves for everyone but only answers inside your tailnet.
+
+**Portainer.** Write its admin password (at least 12 characters) into a file only you can read, and name it in
+`.env`; Portainer creates the account `admin` with it at its first start, so there is no moment when a fresh
+Portainer waits for whoever opens it first. Then sign in and turn on two-factor login. Keep the file (Compose needs
+it to start the overlay); it is only read while Portainer has no admin, so changing the password later in Portainer
+is fine, and a Portainer that already had an admin before this keeps it:
+
+```bash
+umask 077; printf '%s' 'a-long-random-password' > /opt/cipherfilm/portainer-admin-password
+# .env
+PORTAINER_ADMIN_PASSWORD_FILE=/opt/cipherfilm/portainer-admin-password
+```
 
 **Kopia.** Add the Kopia overlay and `KOPIA_SERVER_PASSWORD`, open `https://photos.your-tailnet.ts.net:8443`, connect
 or create a repository (WebDAV, S3, SFTP, …) and set the policy for `/data` (ignore `/app.db*` and `/secret`, which

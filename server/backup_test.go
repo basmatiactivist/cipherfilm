@@ -465,3 +465,130 @@ func TestRestoreKeepsLaterTwoFactorChanges(t *testing.T) {
 		t.Fatalf("bob's notice after the restore: %d", n)
 	}
 }
+
+// A storage limit lowered, explicit search turned off or on, or the default limit for new people changed after the
+// backup stays so after a restore onto the same server: a restore brings photos back, not limits that were set since.
+func TestRestoreKeepsLaterLimitsAndExplicitSearch(t *testing.T) {
+	e := newEnv(t)
+	admin, _ := e.setupAdmin("admin@x.org")
+	e.acceptInvite(e.invite(admin, "bob@x.org"))
+	e.acceptInvite(e.invite(admin, "carol@x.org"))
+	e.app.db.Exec(`UPDATE users SET quota_bytes=5000000, nsfw=1 WHERE email='bob@x.org'`)
+	if err := runBackup(e.app.dataDir); err != nil {
+		t.Fatal(err)
+	}
+	e.app.db.Exec(`UPDATE users SET quota_bytes=1000, nsfw=0 WHERE email='bob@x.org'`)
+	e.app.db.Exec(`UPDATE users SET nsfw=1 WHERE email='carol@x.org'`)
+	e.app.db.Exec(`INSERT INTO settings(key,value) VALUES (?, '12345') ON CONFLICT(key) DO UPDATE SET value=excluded.value`, settingDefaultQuota)
+	type state struct {
+		quota int64
+		nsfw  int
+	}
+	read := func(a *App, email string) (s state) {
+		a.db.QueryRow(`SELECT quota_bytes, nsfw FROM users WHERE email=?`, email).Scan(&s.quota, &s.nsfw)
+		return
+	}
+	before := map[string]state{}
+	for _, m := range []string{"admin@x.org", "bob@x.org", "carol@x.org"} {
+		before[m] = read(e.app, m)
+	}
+	app2 := restoredApp(t, e)
+	for m, want := range before {
+		if got := read(app2, m); got != want {
+			t.Fatalf("%s after the restore: %+v, want %+v", m, got, want)
+		}
+	}
+	if got := app2.defaultQuota(); got != 12345 {
+		t.Fatalf("default limit after the restore: %d", got)
+	}
+}
+
+// After a restore onto a fresh machine (no replaced data), new notices must not get ids the devices have already seen
+// before the restore: they remember shown ids and would stay silent about a new sign-in. Nor after a second restore.
+func TestNoticeIDsAfterARestoreAreNew(t *testing.T) {
+	e := newEnv(t)
+	e.setupAdmin("admin@x.org")
+	u, _ := e.app.userByEmail("admin@x.org")
+	if err := runBackup(e.app.dataDir); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 5; i++ { // seen by the devices, lost with the restore
+		e.app.notify(u.ID, noticeTwoFactorReset, "", "")
+	}
+	fresh := func(from string) *App {
+		dir := t.TempDir()
+		os.MkdirAll(filepath.Join(dir, "blobs"), 0o700)
+		for _, f := range []string{"app.db", "secret"} {
+			if err := copyFile(filepath.Join(from, "backup", f), filepath.Join(dir, f)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := runAfterRestore(dir); err != nil {
+			t.Fatal(err)
+		}
+		a, err := newApp(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { a.db.Close() })
+		return a
+	}
+	top := func(a *App) (n int64) {
+		a.db.QueryRow(`SELECT COALESCE(MAX(id),0) FROM notices`).Scan(&n)
+		return
+	}
+	seen := top(e.app)
+	app2 := fresh(e.app.dataDir)
+	app2.notify(u.ID, noticeTwoFactorReset, "", "")
+	if got := top(app2); got <= seen {
+		t.Fatalf("new notice after the restore has id %d; the devices saw up to %d", got, seen)
+	}
+	if got := top(app2); got >= 1<<53 {
+		t.Fatalf("notice id %d is not exact in JavaScript", got)
+	}
+	// the restored server goes on, is backed up and restored again: still past everything it handed out
+	for i := 0; i < 3; i++ {
+		app2.notify(u.ID, noticeTwoFactorReset, "", "")
+	}
+	if err := runBackup(app2.dataDir); err != nil {
+		t.Fatal(err)
+	}
+	app2.notify(u.ID, noticeTwoFactorReset, "", "")
+	seen = top(app2)
+	time.Sleep(2 * time.Millisecond)
+	app3 := fresh(app2.dataDir)
+	app3.notify(u.ID, noticeTwoFactorReset, "", "")
+	if got := top(app3); got <= seen {
+		t.Fatalf("after a second restore: id %d, the devices saw up to %d", got, seen)
+	}
+}
+
+// restore.sh marks the data before it swaps it; the server refuses to start until after-restore has succeeded, which
+// removes the mark.
+func TestPendingRestoreBlocksStartUntilAfterRestore(t *testing.T) {
+	e := newEnv(t)
+	e.setupAdmin("admin@x.org")
+	if err := runBackup(e.app.dataDir); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "blobs"), 0o700)
+	for _, f := range []string{"app.db", "secret"} {
+		if err := copyFile(filepath.Join(e.app.dataDir, "backup", f), filepath.Join(dir, f)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := checkNoPendingRestore(dir); err != nil {
+		t.Fatalf("no mark: %v", err)
+	}
+	os.WriteFile(filepath.Join(dir, restorePending), nil, 0o600)
+	if err := checkNoPendingRestore(dir); err == nil {
+		t.Fatal("the server would start in the middle of a restore")
+	}
+	if err := runAfterRestore(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkNoPendingRestore(dir); err != nil {
+		t.Fatalf("after after-restore: %v", err)
+	}
+}

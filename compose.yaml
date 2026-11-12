@@ -31,6 +31,10 @@ services:
       TRUSTED_PROXIES: "${TRUSTED_PROXIES:-}"
       DEMO_ACCOUNTS: "${DEMO_ACCOUNTS:-}" # public read-only demo logins (deploy/demo); normally empty
       DEMO_LOGIN: "${DEMO_LOGIN:-}"       # "EMAIL PASSWORD" of one of them, shown on the sign-in page; normally empty
+      MAP_STYLE: "${MAP_STYLE:-}"         # the map tab's base map (docs/MAP.md); empty: the default
+      # the Android apps that may use this server's passkeys (docs/SELF-HOSTING.md); empty: the official app
+      ANDROID_APP_CERTS: "${ANDROID_APP_CERTS:-}"
+      ANDROID_APP_PACKAGES: "${ANDROID_APP_PACKAGES:-}"
 
 volumes:
   appdata:

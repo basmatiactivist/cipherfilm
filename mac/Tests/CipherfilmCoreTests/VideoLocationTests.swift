@@ -148,6 +148,18 @@ import Testing
   }
   private static let mvhd = box("mvhd", [UInt8](repeating: 0, count: 100))
 
+  /** A box whose 64-bit size is close to UInt64.max: no location, and no trap from an overflowing sum. */
+  @Test func hugeLargeSizeBoxIsNoneNotACrash() throws {
+    let url = temp("mp4")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let ftyp = Self.box("ftyp", Array("isom".utf8) + [0, 0, 2, 0])
+    for size: [UInt8] in [[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xF8], [0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF], [0, 0, 0, 0, 0, 0, 0, 16]] {
+      let huge = Self.be32(1) + Array("mdat".utf8) + size + [UInt8](repeating: 0, count: 32)
+      try Data(ftyp + huge).write(to: url)
+      #expect(Media.fileVideoLocation(url) == nil)
+    }
+  }
+
   @Test func boxesUdtaXyz() {
     let moov = Self.mvhd + Self.box("udta", Self.box("name", [0, 0]) + Self.xyzBox("-33.9249+018.4241/"))
     let p = Media.locationInMoov(moov)

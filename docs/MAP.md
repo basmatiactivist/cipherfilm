@@ -40,8 +40,8 @@ thumbnail or anything else from the library. To keep that small:
 
 - The map opens on the whole world and never moves to where the photos are by itself; only what the person zooms or
   moves to is loaded.
-- A photo's small map in its details loads only when the details are opened, at district level (zoom 11), not street
-  level. Looking at a photo's details tells the tile server roughly where that one photo was taken.
+- A photo's small map in its details loads only when the details are opened (on the Mac, whose details column stays
+  open from photo to photo, only after "Show Map" for that photo), at district level (zoom 11), not street level. Looking at a photo's details tells the tile server roughly where that one photo was taken.
 - No cookies and no referrer go to the tile server (the web app's `Referrer-Policy: no-referrer`; MapLibre's requests
   carry this server's cookies only to this server).
 - OpenFreeMap: no account, no API key, no cookies; IP addresses are not in its access logs, error logs are deleted after

@@ -27,3 +27,16 @@ import Testing
     #expect(e.phase == .off)
   }
 }
+
+/** A photo's small map loads only for the photo the person asked it for, not because the details column is open. */
+@Suite struct MiniMapGateTests {
+  @Test func onlyAfterShowMapForThatPhoto() {
+    #expect(MiniMapGate.state(mapOn: true, serverMap: true, located: true, asked: nil, item: "a") == .offer)
+    #expect(MiniMapGate.state(mapOn: true, serverMap: true, located: true, asked: "a", item: "a") == .show)
+    // the next photo, with the column still open: asked again
+    #expect(MiniMapGate.state(mapOn: true, serverMap: true, located: true, asked: "a", item: "b") == .offer)
+    #expect(MiniMapGate.state(mapOn: false, serverMap: true, located: true, asked: "a", item: "a") == .mapOff)
+    #expect(MiniMapGate.state(mapOn: true, serverMap: false, located: true, asked: "a", item: "a") == .none)
+    #expect(MiniMapGate.state(mapOn: true, serverMap: true, located: false, asked: "a", item: "a") == .none)
+  }
+}

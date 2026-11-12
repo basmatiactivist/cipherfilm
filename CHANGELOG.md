@@ -58,6 +58,8 @@ version into the GitHub release notes, so a release cannot be published without 
   explicit search as an administrator set them after the backup, like roles and disabled accounts.
 - Server: after a restore (also onto a new machine) new sign-in notices get ids the devices haven't seen before, so
   the phones and the Mac announce them again instead of taking them for ones already shown.
+- Server: a restore whose last step failed is marked in the data: the server doesn't start and a second restore or
+  demo reset doesn't run until it is finished, so the replaced data in `.previous/` is never dropped.
 
 ### Changed
 - Search uses one open model for everyone, in every app and build: LAION's CLIP ViT-B/32 (MIT), the model explicit

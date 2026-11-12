@@ -145,6 +145,21 @@ func runAfterRestore(dataDir string) error {
 		return err
 	}
 	fmt.Printf("ended %d sessions; kept %d later sign-outs; %d items in the trash keep it for another 30 days\n", sessions, revoked, trashed)
+	if err := os.Remove(filepath.Join(dataDir, restorePending)); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+// restorePending is the file scripts/restore.sh writes into the data before it swaps it for the backup; after-restore
+// removes it once it succeeded. While it is there the server does not start (it would serve the backup's sessions and
+// cursors) and restore.sh does not run again (it would drop .previous/, which then holds the live data).
+const restorePending = ".restore-pending"
+
+func checkNoPendingRestore(dataDir string) error {
+	if _, err := os.Lstat(filepath.Join(dataDir, restorePending)); err == nil {
+		return fmt.Errorf("a restore is not finished (%s in the data): run `after-restore` first (docs/SELF-HOSTING.md); the replaced data is in .previous/", restorePending)
+	}
 	return nil
 }
 

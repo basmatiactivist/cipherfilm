@@ -175,6 +175,9 @@ func main() {
 			os.Exit(2)
 		}
 	}
+	if err := checkNoPendingRestore(dataDir); err != nil {
+		log.Fatal(err)
+	}
 	// the port first: a second start next to a running server (`/app` typed in its console) stops here, before it
 	// touches the data (setup token, the janitor's cleanup of uploads in progress)
 	ln, err := net.Listen("tcp", addr)

@@ -128,6 +128,11 @@ two-step sign-in turned on or off, passkeys and new recovery codes (and the noti
 roles, storage limits (and the default one for new people), explicit search, and disabled or deleted accounts (those stay disabled; their e-mail addresses are printed). This applies only
 when the replaced data is from the same server (the same `secret`).
 
+If the last step (`after-restore`) fails, the script stops with the app stopped: the replaced data stays in
+`.previous/`, and a `.restore-pending` file in the volume keeps the server from starting and `restore.sh` (and the
+demo's `reset.sh`) from running again, which would drop `.previous/`. Fix the cause, then
+`docker compose run --rm --no-deps -T app after-restore` (it removes the file) and `docker compose up -d app`.
+
 **Test your restore** on a spare machine with `scripts/restore.sh`, and sign in as a user.
 
 ## Updating

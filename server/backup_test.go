@@ -562,3 +562,33 @@ func TestNoticeIDsAfterARestoreAreNew(t *testing.T) {
 		t.Fatalf("after a second restore: id %d, the devices saw up to %d", got, seen)
 	}
 }
+
+// restore.sh marks the data before it swaps it; the server refuses to start until after-restore has succeeded, which
+// removes the mark.
+func TestPendingRestoreBlocksStartUntilAfterRestore(t *testing.T) {
+	e := newEnv(t)
+	e.setupAdmin("admin@x.org")
+	if err := runBackup(e.app.dataDir); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "blobs"), 0o700)
+	for _, f := range []string{"app.db", "secret"} {
+		if err := copyFile(filepath.Join(e.app.dataDir, "backup", f), filepath.Join(dir, f)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := checkNoPendingRestore(dir); err != nil {
+		t.Fatalf("no mark: %v", err)
+	}
+	os.WriteFile(filepath.Join(dir, restorePending), nil, 0o600)
+	if err := checkNoPendingRestore(dir); err == nil {
+		t.Fatal("the server would start in the middle of a restore")
+	}
+	if err := runAfterRestore(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkNoPendingRestore(dir); err != nil {
+		t.Fatalf("after after-restore: %v", err)
+	}
+}

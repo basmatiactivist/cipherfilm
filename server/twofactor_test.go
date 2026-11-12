@@ -377,11 +377,6 @@ func TestTwoFactorCodesAreRateLimited(t *testing.T) {
 	if code, _ := admin.do("POST", "/api/me/2fa/disable", map[string]any{"current_auth": ab["auth"], "code": codeAt(t, secret, clk.at)}, true); code != 429 {
 		t.Fatalf("disable over the limit: %d", code)
 	}
-	// a password change clears them: whoever was guessing doesn't have the new password
-	e.app.forgetCodeTries(u.ID)
-	if !e.app.totpAcct.allowed("2fa|"+u.ID) || !e.app.totpDay.allowed("2fa|"+u.ID) {
-		t.Fatal("not cleared")
-	}
 }
 
 func TestRecoveryCodesWorkOnce(t *testing.T) {
@@ -1023,5 +1018,37 @@ func TestPasswordStepNeverCreatesASession(t *testing.T) {
 	}
 	if n := rows(); n != before+1 {
 		t.Fatalf("after the code: %d session rows, want %d", n, before+1)
+	}
+}
+
+// A session that has the password guesses codes for turning two-step sign-in off and changes the password between
+// rounds: the change doesn't give it a fresh budget. Of 30 guesses, only totpAcctMax are checked.
+func TestPasswordChangeKeepsTheCodeCount(t *testing.T) {
+	e := newEnv(t)
+	e.pinClock()
+	admin, ab := e.setupAdmin("admin@x.org")
+	e.enable2FA(admin, ab)
+	auth := ab["auth"]
+	checked := 0
+	for round := 0; round < 6; round++ {
+		for i := 0; i < totpAcctMax; i++ {
+			code, _ := admin.do("POST", "/api/me/2fa/disable", map[string]any{"current_auth": auth, "code": "000000"}, true)
+			switch code {
+			case 403:
+				checked++
+			case 429:
+			default:
+				t.Fatalf("guess: %d", code)
+			}
+		}
+		next := rb(32)
+		if code, out := admin.do("POST", "/api/auth/password", map[string]any{"current_auth": auth, "new_auth": next,
+			"new_kdf": ab["kdf"], "new_wrapped_master_pw": rb(wrappedLen)}, true); code != 200 {
+			t.Fatalf("password change: %d %v", code, out)
+		}
+		auth = next
+	}
+	if checked != totpAcctMax {
+		t.Fatalf("%d of 30 guesses checked, want %d", checked, totpAcctMax)
 	}
 }

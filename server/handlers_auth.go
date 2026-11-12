@@ -321,7 +321,9 @@ func (a *App) changePassword(w http.ResponseWriter, r *http.Request, u *user, s 
 	}
 	at.success()
 	a.revokeTickets(u.ID)
-	a.forgetCodeTries(u.ID)
+	// the pending sign-ins were issued for the old password. The account's code count stays: the session changing the
+	// password may be the one guessing codes, and must not get a fresh budget with every change it makes
+	a.pending.dropUser(u.ID, a.now())
 	a.live.recheck(u.ID) // the other devices' live-update streams end with their sessions
 	if nu, err := a.userByID(u.ID); err == nil {
 		a.setDevice(w, nu) // the old device cookie is bound to the old password hash

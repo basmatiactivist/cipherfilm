@@ -264,15 +264,6 @@ func (a *App) codeSlots(userID string) []slot {
 	return []slot{{a.totpAcct, "2fa|" + userID, true}, {a.totpDay, "2fa|" + userID, true}}
 }
 
-// forgetCodeTries: after a password change whoever was guessing codes no longer has the password, so the real person
-// isn't kept waiting by their failures. Only a password change does this (it needs a session, which passed the code
-// step); a recovery only drops the pending sign-ins, since the recovery key alone gets no further than the code step.
-func (a *App) forgetCodeTries(userID string) {
-	a.totpAcct.clear("2fa|" + userID)
-	a.totpDay.clear("2fa|" + userID)
-	a.pending.dropUser(userID, a.now())
-}
-
 // ---- pending sign-ins ----
 
 type pendingSignIn struct {

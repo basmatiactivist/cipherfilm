@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { api } from "./api";
 import * as auth from "./auth";
 import { mem } from "./state";
-import { mapProvider, PRIVACY_URL, setMapOn, useMapOn } from "./map/consent";
+import { mapProvider, mapProviderLong, PRIVACY_URL, setMapOn, useMapOn } from "./map/consent";
 import { setMemoriesOn, useMemoriesOn } from "./memories/setting";
 import { browserAlertsPossible, setBrowserAlerts, useBrowserAlerts } from "./noticeAlerts";
 import { Loader, Loading } from "./loader";
@@ -183,7 +183,7 @@ function MapPanel() {
   return (
     <Acc icon="map" title="Map" sub={on ? "On in this browser" : "Off"}>
       <label class="check"><input type="checkbox" checked={on} onChange={(e) => setMapOn((e.target as HTMLInputElement).checked)} /> Show the map and the small maps in a photo's details</label>
-      <p class="hint">Your photos on a map. Map images from {mapProvider() || "the map server"}; what it sees is in the <a href={PRIVACY_URL} target="_blank" rel="noopener noreferrer">privacy policy</a>.</p>
+      <p class="hint">Your photos on a map. Map images from {mapProviderLong()}; what it sees is in the <a href={PRIVACY_URL} target="_blank" rel="noopener noreferrer">privacy policy</a>.</p>
     </Acc>
   );
 }

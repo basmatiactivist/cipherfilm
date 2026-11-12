@@ -16,6 +16,7 @@ import { open, LABEL } from "./crypto/wrap";
 import { announce, sameSession } from "./tabs";
 import { forgetBrowserAlerts } from "./noticeAlerts";
 import { getPasskey } from "./passkeys";
+import { httpsMap } from "./places/mapHosts";
 
 /** Give the browser a frame to paint a busy state before Argon2 blocks the thread. */
 export const paint = (): Promise<void> => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
@@ -39,7 +40,7 @@ const kept = (userId: string, key: Uint8Array) => Promise.race([keepKey(userId, 
 async function adopt(me: Me, masterKey: Uint8Array | null): Promise<void> {
   if (me.server_version) serverVersion = me.server_version; // the sign-in screen after a sign-out shows it too
   setCsrf(me.csrf);
-  mem.me = me;
+  mem.me = { ...me, map: httpsMap(me.map) }; // only https styles, from the hosts the map question names
   mem.masterKey = masterKey;
   if (masterKey) await kept(me.user.id, masterKey); // for a reload of this tab (keep.ts)
 }

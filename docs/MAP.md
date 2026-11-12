@@ -118,7 +118,9 @@ them.
    ```
 
    The server refuses anything that isn't two https URLs (or empty, or `off`) at start, and builds the web app's
-   Content-Security-Policy from these hosts. One style for both modes works too: give the same URL twice.
+   Content-Security-Policy from these hosts. One style for both modes works too: give the same URL twice. The apps
+   check it again: they use only https style URLs with a plain host name, the hosts the question before the map
+   names (an inline style or an http:// URL is ignored, and with nothing left the map stays off).
 5. **Check it.** The apps load the setting from the server when someone signs in or unlocks, so sign out and in (or
    lock and unlock) on each device. The question before the map then names your map server's host instead of
    OpenFreeMap. If the map stays empty, open the browser's developer tools on the web app: a blocked request

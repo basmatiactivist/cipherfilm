@@ -72,7 +72,7 @@ func TestDemoAccountReadsAndSearchesButChangesNothing(t *testing.T) {
 		method, path string
 		body         any
 	}{
-		{"PUT", "/api/items/" + item + "/index", map[string]any{"data_enc": rb(300)}},
+		{"PUT", "/api/items/" + item + "/index", map[string]any{"data_enc": rb(300), "model": "laionb32/1"}},
 		{"PUT", "/api/me/indexer", nil},
 	} {
 		if code, out := demo.do(c.method, c.path, c.body, true); code != 409 || out["code"] != "not_indexer" {
@@ -160,6 +160,8 @@ func serverRoutes(t *testing.T) []string {
 var demoPublic = map[string]string{
 	"POST /api/setup":                  "only before the first account exists",
 	"POST /api/auth/login":             "signing in is the point",
+	"POST /api/auth/login/2fa":         "needs a pending token from a password step; a demo account never has two-step sign-in",
+	"POST /api/auth/login/2fa/passkey": "needs a pending token from a password step, too",
 	"POST /api/auth/recover/start":     "refused for demo addresses (TestDemoAccountReadsAndSearchesButChangesNothing)",
 	"POST /api/auth/recover/finish":    "needs a ticket from recover/start",
 	"POST /api/invites/{token}/accept": "makes a new account, never changes one",
@@ -288,5 +290,34 @@ func TestDemoLoginsAreNotSharedByADeviceCookie(t *testing.T) {
 	}
 	if code, _ := login("203.0.113.9", db["auth"].(string)); code != 200 {
 		t.Fatalf("another visitor was locked out: %d", code)
+	}
+}
+
+// On a demo server, another administrator (an app-store reviewer's account may be one, to show the admin area) can't
+// change the public demo login: not delete, disable, promote, re-limit it or reset its two-step sign-in. Other
+// accounts stay theirs to manage.
+func TestAdminsCantChangeTheDemoAccount(t *testing.T) {
+	e, admin, _, _, _ := demoEnv(t)
+	ud, _ := e.app.userByEmail("demo@x.org")
+	ub, _ := e.app.userByEmail("bob@x.org")
+	for _, c := range []struct {
+		method, path string
+		body         any
+	}{
+		{"PATCH", "/api/admin/users/" + ud.ID, map[string]any{"status": "disabled"}},
+		{"PATCH", "/api/admin/users/" + ud.ID, map[string]any{"role": "admin"}},
+		{"PATCH", "/api/admin/users/" + ud.ID, map[string]any{"quota_bytes": 1}},
+		{"DELETE", "/api/admin/users/" + ud.ID, nil},
+		{"DELETE", "/api/admin/users/" + ud.ID + "/2fa", nil},
+	} {
+		if code, out := admin.do(c.method, c.path, c.body, true); code != 403 {
+			t.Fatalf("%s %s: %d %v", c.method, c.path, code, out)
+		}
+	}
+	if after, _ := e.app.userByEmail("demo@x.org"); after == nil || after.Status != "active" || after.Role != "user" {
+		t.Fatalf("demo account changed: %+v", after)
+	}
+	if code, out := admin.do("PATCH", "/api/admin/users/"+ub.ID, map[string]any{"quota_bytes": 5_000_000_000}, true); code != 200 {
+		t.Fatalf("another account: %d %v", code, out)
 	}
 }

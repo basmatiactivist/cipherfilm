@@ -10,12 +10,15 @@ import { askMediaLocation } from "../mediaAccess";
 import { useMapOn } from "../mapConsent";
 import { relocate } from "../relocate";
 import { Gallery } from "../Gallery";
+import { MemoriesRow } from "../MemoriesRow";
+import { useMemories } from "../memories";
 import { NAV_HEIGHT, NavBar } from "../NavBar";
 import { Icon } from "../icons";
 import { refreshLibrary, useLibrary } from "../libraryStore";
 import { setPicked } from "../pending";
 import { demoNote, useSession } from "../session";
 import { useAppTheme } from "../ui";
+import { NoticesButton } from "../NoticesButton";
 import { text } from "../tokens";
 import { t } from "../i18n";
 
@@ -33,6 +36,7 @@ export default function Library() {
   const inset = useSafeAreaInsets();
   const { items, error, loading } = useLibrary();
   const demo = !!useSession().me?.demo;
+  const memories = useMemories(items);
   useEffect(() => { if (!items) refreshLibrary(); }, []);
   // while the map is on: what this phone uploaded without where it was taken gets it (relocate.ts, every few minutes)
   const mapOn = useMapOn();
@@ -58,7 +62,7 @@ export default function Library() {
           <Dialog.Title>{t("Search your photos?")}</Dialog.Title>
           <Dialog.Content>
             <Text variant="bodyMedium">
-              {t("Find photos by what's in them (\"beach\", \"birthday cake\") and by the people in them. Runs on this phone; the server never sees what your photos show. The models download once from Hugging Face; you see the size first. Change this any time in Account.")}
+              {t("Find photos by what's in them (\"beach\", \"birthday cake\") and by the people in them. Runs on this phone; the server never sees what your photos show. The models download once from where they are published; you see the size first. Change this any time in Account.")}
             </Text>
           </Dialog.Content>
           <Dialog.Actions>
@@ -73,11 +77,13 @@ export default function Library() {
           <View>
             <Appbar.Header style={{ backgroundColor: th.colors.background }}>
               <Appbar.Content title={t("Photos")} titleStyle={text.page} />
+              <NoticesButton />
               <Appbar.Action icon="user" accessibilityLabel={t("Account")} onPress={() => router.push("/account")} />
             </Appbar.Header>
             {demo ? <Text variant="labelLarge" style={[st.demo, { backgroundColor: th.colors.primaryContainer, color: th.colors.onPrimaryContainer }]}>{demoNote()}</Text> : null}
           </View>
         }
+        top={memories.length ? <MemoriesRow memories={memories} /> : undefined}
         empty={<Empty />}
         fab={demo ? undefined : <FAB icon="upload" label={t("Upload")} onPress={pick} accessibilityLabel={t("Upload photos and videos from this phone")}
           style={[st.fab, { right: 16 + inset.right, bottom: 16 + inset.bottom + NAV_HEIGHT, backgroundColor: th.colors.primary }]} color={th.colors.onPrimary} />}

@@ -1,13 +1,13 @@
-// Explicit search (docs/SEARCH.md): which model is used, its tags, and the LAION ViT-B/32 vectors the Mac
-// computes against scripts/laion-reference.py (ONNX Runtime in Python with the documented preprocessing). The vector
-// test runs with CF_MODELS (a folder that also has nsfw-laion-b32-*.onnx) and CF_LAION_REF (the script's output).
+// The search model, LAION's ViT-B/32 (docs/SEARCH.md): the explicit-search choice in the people document, and the
+// vectors the Mac computes against scripts/laion-reference.py (ONNX Runtime in Python with the documented
+// preprocessing). The vector test runs with CF_MODELS (a folder with clip-b32-*.onnx) and CF_LAION_REF (the output).
 import Foundation
 import Testing
 @testable import CipherfilmCore
 
 private let env = ProcessInfo.processInfo.environment
 private let refFile = env["CF_LAION_REF"]
-private let haveLaion = env["CF_MODELS"].map { FileManager.default.fileExists(atPath: URL(fileURLWithPath: $0).appendingPathComponent(ClipModel.laion.vision.name).path) } ?? false
+private let haveLaion = env["CF_MODELS"].map { FileManager.default.fileExists(atPath: URL(fileURLWithPath: $0).appendingPathComponent(ClipModel.clip.vision.name).path) } ?? false
 
 private func cosine(_ a: [Float], _ b: [Float]) -> Float {
   var s: Float = 0, x: Float = 0, y: Float = 0
@@ -16,19 +16,6 @@ private func cosine(_ a: [Float], _ b: [Float]) -> Float {
 }
 
 @Suite struct LaionParityTests {
-  @Test func choice() {
-    #expect(ClipModel.choose(allowed: true, explicit: true) == .laion)
-    #expect(ClipModel.choose(allowed: false, explicit: true) == .mobileclip) // the admin withdrew it
-    #expect(ClipModel.choose(allowed: true, explicit: false) == .mobileclip)
-    #expect(ClipModel.laion.tag == "laionb32+yunet23+sface21/1" && ClipModel.laion.tagNoFaces == "laionb32/1")
-    #expect(ClipModel.mobileclip.tag == "mcs2+yunet23+sface21/2" && ClipModel.mobileclip.tagNoFaces == "mcs2/2")
-    // an entry from the other model is made again; one without faces is enough when faces are off
-    #expect(!Models.good("mcs2+yunet23+sface21/2", faces: true, clip: .laion))
-    #expect(Models.good("laionb32/1", faces: false, clip: .laion) && !Models.good("laionb32/1", faces: true, clip: .laion))
-    // indexing with LAION runs MobileCLIP's image model too (ExplicitIndexTests)
-    #expect(Models.needed(faces: false, clip: .laion).map(\.name) == ["nsfw-laion-b32-vision.onnx", "nsfw-laion-b32-text.onnx", "mobileclip-s2-tokenizer.json", "mobileclip-s2-vision.onnx"])
-  }
-
   @Test func peopleDocKeepsTheChoice() throws {
     var d = PeopleDoc()
     #expect(String(decoding: try JSONEncoder().encode(d), as: UTF8.self).contains("explicit") == false)
@@ -42,7 +29,7 @@ private func cosine(_ a: [Float], _ b: [Float]) -> Float {
   @Test(.enabled(if: haveLaion && refFile != nil)) func vectorsMatchPython() throws {
     struct Ref: Decodable { let ort: String; let images: [String: [Float]]; let texts: [String: [Float]] }
     let ref = try JSONDecoder().decode(Ref.self, from: Data(contentsOf: URL(fileURLWithPath: refFile!)))
-    let vision = try Vision(dir: URL(fileURLWithPath: env["CF_MODELS"]!), faces: false, clip: .laion)
+    let vision = try Vision(dir: URL(fileURLWithPath: env["CF_MODELS"]!), faces: false, clip: .clip)
     #expect(!ref.images.isEmpty)
     for (path, want) in ref.images.sorted(by: { $0.key < $1.key }) {
       let got = Vision.unhalf(try vision.analyze(Data(contentsOf: URL(fileURLWithPath: path)), faces: false).clip)

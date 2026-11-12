@@ -5,6 +5,8 @@ import Foundation
 
 public enum LiveTopic: String, Sendable, CaseIterable {
   case items, trash, albums, people, index
+  /** a notice for this account's devices (a new sign-in; server/notices.go) */
+  case notices
 }
 
 /** One event of the stream; a heartbeat (a comment line) has the name ":". */

@@ -5,33 +5,43 @@ import * as ort from "onnxruntime-web/wasm";
 import { allFinite, unhalf } from "../people/faces";
 import { Tokenizer } from "./tokenizer";
 import { embed } from "./embed";
-import { Family, Hit, MODEL_CACHE, ModelFile, TEXT_MODELS, TOKENIZER, familyOf, normalize, rank } from "./rank";
+import { scoreWith } from "../cleanup/duplicates";
+import { Family, Hit, MODEL_CACHE, ModelFile, TEXT_MODELS, TOKENIZER, familyOf, normalize } from "./rank";
+import { imageHidden, searchHits } from "./explicit";
 
 export type Req =
   | { t: "put"; entries: { item: string; m?: string; clip?: Uint8Array }[] }
   | { t: "remove"; items: string[] }
-  | { t: "search"; id: number; q: string; family: Family };
+  /** allow: the person agreed to download the model (search/consent.ts); without it only a cached file is used.
+   *  An empty q only loads the model. */
+  | { t: "search"; id: number; q: string; family: Family; allow?: boolean; filtered?: boolean }
+  /** cosine of the vectors of a[k] and b[k] (NaN where one has none): duplicates and similar photos (cleanup/) */
+  | { t: "score"; id: number; family: Family; a: string[]; b: string[] };
 
 export type Res =
   | { id: number; t: "progress"; done: number; total: number }
   | { id: number; t: "done"; hits: Hit[] }
+  | { id: number; t: "scores"; scores: Float32Array }
   | { id: number; t: "error"; error: string };
 
 ort.env.wasm.numThreads = 1; // threads need cross-origin isolation, which the app doesn't have; one is fast enough for text
 ort.env.wasm.proxy = false;
 
-const vectors: Record<Family, Map<string, Float32Array>> = { mcs2: new Map(), laionb32: new Map() };
+const vectors: Record<Family, Map<string, Float32Array>> = { laionb32: new Map() };
+/** Photos filtered search leaves out (explicit.ts): worked out once, when their vector comes in. */
+const hidden = new Set<string>();
 
 const hex = (b: ArrayBuffer) => Array.from(new Uint8Array(b), (x) => x.toString(16).padStart(2, "0")).join("");
 const sha = async (b: ArrayBuffer) => hex(await crypto.subtle.digest("SHA-256", b));
 
-const failed = "Couldn't download the search model from Hugging Face. Try again.";
+const failed = "Couldn't download the search model. Try again.";
 const wrong = "The downloaded search model isn't the expected file.";
+const notAgreed = "The search model isn't downloaded yet.";
 
 /** A model file: from the cache if it is there and still has the right hash, else from its pinned Hugging Face URL
  *  (then cached). Nothing of the account goes along: no cookie, no referrer. A dropped connection continues with
  *  Range where it stopped, as long as each try gets somewhere. */
-async function file(m: ModelFile, progress: (done: number) => void): Promise<ArrayBuffer> {
+async function file(m: ModelFile, allow: boolean, progress: (done: number) => void): Promise<ArrayBuffer> {
   const { size, sha256 } = m;
   const key = `/api/models/${m.file}`;
   const cache = typeof caches !== "undefined" ? await caches.open(MODEL_CACHE).catch(() => null) : null;
@@ -41,6 +51,8 @@ async function file(m: ModelFile, progress: (done: number) => void): Promise<Arr
     if (b.byteLength === size && (await sha(b)) === sha256) { progress(size); return b; }
     await cache!.delete(key);
   }
+  // nothing goes to Hugging Face without the yes (search/consent.ts); the main thread checks it too
+  if (!allow) throw new Error(notAgreed);
   const out = new Uint8Array(size);
   let at = 0;
   for (let fruitless = 0; at < size; ) {
@@ -75,20 +87,20 @@ async function file(m: ModelFile, progress: (done: number) => void): Promise<Arr
 let tokenizer: Promise<Tokenizer> | null = null;
 let loaded: { family: Family; session: Promise<ort.InferenceSession> } | null = null;
 
-async function session(family: Family, progress: (done: number, total: number) => void): Promise<ort.InferenceSession> {
+async function session(family: Family, allow: boolean, progress: (done: number, total: number) => void): Promise<ort.InferenceSession> {
   if (loaded?.family === family) return loaded.session;
   const prev = loaded;
   const m = TEXT_MODELS[family];
   const total = m.size + TOKENIZER.size;
   let tok = 0, mod = 0;
   const tell = () => progress(tok + mod, total);
-  tokenizer ??= file(TOKENIZER, (d) => { tok = d; tell(); })
+  tokenizer ??= file(TOKENIZER, allow, (d) => { tok = d; tell(); })
     .then((b) => new Tokenizer(JSON.parse(new TextDecoder().decode(b))))
     .catch((e) => { tokenizer = null; throw e; });
   const s = (async () => {
     await tokenizer;
     tok = TOKENIZER.size;
-    const bytes = await file(m, (d) => { mod = d; tell(); });
+    const bytes = await file(m, allow, (d) => { mod = d; tell(); });
     (await prev?.session.catch(() => null))?.release();
     return ort.InferenceSession.create(new Uint8Array(bytes), { executionProviders: ["wasm"], graphOptimizationLevel: "all" });
   })();
@@ -97,7 +109,7 @@ async function session(family: Family, progress: (done: number, total: number) =
   return s;
 }
 
-function remove(item: string) { vectors.mcs2.delete(item); vectors.laionb32.delete(item); }
+function remove(item: string) { vectors.laionb32.delete(item); hidden.delete(item); }
 
 self.onmessage = async (e: MessageEvent<Req>) => {
   // a dedicated worker only hears from the page that created it (origin empty); refuse anything else
@@ -108,15 +120,27 @@ self.onmessage = async (e: MessageEvent<Req>) => {
       remove(x.item);
       const f = familyOf(x.m);
       const v = f && x.clip && x.clip.length >= 1024 ? unhalf(x.clip) : null;
-      if (f && v && allFinite(v)) vectors[f].set(x.item, normalize(v));
+      if (f && v && allFinite(v)) {
+        const n = normalize(v);
+        vectors[f].set(x.item, n);
+        if (imageHidden(n)) hidden.add(x.item);
+      }
     }
   } else if (r?.t === "remove" && Array.isArray(r.items)) r.items.forEach(remove);
-  else if (r?.t === "search" && typeof r.q === "string" && Object.hasOwn(TEXT_MODELS, r.family)) {
+  else if (r?.t === "score" && Object.hasOwn(TEXT_MODELS, r.family) && Array.isArray(r.a) && Array.isArray(r.b) && r.a.length === r.b.length) {
+    const v = vectors[r.family];
+    const scores = scoreWith((id) => v.get(id))(r.a, r.b);
+    self.postMessage({ id: r.id, t: "scores", scores } satisfies Res, { transfer: [scores.buffer] });
+  } else if (r?.t === "search" && typeof r.q === "string" && Object.hasOwn(TEXT_MODELS, r.family)) {
     const post = (m: Res) => self.postMessage(m);
     try {
-      const s = await session(r.family, (done, total) => post({ id: r.id, t: "progress", done, total }));
+      const s = await session(r.family, r.allow === true, (done, total) => post({ id: r.id, t: "progress", done, total }));
+      if (!r.q) { post({ id: r.id, t: "done", hits: [] }); return; }
       const v = await embed(s, await tokenizer!, r.q, TEXT_MODELS[r.family].int32);
-      post({ id: r.id, t: "done", hits: rank(v, vectors[r.family]) });
+      // filtered unless the caller says otherwise: explicit words find nothing ("No results", no lecture), and
+      // explicit photos are left out
+      const filtered = r.filtered !== false;
+      post({ id: r.id, t: "done", hits: searchHits(v, vectors[r.family], hidden, filtered) });
     } catch (err) {
       post({ id: r.id, t: "error", error: err instanceof Error ? err.message : String(err) });
     }

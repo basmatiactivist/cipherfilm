@@ -1,7 +1,8 @@
 # Updates arrive as one grouped pull request per area, weekly, and only for versions that have been out for a few
 # days (cooldown): a hijacked package is usually found and pulled within hours, before it would reach us. Security
 # updates are not limited by this file and open on their own. The crypto and storage libraries (libsodium and its
-# bindings, x/crypto, JNA, sqlite) come in the same grouped pull requests, but such a pull request never merges by
+# bindings, x/crypto, JNA, sqlite) and the sign-in libraries (go-webauthn and its parsers, androidx.credentials) come
+# in the same grouped pull requests, but such a pull request never merges by
 # itself (workflows/dependabot.yml): it must pass the cross-implementation test vectors and the e2e suite, and a person
 # reads the changelog against docs/CRYPTO.md before merging.
 version: 2
@@ -70,6 +71,21 @@ updates:
     cooldown: { default-days: 7 }   # docker, docker-compose and github-actions take no per-semver days
     multi-ecosystem-group: e2e-stack
     patterns: ["*"]
+  # the private tailnet setup (deploy/tailnet, docs/TAILNET.md): Tailscale, Kopia, Portainer, the Alpine helpers and the
+  # Caddy build, all pinned by tag and digest. CI checks every overlay combination (make prod-config). The Caddy
+  # Cloudflare module's version (xcaddy, deploy/tailnet/domain/Dockerfile) is checked by hand (docs/RELEASING.md).
+  - package-ecosystem: docker-compose
+    directory: /deploy/tailnet
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7 }
+    open-pull-requests-limit: 2
+    groups: { tailnet: { patterns: ["*"] } }
+  - package-ecosystem: docker
+    directory: /deploy/tailnet/domain
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7 }
+    open-pull-requests-limit: 2
+    groups: { tailnet-caddy: { patterns: ["*"] } }
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }

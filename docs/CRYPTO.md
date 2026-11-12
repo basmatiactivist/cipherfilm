@@ -72,13 +72,31 @@ ad for every chunk = "seg" || itemId || u32(i) || u32(segment_count) || u64(tota
 - The authoritative `total_size` also lives in the encrypted metadata and the client rejects an item whose server-declared size differs; `segment_count` is bound through the associated data and must equal `ceil(total_size / 4 MiB)` (at least 1).
 - Independent segments give: parallel and resumable upload, retry per segment, and random access (a Range request maps to segment + chunk offsets, so video seeking works).
 - Thumbnail and preview: single-shot AEAD, `ad = "thumb"|"preview" || itemId` (single-shot AEAD via the wrap format, so the label and owner are joined with a NUL byte).
-- Metadata: JSON (`name`, `mime`, `capture_ts`, `width`, `height`, `duration`, GPS, EXIF subset, `size`, `segment_count`, `content_hash`) padded to a multiple of 256 B (small leak reduction), single-shot AEAD under `metaKey`, `ad = "meta" || itemId`.
+- Metadata: JSON (`name`, `mime`, `size`, `lastModified`, `capture_ts`, `width`, `height`, `duration`, `gps`, `make`, `model`, `sha256`) padded to a multiple of 256 B (small leak reduction), single-shot AEAD under `metaKey`, `ad = "meta" || itemId`.
+  `sha256` (optional, written by uploads from the web, Android and Mac apps and `cipherfilm-upload` since it was
+  added) is the SHA-256 of the plaintext original as 64 lowercase hex characters, computed from the segments as they
+  are read for encryption (`cipherfilm-upload` reads the file once more alongside). It only lets the apps find the
+  same file again (Duplicates, docs/SEARCH.md); clients drop a value of any other form, and older clients and
+  `cipherfilm-decrypt` ignore the field. Older items have none. (Earlier versions of this list named a
+  `content_hash` that no client ever wrote; `sha256` is that field.)
+  Edits (docs/EDITING.md) add the optional `edit` (turn, crop, picture version) and `orig` (date and place before the
+  person changed them); the thumbnail and preview made for an edit replace the old ones under the same subkeys and `ad`.
+  **Metadata version** `mv` (optional integer, `web/src/crypto/metaVersion.ts`): every change of the metadata (an edit,
+  a new date or place, a place added afterwards) writes it one higher than the metadata it changes; an upload writes
+  none (version 0). The `ad` binds the metadata to its item but not to a point in time, so a server could hand out an
+  older sealed copy it kept. The web and Android apps remember the highest version they have seen per item (item ids
+  and numbers only, at most 10,000 items, in the browser's storage or the app's private files, deleted at sign-out) and
+  never show a lower one: the newer metadata decrypted since the last lock stays; without it (after a lock or a
+  restart) the item is marked stale and is never downloaded, shared or saved as the original by default (a copy with
+  no place). Older clients and the Mac keep or ignore the field; the Mac and `cipherfilm-decrypt` don't check it.
 
 Failure policy: any AEAD failure aborts decryption for that object, nothing is rendered, and the UI shows a "could not be verified" placeholder.
 
 ## 5. Authentication and sessions
 
 - Login: `POST auth` with `authKey`; server verifies, issues a random 256-bit session token in an `HttpOnly; Secure; SameSite=Strict; Path=/` cookie (`__Host-` prefix). Only `SHA-256(token)` is stored. CSRF: double-submit token derived per session plus a required custom header and Origin check.
+- Two-step sign-in (optional, server/twofactor.go): for such an account the password step answers 401 `two_factor_required` with only a pending token (random 256 bits, stored as SHA-256 in memory, 5 minutes, single use); `POST /api/auth/login/2fa` with that token and a TOTP code (RFC 6238: HMAC-SHA-1, 6 digits, 30 s, ±1 step, each step accepted once) or a recovery code (80 random bits; stored as `HMAC-SHA256(HMAC(serverSecret, label), user id ‖ code)`) then issues the session and the bundle below. The client keeps the `KEK` derived in the password step in memory until then and zeroes it on success, on "start over" and on expiry. The TOTP secret is stored as `AES-256-GCM(key = HMAC(serverSecret, label), ad = "totp|" ‖ slot ‖ "|" ‖ user id)`. None of this touches the key hierarchy: two-step sign-in guards the session, not the keys.
+- Passkeys (server/passkeys.go, WebAuthn via go-webauthn) are the same kind of second step: `POST /api/auth/login/2fa/passkey` with the pending token returns a challenge (32 random bytes) bound to that pending sign-in, and `POST /api/auth/login/2fa` with the token and the passkey's assertion (signed over the relying party id = the server's name and the challenge, origin `https://<name>` or the Android app's `android:apk-key-hash:<SHA-256 of its signing certificate>`) issues the session. The credential record (public key, signature counter, transports, AAGUID, flags) is stored as `AES-256-GCM(key = HMAC(serverSecret, "cipherfilm passkey at rest v1"), ad = "passkey|" ‖ user id ‖ "|" ‖ credential id)`. No PRF/hmac-secret or largeBlob is asked for: a passkey never derives or unwraps a key, and the password remains the only way to the `KEK`.
 - The server returns `wrapped_master_pw`; the browser derives `KEK` from the password again and unwraps. A wrong password fails at Argon2/AEAD locally, and also at server-side auth.
 - Password change: verify current, derive new `authKey`/`KEK` with a fresh salt, re-wrap `masterKey`, upload, invalidate other sessions. Data is not re-encrypted.
 - Recovery: user enters e-mail + 24 words; client derives `recoveryAuth`, server verifies, returns `wrapped_master_recovery`; client unwraps `masterKey`, sets a new password (new salt, new wrap), and **rotates the recovery key** (new `wrapped_master_recovery` + new verifier) shown once again.

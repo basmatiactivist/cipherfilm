@@ -6,11 +6,17 @@ struct SettingsView: View {
   @Environment(AppModel.self) private var model
 
   var body: some View {
-    TabView {
-      GeneralSettings().tabItem { Label("General", systemImage: "gearshape") }
-      SearchSettings().tabItem { Label("Search & People", systemImage: "sparkle.magnifyingglass") }
-      ExportSettings().tabItem { Label("Export", systemImage: "folder") }
-      WatchSettings().tabItem { Label("Watched Folders", systemImage: "eye") }
+    @Bindable var model = model
+    TabView(selection: $model.settingsTab) {
+      GeneralSettings().tabItem { Label("General", systemImage: "gearshape") }.tag("general")
+      SecuritySettings().tabItem { Label("Security", systemImage: "lock.shield") }.tag("security")
+      SearchSettings().tabItem { Label("Search & People", systemImage: "sparkle.magnifyingglass") }.tag("search")
+      ExportSettings().tabItem { Label("Export", systemImage: "folder") }.tag("export")
+      WatchSettings().tabItem { Label("Watched Folders", systemImage: "eye") }.tag("watch")
+      // only for an administrator, never the public demo login; the server checks every request itself
+      if Admin.offered(model.me) {
+        AdminSettings().tabItem { Label("Administration", systemImage: "person.2.badge.gearshape") }.tag("admin")
+      }
     }
     .frame(width: 560)
     .tint(Ink.teal)
@@ -42,12 +48,13 @@ struct GeneralSettings: View {
   /** The map's credit when the server offers one: OpenStreetMap and OpenFreeMap for the default, else the map's own. */
   private var mapCredit: String {
     guard let m = model.me?.map else { return "" }
-    return m.isDefault ? "Map: © OpenStreetMap contributors, OpenFreeMap · MapLibre GL JS (BSD-3-Clause)\n" : "Map: MapLibre GL JS (BSD-3-Clause); its data is credited on the map\n"
+    return m.isDefault ? "Map: © OpenStreetMap contributors, © OpenMapTiles · MapLibre GL JS (BSD-3-Clause)\n" : "Map: MapLibre GL JS (BSD-3-Clause); its data is credited on the map\n"
   }
 
   @State private var signOut = false
   @State private var deleteAccount = false
   @State private var touchError: String?
+  @AppStorage("memoriesOn") private var memoriesOn = true
 
   var body: some View {
     @Bindable var agent = model.agent
@@ -61,20 +68,24 @@ struct GeneralSettings: View {
       }
       Divider()
       // the map's images come from a third party: off until turned on, per account on this Mac (MapPage.swift)
-      Section_(title: "Map", subtitle: "Your photos on a map. Map images from \(MapConsent.provider(model.me?.map)).") {
+      Section_(title: "Map", subtitle: "Your photos on a map. Map images from \(MapConsent.providerLong(model.me?.map)); a photo's small map in its details loads after Show Map.") {
         Toggle("Map", isOn: Binding(get: { model.mapOn }, set: { model.mapOn = $0 }))
           .disabled(model.me == nil || model.me?.hasMap != true)
         if model.me != nil && model.me?.hasMap != true { Text("This server doesn't offer a map.").font(Typo.caption).foregroundStyle(.secondary) }
       }
       Divider()
-      Section_(title: "Unlock with Touch ID", subtitle: "Your library's key is kept locked in this Mac's Secure Enclave. Changing your fingerprints turns it off. Your password always works.") {
-        Toggle("Unlock with Touch ID", isOn: Binding(get: { model.touchID }, set: { on in
+      Section_(title: "Memories", subtitle: "Photos from around today's date in earlier years, above Photos. Worked out on this Mac from the encrypted dates; the server learns nothing.") {
+        Toggle("Show “On this day”", isOn: $memoriesOn)
+      }
+      Divider()
+      Section_(title: "Unlock with Your Fingerprint", subtitle: "Your library's key is kept locked in this Mac's security chip. Changing your fingerprints turns it off. Your password always works.") {
+        Toggle("Unlock with your fingerprint", isOn: Binding(get: { model.touchID }, set: { on in
           touchError = nil
           if on { Task { do { try await model.enableTouchID() } catch { touchError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription } } }
           else { model.disableTouchID() }
         }))
         .disabled(!TouchID.available || (model.phase != .unlocked && !model.touchID))
-        if !TouchID.available { Text("No Touch ID or no fingerprint set up on this Mac.").font(Typo.caption).foregroundStyle(.secondary) }
+        if !TouchID.available { Text("This Mac has no fingerprint sensor, or no fingerprint is set up.").font(Typo.caption).foregroundStyle(.secondary) }
         else if model.phase != .unlocked && !model.touchID { NeedsUnlock() }
         if let touchError { Text(touchError).font(Typo.caption).foregroundStyle(Ink.danger) }
       }
@@ -98,7 +109,7 @@ struct GeneralSettings: View {
         }
       }
       Divider()
-      Section_(title: "Problems", subtitle: "Opens the issue form on GitHub. You see what it fills in first.") {
+      Section_(title: "Problems", subtitle: "Opens the issue form in the browser. You see what it fills in first.") {
         Button("Report a Problem…") { ReportProblem.ask(model) }
       }
       Divider()
@@ -114,7 +125,8 @@ struct GeneralSettings: View {
   }
 }
 
-/** Deletes the account and everything in it from the server, permanently, after a warning and the password. */
+/** Deletes the account and everything in it from the server, permanently, after a warning and the password (and, while
+ *  two-step sign-in is on, the second step: the same choices as for turning it off). */
 struct DeleteAccountSheet: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dismiss) private var dismiss
@@ -122,6 +134,12 @@ struct DeleteAccountSheet: View {
   @State private var sure = false
   @State private var busy = false
   @State private var error: String?
+  /** two-step sign-in is on: as the account said at sign-in, or as the server said when asked for the deletion */
+  @State private var on = false
+  @State private var hasApp = true
+  @State private var hasPasskey = false
+  @State private var code = ""
+  @State private var way: CodeStepView.Way = .code
 
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
@@ -130,24 +148,52 @@ struct DeleteAccountSheet: View {
         .font(Typo.body).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
       Text("Exported copies on this Mac stay where they are.").font(Typo.caption).foregroundStyle(Ink.faint)
       SecureField("Your password", text: $password).textContentType(.password)
+      if on { SecondStepFields(code: $code, way: $way, hasApp: hasApp, hasPasskey: hasPasskey) }
       Toggle("I understand my photos and videos are deleted permanently", isOn: $sure).toggleStyle(.checkbox)
       if let error { Text(error).font(Typo.caption).foregroundStyle(Ink.danger) }
       HStack {
         Spacer()
         Button("Cancel") { dismiss() }.buttonStyle(SecondaryButton()).keyboardShortcut(.cancelAction).disabled(busy)
-        Button {
-          busy = true; error = nil
-          Task {
-            do { try await model.deleteAccount(password: password); dismiss() } catch {
-              self.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            }
-            busy = false
-          }
-        } label: { BusyLabel(busy, "Delete Account", "Deleting…") }.buttonStyle(PrimaryButton()).disabled(busy || !sure || password.isEmpty)
+        Button(action: go) { BusyLabel(busy, "Delete Account", "Deleting…") }.buttonStyle(PrimaryButton())
+          .disabled(busy || !sure || password.isEmpty || (on && !SecondStepFields.ready(code, way)))
       }
     }
     .padding(24).frame(width: 460)
     .background(Ink.card)
+    .task { if model.me?.two_factor == true { await askSecond() } }
+  }
+
+  /** Shows the second step, with the choices the account has (the authenticator app, a passkey for this server); not
+   *  when the server says two-step sign-in is off by now, unless it just asked for the step. */
+  private func askSecond(asked: Bool = false) async {
+    if let api = model.api {
+      let s = try? await TwoFactor.status(api: api)
+      if s?.enabled == false && !asked { return }
+      hasApp = s?.hasApp ?? true
+      hasPasskey = ((try? await Passkeys.list(api: api)) ?? []).contains { $0.here }
+    }
+    if !on { way = SecondStepFields.start(hasApp: hasApp, hasPasskey: hasPasskey) }
+    on = true
+  }
+
+  private func go() {
+    guard let api = model.api, !busy, sure, !password.isEmpty, !on || SecondStepFields.ready(code, way) else { return }
+    busy = true; error = nil
+    let pw = password
+    Task {
+      do {
+        let s2 = try await secondStep(api, on: on, way: way, code: code)
+        try await model.deleteAccount(password: pw, second: s2)
+        dismiss()
+      } catch {
+        // two-step sign-in was turned on since this Mac last looked: ask for the step now
+        let wasOn = on
+        if TwoFactor.needsSecondStep(error) { await askSecond(asked: true) }
+        self.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        if wasOn { code = "" }
+      }
+      busy = false
+    }
   }
 }
 
@@ -155,36 +201,64 @@ struct SearchSettings: View {
   @Environment(AppModel.self) private var model
   @State private var confirm = false
   @State private var error: String?
-  @State private var explicitAsk: Bool?
-  @State private var askModel = false
   @State private var explicitBusy = false
   @State private var indexer: SearchEngine.Device?
   @State private var takingOver = false
+  /** the question before a model download (ModelConsent.swift), and what to do after the yes */
+  @State private var consent: PendingConsent?
+  @State private var offAsk = false
+
+  struct PendingConsent: Identifiable { let ask: ModelConsentAsk; let then: () -> Void; var id: String { ask.id } }
+
+  /** Runs `then` at once when it downloads nothing new; otherwise after the person agreed to the download. */
+  private func withConsent(_ clip: ClipModel, faces: Bool, reader: Bool? = nil, then: @escaping () -> Void) {
+    let store = model.search.models
+    Task { @MainActor in
+      // the files here count once their hash is checked (ModelStore.unagreed), off the main thread
+      await Task.detached { store.checkHere() }.value
+      guard let a = model.search.consentAsk(clip, faces: faces, reader: reader) else { then(); return }
+      // (from an alert's button: the sheet opens once the alert is gone)
+      consent = PendingConsent(ask: a, then: then)
+    }
+  }
 
   var body: some View {
     @Bindable var model = model
     let unlocked = model.phase == .unlocked
     VStack(alignment: .leading, spacing: 20) {
-      Section_(title: "Search and people", subtitle: "Runs on this Mac with open models (MobileCLIP, YuNet, SFace)\(size(.mobileclip).map { ", \($0)" } ?? ", already on this Mac"). Results are encrypted and stored on your server, shared with your other devices.") {
+      Section_(title: "Search and people", subtitle: "Runs on this Mac with open models\(size(.clip).map { ", \($0)" } ?? ", already on this Mac"). Results are encrypted and stored on your server, shared with your other devices.") {
         Toggle("Search and people", isOn: Binding(get: { model.settings.search }, set: { on in
-          // where explicit search is allowed, which model is asked first, so only that one is downloaded
-          if on && model.me?.user.nsfw == true { askModel = true } else { model.settings.search = on; model.settings.searchAsked = true }
+          if on { withConsent(.clip, faces: model.settings.faces) { model.turnOnSearch() } }
+          // off: the models stay unless the person deletes them (asked when there are any)
+          else if model.search.models.downloaded() != nil { offAsk = true }
+          else { model.settings.search = false; model.settings.searchAsked = true }
         }))
           .disabled(!unlocked)
         // where the models come from, said before anything is downloaded (docs/MODELS.md)
-        Text("Downloaded once from Hugging Face. Hugging Face sees this Mac's IP address, nothing of your photos. Hugging Face is a trademark of Hugging Face, Inc. Cipherfilm is not affiliated with or endorsed by Hugging Face.")
+        if let d = model.search.models.downloaded() {
+          Text(d.at.map { "Models downloaded on \($0.formatted(date: .abbreviated, time: .omitted)), \(ModelConsentSheet.mb(d.bytes))." } ?? "Models downloaded, \(ModelConsentSheet.mb(d.bytes)).")
+            .font(Typo.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+        Text("Downloaded once from the site where the models are published, after you agree. That site sees this Mac's IP address, nothing of your photos.")
           .font(Typo.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        Toggle("Group faces into people", isOn: $model.settings.faces).disabled(!unlocked || !model.settings.search)
+        Toggle("Group faces into people", isOn: Binding(get: { model.settings.faces }, set: { on in
+          if on && model.settings.search { withConsent(model.search.clip, faces: true) { model.settings.faces = true } } else { model.settings.faces = on }
+        })).disabled(!unlocked || !model.settings.search)
         Toggle("Also while on battery", isOn: $model.settings.indexOnBattery).disabled(!model.settings.search)
         if !unlocked { NeedsUnlock() }
       }
-      // only for a person an admin allowed it (docs/SEARCH.md, "Explicit search")
+      // only for a person an admin allowed it (docs/SEARCH.md, "Explicit content")
       if model.me?.user.nsfw == true && model.settings.search {
         let on = model.search.people.explicit == true
-        Section_(title: "Explicit search", subtitle: "Uses LAION's OpenCLIP ViT-B/32, which also understands explicit content\(size(.laion).map { " (\($0) download)" } ?? ""). Applies to your account: all devices switch and every photo is indexed again.") {
-          Toggle("Explicit search", isOn: Binding(get: { on }, set: { explicitAsk = $0 }))
+        Section_(title: "Explicit search", subtitle: "Off, search leaves out photos and words it takes for explicit content. On, it finds everything. Applies to all your devices (not the Android app from the app store, which always leaves them out).") {
+          Toggle("Explicit search", isOn: Binding(get: { on }, set: { want in
+            explicitBusy = true
+            Task {
+              do { try await model.search.setExplicit(want); error = nil } catch { self.error = error.localizedDescription }
+              explicitBusy = false
+            }
+          }))
             .disabled(!unlocked || explicitBusy || model.search.phase == .off)
-          if on && model.search.clip == .laion { Text("On. Search uses the LAION model.").font(Typo.caption).foregroundStyle(.secondary) }
         }
       }
       if model.settings.search {
@@ -192,6 +266,7 @@ struct SearchSettings: View {
         let c = s.index.count
         Section_(title: "Status") {
           Text(status(s)).font(Typo.caption)
+          if s.phase == .consent { Button("Download…") { consent = PendingConsent(ask: s.pendingAsk(), then: {}) }.disabled(!unlocked) }
           Text("\(c.items) photos and videos indexed, \(c.faces) faces.").font(Typo.caption).foregroundStyle(.secondary)
         }
         // one device per account looks at the photos; the others read what it found (docs/SEARCH.md)
@@ -200,11 +275,19 @@ struct SearchSettings: View {
             Text("This Mac indexes your photos.").font(Typo.caption)
           } else {
             Text(indexedBy).font(Typo.caption)
+            // that device may have stopped (it waits for its own OK to download the models after an update, or is
+            // gone): said, so it is clear why search misses photos and what to do
+            if s.phase == .ready && s.waiting > 0 {
+              Text("\(s.waiting) \(s.waiting == 1 ? "photo or video isn't" : "photos and videos aren't") indexed yet. If that device no longer indexes, index on this Mac instead.")
+                .font(Typo.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
             Button(takingOver ? "Switching…" : "Index on This Mac Instead") {
-              takingOver = true
-              Task {
-                do { if let api = model.api { try await model.search.indexHere(api: api) }; error = nil } catch { self.error = error.localizedDescription }
-                takingOver = false
+              withConsent(s.clip, faces: model.settings.faces, reader: false) {
+                takingOver = true
+                Task {
+                  do { if let api = model.api { try await model.search.indexHere(api: api) }; error = nil } catch { self.error = error.localizedDescription }
+                  takingOver = false
+                }
               }
             }
             .disabled(!unlocked || takingOver)
@@ -219,7 +302,7 @@ struct SearchSettings: View {
         }
       }
       Divider()
-      Section_(title: "Turn off and delete", subtitle: "Removes the models and index from this Mac. “Everywhere” also deletes the index and people names from the server.") {
+      Section_(title: "Turn off and delete", subtitle: "Removes the models and index from this Mac; turning search on again asks before downloading them. “Everywhere” also deletes the index and people names from the server.") {
         HStack {
           Button("Turn Off on This Mac") { Task { try? await model.search.forget(clearServer: false, api: model.api); model.settings.search = false } }
           Button("Delete Everywhere…") { confirm = true }.disabled(!unlocked)
@@ -236,39 +319,18 @@ struct SearchSettings: View {
       }
       Button("Cancel", role: .cancel) {}
     } message: { Text("People names are lost. Turning search on again starts over.") }
-    .alert("Which search?", isPresented: $askModel) {
-      Button("Standard Search (MobileCLIP, \(size(.mobileclip) ?? "already on this Mac"))") { model.turnOnSearch(explicit: false) }
-      Button("Explicit Search (LAION, \(size(.laion) ?? "already on this Mac"))") { model.turnOnSearch(explicit: true) }
-      Button("Cancel", role: .cancel) {}
-    } message: {
-      Text("Explicit search also understands explicit content. It applies to all your devices. You can change it later here.")
+    .sheet(item: $consent) { p in
+      ModelConsentSheet(ask: p.ask, yes: { consent = nil; model.search.agree(p.ask); p.then() }, later: { consent = nil })
     }
-    .alert(explicitAsk == true ? "Turn on explicit search?" : "Turn off explicit search?", isPresented: Binding(get: { explicitAsk != nil }, set: { if !$0 { explicitAsk = nil } })) {
-      Button(explicitAsk == true ? "Turn On" : "Turn Off") {
-        guard let want = explicitAsk else { return }
-        explicitBusy = true
-        Task {
-          do { try await model.search.setExplicit(want); error = nil } catch { self.error = error.localizedDescription }
-          explicitBusy = false
-        }
-      }
+    .alert("Turn off search on this Mac?", isPresented: $offAsk) {
+      Button("Turn Off and Delete the Models") { Task { try? await model.search.forget(clearServer: false, api: model.api); model.settings.search = false; model.settings.searchAsked = true } }
+      Button("Turn Off, Keep the Models") { model.settings.search = false; model.settings.searchAsked = true }
       Button("Cancel", role: .cancel) {}
-    } message: {
-      Text(switchText(to: explicitAsk == true ? .laion : .mobileclip))
-    }
+    } message: { Text("Deleting the models frees their space; turning search on again then asks before downloading them.") }
   }
 
   /** The download a model needs here now, from what is missing ("about 248 MB"); nil when it is all here. */
   private func size(_ clip: ClipModel) -> String? { model.search.downloadSize(clip, faces: model.settings.faces) }
-
-  private func switchText(to clip: ClipModel) -> String {
-    let old = clip == .laion ? "MobileCLIP" : "the explicit model"
-    let get = size(clip).map { "downloads \(clip == .laion ? "the explicit model" : "MobileCLIP") (\($0))" } ?? "uses the model already here"
-    guard model.search.indexes else { return "This Mac deletes \(old), \(get) and searches with what your indexing device finds again. Your other devices switch too." }
-    // the indexing Mac keeps MobileCLIP's results current next to LAION's, for devices without explicit search
-    if clip == .laion { return "This Mac \(get) and looks at every photo and video again. It keeps MobileCLIP's results up to date too, for devices without explicit search. Your other devices switch too." }
-    return "This Mac deletes the explicit model and searches with MobileCLIP's results, kept up to date all along. Your other devices switch too."
-  }
 
   private var indexedBy: String {
     guard let d = indexer, !d.current else { return "Another device indexes your photos." }
@@ -279,13 +341,14 @@ struct SearchSettings: View {
   private func status(_ s: SearchEngine) -> String {
     switch s.phase {
     case .off: return model.phase == .unlocked ? "Starting…" : "Waits until the library is unlocked."
+    case .consent: return "Waiting for your OK to download the models (\(ModelConsentSheet.mb(Int64(s.total))))."
     case .download: return s.downloadText
     case .loading: return "Loading the models…"
     case .indexing: return "Indexing \(s.done) of \(s.total)"
     case .waitPower: return s.message ?? "Waiting for power."
     case .ready:
-      if !s.indexes { return s.clip == .laion ? "Ready (explicit search), using the indexing device's results." : "Ready, using the indexing device's results." }
-      return s.clip == .laion ? "Up to date (explicit search)." : "Up to date."
+      if !s.indexes { return s.filtered ? "Ready, using the indexing device's results." : "Ready (explicit search), using the indexing device's results." }
+      return s.filtered ? "Up to date." : "Up to date (explicit search)."
     case .error: return s.message ?? "Stopped."
     }
   }

@@ -112,6 +112,7 @@ final class AppModel {
       throw APIError(status: -1, message: "That address isn't a Cipherfilm server.")
     }
     a.invalidate()
+    startOver()
     wipe(ended: true)
     UserDefaults.standard.set(url.absoluteString, forKey: "server")
     use(server: url)
@@ -121,16 +122,131 @@ final class AppModel {
   }
 
   func forgetServer() {
+    startOver()
     wipe(ended: true)
     UserDefaults.standard.removeObject(forKey: "server")
     api?.invalidate(); api = nil; server = nil; me = nil
     phase = .noServer
   }
 
+  /** A sign-in waiting for its two-step code (the sign-in page then asks for it). */
+  var codeStep: CodeStep?
+
   func login(email: String, password: String) async throws {
     guard let api else { return }
-    let (me, master) = try await Account.login(api: api, email: email, password: password)
-    adopt(me, master: master)
+    codeStep?.abandon(); codeStep = nil
+    switch try await Account.login(api: api, email: email, password: password) {
+    case .done(let me, let master): adopt(me, master: master)
+    case .code(let step): codeStep = step
+    }
+  }
+
+  /** The code step: a wrong code may be tried again; an expired sign-in goes back to the password. */
+  func finishSignIn(code: String) async throws {
+    guard let api, let step = codeStep else { return }
+    do {
+      let (me, master) = try await Account.finish(api: api, step: step, code: code)
+      codeStep = nil
+      adopt(me, master: master)
+    } catch let e as APIError where e.code == "two_factor_expired" {
+      codeStep = nil
+      throw e
+    }
+  }
+
+  /** The code step with a passkey, in the browser (PasskeyBrowser): a passkey that isn't accepted may be tried again. */
+  func finishSignInWithPasskey() async throws {
+    guard let api, let step = codeStep else { return }
+    do {
+      let options = try await Account.passkeyChallenge(api: api, step: step)
+      let answer = try await PasskeyBrowser.shared.run(server: api.base, op: "get", options: options)
+      let (me, master) = try await Account.finish(api: api, step: step, passkey: answer)
+      codeStep = nil
+      adopt(me, master: master)
+    } catch let e as APIError where e.code == "two_factor_expired" {
+      codeStep = nil
+      throw e
+    }
+  }
+
+  /** Back to the password: the key the password made is forgotten. */
+  func startOver() {
+    codeStep?.abandon()
+    codeStep = nil
+  }
+
+  // ---- notices (a new sign-in elsewhere, two-step sign-in turned off by an admin or changed on another device) ----
+
+  var notices: [Notice] = []
+  /** the newest notice id the inbox has shown, for this account (the bell's unread badge) */
+  var noticesSeen: Int64 = 0
+  var unreadNotices: Int { Notice.unread(notices, seen: noticesSeen) }
+  /** the Settings tab to show (the inbox's "Review Devices" opens Security) */
+  var settingsTab = "general"
+
+  /** Per server and account: ids are the server's. */
+  private var noticesSeenKey: String? {
+    guard let api, let id = me?.user.id else { return nil }
+    return "noticesSeen.\(api.base.absoluteString).\(id)"
+  }
+
+  func loadNotices() async {
+    guard let api, phase == .unlocked else { return }
+    if let l = try? await Notice.load(api: api), phase == .unlocked {
+      // dismissed on another device: its notification goes too
+      NoticeNotifier.remove(notices.map(\.id).filter { id in !l.contains { $0.id == id } })
+      if let k = noticesSeenKey { noticesSeen = (UserDefaults.standard.object(forKey: k) as? NSNumber)?.int64Value ?? 0 }
+      notices = l
+      // in front, the bell's badge shows the new ones; a notification only when the window is elsewhere
+      NoticeNotifier.consider(l, server: api.base.absoluteString, visible: NoticeNotifier.windowInFront)
+    }
+  }
+
+  /** The inbox is open: everything in it is read, and its notifications go from Notification Center. */
+  func markNoticesRead() {
+    NoticeNotifier.remove(notices.map(\.id))
+    guard let top = notices.map(\.id).max(), top > noticesSeen else { return }
+    noticesSeen = top
+    if let k = noticesSeenKey { UserDefaults.standard.set(NSNumber(value: top), forKey: k) }
+  }
+
+  func dismissAllNotices() {
+    let all = notices
+    NoticeNotifier.remove(all.map(\.id))
+    notices = []
+    guard let api else { return }
+    Task { for n in all { try? await Notice.dismiss(api: api, id: n.id) } }
+  }
+
+  /** While locked (and running in the menu bar): the notices every few minutes, for the notifications only (nothing is
+   *  shown in the window before unlocking). The live updates do this while unlocked. Without the key: notices aren't
+   *  encrypted. The check is a background one, so it doesn't keep the session alive. */
+  @ObservationIgnored private var lockedNoticeTimer: Timer?
+  private func checkNoticesWhileLocked() {
+    guard lockedNoticeTimer == nil else { return }
+    lockedNoticeTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { _ in
+      Task { @MainActor in
+        let m = AppModel.shared
+        guard m.phase == .locked, NoticeNotifier.enabled, let api = m.api,
+              let l = try? await Notice.load(api: api, background: true), m.phase == .locked else { return }
+        NoticeNotifier.consider(l, server: api.base.absoluteString, visible: false)
+      }
+    }
+  }
+
+  func dismiss(_ n: Notice) {
+    NoticeNotifier.remove([n.id])
+    notices.removeAll { $0.id == n.id }
+    guard let api else { return }
+    Task { try? await Notice.dismiss(api: api, id: n.id) }
+  }
+
+  /** Fetches the account again (two-step sign-in turned on or off here). */
+  func refreshMe() async {
+    guard let api, let old = me, let fresh = try? JSONDecoder().decode(Me.self, from: try await api.json("GET", "/api/me")),
+          fresh.user.id == old.user.id else { return }
+    api.csrf = fresh.csrf
+    me = fresh
   }
 
   /** Touch ID unlock is set up on this Mac for the signed-in account. */
@@ -183,10 +299,12 @@ final class AppModel {
       restoreUploads()
       every(120)
       startLive(api, vault!)
+      Task { await loadNotices() }
       agent.unlocked()
     } else {
       phase = .locked
     }
+    checkNoticesWhileLocked()
   }
 
   /** Lock when this Mac sleeps or its screen locks (on unless turned off in Settings), so a Mac left alone doesn't keep
@@ -234,6 +352,9 @@ final class AppModel {
   private func forget(account userId: String) {
     guard ServerId.valid(userId) else { return }
     TouchID.disable(userId) // its keychain item lives outside the account's folder
+    for k in UserDefaults.standard.dictionaryRepresentation().keys where k.hasPrefix("noticesSeen.") && k.hasSuffix(".\(userId)") {
+      UserDefaults.standard.removeObject(forKey: k)
+    }
     try? FileManager.default.removeItem(at: Paths.account(userId))
     if let dir = Vault.cacheDir(of: userId) { try? FileManager.default.removeItem(at: dir) }
   }
@@ -269,9 +390,9 @@ final class AppModel {
 
   /** Account › Delete Account: the server deletes the account and everything in it; then this Mac forgets it all, as at
    *  sign-out (the exported copies stay: they are the person's files now). */
-  func deleteAccount(password: String) async throws {
+  func deleteAccount(password: String, second: TwoFactor.Second = .none) async throws {
     guard let me, let api else { return }
-    try await Account.delete(api: api, me: me, password: password)
+    try await Account.delete(api: api, me: me, password: password, second: second)
     watcher.stop(forget: true)
     wipe(ended: true)
     api.clearCookies()
@@ -288,7 +409,7 @@ final class AppModel {
     refreshTimer?.invalidate(); refreshTimer = nil
     liveTask?.cancel(); liveTask = nil; liveFlush?.cancel(); liveFlush = nil; _ = liveBatch.take(); liveV = nil
     search.stop(clear: true)
-    exporter.stop()
+    exporter.forget() // its copy of the vault, the decrypted items and their item keys go too
     Outbox.cancel()
     // after a lock the queue stays (saved in the account's folder) and goes on after the next unlock; once the session
     // is gone it is not this Mac's to finish (it never goes on in another account)
@@ -297,7 +418,7 @@ final class AppModel {
     images.clear()
     PlaceBook.forget()
     Outbox.clear()
-    items = []; byId = [:]; albums = []; trash = []
+    items = []; byId = [:]; albums = []; trash = []; notices = []; noticesSeen = 0
     if ended { watcher.stop(forget: true); uploads = []; uploadsOwner = nil; uploadsPaused = false; Inbox.clear() }
   }
 
@@ -367,7 +488,7 @@ final class AppModel {
     if !quiet { loading = true }
     defer { loading = false }
     do {
-      // only what changed since the last load (ListSync.swift); the albums are small and come whole
+      // only what changed since the last load (ListSync.swift, AlbumSync.swift)
       async let l = vault.syncLibrary()
       async let a = vault.loadAlbums()
       let (r, al) = try await (l, a)
@@ -469,6 +590,7 @@ final class AppModel {
     if !what.isDisjoint(with: [.items, .albums]) && uploading == 0 { await refresh(quiet: true) }
     if what.contains(.trash) { await loadTrash(quiet: true) }
     if what.contains(.people) { search.peopleChangedElsewhere() }
+    if what.contains(.notices) { await loadNotices() }
     liveTook = Date().timeIntervalSince(began)
     liveLast = Date()
     liveFlush = nil
@@ -487,18 +609,10 @@ final class AppModel {
     }
   }
 
-  /** Turns search on; where an admin allowed explicit search, with the model the person chose (nil: not asked). */
-  func turnOnSearch(explicit: Bool?) {
+  /** Turns search on (one model for everyone; explicit search, where allowed, is a switch in Settings). */
+  func turnOnSearch() {
     settings.searchAsked = true
-    guard let explicit, let vault else { settings.search = true; return }
-    Task {
-      do {
-        try await search.choose(explicit: explicit, vault: vault)
-        settings.search = true
-      } catch {
-        alert = "Couldn't turn on search: \(error.localizedDescription)"
-      }
-    }
+    settings.search = true
   }
 
   /** The library changed: the background work gets the new list. */

@@ -7,8 +7,9 @@ import { fetch } from "expo/fetch";
 import { AppState } from "react-native";
 import { server } from "./api";
 
-export type Topic = "items" | "trash" | "albums" | "people" | "index";
-export const ALL: Topic[] = ["items", "trash", "albums", "people", "index"];
+// "notices": a new sign-in or an admin's change for the person to see (notices.ts)
+export type Topic = "items" | "trash" | "albums" | "people" | "index" | "notices";
+export const ALL: Topic[] = ["items", "trash", "albums", "people", "index", "notices"];
 const TOPICS = new Set<string>(ALL);
 
 /** One event of the stream; a heartbeat (a comment line) has the name ":". */

@@ -9,7 +9,7 @@ import (
 func (a *App) adminListUsers(w http.ResponseWriter, r *http.Request, u *user, s *session) {
 	rows, err := a.db.Query(`SELECT u.id,u.email,u.role,u.status,u.created_at,u.quota_bytes,
 		` + usedBytesSQL("u.id") + `,
-		(SELECT COUNT(*) FROM items i WHERE i.user_id=u.id AND i.state='ready'), u.last_login_at, u.nsfw
+		(SELECT COUNT(*) FROM items i WHERE i.user_id=u.id AND i.state='ready'), u.last_login_at, u.nsfw, (u.totp_secret<>'' OR EXISTS (SELECT 1 FROM passkeys p WHERE p.user_id=u.id))
 		FROM users u ORDER BY u.created_at`)
 	if err != nil {
 		fail(w, 500, "server error")
@@ -20,17 +20,17 @@ func (a *App) adminListUsers(w http.ResponseWriter, r *http.Request, u *user, s 
 		ID, Email, Role, Status string
 		CreatedAt, LastLogin    int64
 		Quota, Used, Count      int64
-		NSFW                    bool
+		NSFW, TwoFactor         bool
 	}
 	out := []map[string]any{}
 	for rows.Next() {
 		var x row
-		if rows.Scan(&x.ID, &x.Email, &x.Role, &x.Status, &x.CreatedAt, &x.Quota, &x.Used, &x.Count, &x.LastLogin, &x.NSFW) == nil {
+		if rows.Scan(&x.ID, &x.Email, &x.Role, &x.Status, &x.CreatedAt, &x.Quota, &x.Used, &x.Count, &x.LastLogin, &x.NSFW, &x.TwoFactor) == nil {
 			// sizes and counts are metadata the server knows anyway; names, albums and content stay private
-			out = append(out, map[string]any{"id": x.ID, "email": x.Email, "role": x.Role, "status": x.Status, "created_at": x.CreatedAt, "quota_bytes": x.Quota, "used_bytes": x.Used, "item_count": x.Count, "last_login_at": x.LastLogin, "nsfw": x.NSFW})
+			out = append(out, map[string]any{"id": x.ID, "email": x.Email, "role": x.Role, "status": x.Status, "created_at": x.CreatedAt, "quota_bytes": x.Quota, "used_bytes": x.Used, "item_count": x.Count, "last_login_at": x.LastLogin, "nsfw": x.NSFW, "two_factor": x.TwoFactor})
 		}
 	}
-	inv, err := a.db.Query(`SELECT id,email,expires_at,quota_bytes FROM invites WHERE used_at IS NULL AND expires_at > ? ORDER BY created_at`, a.now().Unix())
+	inv, err := a.db.Query(`SELECT id,email,expires_at,quota_bytes FROM invites WHERE used_at IS NULL AND expires_at > ? AND `+inviteCreatorOK+` ORDER BY created_at`, a.now().Unix())
 	invites := []map[string]any{}
 	defQuota := a.defaultQuota()
 	if err == nil {
@@ -78,8 +78,8 @@ func (a *App) adminCreateInvite(w http.ResponseWriter, r *http.Request, u *user,
 	exp := a.now().Add(inviteTTL).Unix()
 	// a new invite replaces any open one for the same address
 	a.db.Exec(`DELETE FROM invites WHERE email=? AND used_at IS NULL`, email)
-	if _, err := a.db.Exec(`INSERT INTO invites(id,token_hash,email,created_by,created_at,expires_at,quota_bytes) VALUES (?,?,?,?,?,?,?)`,
-		randID(), sha256hex(tok), email, u.ID, a.now().Unix(), exp, quota); err != nil {
+	if _, err := a.db.Exec(`INSERT INTO invites(id,token_hash,email,created_by,created_at,expires_at,quota_bytes,created_session) VALUES (?,?,?,?,?,?,?,?)`,
+		randID(), sha256hex(tok), email, u.ID, a.now().Unix(), exp, quota, s.Pub); err != nil {
 		fail(w, 500, "server error")
 		return
 	}
@@ -105,6 +105,13 @@ func (a *App) adminGuard(w http.ResponseWriter, caller *user, target *user, remo
 	cur, err := a.userByID(caller.ID)
 	if err != nil || cur.Role != "admin" || cur.Status != "active" {
 		fail(w, http.StatusNotFound, "not found")
+		return false
+	}
+	// a public demo login (DEMO_ACCOUNTS) stays as the operator set it up: another admin on that server (an app-store
+	// reviewer's account, which may be one to show the admin area) can't delete, disable, re-limit or promote it. The
+	// server console still can.
+	if a.isDemo(target) {
+		fail(w, http.StatusForbidden, "the public demo account can't be changed here")
 		return false
 	}
 	if removesAdmin && target.Role == "admin" && target.Status == "active" {

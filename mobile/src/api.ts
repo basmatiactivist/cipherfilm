@@ -11,11 +11,18 @@ let onRevoked: () => void = () => {};
 
 /** How this phone shows in the account's device list (web, Account › Devices); only a label. */
 // ASCII only: a header value with any other character makes the request fail before it is sent
-const DEVICE = `${String((Platform.constants as { Model?: string }).Model ?? "Android").replace(/[^\x20-\x7e]/g, "").slice(0, 60)} (Android app)`;
+// the phone's maker and model ("OPPO CPH2791"), never the name the person gave it in Android's settings (often theirs)
+const DEVICE = (() => {
+  const c = Platform.constants as { Model?: string; Brand?: string; Manufacturer?: string };
+  const model = String(c.Model ?? "Android");
+  const maker = String(c.Manufacturer || c.Brand || "");
+  const name = maker && !model.toLowerCase().startsWith(maker.toLowerCase()) ? `${maker.toUpperCase() === maker ? maker : maker[0].toUpperCase() + maker.slice(1)} ${model}` : model;
+  return `${name.replace(/[^\x20-\x7e]/g, "").slice(0, 60)} (Android app)`;
+})();
 
 export class ApiError extends Error {
   /** for logs: what the network layer said (a timeout, a refused connection), never shown as the message */
-  constructor(public status: number, message: string, public detail = "", public code = "") {
+  constructor(public status: number, message: string, public detail = "", public code = "", public body: unknown = null) {
     super(message);
   }
 }
@@ -27,7 +34,12 @@ export const setCsrf = (t: string) => { csrf = t; };
 export const csrfToken = () => csrf;
 /** Where a background job sends its requests, with the CSRF token of its own /api/me: the app's server and token stay
  *  as they are, whatever the job does. The session cookie is still the one in Android's cookie store. */
-export interface Remote { base: string; csrf: string }
+export interface Remote {
+  base: string; csrf: string;
+  /** a periodic check of the background (noticeCheck.ts): its GETs don't count as using the phone (X-CF-Background),
+   *  so they neither keep the session from ending when idle nor show the phone as active in the device list */
+  background?: boolean;
+}
 export const remote = (origin: string): Remote => ({ base: origin.replace(/\/+$/, ""), csrf: "" });
 const here = (): Remote => ({ base, csrf });
 
@@ -67,6 +79,7 @@ export async function api<T = any>(method: string, path: string, body?: unknown,
   const headers: Record<string, string> = { Accept: "application/json", "X-CF-Device": DEVICE };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (method !== "GET" && to.csrf) headers["X-CSRF-Token"] = to.csrf;
+  if (method === "GET" && to.background) headers["X-CF-Background"] = "1";
   let res: Response;
   const time = limit(JSON_TIMEOUT);
   try {
@@ -82,7 +95,7 @@ export async function api<T = any>(method: string, path: string, body?: unknown,
   try { text = await res.text(); } catch (e) { if (res.ok) throw new ApiError(0, offline(), `${method} ${path.replace(/[0-9a-f]{32}/g, ":id")}: body ${why(e)}`); } finally { time.end(); }
   let data: any = null;
   try { data = text ? JSON.parse(text) : null; } catch { /* not JSON */ }
-  if (!res.ok) { ended(res, path, to); throw new ApiError(res.status, serverSays(data?.error) ?? t("Something went wrong."), "", data?.code ?? ""); }
+  if (!res.ok) { ended(res, path, to); throw new ApiError(res.status, serverSays(data?.error) ?? t("Something went wrong."), "", data?.code ?? "", data); }
   // a GET always answers with an object or a list; other methods may answer with nothing
   if ((text && data === null) || (method === "GET" && (data === null || typeof data !== "object"))) {
     throw new ApiError(0, offline(), `${method} ${path.replace(/[0-9a-f]{32}/g, ":id")}: ${res.status}, not a JSON answer`);

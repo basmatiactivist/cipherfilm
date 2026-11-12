@@ -2,10 +2,10 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BackHandler, Pressable, RefreshControl, ScrollView, SectionList, StyleSheet, useWindowDimensions, View } from "react-native";
 import { type ReactNode } from "react";
 import { router, useFocusEffect } from "expo-router";
-import { Button, Dialog, List, Portal, ProgressBar, Snackbar, Text, TextInput } from "react-native-paper";
+import { Button, List, Portal, ProgressBar, Snackbar, Text, TextInput } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import N from "../modules/cf-native/src/CfNativeModule";
-import { Problem, useAppTheme } from "./ui";
+import { Problem, useAppTheme, Dialog } from "./ui";
 import { Tile } from "./Tile";
 import { Icon, type IconName } from "./icons";
 import { when, type Item } from "./library";
@@ -17,6 +17,7 @@ import { prepareShare, saveItems } from "./outbox";
 import { setViewerList } from "./viewerList";
 import { radius, text } from "./tokens";
 import { Loading } from "./Loader";
+import { Veil } from "./veil";
 import { locale, t, tn } from "./i18n";
 
 const GAP = 4;
@@ -35,6 +36,8 @@ interface Props {
   onRefresh: () => void;
   /** shown above the grid when nothing is selected */
   header: ReactNode;
+  /** scrolls with the grid, above its first day (the memories row) */
+  top?: ReactNode;
   empty: ReactNode;
   /** extra space below the grid, e.g. for a navigation bar */
   bottom?: number;
@@ -67,7 +70,7 @@ const Row = memo(function Row(p: { row: Item[]; size: number; selecting: boolean
 /** What the first load of each place says. */
 const opening = (within: string): string | undefined => ({ search: t("Searching…"), trash: t("Opening the trash…"), person: t("Loading people…") } as Record<string, string>)[within];
 
-export function Gallery({ items, error, loading, onRefresh, header, empty, bottom = 0, fab, nav, extraAction, actions, album, flat, within }: Props) {
+export function Gallery({ items, error, loading, onRefresh, header, top, empty, bottom = 0, fab, nav, extraAction, actions, album, flat, within }: Props) {
   const th = useAppTheme();
   const inset = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
@@ -119,22 +122,17 @@ export function Gallery({ items, error, loading, onRefresh, header, empty, botto
     });
   }, [items, cols, flat]);
 
-  // The first screen appears only once its pictures are decoded: the list arrives before the thumbnails, and a grid
-  // of empty tiles in the meantime looks broken. Until then the list is laid out and loads, invisible, under the
-  // loading badge; at most VEIL_MAX, so one slow or missing thumbnail can't hold the library back.
+  // The first screen appears only once its pictures are decoded, at most VEIL_MAX later (veil.ts)
   const [veiled, setVeiled] = useState(true);
-  const seen = useRef(new Set<string>());
-  const waiting = useRef<Set<string> | null>(null);
-  const shown = useCallback((id: string) => { seen.current.add(id); const w = waiting.current; if (w && w.delete(id) && !w.size) setVeiled(false); }, []);
+  const veiler = useRef<Veil | null>(null);
+  veiler.current ??= new Veil(() => setVeiled(false), VEIL_MAX);
+  const shown = useCallback((id: string) => veiler.current!.shown(id), []);
   useEffect(() => {
-    if (!veiled || !items || waiting.current) return;
+    if (!items) return;
     const rowsOnScreen = Math.ceil(height / Math.max(1, size)) + 1;
-    const first = sections.flatMap((sec) => sec.data).slice(0, rowsOnScreen).flat();
-    waiting.current = new Set(first.filter((it) => it.has_thumb && !it.broken && !seen.current.has(it.id)).map((it) => it.id));
-    if (!waiting.current.size) { setVeiled(false); return; }
-    const tm = setTimeout(() => setVeiled(false), VEIL_MAX);
-    return () => clearTimeout(tm);
-  }, [items, sections, veiled]);
+    veiler.current!.update(sections.flatMap((sec) => sec.data).slice(0, rowsOnScreen).flat());
+  }, [items, sections]);
+  useEffect(() => () => veiler.current?.dispose(), []);
   const veil = veiled && !!items && items.length > 0;
 
   // a long press starts (or extends) the selection, with the system's own long-press vibration
@@ -254,7 +252,7 @@ export function Gallery({ items, error, loading, onRefresh, header, empty, botto
         renderItem={({ item: row }) => (
           <Row row={row} size={size} selecting={selecting} sel={row.map((it) => (selected.has(it.id) ? "1" : "0")).join("")} onPress={press} onLongPress={hold} onShown={shown} />
         )}
-        ListHeaderComponent={error ? <View style={{ paddingTop: 8 }}><Problem>{error}</Problem></View> : undefined}
+        ListHeaderComponent={error || top ? <>{error ? <View style={{ paddingTop: 8 }}><Problem>{error}</Problem></View> : null}{top}</> : undefined}
         ListEmptyComponent={items && !error ? <>{empty}</> : !items && !error ? <Loading label={opening(within ?? "") ?? (album ? t("Opening the album…") : t("Opening your library…"))} /> : undefined}
         initialNumToRender={12}
         maxToRenderPerBatch={6}

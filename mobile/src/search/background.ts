@@ -9,15 +9,13 @@ import N from "../../modules/cf-native/src/CfNativeModule";
 import { api, ApiError, remote, type Remote } from "../api";
 import { savedServer } from "../session";
 import { fingerprint } from "../prints";
-import { haveModels, keepsStandard, modelPath, STANDARD, type Clip } from "./models";
+import { CLIP, haveModels, modelPath, type Clip } from "./models";
 import { loadSettings, saveSettings, type SearchSettings } from "./settings";
 import { analyzeBytes, localFile } from "./engine";
 
 const BUDGET = 6 * 60_000;
 
-// with LAION, MobileCLIP's entry too (docs/SEARCH.md "Explicit search"): devices that can't use it read that one
-const models = (clip: Clip): Clip[] => (keepsStandard(clip) ? [clip, STANDARD] : [clip]);
-const open = (st: SearchSettings, clip: Clip) => N.visionOpen(modelPath(), st.faces, clip, true, keepsStandard(clip) ? STANDARD : null);
+const open = (st: SearchSettings, clip: Clip) => N.visionOpen(modelPath(), st.faces, clip, true);
 
 /** Whether background indexing may run now; the reason in plain words if not. */
 export function backgroundBlocker(st: SearchSettings): string | undefined {
@@ -34,7 +32,7 @@ export function backgroundBlocker(st: SearchSettings): string | undefined {
 export async function indexUploaded(s: Sodium, id: string, uri: string, video: boolean, pubkey: Uint8Array, to: Remote) {
   try {
     const st = await loadSettings();
-    const clip = st.clip ?? "mobileclip-s2";
+    const clip = CLIP;
     const why = backgroundBlocker(st) ?? (!(await haveModels(st.faces, clip)) ? "models missing" : undefined);
     if (why) { if (why !== "off") console.log(`search index (upload): later, ${why}`); return; }
     await open(st, clip);
@@ -64,9 +62,9 @@ export async function rememberUploaded(userId: string, print: string, id: string
 async function indexFile(s: Sodium, id: string, uri: string, video: boolean, faces: boolean, pubkey: Uint8Array, clip: Clip, to: Remote) {
   const img = await N.jpeg(uri, video, 2048, 90);
   if (!img) return;
-  // wipes the bytes; an unusable picture gets empty entries; the faces are found once for both
-  for (const entry of await analyzeBytes(img.bytes, faces, models(clip))) {
-    // the tag in the clear too: where explicit search is allowed the server takes entries only with it (docs/SEARCH.md)
+  // wipes the bytes; an unusable picture gets an empty entry
+  for (const entry of await analyzeBytes(img.bytes, faces, [clip])) {
+    // the tag in the clear too: the server takes only the current model's entries (docs/SEARCH.md)
     await api("PUT", `/api/items/${id}/index`, { data_enc: b64(s, sealIndexEntry(s, entry, pubkey, id)), model: entry.m }, to);
   }
 }
@@ -80,7 +78,7 @@ export async function runBackgroundIndex(): Promise<number> {
   let local: { userId: string; prints: Record<string, string>; done: string[]; attempt?: string };
   try { local = JSON.parse(await f.text()); } catch { return 0; }
   if (!local || typeof local.prints !== "object" || !local.prints || !Array.isArray(local.done)) return 0; // the app writes it again
-  const clip = st.clip ?? "mobileclip-s2";
+  const clip = CLIP;
   if (local.userId !== st.userId || !(await haveModels(st.faces, clip))) return 0;
   if (local.attempt) { // not tried here again: the app indexes it from the server's preview when it is opened
     local.done.push(local.attempt);

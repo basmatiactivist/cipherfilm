@@ -11,12 +11,13 @@ private struct Listed: Decodable { let name: String; let url: String; let sha256
 @Suite struct DownloadTests {
   @Test func sameListAsTheServerAndTheOtherApps() throws {
     let listed = try JSONDecoder().decode([Listed].self, from: Data(contentsOf: repo.appendingPathComponent("server/models.json")))
-    let mine = Models.all(.mobileclip) + [ClipModel.laion.vision, ClipModel.laion.text]
+    let mine = Models.every
     #expect(Set(mine.map(\.name)) == Set(listed.map(\.name)))
     for m in mine {
       let l = listed.first { $0.name == m.name }
       #expect(l?.url == m.url.absoluteString && l?.sha256 == m.sha256 && l?.size == m.size, "\(m.name)")
     }
+    #expect(!mine.contains { $0.url.absoluteString.lowercased().contains("mobileclip") })
   }
 
   @Test(.enabled(if: ProcessInfo.processInfo.environment["CF_TEST_NETWORK"] != nil)) func resumesWithRange() async throws {

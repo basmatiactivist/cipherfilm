@@ -17,6 +17,8 @@ public struct ItemMeta: Codable, Sendable, Hashable {
   public var make: String?
   public var model: String?
   public var gps: GPS?
+  /** turned and cropped in another app (PictureEdit.swift); nil when it isn't */
+  public var edit: PictureEdit?
 
   public init(name: String, mime: String, size: Int64, lastModified: Double, capture_ts: Double, width: Double? = nil, height: Double? = nil,
               duration: Double? = nil, make: String? = nil, model: String? = nil, gps: GPS? = nil) {
@@ -53,10 +55,12 @@ public struct Item: Identifiable, Sendable, Hashable {
   /** width / height, clamped like the web grid */
   public var aspect: Double {
     guard let w = meta?.width, let h = meta?.height, w > 0, h > 0 else { return 1 }
-    return min(4, max(0.4, w / h))
+    let e = meta?.edit?.size(width: w, height: h) ?? (w, h) // as shown: turned and cropped when it was edited
+    return min(4, max(0.4, e.0 / e.1))
   }
 
-  public static func == (a: Item, b: Item) -> Bool { a.id == b.id && a.favorite == b.favorite && a.trashedAt == b.trashedAt && a.broken == b.broken }
+  // a changed date, place or edit (made in another app) is a change the screens show
+  public static func == (a: Item, b: Item) -> Bool { a.id == b.id && a.favorite == b.favorite && a.trashedAt == b.trashedAt && a.broken == b.broken && a.meta == b.meta }
   public func hash(into h: inout Hasher) { h.combine(id) }
 }
 
@@ -192,6 +196,7 @@ public final class Vault: @unchecked Sendable {
         if let d = meta.duration, !(d.isFinite && d >= 0 && d < 1e7) { meta.duration = nil }
         meta.capture_ts = Self.timestamp(meta.capture_ts) ?? Self.timestamp(x.created_at * 1000) ?? 0
         meta.lastModified = Self.timestamp(meta.lastModified)
+        if meta.edit?.isIdentity == true { meta.edit = nil }
         // the kind as the authenticated metadata says, by the rule the upload used: the server's plain `kind` could
         // otherwise route this item's own bytes to the video player or the image decoder at will
         it.kind = Media.kind(name: meta.name, mime: meta.mime)
@@ -408,16 +413,17 @@ public final class Vault: @unchecked Sendable {
 
   // ---- albums: names encrypted under the master key, bound to the album id ----
 
-  private struct RawAlbum: Decodable { let id: String; let name_enc: String; let item_ids: [String] }
+  /** The albums, kept current with ?since (AlbumSync.swift): after the first load only the albums that changed. */
+  public let albumSync = AlbumSync()
 
   public func loadAlbums() async throws -> [Album] {
-    struct R: Decodable { let albums: [RawAlbum] }
     let m = try masterKey()
-    let r = try await api.get(R.self, "/api/albums")
-    return r.albums.map { a in
-      if let n = try? Crypto.decryptAlbumName(B64.decode(a.name_enc), master: m, albumId: a.id) { return Album(id: a.id, name: n, itemIds: a.item_ids, broken: false) }
-      return Album(id: a.id, name: "Unreadable album", itemIds: a.item_ids, broken: true)
-    }
+    return try await albumSync.load(get: { [api] in try await api.json("GET", $0) }, decrypt: { raw in
+      raw.map { a in
+        if let n = try? Crypto.decryptAlbumName(B64.decode(a.name_enc), master: m, albumId: a.id) { return Album(id: a.id, name: n, itemIds: a.item_ids, broken: false) }
+        return Album(id: a.id, name: "Unreadable album", itemIds: a.item_ids, broken: true)
+      }
+    })
   }
 
   public func createAlbum(_ name: String) async throws -> Album {

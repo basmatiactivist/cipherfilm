@@ -27,6 +27,7 @@ const (
 	// again every 14 days and after a day without use.
 	sessionAbs  = 365 * 24 * time.Hour
 	sessionIdle = 30 * 24 * time.Hour
+	sessionsMax = 50 // live sessions per account; a new sign-in beyond it ends the one idle longest
 	inviteTTL   = 7 * 24 * time.Hour
 	ticketTTL   = 10 * time.Minute
 )
@@ -36,6 +37,7 @@ type App struct {
 	dataDir    string
 	secret     []byte // HMAC key for fake KDF params; persisted in data dir
 	trustProxy bool
+	tsHeaders  bool              // TRUST_TAILSCALE_HEADERS: key per-source limits by Tailscale Serve's user header
 	proxies    []netip.Prefix    // TRUSTED_PROXIES: the peers whose X-Forwarded-For counts; empty: loopback and private
 	hosts      map[string]bool   // PUBLIC_HOSTS; empty: any
 	mapConf    *mapConfig        // MAP_STYLE; nil: no map (mapconf.go)
@@ -45,9 +47,17 @@ type App struct {
 	loginIP    *limiter
 	loginAcct  *limiter         // per (account, source)
 	loginDev   *limiter         // per account, for browsers carrying a valid device cookie
+	knownBusy  inFlight         // credential checks of known browsers and signed-in sessions per account (device.go)
+	proofs     *limiter         // password proofs of signed-in sessions per account, right or wrong (proofOK)
 	demoReqs   *demoBuckets     // requests of demo accounts, per source (demo.go)
 	demoSignIn *limiter         // sign-ins to demo accounts, per source (demo.go)
 	tickets    sync.Map         // recovery tickets: token hash -> ticket
+	pending    *pendingStore    // sign-ins waiting for their second step (twofactor.go)
+	totpAcct   *limiter         // second-step codes per account, short window (twofactor.go)
+	totpDay    *limiter         // second-step codes per account, per day
+	android    androidApps      // the apps that may use this server's passkeys (passkeys.go)
+	waProof    *challengeStore  // passkey challenges of signed-in sessions, answered instead of a code
+	waReg      *challengeStore  // passkeys being added, per session
 	resMu      sync.Mutex       // guards reserved
 	auxMu      sync.Mutex       // pairs a thumbnail or preview count with its file
 	reserved   map[string]int64 // in-flight upload bytes per user
@@ -74,12 +84,19 @@ type user struct {
 	CreatedAt                              int64
 	NSFW                                   bool   // the admin allows search of explicit content
 	Indexer                                string // the session (pub id) that computes the search index, or ""
+	TOTPSecret, TOTPPending                string // encrypted (twofactor.go); "" = none
+	TOTPLast                               int64  // the last time step a code was accepted for
+	Passkeys                               int    // how many passkeys it has (passkeys.go)
 }
+
+// twoFactor: the account signs in with a code from an authenticator app, or a passkey, after the password.
+func (u *user) twoFactor() bool { return u.TOTPSecret != "" || u.Passkeys > 0 }
 
 // Pub names a session in the device list (the cookie's hash stays on the server).
 type session struct {
 	IDHash, UserID, CSRF, Pub string
-	renewed                   bool // its expiry moved forward: the cookie is sent again with the new lifetime
+	Created                   int64 // when this device signed in
+	renewed                   bool  // its expiry moved forward: the cookie is sent again with the new lifetime
 }
 
 func newApp(dataDir string) (*App, error) {
@@ -110,10 +127,15 @@ func newApp(dataDir string) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	android, err := androidSetting(os.Getenv("ANDROID_APP_PACKAGES"), os.Getenv("ANDROID_APP_CERTS"))
+	if err != nil {
+		return nil, err
+	}
 	dummy, _ := hashSecret(b64.EncodeToString(randBytes(32)))
 	a := &App{
 		db: db, dataDir: dataDir, secret: secret, dummyHash: dummy,
 		trustProxy: os.Getenv("TRUST_PROXY") == "1",
+		tsHeaders:  os.Getenv("TRUST_TAILSCALE_HEADERS") == "1",
 		proxies:    proxies,
 		hosts:      publicHosts(os.Getenv("PUBLIC_HOSTS")),
 		demo:       demo,
@@ -122,8 +144,15 @@ func newApp(dataDir string) (*App, error) {
 		loginIP:    newLimiter(15*time.Minute, 30),
 		loginAcct:  newLimiter(15*time.Minute, 10),
 		loginDev:   newLimiter(15*time.Minute, 20),
+		proofs:     newLimiter(proofWindow, proofsPerAccount),
 		demoReqs:   newDemoBuckets(),
 		demoSignIn: newLimiter(demoSignInWin, demoSignIns),
+		pending:    newPendingStore(),
+		totpAcct:   newLimiter(totpAcctWin, totpAcctMax),
+		totpDay:    newLimiter(24*time.Hour, totpDayMax),
+		android:    android,
+		waProof:    newChallengeStore(),
+		waReg:      newChallengeStore(),
 		now:        time.Now,
 		reserved:   map[string]int64{},
 		lists:      map[string]chan struct{}{},
@@ -226,7 +255,30 @@ func (a *App) clientIP(r *http.Request) string {
 	if err != nil {
 		return r.RemoteAddr
 	}
+	if id := a.tailscaleUser(r, h); id != "" {
+		return id
+	}
 	return h
+}
+
+// tailscaleUser is the source key for a request that Tailscale Serve forwarded on behalf of a tailnet user: behind
+// Serve every client is 127.0.0.1, so per-source limits would be one bucket for the whole server. Serve sets
+// Tailscale-User-Login to the user it identified and removes the header from what the client sent; it sets none for
+// tagged devices (they keep sharing 127.0.0.1). Only with TRUST_TAILSCALE_HEADERS=1, TRUST_PROXY off and a loopback
+// peer: anything else that can reach the app on loopback (a proxy that passes client headers through, such as Caddy
+// in the domain overlay) could otherwise choose its own key. "" when it does not apply.
+func (a *App) tailscaleUser(r *http.Request, peer string) string {
+	if !a.tsHeaders || a.trustProxy {
+		return ""
+	}
+	if addr, err := netip.ParseAddr(peer); err != nil || !addr.Unmap().IsLoopback() {
+		return ""
+	}
+	v := r.Header.Values("Tailscale-User-Login")
+	if len(v) != 1 || v[0] == "" || len(v[0]) > 256 || clean(v[0]) != v[0] {
+		return ""
+	}
+	return "tailscale:" + strings.ToLower(v[0])
 }
 
 // limiterIP is the key used for rate limiting: IPv6 addresses are grouped by /64, since one subscriber
@@ -277,7 +329,10 @@ func (a *App) auth(admin bool, next func(http.ResponseWriter, *http.Request, *us
 			fail(w, http.StatusUnauthorized, "not signed in")
 			return
 		}
-		u, s, err := a.lookupSession(c.Value)
+		// a phone's periodic background check (the Android app's notice check, mobile/src/noticeCheck.ts) is not the
+		// person using the device: it neither keeps the session from ending when idle nor shows the device as active
+		quiet := r.Method == http.MethodGet && r.Header.Get("X-CF-Background") == "1"
+		u, s, err := a.lookupSession(c.Value, !quiet)
 		if err != nil {
 			if a.revoked(c.Value) {
 				w.Header().Set("X-CF-Session", "revoked")
@@ -317,7 +372,8 @@ func (a *App) auth(admin bool, next func(http.ResponseWriter, *http.Request, *us
 	}
 }
 
-func (a *App) lookupSession(token string) (*user, *session, error) {
+// lookupSession finds the session of a cookie; touch counts the request as activity (last_seen, the idle timeout).
+func (a *App) lookupSession(token string, touch bool) (*user, *session, error) {
 	h := sha256hex(token)
 	now := a.now().Unix()
 	var s session
@@ -328,6 +384,7 @@ func (a *App) lookupSession(token string) (*user, *session, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	s.Created = created
 	if now > exp || now-last > int64(sessionIdle.Seconds()) {
 		a.db.Exec(`DELETE FROM sessions WHERE id_hash=?`, h)
 		return nil, nil, errors.New("expired")
@@ -337,7 +394,7 @@ func (a *App) lookupSession(token string) (*user, *session, error) {
 		return nil, nil, errors.New("inactive")
 	}
 	// at most once a minute: a write (and its fsync) for every thumbnail made browsing slow
-	if now-last >= 60 {
+	if touch && now-last >= 60 {
 		next := min(now+int64(sessionIdle.Seconds()), created+int64(sessionAbs.Seconds()))
 		a.db.Exec(`UPDATE sessions SET last_seen=?, expires_at=? WHERE id_hash=?`, now, next, h)
 		s.renewed = next > exp
@@ -347,8 +404,9 @@ func (a *App) lookupSession(token string) (*user, *session, error) {
 
 func (a *App) userBy(where string, arg any) (*user, error) {
 	var u user
-	err := a.db.QueryRow(`SELECT id,email,role,status,kdf,auth_hash,pubkey,wrapped_master_pw,wrapped_master_recovery,wrapped_privkey,recovery_hash,created_at,nsfw,indexer FROM users WHERE `+where, arg).
-		Scan(&u.ID, &u.Email, &u.Role, &u.Status, &u.KDF, &u.AuthHash, &u.Pubkey, &u.WrappedMasterPW, &u.WrappedMasterRecovery, &u.WrappedPrivkey, &u.RecoveryHash, &u.CreatedAt, &u.NSFW, &u.Indexer)
+	err := a.db.QueryRow(`SELECT id,email,role,status,kdf,auth_hash,pubkey,wrapped_master_pw,wrapped_master_recovery,wrapped_privkey,recovery_hash,created_at,nsfw,indexer,totp_secret,totp_pending,totp_last,
+		(SELECT COUNT(*) FROM passkeys p WHERE p.user_id=users.id) FROM users WHERE `+where, arg).
+		Scan(&u.ID, &u.Email, &u.Role, &u.Status, &u.KDF, &u.AuthHash, &u.Pubkey, &u.WrappedMasterPW, &u.WrappedMasterRecovery, &u.WrappedPrivkey, &u.RecoveryHash, &u.CreatedAt, &u.NSFW, &u.Indexer, &u.TOTPSecret, &u.TOTPPending, &u.TOTPLast, &u.Passkeys)
 	if err != nil {
 		return nil, err
 	}
@@ -377,6 +435,12 @@ func (a *App) startSession(w http.ResponseWriter, r *http.Request, userID, authH
 	if rowsAffected(res, nil) != 1 {
 		return nil, errCredentialsChanged
 	}
+	// at most sessionsMax per account (each is a row, and a device-list entry, for up to a year): the one idle longest
+	// goes, never this new one. That device is asked to sign in again; nothing is wiped.
+	if res, err := a.db.Exec(`DELETE FROM sessions WHERE user_id=? AND id_hash NOT IN (SELECT id_hash FROM sessions WHERE user_id=?
+		ORDER BY last_seen DESC, created_at DESC LIMIT ?)`, userID, userID, sessionsMax); rowsAffected(res, err) > 0 {
+		a.live.recheck(userID)
+	}
 	// the browser's previous session, if it had one, is replaced by this one: end it rather than leave it valid
 	if c, err := r.Cookie(cookieName); err == nil {
 		a.db.Exec(`DELETE FROM sessions WHERE id_hash=?`, sha256hex(c.Value))
@@ -386,7 +450,7 @@ func (a *App) startSession(w http.ResponseWriter, r *http.Request, userID, authH
 	if u, uerr := a.userByID(userID); uerr == nil {
 		a.setDevice(w, u)
 	}
-	return &session{IDHash: sha256hex(tok), UserID: userID, CSRF: csrf, Pub: pub}, nil
+	return &session{IDHash: sha256hex(tok), UserID: userID, CSRF: csrf, Pub: pub, Created: now.Unix()}, nil
 }
 
 func setSessionCookie(w http.ResponseWriter, tok string) {

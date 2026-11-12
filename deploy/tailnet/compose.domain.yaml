@@ -1,0 +1,57 @@
+# Overlay: your own domain (e.g. photos.example.com) for the Tailscale setup, still reachable only in your tailnet.
+# The name points at the server's tailnet address; Caddy gets a Let's Encrypt certificate through a DNS check at
+# Cloudflare, so nothing is opened to the internet. Put it last:
+#   COMPOSE_FILE=compose.yaml:deploy/tailnet/compose.tailscale.yaml:deploy/tailnet/compose.kopia.yaml:deploy/tailnet/compose.domain.yaml
+# Needs in .env: DOMAIN, TS_DOMAIN, CF_API_TOKEN, PUBLIC_HOSTS. Setup: docs/TAILNET.md
+services:
+  tailscale:
+    environment:
+      TS_SERVE_CONFIG: /config/serve-domain.json     # :443 to Caddy; :8443 stays Kopia's UI (if you use Kopia)
+      TS_SOCKET: /var/run/tailscale/tailscaled.sock   # shared with Caddy for the tailnet name's certificate
+      TS_PERMIT_CERT_UID: "10001"   # Caddy's user may fetch certificates over the socket, and nothing else
+    volumes:
+      - tsrun:/var/run/tailscale
+  app:
+    environment:
+      # Serve hands :443 to Caddy as plain TCP and adds no identity header; Caddy would pass on one a client made up
+      TRUST_TAILSCALE_HEADERS: "0"
+  caddy-perms:   # once per start: the certificate volume belongs to Caddy's user (it ran as root before)
+    image: alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
+    command: chown -R 10001:10001 /data
+    volumes:
+      - domaincerts:/data
+    network_mode: none
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
+    security_opt: ["no-new-privileges:true"]
+  caddy:
+    build: ./deploy/tailnet/domain
+    image: cipherfilm-caddy:2.11.7
+    restart: unless-stopped
+    network_mode: service:tailscale
+    depends_on:
+      tailscale: { condition: service_started }
+      app: { condition: service_started }
+      caddy-perms: { condition: service_completed_successfully }
+    # not root: to tailscaled it is then an ordinary local user, allowed only the certificate (TS_PERMIT_CERT_UID
+    # above); it listens on 4443 and 8081, so it needs no capability to bind
+    user: "10001:10001"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env, e.g. photos.example.com}
+      TS_DOMAIN: ${TS_DOMAIN:?set TS_DOMAIN in .env, e.g. photos.your-tailnet.ts.net}
+      CF_API_TOKEN: ${CF_API_TOKEN:?set CF_API_TOKEN in .env (Cloudflare token with Zone > DNS > Edit for this zone)}
+    volumes:
+      - ./deploy/tailnet/domain/Caddyfile:/etc/caddy/Caddyfile:ro
+      - domaincerts:/data
+      - tsrun:/var/run/tailscale:ro   # only to reach the socket
+    tmpfs: ["/config:uid=10001,gid=10001,mode=0700", /tmp]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    pids_limit: 256
+
+volumes:
+  tsrun:
+  domaincerts:
+    name: ${DOMAIN_CERTS_VOLUME:-cipherfilm_domain_certs}

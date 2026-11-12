@@ -236,7 +236,7 @@ Source: [Sexual content and profanity policy](https://support.google.com/googlep
 - The policy bans apps that *contain or promote* sexual content, and "undress / see-through" apps. A classifier that lets a user find their *own* photos isn't content, and the help page doesn't address it. The risk is a reviewer seeing an "explicit" toggle or label and judging it as promoting sexual content.
 - [ ] It's already off unless an admin allows it (`me.user.nsfw`), and the demo server must **not** allow it. Reviewers then never see it.
 - [ ] Neutral wording in the app: "Sensitive content detection: find or hide photos that may contain nudity" rather than "explicit search". No sample imagery, nothing in screenshots, listing or description.
-- [x] Safest: a Play build flag that removes the explicit model choice entirely (the GitHub build keeps it). Done: the Play build has no explicit search (`mobile/src/store.ts`).
+- [x] Safest: a Play build flag that removes the explicit choice entirely (the GitHub build keeps it). Done: the Play build has no explicit search and always filters explicit photos and words out of search (`mobile/src/store.ts`, docs/SEARCH.md "Explicit content"). Since one model serves every build, the Play build downloads the same LAION ViT-B/32 files (under the neutral names `clip-b32-*`, no "nsfw" in any name); MobileCLIP S2 is gone from every build (its license is research-only, docs/MODELS.md).
 - [ ] Don't market it. If asked, the answer is: "on-device classifier over the user's own private library; no content is provided by the app."
 
 ### 4.9 Other App content items
@@ -271,7 +271,7 @@ Sources: [App access](https://support.google.com/googleplay/android-developer/an
 - [ ] Run a **dedicated demo instance** on a public HTTPS domain (e.g. `demo.<project-domain>`, behind an HTTPS proxy with Let's Encrypt). A separate small VPS or a separate compose project with its own volume works, sharing nothing with production. Configuration:
   - one ordinary user, `reviewer@<domain>`, with a strong static password, no recovery dependency, and no admin rights;
   - about 30 pre-loaded neutral demo photos and videos (own or CC0, no identifiable private people), plus one album;
-  - **explicit model disabled** (the Play build doesn't offer it anyway; the models come from Hugging Face, not the server), small quota (e.g. 2 GB);
+  - **explicit search not allowed** for the reviewer account (the Play build doesn't offer it anyway; the models come from Hugging Face, not the server), small quota (e.g. 2 GB);
   - a nightly reset job (restore a snapshot) so reviewer uploads don't pile up, with monitoring and an uptime alert.
 - [ ] App access instructions (≤ 500 chars each field):
   > Cipherfilm is a client for a self-hosted server. On the sign-in screen enter Server: `https://demo.<domain>` · Email: `reviewer@<domain>` · Password: `<…>`. No 2FA. After sign-in, grant photo access and tap "Back up" to see encrypted backup; the demo library already contains sample photos. Biometric unlock is optional (Account → Unlock with fingerprint or face).
@@ -320,7 +320,7 @@ Sources: [App access](https://support.google.com/googleplay/android-developer/an
 15. Fill in App content: privacy policy, app access, ads (no), content rating (IARC as in §4.9), target audience 18+, news/government/financial/health (none), advertising ID (no), Data safety (§4.6), photo/video declaration (§4.2), FGS declaration (§4.3).
 
 **Infrastructure**
-16. Public **demo server** with a reviewer account, demo library, explicit model off, nightly reset, uptime alert (§5). Keep it separate from the tailnet-only production VPS.
+16. Public **demo server** with a reviewer account, demo library, explicit search not allowed, nightly reset, uptime alert (§5). Keep it separate from the tailnet-only production VPS.
 
 **Rollout**
 17. Internal test → closed test (personal account: ≥ 12 testers, 14 continuous days, then the production-access application) → production with managed publishing. Allow 1–3 weeks for the first review cycle.

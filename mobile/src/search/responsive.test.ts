@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const st = vi.hoisted(() => ({
   files: new Map<string, string>(),
   master: new Uint8Array(32).fill(7),
-  vision: { clip: null as string | null, dir: null as string | null, text: false, image: false, faces: false, also: null as string | null },
+  vision: { clip: null as string | null, dir: null as string | null, text: false, image: false, faces: false},
   log: [] as string[], // what happened, in order: "open text", "open all", "fetch", "analyze <id>"
   analyzed: [] as string[],
   gate: null as Promise<void> | null, // holds every analysis until released
@@ -37,11 +37,11 @@ vi.mock("../../modules/cf-native/src/CfNativeModule", () => ({
     visionState: () => st.vision,
     // like Vision.kt: what is open changes only once the models are open, and a text-only open closes the image side
     // (one at a time, in the order asked, as on the native side's own thread)
-    visionOpen: (dir: string, faces: boolean, clip: string, indexes: boolean, also: string | null) => {
+    visionOpen: (dir: string, faces: boolean, clip: string, indexes: boolean) => {
       st.log.push(indexes ? "open all" : "open text");
       st.lane = st.lane.then(async () => {
         if (indexes && st.opening) await st.opening; // (the image models: the text model opens at once)
-        Object.assign(st.vision, { dir, clip, text: true, image: indexes, faces: indexes && faces, also });
+        Object.assign(st.vision, { dir, clip, text: true, image: indexes, faces: indexes && faces });
       });
       return st.lane;
     },
@@ -54,6 +54,7 @@ vi.mock("../../modules/cf-native/src/CfNativeModule", () => ({
     },
     visionText: async () => new Uint8Array(4),
     indexSearch: async () => [],
+    indexConcepts: async () => {},
     backupState: () => ({ unmetered: true }),
     backupNotify: () => {},
     checkModel: async () => true,
@@ -61,7 +62,7 @@ vi.mock("../../modules/cf-native/src/CfNativeModule", () => ({
 }));
 vi.mock("@crypto/item", () => ({ accountKeyPair: () => ({ pk: new Uint8Array(32), sk: new Uint8Array(32) }) }));
 vi.mock("@crypto/search", () => ({
-  openIndexEntry: () => ({ v: 1, m: "mcs2/2", clip: "AQ" }),
+  openIndexEntry: () => ({ v: 1, m: "laionb32/1", clip: "AQ" }),
   sealIndexEntry: () => new Uint8Array(1),
   decryptPeople: () => ({}),
 }));
@@ -102,7 +103,7 @@ describe("indexing while the app is in use", () => {
     settings.forgetSettings(); // (only empties the cache here: the stand-in folder never exists)
     st.files.set("file:///doc/search/settings.json", JSON.stringify({ enabled: true, faces: false, background: false, asked: true }));
     Object.assign(st, { log: [], analyzed: [], gate: null, opening: null, lane: Promise.resolve(), vectors: 0, textLater: false });
-    st.vision = { clip: null, dir: null, text: false, image: false, faces: false, also: null };
+    st.vision = { clip: null, dir: null, text: false, image: false, faces: false };
   });
 
   it("lets timers run between photos: the JS thread is never held for more than one photo per worker", async () => {
@@ -140,7 +141,7 @@ describe("indexing while the app is in use", () => {
     const run = engine.startSearch(lib(ids(3)));
     await until(() => engine.searchReady()); // the entries are in while the models still open
     expect(st.vision.image).toBe(false);
-    st.files.set("file:///doc/models/mobileclip-s2-tokenizer.json", "{}");
+    st.files.set("file:///doc/models/clip-b32-tokenizer.json", "{}");
     const found = engine.textSearch("dog");
     release();
     await Promise.all([run, found]);

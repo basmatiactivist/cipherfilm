@@ -69,11 +69,21 @@ Gradle cache paths), then run the check. CI builds don't have the problem (their
 The version is baked into the image: `docker run --rm ghcr.io/<owner>/cipherfilm:2 version`,
 and it is shown in the admin area under Server.
 
+## Going back to an older version
+
+Database changes are backward compatible in the sense that an older server starts on a newer database, but it ignores
+what it doesn't know. That is not always harmless: **once passkeys are in use (the first release with passkeys), going
+back to a server version before it is not supported.** An older server doesn't read the `passkeys` table, so an
+account whose only second step is a passkey signs in there with the password alone. If you must go back anyway,
+restore a backup taken before the upgrade, or turn two-step sign-in off and on again with an authenticator app for
+those accounts first. Say this in the release notes of any release that adds a security check an older server lacks.
+
 ## Google Play
 
 The Play build differs from the GitHub APK only by `CF_STORE=play` at prebuild (`mobile/app.config.js`): no
 `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` (the app opens Android's battery optimisation list instead of the direct
-dialog) and no explicit search model (`mobile/src/store.ts`, docs/SEARCH.md). Requirements and the Play Console forms:
+dialog) and no explicit search: its search always filters explicit content (`mobile/src/store.ts`, docs/SEARCH.md;
+the model and the index are the same in both builds). Requirements and the Play Console forms:
 [docs/play/REQUIREMENTS.md](play/REQUIREMENTS.md).
 
 Signing (Play App Signing, option B there): the **app signing key** is the existing release key
@@ -155,6 +165,8 @@ Insights › Dependency graph › Dependabot: a rejected file stops every update
 - **The Mac app's Swift packages** (`swift-sodium`, pinned exactly in `mac/Package.swift`): the package needs the
   ONNX Runtime framework that `scripts/fetch-onnxruntime.sh` downloads, so Dependabot can't resolve it. Check
   swift-sodium's releases by hand before each release, like ONNX Runtime's version in that script.
+- **Caddy's Cloudflare module** in `deploy/tailnet/domain/Dockerfile` (`xcaddy build --with
+  github.com/caddy-dns/cloudflare@…`) is invisible to Dependabot; check its releases by hand.
 - **Helper images** in the `Makefile` and `scripts/` (`alpine`, `golang`, `node`) are invisible to Dependabot.
   Check them by hand before each release; Go and Node must match the `Dockerfile`.
 
@@ -216,4 +228,36 @@ Settings that live on GitHub, not in the repository, set once the repository is 
   anything but a release tag. Without it the Android build has no signing key.
 - **Security:** secret scanning with push protection, Dependabot alerts, private vulnerability reporting.
 - The container package's visibility (above).
+
+**Check the release gates before each release.** The "is the commit on master" steps in `release.yml` and
+`android.yml` run from the tagged commit's own copy of the workflow: a tag on a commit with an edited workflow would
+skip them. What really keeps the signing keys to the owner's releases are the two settings below, so verify them
+(Settings in the browser, or with `gh` as shown) rather than trust the workflow files:
+
+1. **Tag ruleset** (Settings › Rules › Rulesets): target *Tags*, enforcement *Active*, target pattern `v*` (it shows
+   as `refs/tags/v*`), rules *Restrict creations*, *Restrict updates* and *Restrict deletions* all on; the bypass list
+   holds only *Repository admin* (the owner), no apps, teams or deploy keys.
+
+   ```bash
+   gh api repos/OWNER/REPO/rulesets --jq '.[] | select(.target=="tag") | {name, enforcement, id}'
+   gh api repos/OWNER/REPO/rulesets/ID --jq '{enforcement, include: .conditions.ref_name.include, rules: [.rules[].type], bypass: .bypass_actors}'
+   ```
+
+   Expect `active`, `["refs/tags/v*"]`, the rules `creation`, `update`, `deletion`, and one bypass actor of type
+   `RepositoryRole` (admin).
+2. **Environment `release`** (Settings › Environments › release): *Required reviewers* with the owner (every job that
+   gets the signing keys waits for the owner's approval in the Actions run, so a tag alone never signs anything);
+   *Allow administrators to bypass configured protection rules* off; *Deployment branches and tags* "Selected
+   branches and tags" with only the tag rule `v*` and no branch rule.
+
+   ```bash
+   gh api repos/OWNER/REPO/environments/release --jq '{rules: [.protection_rules[] | {type, reviewers: [.reviewers[]?.reviewer.login]}], admins_bypass: .can_admins_bypass, policy: .deployment_branch_policy}'
+   gh api repos/OWNER/REPO/environments/release/deployment-branch-policies --jq '[.branch_policies[] | {name, type}]'
+   ```
+
+   Expect a `required_reviewers` rule naming the owner, `admins_bypass: false`, `custom_branch_policies: true`, and the
+   single policy `{"name":"v*","type":"tag"}`.
+
+When approving a run, check that its tag is on `master` (`git merge-base --is-ancestor vX.Y.Z origin/master`) and
+that the run's workflow files are the ones on `master`.
 

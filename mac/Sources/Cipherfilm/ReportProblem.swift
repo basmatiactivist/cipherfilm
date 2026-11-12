@@ -23,8 +23,8 @@ enum ReportProblem {
   @MainActor static func ask(_ model: AppModel) {
     let d = details(model)
     let a = NSAlert()
-    a.messageText = "Report a problem on GitHub"
-    a.informativeText = "You'll continue on github.com (a free GitHub account is needed to post). We'll fill in this Mac's details:\n\n\(d.summary)\n\nNothing else is sent: no server address, e-mail, photos or names."
+    a.messageText = "Report a problem"
+    a.informativeText = "You'll continue in the browser, on the project's issue tracker (posting needs a free account there). We'll fill in this Mac's details:\n\n\(d.summary)\n\nNothing else is sent: no server address, e-mail, photos or names."
     a.addButton(withTitle: "Include details")  // the default button (Return)
     a.addButton(withTitle: "Without details")
     a.addButton(withTitle: "Cancel")           // NSAlert gives a "Cancel" button Escape

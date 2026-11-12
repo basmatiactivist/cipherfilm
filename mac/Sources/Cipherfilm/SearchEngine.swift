@@ -9,7 +9,9 @@ import CipherfilmCore
 
 @MainActor @Observable
 final class SearchEngine {
-  enum Phase: Equatable { case off, download, loading, indexing, waitPower, ready, error }
+  /** consent: the models (or some) aren't here and the person hasn't agreed to download them yet (ModelStore,
+   *  docs/MODELS.md); total is the download's size. Nothing is fetched until they do. */
+  enum Phase: Equatable { case off, consent, download, loading, indexing, waitPower, ready, error }
   var phase: Phase = .off
   var done = 0
   var total = 0
@@ -25,22 +27,23 @@ final class SearchEngine {
   let models = ModelStore(dir: Paths.models)
   private var vision: Vision?
   private var visionFaces = false
-  private var visionClip = ClipModel.mobileclip
   private var visionReader = false
-  private var visionStandard = false
   private var tokenizer: Tokenizer?
   private var tags: [String: String] = [:]
-  /** MobileCLIP's entries, on the Mac that indexes with LAION: it keeps them current for the devices that can't use
-   *  explicit search (docs/SEARCH.md). Only which there are, from which model; they aren't searched here. */
-  private var stdTags: [String: String] = [:]
   private var run: Task<Void, Never>?
   private var runVault: Vault?
   private var runFaces = false
-  /** the model this run uses: LAION only while an admin allows it and the account chose it */
-  private(set) var clip = ClipModel.mobileclip
+  /** the model: one for everyone (docs/SEARCH.md "One model") */
+  let clip = ClipModel.clip
+  /** whether search leaves explicit photos and words out (docs/SEARCH.md "Explicit content"): unless an admin allows
+   *  explicit search and the account chose it; yes until that is known */
+  private(set) var filtered = true
   /** whether this Mac computes the index; otherwise another device does and this one only reads it (and keeps only
    *  the text model, to turn search words into a vector) */
   private(set) var indexes = true
+  /** while this Mac only reads: the photos and videos still without an entry from the indexing device (0 while it
+   *  indexes itself) */
+  private(set) var waiting = 0
   /** what the run is doing, for an error message ("Fetching the index from the server: …") */
   private var step = ""
   private var pending: [Item] = []
@@ -78,62 +81,68 @@ final class SearchEngine {
   func stop(clear: Bool) {
     run?.cancel(); run = nil
     if clear {
-      index.clear(); tags = [:]; stdTags = [:]; runVault = nil; people = PeopleDoc(); peopleVersion = 0; peopleLoaded = false; groupsAt = -1; groups = []
+      index.clear(); tags = [:]; runVault = nil; people = PeopleDoc(); peopleVersion = 0; peopleLoaded = false; groupsAt = -1; groups = []
+      // the decrypted items it was handed (with their item keys) and what was queued from them
+      items = []; pending = []; inFlight = []
       version += 1
     }
-    phase = .off; done = 0; total = 0; message = nil; skipped = []
+    phase = .off; done = 0; total = 0; waiting = 0; message = nil; skipped = []
   }
 
   private func live(_ v: Vault) -> Bool { !Task.isCancelled && runVault === v && v.isOpen }
 
   private func start(vault: Vault, faces: Bool) async {
     do {
-      // which model: the people document holds the account's choice, the server whether it is allowed; and whether
+      // filtered or not: the people document holds the account's choice, the server whether it is allowed; and whether
       // this Mac computes the index or only reads what another device computes (docs/SEARCH.md, "One device indexes")
       phase = .loading
       step = "Loading your search settings"
       await refreshMe(vault.api)
       try await loadPeople()
       guard live(vault) else { return }
-      let allowed = AppModel.shared.me?.user.nsfw == true
-      clip = ClipModel.choose(allowed: allowed, explicit: people.explicit == true)
+      filtered = !Explicit.unfiltered(allowed: AppModel.shared.me?.user.nsfw == true, chosen: people.explicit == true)
       indexes = AppModel.shared.me?.mayIndex ?? true
-      if AppModel.shared.settings.explicitSeen != (people.explicit == true) { AppModel.shared.settings.explicitSeen = people.explicit == true }
-      // the other model's files go before the chosen one is fetched (tokenizer and face models are shared; indexing
-      // with LAION keeps MobileCLIP's image model); a Mac that only reads keeps just the text model
-      models.removeUnused(clip: clip, reader: !indexes)
+      // a Mac that only reads keeps just the text model
       if !indexes { models.removeIndexing() }
-      let clip = clip, reader = !indexes, standardToo = clip.keepsStandard(indexes: indexes)
+      let clip = clip, reader = !indexes
       step = "Downloading the search models"
       if !models.have(faces: faces, clip: clip, reader: reader) {
+        // asked first (a model update, explicit search, faces or indexing here need new files): nothing goes out before
+        if !models.unagreed(faces: faces, clip: clip, reader: reader).isEmpty {
+          phase = .consent; done = 0; total = Int(models.missingBytes(faces: faces, clip: clip, reader: reader)); message = nil
+          return
+        }
         phase = .download; done = 0; total = Int(models.missingBytes(faces: faces, clip: clip, reader: reader)); message = nil; rate = 0; rateAt = nil; retry = nil
         try await models.download(faces: faces, clip: clip, reader: reader) { p in Task { @MainActor in self.downloaded(p) } }
         guard live(vault) else { return }
       }
       phase = .loading
       step = "Opening the search models"
-      if vision == nil || visionFaces != faces || visionClip != clip || visionReader != reader || visionStandard != standardToo {
+      if vision == nil || visionFaces != faces || visionReader != reader {
         let dir = models.dir
         vision = nil
-        vision = try await Task.detached(priority: .utility) { try Vision(dir: dir, faces: faces, clip: clip, threads: 4, textOnly: reader, standardToo: standardToo) }.value
-        visionFaces = faces; visionClip = clip; visionReader = reader; visionStandard = standardToo
+        vision = try await Task.detached(priority: .utility) { try Vision(dir: dir, faces: faces, clip: clip, threads: 4, textOnly: reader) }.value
+        visionFaces = faces; visionReader = reader
       }
       guard live(vault) else { return }
       let pair = try vault.pair()
       let pk = try vault.checkedPublicKey()
 
       // what the server has for this model: everything new since the last visit, added to the encrypted copy kept in
-      // the cache (one per model, so switching back doesn't fetch the whole index again)
+      // the cache
       step = "Fetching the index from the server"
       var cache = IndexCache.read(vault, clip.family)
       try await pull(vault, &cache, pair: pair, faces: faces, all: true)
       guard live(vault) else { return }
-      // next to LAION's, this Mac keeps MobileCLIP's entries complete when it indexes: which there are
-      let std = ClipModel.standard.family
-      var stdCache = IndexCache()
-      if standardToo {
-        stdCache = IndexCache.read(vault, std)
-        try await pullStandard(vault, &stdCache, pair: pair)
+      // MobileCLIP's entries left from before (docs/SEARCH.md "One model"): read by the Mac that indexes, while photos
+      // are missing the new entry, for their faces (no face looked for twice; the people document's names stay)
+      let old = ClipModel.legacyFamily
+      var legacy = IndexCache()
+      queueMissing()
+      if indexes && !pending.isEmpty {
+        legacy = IndexCache.read(vault, old)
+        _ = try? await fetch(vault, &legacy, family: old)
+        legacy.write(vault, old)
         guard live(vault) else { return }
       }
 
@@ -153,16 +162,21 @@ final class SearchEngine {
           phase = .ready
           if indexes { done = total }
           cache.write(vault, clip.family)
-          if standardToo { stdCache.write(vault, std) }
+          // everything has the new entry: what is left of MobileCLIP's goes, on the server and here
+          if indexes && !legacy.entries.isEmpty && inFlight.isEmpty {
+            if (try? await vault.api.json("DELETE", "/api/index?model=\(old)")) != nil { legacy = IndexCache(); IndexCache.delete(vault, old) }
+          }
           try await Task.sleep(nanoseconds: 3_000_000_000)
           // another device may have turned explicit search on or off, an admin changed the permission, or the
           // person chose another device to index (or this one)
           idleRounds += 1
           if idleRounds % 20 == 0 {
             await refreshMe(vault.api)
-            if (try? await loadPeople()) != nil, live(vault),
-               ClipModel.choose(allowed: AppModel.shared.me?.user.nsfw == true, explicit: people.explicit == true) != clip
-                || (AppModel.shared.me?.mayIndex ?? true) != indexes {
+            if (try? await loadPeople()) != nil, live(vault) {
+              let f = !Explicit.unfiltered(allowed: AppModel.shared.me?.user.nsfw == true, chosen: people.explicit == true)
+              if f != filtered { filtered = f; version += 1 }
+            }
+            if live(vault), (AppModel.shared.me?.mayIndex ?? true) != indexes {
               restart(); return
             }
             if !indexes, live(vault) { try? await pull(vault, &cache, pair: pair, faces: faces, all: false); queueMissing() }
@@ -183,13 +197,12 @@ final class SearchEngine {
         var refused = false
         inFlight = Set(batch.map(\.id))
         defer { inFlight = [] } // also the ones a refusal left unstarted
-        // per photo, the models whose entry is missing; with only one missing, the faces come from the other entry, so
-        // both list the same faces (the people document names them by place) and they are found once
+        // per photo: the faces of its MobileCLIP entry from before, if it has one with faces (the people document names
+        // faces by their place in an entry, so they stay the same, and they aren't looked for again)
         var plans: [String: (want: [ClipModel], known: [IndexEntry.Face]?)] = [:]
         for item in batch {
-          let want = Models.toCompute(tags[item.id], standard: stdTags[item.id], faces: faces, clip: clip, indexes: indexes)
-          let other = faces && standardToo && want.count == 1 ? (want[0] == clip ? stdCache : cache).entries[item.id] : nil
-          plans[item.id] = (want, other.flatMap { try? B64.decode($0) }.flatMap { try? IndexEntry.open($0, pair: pair, itemId: item.id) }?.faces)
+          let e = faces ? legacy.entries[item.id].flatMap { try? B64.decode($0) }.flatMap { try? IndexEntry.open($0, pair: pair, itemId: item.id) } : nil
+          plans[item.id] = ([clip], ClipModel.legacyFaces(e?.m) ? e?.faces ?? [] : nil)
         }
         await withTaskGroup(of: (Item, [(IndexEntry, String)], APIError?).self) { g in
           var it = batch.makeIterator()
@@ -216,15 +229,11 @@ final class SearchEngine {
           for await (item, stored, err) in g {
             inFlight.remove(item.id)
             for (e, enc) in stored {
-              if clip.owns(e.m) {
-                let d = e.decoded(faces: faces)
-                index.put(item.id, clip: d.clip, faces: d.faces)
-                tags[item.id] = e.m
-                cache.entries[item.id] = enc
-              } else {
-                stdTags[item.id] = e.m
-                stdCache.entries[item.id] = enc
-              }
+              let d = e.decoded(faces: faces)
+              index.put(item.id, clip: d.clip, faces: d.faces)
+              tags[item.id] = e.m
+              cache.entries[item.id] = enc
+              legacy.entries.removeValue(forKey: item.id) // the server replaced it
             }
             if err == nil {
               done += 1; indexedThisRun += 1; sinceWrite += 1
@@ -240,19 +249,21 @@ final class SearchEngine {
         }
         if refused {
           cache.write(vault, clip.family)
-          if standardToo { stdCache.write(vault, std) }
+          legacy.write(vault, old)
           await refreshMe(vault.api)
           restart(); return
         }
         // screens that show people or search results are worked out again at most every few seconds
         if Date().timeIntervalSince(lastBump) > 4 { version += 1; lastBump = Date() }
-        if sinceWrite >= 20 { cache.write(vault, clip.family); if standardToo { stdCache.write(vault, std) }; sinceWrite = 0 }
+        if sinceWrite >= 20 { cache.write(vault, clip.family); legacy.write(vault, old); sinceWrite = 0 }
         if offlineCount == batch.count {
           phase = .error; message = "Couldn't load photos to index: \(lastOffline ?? APIError.offline) Trying again in 30 s."
           try await Task.sleep(nanoseconds: 30_000_000_000)
         }
       }
     } catch is CancellationError {
+    } catch let e as NeedsConsent {
+      if live(vault) { phase = .consent; done = 0; total = Int(e.bytes); message = nil }
     } catch {
       if live(vault) { phase = .error; message = "\(step): \(error.localizedDescription) Trying again in a minute." }
       // try again in a while (offline, server busy)
@@ -262,8 +273,7 @@ final class SearchEngine {
   }
 
   /** Adds the server's entries of a family since the cache's last visit. When the server has fewer than the cache,
-   *  some were deleted there (an older app dropped MobileCLIP's when explicit search was turned on): the cache starts
-   *  over. anew: the cache now holds exactly the server's entries (it started from none). A server that doesn't count
+   *  some were deleted there (MobileCLIP's go as the new ones are made): the cache starts over. anew: the cache now holds exactly the server's entries (it started from none). A server that doesn't count
    *  yet is taken at its word. */
   private func fetch(_ vault: Vault, _ cache: inout IndexCache, family: String) async throws -> (fresh: [String: String], anew: Bool) {
     if cache.since == 0 { cache.entries = [:] }
@@ -321,27 +331,6 @@ final class SearchEngine {
     version += 1
   }
 
-  /** MobileCLIP's entries on the server, on the Mac that indexes with LAION: which photos have one and from which
-   *  model (only the tag is read; this Mac searches with LAION's). */
-  private func pullStandard(_ vault: Vault, _ cache: inout IndexCache, pair: KeyPair) async throws {
-    let fam = ClipModel.standard.family
-    _ = try await fetch(vault, &cache, family: fam)
-    cache.write(vault, fam)
-    let ids = Set(items.map(\.id))
-    let entries = cache.entries
-    let opened = await Task.detached(priority: .utility) { () -> ([String: String], [String]) in
-      var tags: [String: String] = [:]
-      var bad: [String] = []
-      for (id, enc) in entries where ids.contains(id) {
-        guard let blob = try? B64.decode(enc), let e = try? IndexEntry.open(blob, pair: pair, itemId: id) else { bad.append(id); continue }
-        tags[id] = e.m
-      }
-      return (tags, bad)
-    }.value
-    stdTags = opened.0
-    for id in opened.1 { cache.entries.removeValue(forKey: id) } // damaged or not for this item: made again
-  }
-
   /** The account as the server sees it now: who indexes, whether explicit search is allowed. */
   private func refreshMe(_ api: API) async {
     if let d = try? await api.json("GET", "/api/me"), let fresh = try? JSONDecoder().decode(Me.self, from: d),
@@ -368,6 +357,26 @@ final class SearchEngine {
     return n == 0 ? nil : "about \(max(1, Int((Double(n) / 1e6).rounded()))) MB"
   }
 
+  /** What a setting would download that the person hasn't agreed to yet: the question to ask first, or nil when none
+   *  is needed. reader: nil for this Mac's role now. */
+  func consentAsk(_ clip: ClipModel, faces: Bool, reader: Bool? = nil) -> ModelConsentAsk? {
+    let r = reader ?? !(AppModel.shared.me?.mayIndex ?? true)
+    guard !models.unagreed(faces: faces, clip: clip, reader: r).isEmpty else { return nil }
+    return ModelConsentAsk(clip: clip, faces: faces, reader: r, bytes: models.missingBytes(faces: faces, clip: clip, reader: r))
+  }
+
+  /** The question for what this run waits for (phase consent). */
+  func pendingAsk() -> ModelConsentAsk {
+    let faces = runFaces, reader = !indexes
+    return ModelConsentAsk(clip: clip, faces: faces, reader: reader, bytes: models.missingBytes(faces: faces, clip: clip, reader: reader))
+  }
+
+  /** The yes; a run that waited for it goes on. */
+  func agree(_ a: ModelConsentAsk) {
+    models.agree(faces: a.faces, clip: a.clip, reader: a.reader)
+    if phase == .consent { restart() }
+  }
+
   /** "Downloading search models · 40 of 250 MB · 280 KB/s, about 13 min left", or why it is waiting. */
   var downloadText: String {
     let of = "\(bytes(Int64(done))) of \(bytes(Int64(total)))"
@@ -382,11 +391,13 @@ final class SearchEngine {
     guard indexes else {
       total = items.filter { $0.kind != .other && !$0.broken }.count
       done = min(total, items.filter { Models.good(tags[$0.id], faces: runFaces, clip: clip) }.count)
+      // any entry of the model counts: whether the indexing device looks for faces is its own setting
+      waiting = Models.waiting(items, tags: tags, faces: false, clip: clip)
       return
     }
+    waiting = 0
     let queued = Set(pending.map(\.id)).union(inFlight).union(skipped)
-    let todo = items.filter { !$0.broken && $0.itemKey != nil && $0.kind != .other && ($0.hasPreview || $0.hasThumb) && !queued.contains($0.id)
-      && !Models.toCompute(tags[$0.id], standard: stdTags[$0.id], faces: runFaces, clip: clip, indexes: indexes).isEmpty }
+    let todo = items.filter { Models.indexable($0) && !queued.contains($0.id) && !Models.good(tags[$0.id], faces: runFaces, clip: clip) }
     pending += todo
     total = items.filter { $0.kind != .other && !$0.broken }.count
     done = min(total, max(0, total - pending.count - inFlight.count))
@@ -402,40 +413,12 @@ final class SearchEngine {
     run = Task { await self.start(vault: v, faces: faces) }
   }
 
-  /** The person's choice of explicit search, saved in the people document for all their devices; this Mac switches
-   *  models (and, where it indexes, looks at the library with LAION too). */
+  /** The person's choice of explicit search, saved in the people document for all their devices: search shows explicit
+   *  photos too, or leaves them out. Nothing is indexed again or deleted. */
   func setExplicit(_ on: Bool) async throws {
-    let old = clip
     try await change { d in d.explicit = on ? true : nil }
-    AppModel.shared.settings.explicitSeen = on
-    if let v = runVault { await dropFamily(ClipModel.dropped(from: old, to: ClipModel.choose(allowed: AppModel.shared.me?.user.nsfw == true, explicit: on)), vault: v) }
-    restart()
-  }
-
-  /** After turning explicit search off: LAION's entries go (on the server, for every device, and here). MobileCLIP's
-   *  always stay: the indexing device keeps them current next to LAION's, for the devices that can't use it. */
-  private func dropFamily(_ old: ClipModel?, vault: Vault) async {
-    guard let old else { return }
-    try? await vault.api.json("DELETE", "/api/index?model=\(old.family)")
-    IndexCache.delete(vault, old.family)
-  }
-
-  /** Turning search on where explicit search is allowed: the choice of model goes into the people document first, so
-   *  only the chosen model is downloaded. */
-  func choose(explicit: Bool, vault: Vault) async throws {
-    let allowed = AppModel.shared.me?.user.nsfw == true
-    for attempt in 0..<5 {
-      var (doc, version) = try await People.load(vault)
-      if (doc.explicit == true) == explicit { break }
-      let old = ClipModel.choose(allowed: allowed, explicit: doc.explicit == true)
-      doc.explicit = explicit ? true : nil
-      do {
-        _ = try await People.save(vault, doc, version: version)
-        await dropFamily(ClipModel.dropped(from: old, to: ClipModel.choose(allowed: allowed, explicit: explicit)), vault: vault)
-        break
-      } catch let e as APIError where e.status == 409 && attempt < 4 { continue }
-    }
-    AppModel.shared.settings.explicitSeen = explicit
+    filtered = !Explicit.unfiltered(allowed: AppModel.shared.me?.user.nsfw == true, chosen: on)
+    version += 1
   }
 
   /** Turns search off on this Mac; with clearServer also the index and the people list on the server (all devices). */
@@ -472,21 +455,18 @@ final class SearchEngine {
 
   // ---- for uploads from watched folders: index the file while it is at hand (no master key needed) ----
 
-  nonisolated static func indexFile(_ url: URL, id: String, video: Bool, faces: Bool, clip: ClipModel, pk: Data, api: API) async {
+  nonisolated static func indexFile(_ url: URL, id: String, video: Bool, faces: Bool, clip: ClipModel = .clip, pk: Data, api: API) async {
     let store = ModelStore(dir: Paths.models)
-    // with LAION, MobileCLIP's entry too, from the same look at the photo (docs/SEARCH.md "Explicit search")
-    let both = clip.keepsStandard(indexes: true)
     guard store.have(faces: faces, clip: clip), let img = await Media.jpeg(url, video: video, maxPx: 2048, quality: 0.9),
-          let v = try? Vision(dir: Paths.models, faces: faces, clip: clip, threads: 2, standardToo: both),
-          let a = try? v.analyze(img.data, faces: faces, clips: both ? [clip, .standard] : [clip]) else { return }
+          let v = try? Vision(dir: Paths.models, faces: faces, clip: clip, threads: 2),
+          let a = try? v.analyze(img.data, faces: faces, clips: [clip]) else { return }
     for entry in IndexEntry.entries(a, faces: faces) {
       guard let enc = try? entry.seal(pk: pk, itemId: id) else { return }
       try? await put(B64.encode(enc), model: entry.m, item: id, api: api)
     }
   }
 
-  /** Stores a sealed entry with its model tag in the clear: where explicit search is allowed the server refuses entries
-   *  without it, so an older app can't overwrite the other model's entries. A server from before that (1.7.4 and
+  /** Stores a sealed entry with its model tag in the clear: the server takes only the current model's entries. A server from before that (1.7.4 and
    *  older) refuses the unknown field with 400 and gets the entry without it. */
   nonisolated static func put(_ enc: String, model: String, item: String, api: API) async throws {
     do {
@@ -501,16 +481,18 @@ final class SearchEngine {
   /** ranked: the items are ordered by how well they match the words, not by date */
   struct Result { var items: [Item]; var people: [Group]; var how: [String]; var ranked = false }
 
-  /** Every photo with an image vector from the active model, best match first, with no cut-off (as Immich's smart
-   *  search ranks); the results page shows them a page at a time. */
+  /** Every photo with an image vector from the model, best match first, with no cut-off (as Immich's smart search
+   *  ranks); the results page shows them a page at a time. Filtered (docs/SEARCH.md "Explicit content"): words close to
+   *  explicit content find nothing, and photos that look explicit are left out. */
   func textHits(_ q: String) async -> [Hit] {
     guard ready, let vision else { return [] }
-    if tokenizer == nil { tokenizer = try? Tokenizer(json: Data(contentsOf: models.dir.appendingPathComponent("mobileclip-s2-tokenizer.json"))) }
+    if tokenizer == nil { tokenizer = try? Tokenizer(json: Models.verified(Models.tokenizer, in: models.dir)) } // the checked bytes
     guard let t = tokenizer else { return [] }
-    let idx = index
+    let idx = index, filtered = filtered
     return await Task.detached(priority: .userInitiated) {
       guard let vec = try? vision.textVector(t.encode(q)) else { return [] }
-      return idx.search(vec, limit: Int.max, minScore: -2)
+      if filtered && Explicit.queryBlocked(vec) { return [] }
+      return idx.search(vec, limit: Int.max, minScore: -2, filtered: filtered)
     }.value
   }
 
@@ -776,7 +758,7 @@ struct IndexCache: Codable {
   var since: Int64 = 0
   var entries: [String: String] = [:]
 
-  static let families = [ClipModel.mobileclip.family, ClipModel.laion.family]
+  static let families = [ClipModel.clip.family, ClipModel.legacyFamily]
   static func url(_ v: Vault, _ family: String) -> URL? { v.cacheDir?.appendingPathComponent("index-\(family).json") }
   static func read(_ v: Vault, _ family: String) -> IndexCache {
     // before 1.9.0 one file held either model's entries; it is fetched again per model
@@ -799,4 +781,16 @@ enum Power {
           let type = IOPSGetProvidingPowerSourceType(info)?.takeUnretainedValue() as String? else { return false }
     return type == kIOPSBatteryPowerValue
   }
+}
+
+/** What the question before a model download is about (ModelConsentSheet). */
+struct ModelConsentAsk: Identifiable, Equatable {
+  let clip: ClipModel
+  let faces: Bool
+  let reader: Bool
+  let bytes: Int64
+  var id: String { "\(clip.rawValue)-\(faces)-\(reader)" }
+
+  /** Which models, in words, by what they are for (files and sizes come from the model list, whichever model). */
+  var what: String { Models.needed(faces: faces, clip: clip, reader: reader).contains { $0.faces } ? "the search model and the face models" : "the search model" }
 }

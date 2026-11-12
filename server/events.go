@@ -29,12 +29,13 @@ const (
 	tAlbums
 	tPeople
 	tIndex
+	tNotices // a notice for the person's devices (notices.go)
 )
 
 var topicNames = []struct {
 	t topic
 	n string
-}{{tItems, "items"}, {tTrash, "trash"}, {tAlbums, "albums"}, {tPeople, "people"}, {tIndex, "index"}}
+}{{tItems, "items"}, {tTrash, "trash"}, {tAlbums, "albums"}, {tPeople, "people"}, {tIndex, "index"}, {tNotices, "notices"}}
 
 func (t topic) names() []string {
 	out := []string{}

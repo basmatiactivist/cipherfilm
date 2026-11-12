@@ -2,8 +2,8 @@
 // MapLibre GL JS runs in a web view of its own, served from the app bundle (Contents/Resources/map, copied there by
 // scripts/map-assets.sh) under cfmap://app/, never from the network. Coordinates and thumbnails are decrypted on this
 // Mac and handed only to that page; the base map's server (the styles the Cipherfilm server names, OpenFreeMap by
-// default) sees which tiles are loaded and nothing else: the map opens on the whole world and never moves to the
-// photos by itself, its data store lives in memory (no cookies), and no referrer is sent.
+// default) sees which tiles are loaded and nothing else: the map opens on the area with the most photos at region
+// level (map.js homeBounds), closer only where the person zooms in, its data store lives in memory (no cookies), and no referrer is sent.
 import AppKit
 import CipherfilmCore
 import SwiftUI
@@ -182,15 +182,16 @@ final class MapController: NSObject, WKNavigationDelegate, WKUIDelegate {
 
   /** A small JPEG of the item's thumbnail for a marker, from the same decrypted thumbnails the grid shows. */
   private func thumb(_ id: String) async -> String? {
-    if let hit = thumbs[id] { return hit }
-    guard let model, let it = model.item(id), let v = model.vault else { return nil }
-    var img = model.images.cachedThumb(id)
+    guard let model, let it = model.item(id) else { return nil }
+    if let hit = thumbs[it.pictureKey] { return hit } // a new one after an edit elsewhere
+    guard let v = model.vault else { return nil }
+    var img = model.images.cachedThumb(it)
     if img == nil { img = await model.images.thumb(it, v) }
     guard let img, let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
     let url = await Task.detached(priority: .userInitiated) { MapController.dataURL(cg) }.value
     if let url {
       if thumbs.count > 600 { thumbs.removeAll() }
-      thumbs[id] = url
+      thumbs[it.pictureKey] = url
     }
     return url
   }
@@ -325,9 +326,15 @@ struct MapConsent: View {
     return p.isEmpty ? "the map server" : p
   }
 
+  /** As the question says it: with the CDN and the fallback host for the default. */
+  static func providerLong(_ styles: Me.MapStyles?) -> String {
+    let p = provider(styles)
+    return p == "OpenFreeMap" ? "an external map service" : p
+  }
+
   var body: some View {
     let p = Self.provider(styles)
-    let from = p == "OpenFreeMap" ? "from OpenFreeMap (through Cloudflare; VersaTiles if OpenFreeMap doesn't answer)" : "from the map server set on your Cipherfilm server (\(p))"
+    let from = p == "OpenFreeMap" ? "from an external map service (which one: see the privacy policy)" : "from the map server set on your Cipherfilm server (\(p))"
     // the page's title, then the question in a card that scrolls in a small window (the structure of the other pages)
     VStack(alignment: .leading, spacing: 0) {
       PageTitle(title: "Map")
@@ -335,7 +342,7 @@ struct MapConsent: View {
         VStack(alignment: .leading, spacing: 14) {
           Image(systemName: "map").font(.system(size: 30)).foregroundStyle(Ink.teal)
           Text("Show your photos on a map?").font(Typo.dialog).foregroundStyle(Ink.ink)
-          Text("The map images come \(from). That service sees this Mac's IP address and which areas you look at. When you open a photo's details, a small map of its area is loaded too, so the service can tell roughly where that photo was taken.")
+          Text("The map images come \(from). That service sees this Mac's IP address and which areas you look at. When you choose Show Map in a photo's details, a small map of its area is loaded too, so the service can tell roughly where that photo was taken. The map opens on the region with most of your photos, so the service sees that region too.")
             .font(Typo.body).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
           Text("Your photos, and the list of where they were taken, stay encrypted and are drawn on this Mac. You can turn the map off again in Settings › General › Map.")
             .font(Typo.body).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
@@ -371,8 +378,9 @@ struct MapScreen: View {
     let located = model.items.filter { $0.location != nil }
     VStack(spacing: 0) {
       HStack(alignment: .bottom) {
-        PageTitle(title: "Map", subtitle: located.isEmpty ? "No photos with a location yet" : located.count == 1 ? "1 photo on the map" : "\(located.count) photos on the map")
-        if !located.isEmpty {
+        // no count of the photos on the map: only the quiet hint when there are none
+        PageTitle(title: "Map", subtitle: located.isEmpty ? "No photos with a location yet" : nil)
+        if !located.isEmpty && panel == nil {
           Button { Task { await inView() } } label: { Label("Photos in This Area", systemImage: "photo.on.rectangle") }
             .buttonStyle(SecondaryButton()).padding(.trailing, 28).padding(.bottom, 8)
             .help("List the photos inside what the map shows")

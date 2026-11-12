@@ -1,4 +1,4 @@
-.PHONY: bench loadbench up down reset test tokens tokens-check test-server test-web lock e2e e2e-down migration-test leakcheck prod-config multiarch decrypt-test decrypt-tool upload-test upload-tool upload-e2e play-aab
+.PHONY: bench loadbench up down reset test tokens tokens-check test-server test-web lock e2e e2e-down migration-test restore-test leakcheck prod-config multiarch decrypt-test decrypt-tool upload-test upload-tool upload-e2e play-aab
 up:        ## build and start; app at https://cipherfilm.orb.local
 	docker compose -f compose.dev.yaml up -d --build --wait
 	@echo "https://cipherfilm.orb.local"
@@ -6,7 +6,7 @@ down:
 	docker compose -f compose.dev.yaml down
 reset:     ## wipe containers, volumes and image
 	docker compose -f compose.dev.yaml down -v --rmi local
-test: tokens-check test-server test-web decrypt-test upload-test   ## single test command
+test: tokens-check test-server test-web decrypt-test upload-test restore-test   ## single test command
 tokens:    ## write the design tokens (design/tokens/tokens.json) into web/, mobile/ and mac/
 	node design/tokens/build.mjs
 tokens-check: ## fail if a generated token file is out of date or a contrast pair falls short
@@ -14,7 +14,7 @@ tokens-check: ## fail if a generated token file is out of date or a contrast pai
 test-server:
 	docker run --rm -v gocache:/go/pkg/mod -v "$(CURDIR)/server:/src" -w /src golang:1.27-alpine sh -c 'mkdir -p static && go vet ./... && go test ./...'
 test-web:
-	docker run --rm -v "$(CURDIR)/web:/web" -v /web/node_modules -v "$(CURDIR)/server/models.json:/server/models.json:ro" -w /web node:26-alpine sh -c 'npm ci --silent && npm run build --silent && npm test --silent'
+	docker run --rm -v "$(CURDIR)/web:/web" -v /web/node_modules -v "$(CURDIR)/server/models.json:/server/models.json:ro" -v "$(CURDIR)/server/explicit-filter.json:/server/explicit-filter.json:ro" -v "$(CURDIR)/tools/decrypt/testdata:/tools/decrypt/testdata:ro" -w /web node:26-alpine sh -c 'npm ci --silent && npm run build --silent && npm test --silent'
 lock:      ## regenerate web/package-lock.json
 	docker run --rm -v "$(CURDIR)/web:/web" -w /web node:26-alpine npm install --package-lock-only
 # Playwright's browser image in compose.e2e.yaml follows the npm package, so Dependabot bumps one version, not two
@@ -33,6 +33,9 @@ e2e-down:  ## remove the e2e stack and its data
 	$(E2E) --profile test down -v --remove-orphans
 
 MIGRATED = docker compose -p cipherfilm-migrated -f compose.e2e.yaml
+restore-test: ## offline checks of scripts/restore.sh and deploy/demo/reset.sh (no Docker): a failed after-restore keeps .previous/
+	scripts/test-restore.sh
+
 migration-test: ## move the e2e stack to a second, empty stack with scripts/backup.sh + scripts/restore.sh, sign in there and decrypt offline (run make e2e first)
 	mkdir -p dist && docker run --rm -v "$(CURDIR)/dist:/d" alpine:3.24 rm -rf /d/migration && mkdir -p dist/migration/extracted
 	COMPOSE_FILE=compose.e2e.yaml COMPOSE_PROJECT_NAME=cipherfilm-e2e DATA_VOLUME=cipherfilm-e2e_appdata scripts/backup.sh dist/migration
@@ -51,6 +54,14 @@ migration-test: ## move the e2e stack to a second, empty stack with scripts/back
 
 prod-config: ## validate the production compose files
 	@echo "== compose.yaml"; PUBLIC_HOSTS=photos.example.com docker compose -f compose.yaml config -q || exit 1; \
+	t=deploy/tailnet; for o in "$$t/compose.tailscale.yaml" "$$t/compose.tailscale.yaml:$$t/compose.kopia.yaml" \
+	  "$$t/compose.tailscale.yaml:$$t/compose.kopia.yaml:$$t/compose.domain.yaml" \
+	  "$$t/compose.tailscale.yaml:$$t/compose.kopia.yaml:$$t/compose.domain.yaml:$$t/compose.portainer.yaml"; do \
+	  echo "== compose.yaml:$$o"; COMPOSE_FILE="compose.yaml:$$o" PUBLIC_HOSTS=photos.example.com TS_AUTHKEY=x \
+	  KOPIA_SERVER_PASSWORD=x PORTAINER_ADMIN_PASSWORD_FILE=/dev/null DOMAIN=photos.example.com TS_DOMAIN=photos.example.ts.net CF_API_TOKEN=x \
+	  docker compose config -q || exit 1; done; \
+	echo "== deploy/mac-local/compose.yaml"; docker compose -f deploy/mac-local/compose.yaml config -q || exit 1; \
+	scripts/check-compose-env.sh || exit 1; \
 	echo "all valid"
 multiarch: ## prove the image builds for amd64 and arm64 (not loaded, just built)
 	docker buildx build --platform linux/amd64,linux/arm64 -o type=oci,dest=/tmp/cipherfilm-multiarch.tar . && echo "multi-arch build OK: /tmp/cipherfilm-multiarch.tar"

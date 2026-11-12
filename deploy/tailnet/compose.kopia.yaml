@@ -1,0 +1,56 @@
+# Overlay: off-site backups with Kopia, to any repository Kopia supports (WebDAV such as Nextcloud, S3, SFTP, ...).
+# Kopia's web UI is at https://<TS_HOSTNAME>.<your-tailnet>.ts.net:8443, reachable only in your tailnet, behind
+# its own login. Use it together with the Tailscale overlay:
+#   COMPOSE_FILE=compose.yaml:deploy/tailnet/compose.tailscale.yaml:deploy/tailnet/compose.kopia.yaml
+# Needs in .env: KOPIA_SERVER_PASSWORD. Setup, the nightly run and restoring: docs/TAILNET.md
+services:
+  tailscale:
+    environment:
+      TS_SERVE_CONFIG: /config/serve-kopia.json   # the app on :443 and Kopia's UI on :8443
+  kopia-perms:   # once per start: Kopia's own volumes belong to the app's user, so Kopia needs no extra rights
+    image: alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
+    command: chown -R 65532:65532 /app/config /app/cache /app/logs
+    volumes:
+      - kopiaconfig:/app/config
+      - kopiacache:/app/cache
+      - kopialogs:/app/logs
+    network_mode: none
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
+    security_opt: ["no-new-privileges:true"]
+  kopia:
+    image: kopia/kopia:0.23.1@sha256:89fd95ee2942880ca00eae964266958a394421ddbdf69bca62e38afc55f5900e
+    restart: unless-stopped
+    network_mode: service:tailscale   # listens on 127.0.0.1 inside the tailnet node only; no host ports
+    depends_on:
+      tailscale: { condition: service_started }
+      kopia-perms: { condition: service_completed_successfully }
+    user: "65532:65532"   # the app's user: reads its files as their owner, with no capabilities
+    command:
+      - server
+      - start
+      - --insecure                     # plain HTTP on 127.0.0.1; Tailscale Serve provides HTTPS
+      - --address=http://127.0.0.1:51515
+      - --server-username=${KOPIA_SERVER_USER:-admin}
+    environment:
+      KOPIA_SERVER_PASSWORD: ${KOPIA_SERVER_PASSWORD:?set KOPIA_SERVER_PASSWORD in .env (login for the Kopia UI)}
+      KOPIA_PERSIST_CREDENTIALS_ON_CONNECT: "true"   # the nightly run must open the repository unattended
+    volumes:
+      - appdata:/data:ro
+      - kopiaconfig:/app/config
+      - kopiacache:/app/cache
+      - kopialogs:/app/logs
+    tmpfs: [/tmp]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 768m
+    pids_limit: 256
+
+volumes:
+  kopiaconfig:
+    name: ${KOPIA_CONFIG_VOLUME:-cipherfilm_kopia_config}
+  kopiacache:
+    name: ${KOPIA_CACHE_VOLUME:-cipherfilm_kopia_cache}
+  kopialogs:
+    name: ${KOPIA_LOGS_VOLUME:-cipherfilm_kopia_logs}

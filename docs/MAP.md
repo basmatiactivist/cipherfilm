@@ -8,14 +8,18 @@ apps. A photo's details show the place's name and a small map of its spot. Searc
 
 - **Coordinates.** A photo's or video's location is part of its encrypted metadata (`gps` in `meta_enc`,
   docs/CRYPTO.md), written by the app or tool that uploaded it: from a photo's EXIF, from a video's `udta/©xyz` (Android,
-  most cameras) or its `com.apple.quicktime.location.ISO6709` key (iPhone). The server stores it encrypted and never
+  most cameras) or its `com.apple.quicktime.location.ISO6709` key (iPhone: a meta box in `moov`; ffmpeg and other tools
+  put it in a meta box in `udta`, which every app reads too). The server stores it encrypted and never
   sees it. The apps decrypt it with the rest of the metadata and draw and cluster the photos on the device.
 - **Android reads the originals.** From Android 10 the phone hands an app copies without the location unless it holds
   "where photos were taken" (ACCESS_MEDIA_LOCATION); the photo picker behind the Upload button does the same. The app
   asks for it where the backup is set up and before picking (Android grants it without a dialog), and reads the
   original then. The uploaded file is always the original as the phone gives it, byte for byte.
 - **Added afterwards.** What arrived without its location gets it while the map is on: the Android app looks up the
-  photos and videos it uploaded on the phone (same name and size) and reads their originals; the web app reads videos'
+  photos and videos it uploaded on the phone (same name and size) and reads their originals. It does this only for items
+  this phone uploaded itself, by the backup or the Upload button, from this version on: it keeps their ids with a hash
+  of the wrapped item key it sent, and the item must still carry that very key, so an item added by someone else (the
+  server, or a stolen session, can add items under a key of its own) never gets a location from the phone; the web app reads videos'
   header boxes from the encrypted originals (photos already got theirs at upload). Either writes the location into the
   item's encrypted metadata (`PUT /api/items/{id}/meta`), and the other devices get it with their next change list.
   A device remembers what it looked at, so this happens once.
@@ -37,10 +41,12 @@ when OpenFreeMap doesn't answer. A device asks it for the map images (tiles) of 
 sees the device's IP address and which areas and zoom levels are looked at, never a photo, its coordinates, its
 thumbnail or anything else from the library. To keep that small:
 
-- The map opens on the whole world and never moves to where the photos are by itself; only what the person zooms or
-  moves to is loaded.
-- A photo's small map in its details loads only when the details are opened, at district level (zoom 11), not street
-  level. Looking at a photo's details tells the tile server roughly where that one photo was taken.
+- The map opens on the area that holds the most photos (2° cells, the fullest one and its neighbours), never closer
+  than zoom 8 (on Android: at least about two degrees across), with those photos in the panel beside it (web, Mac). So the tile server learns that region (like "Switzerland"),
+  not a street; anything closer is loaded only where the person zooms or moves to. With no located photo, it opens on
+  the whole world.
+- A photo's small map in its details loads only when the details are opened (on the Mac, whose details column stays
+  open from photo to photo, only after "Show Map" for that photo), at district level (zoom 11), not street level. Looking at a photo's details tells the tile server roughly where that one photo was taken.
 - No cookies and no referrer go to the tile server (the web app's `Referrer-Policy: no-referrer`; MapLibre's requests
   carry this server's cookies only to this server).
 - OpenFreeMap: no account, no API key, no cookies; IP addresses are not in its access logs, error logs are deleted after
@@ -117,7 +123,9 @@ them.
    ```
 
    The server refuses anything that isn't two https URLs (or empty, or `off`) at start, and builds the web app's
-   Content-Security-Policy from these hosts. One style for both modes works too: give the same URL twice.
+   Content-Security-Policy from these hosts. One style for both modes works too: give the same URL twice. The apps
+   check it again: they use only https style URLs with a plain host name, the hosts the question before the map
+   names (an inline style or an http:// URL is ignored, and with nothing left the map stays off).
 5. **Check it.** The apps load the setting from the server when someone signs in or unlocks, so sign out and in (or
    lock and unlock) on each device. The question before the map then names your map server's host instead of
    OpenFreeMap. If the map stays empty, open the browser's developer tools on the web app: a blocked request

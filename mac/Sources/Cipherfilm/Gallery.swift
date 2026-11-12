@@ -276,8 +276,8 @@ struct Tile: View {
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("\(item.kind == .video ? "Video" : "Photo"), \(item.date.formatted(date: .long, time: .shortened))\(item.favorite ? ", favorite" : "")")
     .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
-    .task(id: item.id) {
-      if let hit = model.images.cachedThumb(item.id) { image = hit; return }
+    .task(id: item.pictureKey) { // a new thumbnail after an edit elsewhere
+      if let hit = model.images.cachedThumb(item) { image = hit; return }
       guard let v = model.vault else { return }
       image = await model.images.thumb(item, v)
     }

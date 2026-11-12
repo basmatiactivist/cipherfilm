@@ -40,6 +40,20 @@ vi.mock("@crypto/file", () => ({ decryptSegment: () => new Uint8Array(4) }));
 const wipes = vi.hoisted(() => [] as ((how: string) => void)[]);
 vi.mock("./session", () => ({ onWipe: (f: (how: string) => void) => { wipes.push(f); }, session: () => ({ masterKey: new Uint8Array(32) }) }));
 vi.mock("./autolock", () => ({ away: (f: () => Promise<unknown>) => f() }));
+// an edited photo leaves as the edited copy (edit.ts, a stand-in here): written like the others, as a JPEG
+vi.mock("./edit", () => ({
+  editedCopyTo: async (dir: { uri: string }, it: { meta: { name: string } }) => {
+    const path = `${dir.uri}/${it.meta.name.replace(/\.\w+$/, "")} (edited).jpg`;
+    disk.set(path, 10);
+    return { uri: path, name: path.slice(path.lastIndexOf("/") + 1), delete: () => disk.delete(path) };
+  },
+  // a photo whose date or place changed: its own JPEG with the metadata as set, under its own name
+  retaggedCopyTo: async (dir: { uri: string }, it: { meta: { name: string } }) => {
+    const path = `${dir.uri}/${it.meta.name} (retagged)`;
+    disk.set(path, 10);
+    return { uri: path, name: path.slice(path.lastIndexOf("/") + 1), delete: () => disk.delete(path) };
+  },
+}));
 
 const item = (id: string, segments = 2) => ({ id, size: 4 * segments, segment_count: segments, kind: "image", itemKey: new Uint8Array(32), meta: { name: `${id}.jpg`, mime: "image/jpeg" } }) as never;
 const plaintext = () => [...disk.entries()].filter(([, n]) => n >= 0).map(([k]) => k);
@@ -74,6 +88,45 @@ describe("save to phone", () => {
     await expect(saveItems([item("a")], () => {})).rejects.toThrow("offline");
     expect(native.saved).toEqual([]);
     expect(disk.size).toBe(0);
+  });
+});
+
+describe("edited photos", () => {
+  const edited = (id: string) => ({ ...(item(id) as object), meta: { name: `${id}.heic`, mime: "image/heic", edit: { rot: 90, v: "x" } } }) as never;
+  it("leave the app as edited, unless the original is asked for", async () => {
+    const { saveItems, prepareShare } = await import("./outbox");
+    await saveItems([edited("a"), item("b")], () => {});
+    expect(native.saved).toEqual(["/cache/cf-out/save/a (edited).jpg", "/cache/cf-out/save/b.jpg"]);
+    native.saved = [];
+    await saveItems([edited("a")], () => {}, { original: true });
+    expect(native.saved).toEqual(["/cache/cf-out/save/a.heic"]);
+    expect(disk.size).toBe(0);
+    const ready = await prepareShare([edited("c")], () => {});
+    await ready.send();
+    expect(native.shared[0]).toMatch(/c \(edited\)\.jpg$/);
+  });
+});
+
+describe("photos whose place or date changed", () => {
+  const placeRemoved = (id: string, mime = "image/jpeg") =>
+    ({ ...(item(id) as object), meta: { name: `${id}.jpg`, mime, capture_ts: 1, orig: { gps: { lat: 46.5, lon: 7.5 } } } }) as never;
+  it("leave the app with the place and date as set, not as the original, unless the original is asked for", async () => {
+    const { saveItems, prepareShare, leaving } = await import("./outbox");
+    expect(leaving(placeRemoved("a"))).toBe("retag");
+    expect(leaving(placeRemoved("a", "image/heic"))).toBe("redraw");
+    expect(leaving(placeRemoved("a"), true)).toBe("original");
+    expect(leaving({ ...(placeRemoved("v") as object), kind: "video" } as never)).toBe("original");
+    // older metadata than seen before (library.ts stale): never the original by default
+    expect(leaving({ ...(item("s") as object), stale: true } as never)).toBe("retag");
+    await saveItems([placeRemoved("a")], () => {});
+    expect(native.saved).toEqual(["/cache/cf-out/save/a.jpg (retagged)"]);
+    native.saved = [];
+    await saveItems([placeRemoved("a")], () => {}, { original: true });
+    expect(native.saved).toEqual(["/cache/cf-out/save/a.jpg"]);
+    const ready = await prepareShare([placeRemoved("c"), placeRemoved("d", "image/heic")], () => {});
+    await ready.send();
+    expect(native.shared[0]).toMatch(/c\.jpg \(retagged\)$/);
+    expect(native.shared[1]).toMatch(/d \(edited\)\.jpg$/); // another format: drawn anew with the metadata as set
   });
 });
 

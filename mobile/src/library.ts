@@ -16,10 +16,32 @@ import { t } from "./i18n";
 import { ThumbBatcher } from "./thumbbatch";
 import { kindOf } from "./kind";
 import { ListSync, type Page } from "./sync";
+import { normEdit, normOrig, pictureKey, type Edit, type Orig } from "@edit/edit";
+import { SHA256_HEX } from "@crypto/sha256";
+import { HighWater, metaVersion } from "@crypto/metaVersion";
 
 export interface ItemMeta {
   name: string; mime: string; size: number; lastModified: number; capture_ts: number;
   width?: number; height?: number; duration?: number; make?: string; model?: string; gps?: { lat: number; lon: number };
+  /** turned and cropped (@edit/edit); the encrypted original stays as it was */
+  edit?: Edit;
+  /** the date and place before the person changed them */
+  orig?: Orig;
+  /** SHA-256 of the original file, 64 lowercase hex characters (newer uploads only; docs/CRYPTO.md) */
+  sha256?: string;
+  /** the metadata's version, raised by every change of it (@crypto/metaVersion); none: 0 */
+  mv?: number;
+}
+
+/** What an edit says is checked like the rest: what doesn't make sense is dropped, not trusted. */
+export function checkedMeta(m: ItemMeta): ItemMeta {
+  const edit = normEdit(m.edit), orig = normOrig(m.orig);
+  if (edit) m.edit = edit; else delete m.edit;
+  if (orig) m.orig = orig; else delete m.orig;
+  if (Number.isFinite(m.capture_ts)) m.capture_ts = Math.round(m.capture_ts);
+  if (m.sha256 !== undefined && !(typeof m.sha256 === "string" && SHA256_HEX.test(m.sha256))) delete m.sha256;
+  if (m.mv !== undefined && metaVersion(m) !== m.mv) delete m.mv;
+  return m;
 }
 
 export interface Item {
@@ -32,8 +54,13 @@ export interface Item {
   has_preview: boolean;
   meta?: ItemMeta;
   itemKey?: Uint8Array;
+  /** the wrapped item key as the server handed it out (base64): whether this phone made it (ownUploads.ts) */
+  wrapped?: string;
   /** Decryption or verification failed: never shown, the screen says so. */
   broken?: boolean;
+  /** The server gave an older version of the metadata than this phone saw before (@crypto/metaVersion) and the newer
+   *  one isn't known here any more: shown, but never shared or saved as the original by default (outbox.ts). */
+  stale?: boolean;
   /** in the trash: when it was moved there and when the server deletes it permanently (seconds) */
   trashed_at?: number;
   purge_at?: number;
@@ -44,8 +71,27 @@ export interface Item {
 // decrypts only what is new or changed instead of the whole library again; dropped at every lock and sign-out
 let known = new Map<string, { w: string; m: string; master: Uint8Array; key?: Uint8Array; meta?: ItemMeta }>();
 
-function decrypt(s: Sodium, master: Uint8Array, pair: () => KeyPair, x: any): Item {
-  const it: Item = { id: x.id, kind: x.kind, size: x.size, segment_count: x.segment_count, created_at: x.created_at, has_thumb: x.has_thumb, has_preview: x.has_preview, trashed_at: x.trashed_at, purge_at: x.purge_at, favorite: !!x.favorite };
+// the highest metadata version seen of each item (@crypto/metaVersion), per account, in the app's private files (item
+// ids and numbers only); kept across locks, deleted at sign-out
+const VERSIONS = () => new Directory(Paths.document, "cf-mv");
+let versions: { owner: string; hw: HighWater } | null = null;
+function highWater(owner: string): HighWater {
+  if (versions?.owner !== owner) {
+    const f = new File(VERSIONS(), `${owner}.json`);
+    let loaded: unknown = null;
+    try { if (f.exists) loaded = JSON.parse(f.textSync()); } catch { /* unreadable: started anew */ }
+    versions = {
+      owner,
+      hw: new HighWater((e) => {
+        try { VERSIONS().create({ intermediates: true, idempotent: true }); f.write(JSON.stringify(e)); } catch { /* this run only */ }
+      }, loaded),
+    };
+  }
+  return versions.hw;
+}
+
+function decrypt(s: Sodium, master: Uint8Array, pair: () => KeyPair, x: any, hw?: HighWater): Item {
+  const it: Item = { id: x.id, kind: x.kind, size: x.size, segment_count: x.segment_count, created_at: x.created_at, has_thumb: x.has_thumb, has_preview: x.has_preview, trashed_at: x.trashed_at, purge_at: x.purge_at, favorite: !!x.favorite, wrapped: x.wrapped_item_key };
   const k = known.get(x.id);
   if (k && k.master === master && k.w === x.wrapped_item_key && k.m === x.meta_enc && k.key && k.meta && k.meta.size === x.size) {
     it.itemKey = k.key; it.meta = k.meta; it.kind = kindOf(k.meta);
@@ -53,9 +99,19 @@ function decrypt(s: Sodium, master: Uint8Array, pair: () => KeyPair, x: any): It
   }
   try {
     it.itemKey = unwrapAnyItemKey(s, unb64(s, x.wrapped_item_key), master, pair, x.id);
-    it.meta = decryptMeta<ItemMeta>(s, unb64(s, x.meta_enc), it.itemKey, x.id);
+    it.meta = checkedMeta(decryptMeta<ItemMeta>(s, unb64(s, x.meta_enc), it.itemKey, x.id));
     if (it.meta.size !== it.size) throw new Error("size mismatch");
     it.kind = kindOf(it.meta);
+    if (hw && !hw.check(x.id, metaVersion(it.meta))) {
+      // an older version of the metadata than seen before: the server handed out a copy it kept (a removed place
+      // back, an edit undone). The newer one decrypted since the last lock stays; without it the item is stale.
+      console.warn(`Cipherfilm: the server sent older metadata for item ${x.id} (version ${metaVersion(it.meta)}, seen ${hw.highest(x.id)}); keeping the newer one.`);
+      if (k?.meta && k.key && k.master === master && metaVersion(k.meta) > metaVersion(it.meta)) { it.meta = k.meta; it.itemKey = k.key; it.wrapped = k.w; it.kind = kindOf(k.meta); }
+      else it.stale = true;
+      return it;
+    }
+    // turned or cropped on some device since: the pictures kept here are the old ones
+    if (k?.meta && pictureKey(x.id, k.meta) !== pictureKey(x.id, it.meta)) forgetPictures(x.id);
     known.set(x.id, { w: x.wrapped_item_key, m: x.meta_enc, master, key: it.itemKey, meta: it.meta });
   } catch {
     it.broken = true;
@@ -90,7 +146,9 @@ function decryptSome(raw: any[]): Item[] {
   // photos from the background backup carry keys sealed to the account's key pair; it is opened only if needed
   let kp: KeyPair | undefined;
   const pair = () => (kp ??= accountKeyPair(s, unb64(s, me.wrapped_privkey), master, normEmail(me.user.email)));
-  const out = raw.map((x) => decrypt(s, master, pair, x)).sort(newest);
+  const hw = highWater(me.user.id);
+  const out = raw.map((x) => decrypt(s, master, pair, x, hw)).sort(newest);
+  hw.flush();
   if (kp) s.memzero(kp.sk);
   giveThumbKeys(out);
   return out;
@@ -200,14 +258,20 @@ export async function loadCachedLibrary(): Promise<Item[] | null> {
   } catch { return null; }
 }
 
-/** Drops cached images of items that are gone, and all but the newest previews. */
+/** The search index's copies in the same folder (search/engine.ts): the server's entries per model family
+ *  (index-<family>.json) and the opened index (index-<family>.bin). Left alone here: the indexing phone still reads
+ *  MobileCLIP's entries from before for their faces until it has made the new ones (search/engine.ts deletes them). */
+const SEARCH_COPY = /^index-[a-z0-9][a-z0-9._-]{0,63}\.(json|bin)$/;
+
+/** Drops cached images of items that are gone, and all but the newest previews. Only images: the list and the search
+ *  index's copies stay (deleting those made every start fetch and open the whole index again). */
 export function pruneCache(ids: Set<string>) {
   const dir = userDir();
   if (!dir?.exists) return;
   const previews: File[] = [];
   try {
     for (const f of dir.list()) {
-      if (!(f instanceof File) || f.name === "list.json") continue;
+      if (!(f instanceof File) || f.name === "list.json" || SEARCH_COPY.test(f.name)) continue;
       const m = /^(thumb|preview)-([0-9a-f]{32})$/.exec(f.name);
       if (!m || !ids.has(m[2])) f.delete();
       else if (m[1] === "preview") previews.push(f);
@@ -231,9 +295,20 @@ class Lru {
     while (this.m.size > this.max) this.m.delete(this.m.keys().next().value!);
   }
   clear() { this.m.clear(); }
+  /** every entry of one item, whatever picture version */
+  forget(id: string) { for (const k of [...this.m.keys()]) if (k === id || k.startsWith(id + ".")) this.m.delete(k); }
 }
 
 const previews = new Lru(12);
+
+/** The thumbnail and preview of an item were made anew (an edit): the copies kept here go, on disk, in memory and in
+ *  the native thumbnails, and the screens showing them load the new ones. */
+export function forgetPictures(id: string) {
+  previews.forget(id);
+  const dir = userDir();
+  if (dir && ID.test(id)) for (const kind of ["thumb", "preview"]) try { const f = new File(dir, `${kind}-${id}`); if (f.exists) f.delete(); } catch { /* only a cache */ }
+  try { N.thumbsForget?.([id]); } catch { /* an older native module: its bitmaps go at the next lock */ }
+}
 const inflight = new Map<string, Promise<string>>();
 
 // Downloads run a dozen at a time, newest request first; one nobody wants any more by its turn is skipped.
@@ -276,9 +351,9 @@ export const thumbBytes = (it: Item) => (it.itemKey && it.has_thumb ? plainBytes
 
 /** The viewer's sharp picture, as a data: URI; the newest dozen stay in memory. */
 export function previewUri(it: Item): Promise<string> {
-  const hit = previews.get(it.id);
+  const key = pictureKey(it.id, it.meta); // a new version after an edit
+  const hit = previews.get(key);
   if (hit) return Promise.resolve(hit);
-  const key = it.id;
   let p = inflight.get(key);
   if (!p) {
     p = (async () => {
@@ -286,7 +361,7 @@ export function previewUri(it: Item): Promise<string> {
       const uri = "data:image/jpeg;base64," + N.base64(plain);
       plain.fill(0);
       if (!session().masterKey) throw new Error(t("Unlock your library first.")); // locked while this was loading
-      previews.set(it.id, uri);
+      previews.set(key, uri);
       return uri;
     })().finally(() => inflight.delete(key));
     inflight.set(key, p);
@@ -308,4 +383,5 @@ onWipe((how) => {
   N.forgetThumbs?.(); // thumbnail keys and bitmaps
   N.forgetVideos?.(); // video keys and decrypted segments
   if (how === "ended") try { const r = ROOT(); if (r.exists) r.delete(); } catch { /* best effort */ }
+  if (how === "ended") { versions = null; try { const v = VERSIONS(); if (v.exists) v.delete(); } catch { /* best effort */ } }
 });

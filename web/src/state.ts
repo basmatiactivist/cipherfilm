@@ -15,6 +15,8 @@ export interface Me {
   map?: { light: string[]; dark: string[] };
   /** the server's public demo login (DEMO_ACCOUNTS): it reads and searches, every change is refused */
   demo?: boolean;
+  /** two-step sign-in is on: a new sign-in asks for a code after the password (older servers don't send it) */
+  two_factor?: boolean;
 }
 
 /** Key material lives only in this module's memory: a reload or tab close locks the library. */

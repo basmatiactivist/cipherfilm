@@ -13,7 +13,7 @@ import { loadSettings } from "./settings";
 import { t } from "../i18n";
 
 export interface Person { id: string; name: string; hidden?: boolean; anchors: string[]; rejects: string[] }
-interface Doc { v: 1; people: Person[]; /** explicit search chosen (docs/SEARCH.md): used only if an admin allows it */ explicit?: boolean }
+interface Doc { v: 1; people: Person[]; /** explicit search chosen: search unfiltered (docs/SEARCH.md), only while an admin allows it */ explicit?: boolean }
 
 /** A group of faces on screen: a named person, or someone not named yet. */
 export interface Group { key: string; person?: Person; items: string[]; faces: string[]; cover: FaceGroup["cover"] }
@@ -113,14 +113,10 @@ export async function setHidden(g: Group, hidden: boolean): Promise<string> {
   return id;
 }
 
-/** Explicit search on or off for the account: all its devices switch model. Turned on, the indexing device indexes
- *  the library with LAION too; turned off, MobileCLIP's index is there already. */
+/** Explicit search on or off for the account: its devices show explicit photos in search, or leave them out (docs/SEARCH.md
+ *  "Explicit content"). One model and one index for everyone: nothing is indexed again or deleted. */
 export async function setExplicit(on: boolean) {
-  let was = false;
-  await change((d) => { was = d.explicit === true; if (on) d.explicit = true; else delete d.explicit; });
-  // MobileCLIP's entries stay: the indexing device keeps them current next to LAION's, for the devices that can't use
-  // explicit search (docs/SEARCH.md). Turned off, LAION's go (they are kept per model); best effort
-  if (was && !on) await api("DELETE", "/api/index?model=laionb32").catch(() => {});
+  await change((d) => { if (on) d.explicit = true; else delete d.explicit; });
 }
 
 export async function forgetPerson(person: Person) {

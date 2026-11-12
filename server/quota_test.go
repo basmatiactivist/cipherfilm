@@ -213,7 +213,7 @@ func TestIndexAndUserBlobsCountTowardTheQuota(t *testing.T) {
 	if code, _ := bob.do("PUT", "/api/me/blobs/people", map[string]any{"data_enc": people, "version": 0}, true); code != 200 {
 		t.Fatalf("people: %d", code)
 	}
-	if code, _ := bob.do("PUT", "/api/items/"+id+"/index", map[string]any{"data_enc": entry, "model": "mcs2/2"}, true); code != 200 {
+	if code, _ := bob.do("PUT", "/api/items/"+id+"/index", map[string]any{"data_enc": entry, "model": "laionb32/1"}, true); code != 200 {
 		t.Fatalf("index: %d", code)
 	}
 	want := float64(len(people) + len(entry))
@@ -228,10 +228,10 @@ func TestIndexAndUserBlobsCountTowardTheQuota(t *testing.T) {
 	}
 	// a replacement costs only the difference; growing past the limit is refused
 	e.app.db.Exec(`UPDATE users SET quota_bytes=? WHERE email='bob@x.org'`, int64(want)+10)
-	if code, _ := bob.do("PUT", "/api/items/"+id+"/index", map[string]any{"data_enc": rb(1500), "model": "mcs2+yunet23+sface21/2"}, true); code != 200 {
+	if code, _ := bob.do("PUT", "/api/items/"+id+"/index", map[string]any{"data_enc": rb(1500), "model": "laionb32+yunet23+sface21/1"}, true); code != 200 {
 		t.Fatalf("replacing an entry: %d", code)
 	}
-	if code, _ := bob.do("PUT", "/api/items/"+id+"/index", map[string]any{"data_enc": rb(1000), "model": "laionb32/1"}, true); code != 413 {
+	if code, _ := bob.do("PUT", "/api/items/"+id+"/index", map[string]any{"data_enc": rb(3000), "model": "laionb32/1"}, true); code != 413 {
 		t.Fatalf("index over quota: %d", code)
 	}
 	if code, _ := bob.do("PUT", "/api/me/blobs/people", map[string]any{"data_enc": rb(2000), "version": 1}, true); code != 413 {
@@ -311,5 +311,99 @@ func TestResentSegmentIsReservedInFull(t *testing.T) {
 	got, _ := os.ReadFile(filepath.Join(e.app.itemDir(id), "seg000000"))
 	if !bytes.Equal(got, part) {
 		t.Fatal("stored copy changed")
+	}
+}
+
+// One account's quota check (a sum over all its rows) must not hold up another account's uploads: the check locks
+// only the account it is for.
+func TestQuotaCheckOfOneAccountDoesNotBlockAnother(t *testing.T) {
+	e := newEnv(t)
+	a, b := "a-account", "b-account"
+	for i := 0; quotaLock(a) == quotaLock(b); i++ {
+		b = "b-account-" + string(rune('a'+i))
+	}
+	held := quotaLock(a)
+	held.Lock() // a slow check of account a
+	done := make(chan bool)
+	go func() {
+		release, ok := e.app.reserveBytes(b, 1000)
+		if ok {
+			release()
+		}
+		done <- ok
+	}()
+	select {
+	case ok := <-done:
+		if !ok {
+			t.Fatal("reservation refused")
+		}
+	case <-time.After(5 * time.Second):
+		held.Unlock()
+		t.Fatal("another account's quota check waited for account a")
+	}
+	held.Unlock()
+
+	// the same account still waits for its own check
+	held.Lock()
+	go func() {
+		release, ok := e.app.reserveBytes(a, 1000)
+		if ok {
+			release()
+		}
+		done <- ok
+	}()
+	select {
+	case <-done:
+		held.Unlock()
+		t.Fatal("two quota checks of one account ran at the same time")
+	case <-time.After(100 * time.Millisecond):
+	}
+	held.Unlock()
+	<-done
+}
+
+// Many reservations of several accounts at once: each account's total never goes over its room, and all of it is
+// given back. Run with -race.
+func TestConcurrentReservationsPerAccount(t *testing.T) {
+	e := newEnv(t)
+	admin, _ := e.setupAdmin("admin@x.org")
+	var ids []string
+	for _, m := range []string{"b@x.org", "c@x.org", "d@x.org"} {
+		e.acceptInvite(e.invite(admin, m))
+		e.app.db.Exec(`UPDATE users SET quota_bytes=10000+`+usedBytesSQL("users.id")+` WHERE email=?`, m)
+		var id string
+		e.app.db.QueryRow(`SELECT id FROM users WHERE email=?`, m).Scan(&id)
+		ids = append(ids, id)
+	}
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	granted := map[string]int{}
+	var releases []func()
+	for i := 0; i < 60; i++ {
+		wg.Add(1)
+		go func(id string) {
+			defer wg.Done()
+			if release, ok := e.app.reserveBytes(id, 1000); ok {
+				mu.Lock()
+				granted[id]++
+				releases = append(releases, release)
+				mu.Unlock()
+			}
+		}(ids[i%len(ids)])
+	}
+	wg.Wait()
+	for _, id := range ids {
+		if granted[id] != 10 {
+			t.Fatalf("account %s: %d reservations of 1000 in a quota of 10000", id, granted[id])
+		}
+	}
+	for _, r := range releases {
+		r()
+	}
+	e.app.resMu.Lock()
+	left := len(e.app.reserved)
+	e.app.resMu.Unlock()
+	if left != 0 {
+		t.Fatalf("reservations left after release: %v", e.app.reserved)
 	}
 }

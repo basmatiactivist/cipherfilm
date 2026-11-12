@@ -12,8 +12,9 @@ android {
     versionCode 1
     versionName "0.1.0"
     consumerProguardFiles "proguard-rules.pro"
-    // only test builds (not signed with the release key) may let the emulator take screenshots, for checking the UI
-    buildConfigField "boolean", "TEST_BUILD", System.getenv("CF_KEYSTORE") == null ? "true" : "false"
+    // only test builds may let the emulator take screenshots, for checking the UI: the Gradle property cfTestBuild,
+    // which only plugins/withTestCA.js sets (an explicit CF_TEST_CA build), never a release build's missing key
+    buildConfigField "boolean", "TEST_BUILD", (rootProject.findProperty("cfTestBuild") == "true" && System.getenv("CF_KEYSTORE") == null && System.getenv("CF_UNSIGNED") == null) ? "true" : "false"
   }
   buildFeatures { buildConfig true }
   lintOptions {
@@ -28,8 +29,11 @@ dependencies {
   // the video player (CfVideoView, VideoVault.kt)
   implementation "androidx.media3:media3-exoplayer:1.11.1"
   implementation "androidx.media3:media3-ui:1.11.1"
-  // search on the phone: MobileCLIP, YuNet and SFace (Vision.kt)
+  // search on the phone: LAION's CLIP ViT-B/32, YuNet and SFace (Vision.kt)
   implementation "com.microsoft.onnxruntime:onnxruntime-android:1.31.1"
+  // passkeys as the second step of a sign-in (Passkeys.kt): the system's Credential Manager (Android 14+); deliberately
+  // not credentials-play-services-auth, which would bring Google Play services' copy for older phones
+  implementation "androidx.credentials:credentials:1.6.0"
   // the backup starts when a new photo appears (NewMedia.kt), with the same JS task as expo-background-task's runs
   implementation "androidx.work:work-runtime-ktx:2.12.0"
   compileOnly "host.exp.exponent:expo.modules.backgroundtask:${new groovy.json.JsonSlurper().parse(file("../../../node_modules/expo-background-task/package.json")).version}"

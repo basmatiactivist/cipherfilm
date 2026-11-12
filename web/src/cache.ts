@@ -3,6 +3,7 @@ import { getSodium } from "./crypto/sodium";
 import { decryptPreview, decryptThumb } from "./crypto/item";
 import type { Item } from "./items";
 import { ThumbBatcher } from "./thumbbatch";
+import { pictureKey } from "./edit/edit";
 
 /** Decrypted images are kept as object URLs in small LRU caches and revoked when evicted or on sign-out. */
 class UrlCache {
@@ -45,8 +46,10 @@ async function limited<T>(fn: () => Promise<T>, wanted: () => boolean): Promise<
 // thumbnails go out many to a request; one at a time against an older server
 const batcher = new ThumbBatcher((ids) => postForBytes("/api/items/thumbs", { item_ids: ids }), (id, wanted) => limited(() => getBytes(`/api/items/${id}/thumb`), wanted));
 
-export const cachedThumb = (id: string) => thumbs.get(id);
-export const cachedPreview = (id: string) => previews.get(id);
+// cached by item and picture version: a turned or cropped photo has new ones (edit/edit.ts pictureKey)
+type Pic = Pick<Item, "id" | "meta">;
+export const cachedThumb = (it: Pic) => thumbs.get(pictureKey(it.id, it.meta));
+export const cachedPreview = (it: Pic) => previews.get(pictureKey(it.id, it.meta));
 
 // The encrypted thumbnails and previews, exactly as the server sends them, are kept in the browser's Cache Storage, so
 // the next visit shows the grid, and paging back in the lightbox shows the photo, without downloading it again. They
@@ -116,9 +119,11 @@ async function store(kind: "thumb" | "preview", id: string, ct: Uint8Array, gen:
 }
 
 function load(kind: "thumb" | "preview", cache: UrlCache, it: Item, wanted?: () => boolean): Promise<string> {
-  const hit = cache.get(it.id);
+  const pic = pictureKey(it.id, it.meta);
+  const hit = cache.get(pic);
   if (hit) return Promise.resolve(hit);
-  const key = kind + it.id;
+  const key = kind + pic;
+  const asked = kind + it.id; // interest is per item (wantImage)
   let p = inflight.get(key);
   if (!p) {
     const gen = generation;
@@ -126,18 +131,18 @@ function load(kind: "thumb" | "preview", cache: UrlCache, it: Item, wanted?: () 
       const s = await getSodium();
       const open = (ct: Uint8Array) => (kind === "thumb" ? decryptThumb : decryptPreview)(s, ct, it.itemKey!, it.id);
       let plain: Uint8Array | null = null;
-      const kept = await stored(kind, it.id);
+      const kept = await stored(kind, pic);
       if (kept) try { plain = open(kept); } catch { /* damaged copy: fetched again */ }
       if (!plain) {
         const ct = kind === "thumb"
-          ? await batcher.get(it.id, () => gen === generation && (wanted ?? (() => (interest.get(key) ?? 0) > 0))())
+          ? await batcher.get(it.id, () => gen === generation && (wanted ?? (() => (interest.get(asked) ?? 0) > 0))())
           : await limited(() => getBytes(`/api/items/${it.id}/preview`), () => gen === generation);
         plain = open(ct); // only verified ciphertext is kept
-        if (gen === generation) void store(kind, it.id, ct, gen);
+        if (gen === generation) void store(kind, pic, ct, gen);
       }
       if (gen !== generation) throw new Error("cancelled");
       const url = URL.createObjectURL(new Blob([plain as BlobPart], { type: "image/jpeg" }));
-      cache.set(it.id, url);
+      cache.set(pic, url);
       return url;
     })().finally(() => inflight.delete(key));
     inflight.set(key, p);

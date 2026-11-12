@@ -24,6 +24,10 @@ build notes: `mac/README.md`.
   usual, ⌘A selects all, Esc ends it). ⌫ moves the selection to the trash. A person's and an album's page have "Select
   All" for acting on all their photos at once (album, share, save, favorite, trash). The list is decrypted on all
   cores, so a large library opens quickly; the encrypted list is cached, so a restart shows it at once.
+- **On this day:** above Photos, a card for each earlier year with photos from within three days of today's date
+  (`CipherfilmCore/Memories.swift`, the same rules as the web and Android apps in `web/src/memories/memories.ts`); a
+  click opens that year's photos in the viewer. Picked on the Mac from the decrypted dates; Settings › General ›
+  Memories turns it off on this Mac.
 - **Shortcuts** (menu Photo; they act on the photo in the viewer, else on the selection): ⇧⌘F favorite, ⌃⌘A add to
   album, ⇧⌘N new album with the selection, ⇧⌘S share, ⇧⌘E save originals, ⌘K photos like this one, ⌘J go to date,
   ⌘⌫ move to trash, ⌘U upload, ⌃⌘L lock, ⌘, settings (also at the bottom of the sidebar). In the viewer also F, I, ⌫,
@@ -53,6 +57,22 @@ build notes: `mac/README.md`.
   the automatic grouping put it with someone else (on the Mac; the phone still follows only the grouping there).
 - **Notifications** when an upload, a watched-folder run, the first export or the first full index finishes: how many,
   never names. Settings › General turns them off.
+- **Administration** (Settings › Administration, shown to administrators only, never to a public demo login): the web's
+  admin area. People with their usage and last sign-in, invites (copy or share the link, revoke), storage limits and
+  the default one, making someone an administrator or a regular user, disabling, enabling and deleting accounts,
+  turning off someone's two-step sign-in, the explicit-search permission, the server's state with the off-site backup
+  report, and the activity log. Deleting, disabling, role changes and turning off two-step sign-in ask first. The
+  server checks every request (`CipherfilmCore/Admin.swift` sends exactly the web's).
+
+## Two-step sign-in
+
+Settings › Security turns on two-step sign-in with an authenticator app ("Open in Passwords or Authenticator App"
+hands the account to macOS Passwords or another app registered for `otpauth:`; the key and recovery codes are copied as
+concealed and cleared after a minute) or a passkey, lists the passkeys and removes them. A Mac app can only use
+passkeys of web names fixed when Apple signs it (Associated Domains), which can't name every self-hosted server, and
+the hardware-key provider of AuthenticationServices was not used for the same reason; so passkeys are made and used in
+the default browser: the app opens the server's `/passkey` page in a sign-in window (`ASWebAuthenticationSession`) and
+takes the answer back. That works with iCloud Keychain, password managers and security keys alike.
 
 ## Working with the window closed
 
@@ -71,6 +91,17 @@ What needs what:
 | Watched folders | the session (cookie) and the account's public key, pinned when turned on | keeps working |
 | Continuous export | the master key (it decrypts) | waits for unlock |
 | Search indexing | the master key (it decrypts previews) | waits for unlock; files from watched folders are indexed from the file at upload |
+| Security notifications | the session (cookie); notices aren't encrypted | checked every 5 minutes (live updates while unlocked) |
+
+Security notices (a new sign-in to your account elsewhere, two-step sign-in turned off or changed, recovery codes made,
+the password used for a sign-in that wasn't finished) collect behind the bell in the toolbar, next to Lock. Its badge
+marks notices newer than the newest the list has shown on this Mac (remembered per account); opening the list marks
+them all read. Each entry says what happened, on which device and when, with a button to what to check (Review
+Devices, Two-Step Sign-In); each can be removed, or all at once with Remove All, which removes them on every device.
+
+While the window isn't in front, a new notice also shows as a macOS notification, each once. The title says only what happened ("New sign-in to
+Cipherfilm"); the text names the device and the time, and macOS hides it where it hides previews. A click opens
+Settings › Security, which also turns them off. There is no push service: nothing arrives while the app isn't running.
 
 After a restart (or Open at Login) the library is locked until you unlock it once. There is deliberately no
 "remember the password"; with Touch ID unlock that is one touch.
@@ -141,7 +172,7 @@ insides of packages (such as a Photos library). A file that fails three times is
 ## Search on the Mac
 
 Off until turned on (the question after the first unlock, or Settings › Search & People). Then the Mac downloads the
-models once from Hugging Face, at the pinned URLs in `server/models.json` (about 250 MB, checked against the same sizes and
+models once from Hugging Face, at the pinned URLs in `server/models.json` (648 MB with faces, checked against the same sizes and
 SHA-256 values as the phone; no cookie or other app header goes along, docs/MODELS.md), fetches the entries
 other devices made, and indexes every photo and video that has none, six at a time at low priority, also on battery
 (Settings › Search can limit it to power). Entries are sealed to the account's public key and stored on the
@@ -156,18 +187,17 @@ answer", a dropped connection, no network, a server that refuses the connection,
 certificate, or the status the server or a proxy answered ("The server answered 404 (not found; the server may be
 older than this app)"). Search adds the step that failed ("Fetching the index from the server: …") and tries again by
 itself. JSON requests allow a one-minute pause (it was 20 s): over a relayed tailnet a model download can hold a small
-request back that long, which read as "Can't connect to the server" while the server was fine. Where an admin allowed explicit search, turning search on asks for the
-model first, so only that one is downloaded. Every size the app shows (the first-unlock question, the model choice,
-Settings, the switch to and from explicit search) is worked out from the files missing on this Mac for that model:
-about 248 MB for MobileCLIP with faces, 647 MB for LAION with faces, 66 MB or 256 MB for a Mac that only reads (text
-model and tokenizer); "already on this Mac" when nothing is missing.
+request back that long, which read as "Can't connect to the server" while the server was fine. Every size the app shows (the first-unlock question,
+Settings) is worked out from the files missing on this Mac: 648 MB with faces, 609 MB without, 258 MB for a Mac that
+only reads (text model and tokenizer); "already on this Mac" when nothing is missing.
 
-The models run with ONNX Runtime on the CPU in fp32, as on the phone (fp16 is unusable for MobileCLIP on ARM). The
-preprocessing follows `Vision.kt` step by step (JPEG decoded as stored, halving bilinear downscales, centre crop for
-MobileCLIP, letterbox and BGR for YuNet, the least-squares similarity warp onto ArcFace's points for SFace). Checked
-against entries the Android app wrote for the same photos on the test server: image vectors agree with cosine ≥ 0.998
-(23 photos and videos), every face is found with the same box (±0.005), and face vectors agree with cosine 0.95–0.997
-(the same person is above 0.5). `MODEL_TAG` is the same, so neither device redoes the other's work.
+The models run with ONNX Runtime on the CPU in fp32, as on the phone. The preprocessing follows `Vision.kt` (JPEG
+decoded as stored, centre crop and Pillow's bicubic resize to 224 with CLIP's mean and std for the image model, as in
+its Python reference, `mac/scripts/laion-reference.py`; letterbox and BGR for YuNet, the least-squares similarity warp onto ArcFace's points for SFace). Checked
+against entries the Android app wrote for the same photos on the test server (with MobileCLIP, before one model):
+image vectors agreed with cosine ≥ 0.998 (23 photos and videos), every face is found with the same box (±0.005), and
+face vectors agree with cosine 0.95–0.997 (the same person is above 0.5); LAION's image and text vectors match the
+Python reference with cosine ≥ 0.9999. `MODEL_TAG` is the same, so neither device redoes the other's work.
 
 **One device indexes** (docs/SEARCH.md, 1.9.0): per account one device computes the entries, the others only read
 them. The Mac sends `X-CF-Device: <computer name> (Mac app)` with every request (the device list shows it; ASCII only, other characters of the name are left out) and reads
@@ -177,32 +207,23 @@ nothing (also not for files from watched folders), and fetches what the indexing
 write refused with 409 `not_indexer` turns indexing off at once. Settings › Search & People shows "This Mac indexes
 your photos" or "Indexed by <device>, last seen …" with "Index on This Mac Instead" (`PUT /api/me/indexer`, then the
 image models are downloaded and the library indexed); turning search off gives the role up (`DELETE /api/me/indexer`).
-Entries are read per model family (`GET /api/index?model=mcs2` or `laionb32`) and cached per family
-(`index-<family>.json`), so a switch back doesn't fetch the other model's entries again.
+Entries are read for the model's family (`GET /api/index?model=laionb32`) and cached (`index-laionb32.json`).
 
-Search by what is in a photo ranks like Immich's smart search, for both models: every photo with an entry from the
-active model, best match first, no cut-off, shown 200 at a time (more as the end of the results comes into view).
+Search by what is in a photo ranks like Immich's smart search: every photo with an entry, best match first, no cut-off, shown 200 at a time (more as the end of the results comes into view).
 People, years, months, favorites and videos in the query narrow that ranking; a file name or camera containing the
 words comes first.
 
-**Explicit search** (docs/SEARCH.md): shown in Settings › Search & People only to a person an admin allowed it
-(`user.nsfw`). Turning it on asks first, saves `explicit: true` in the encrypted people document (so the phone and
-other devices switch too), downloads LAION's ViT-B/32 (about 600 MB; `nsfw-*` files, fetched with the session cookie)
-and indexes the library again; turning it off goes back to MobileCLIP, whose entries the indexing device kept current.
-Each switch deletes the other model's files before downloading the chosen one (the tokenizer and the face models are
-shared and stay; a Mac that indexes with LAION keeps MobileCLIP's image model), and clears the index in memory. While
-explicit search is on, the indexing Mac stores two entries per photo, LAION's and MobileCLIP's, from one look at it
-(faces found once), so devices without explicit search find a complete index; a MobileCLIP entry that is missing (or
-was deleted on the server, which `count` on the index list's first page shows) is made again, with the faces of the
-photo's LAION entry. Turning explicit search off deletes LAION's entries on the server
-(`DELETE /api/index?model=laionb32`, after the people document is saved) and the cached copy here; turning it on
-deletes nothing. Entries
-made with the other model are made again, and until then their image vectors stay out of search (their faces are
-still used). The Mac checks the choice and the permission about once a minute while idle, so a change made on another
-device or by an admin takes effect without a restart; files from watched folders use the choice last seen. LAION's
-image preprocessing is Pillow's bicubic resize (shortest side 224, centre crop, CLIP mean and std), as in its Python
-reference; text goes in as int32. Every entry is stored with its model tag in the clear (`model`), which the server
-requires where explicit search is allowed; a server from before that gets the entry without it.
+**One model, explicit content** (docs/SEARCH.md "One model", "Explicit content"): the Mac indexes and searches with
+LAION's ViT-B/32 only. Files explicit search downloaded before (`nsfw-laion-b32-*`) are moved to the new names, and
+MobileCLIP's files are deleted, when the model folder is opened. The indexing Mac makes the new entries for photos
+that only have MobileCLIP's: it reads those once (`?model=mcs2`, cached as `index-mcs2.json`), puts their faces into
+the new entries (only the image model runs, the people document's names stay), and once every photo has its new entry
+deletes what is left (`DELETE /api/index?model=mcs2`). Search leaves out photos that look explicit and finds nothing
+for explicit words (`Explicit.swift`, the scores kept per row in `SearchIndex.swift`), unless an admin allowed explicit
+search (`user.nsfw`) and the person turned it on in Settings › Search & People (`explicit: true` in the encrypted people
+document, for all their devices). The switch changes only that: nothing is downloaded, indexed again or deleted. The
+Mac checks the choice and the permission about once a minute while idle. Every entry is stored with its model tag in
+the clear (`model`); the server takes only the current model's.
 Checked against `mac/scripts/laion-reference.py` (ONNX Runtime 1.31.1): text vectors cosine 1.0, image vectors ≥ 0.990
 on 8 images of different sizes and shapes (the lowest is the difference between Apple's and Pillow's JPEG decoders;
 the same picture decoded by both gives that cosine in Python alone). About 50 ms a photo with faces on an M-series Mac.

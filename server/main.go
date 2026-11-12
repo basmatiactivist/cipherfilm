@@ -65,6 +65,8 @@ func (a *App) handler() http.Handler {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		io.WriteString(w, "User-agent: *\nDisallow: /api/\n")
 	})
+	// Android asks this before it lets the app use a passkey of this server's name (passkeys.go)
+	root.HandleFunc("GET /.well-known/assetlinks.json", a.assetLinks)
 	root.Handle("/", newStatic(sub))
 	return bodyLimit(a.hostGuard(securityHeaders(root)))
 }
@@ -172,6 +174,9 @@ func main() {
 			fmt.Fprintf(os.Stderr, "unknown command %q (version %s); cipherfilm help lists them\n", os.Args[1], version)
 			os.Exit(2)
 		}
+	}
+	if err := checkNoPendingRestore(dataDir); err != nil {
+		log.Fatal(err)
 	}
 	// the port first: a second start next to a running server (`/app` typed in its console) stops here, before it
 	// touches the data (setup token, the janitor's cleanup of uploads in progress)

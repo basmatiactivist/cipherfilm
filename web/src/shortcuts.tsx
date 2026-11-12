@@ -4,7 +4,7 @@ import { Icon } from "./icons";
 export const SHORTCUTS: { group: string; rows: [string, string][] }[] = [
   { group: "Anywhere", rows: [["?", "Show this list"], ["/", "Search"], ["U", "Upload photos and videos"], ["G then T", "Go to Timeline"], ["G then F", "Go to Favorites"], ["G then A", "Go to Albums"], ["G then P", "Go to People"], ["G then D", "Go to Trash"], ["Esc", "Close, or leave select mode"]] },
   { group: "Photos", rows: [["S", "Turn select mode on or off"], ["Ctrl or Cmd + A", "Select everything shown"], ["Shift + click", "Select a range"], ["Ctrl or Cmd + click", "Add or remove one photo"], ["Delete", "Move the selection to the trash"], ["Right-click", "Quick actions for a photo or album"]] },
-  { group: "Viewing a photo", rows: [["← and →", "Previous and next"], ["F", "Add to or remove from favorites"], ["I", "Show or hide info"], ["D", "Download the original"], ["Delete", "Move to the trash"], ["Esc", "Close"]] },
+  { group: "Viewing a photo", rows: [["← and →", "Previous and next"], ["F", "Add to or remove from favorites"], ["I", "Show or hide info"], ["D", "Download (an edited photo as edited)"], ["Shift D", "Download the original"], ["E", "Edit"], ["Delete", "Move to the trash"], ["Esc", "Close"]] },
 ];
 
 export function ShortcutsHelp({ onClose }: { onClose: () => void }) {

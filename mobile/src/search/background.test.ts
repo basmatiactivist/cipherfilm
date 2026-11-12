@@ -6,7 +6,7 @@ const st = vi.hoisted(() => ({ settings: {} as Record<string, unknown>, local: {
 vi.mock("react-native", () => ({ Platform: { constants: { Model: "Test" } }, AppState: { currentState: "active" } }));
 vi.mock("../session", () => ({ savedServer: async () => st.saved }));
 vi.mock("./settings", () => ({ loadSettings: async () => st.settings, saveSettings: async () => st.settings }));
-vi.mock("./models", () => ({ haveModels: async () => true, modelPath: () => "/models", STANDARD: "mobileclip-s2", keepsStandard: (c: string) => c !== "mobileclip-s2" }));
+vi.mock("./models", () => ({ haveModels: async () => true, modelPath: () => "/models", CLIP: "clip-b32" }));
 vi.mock("./engine", () => ({
   localFile: () => ({ exists: true, text: async () => JSON.stringify(st.local), write: async (v: string) => { st.local = JSON.parse(v); } }),
   analyzeBytes: async (_b: Uint8Array, _f: boolean, models: string[]) => { st.models.push(models); return models.map((m) => ({ m })); },
@@ -86,18 +86,18 @@ describe("background indexing", () => {
   });
 });
 
-describe("background indexing with explicit search on", () => {
-  it("stores MobileCLIP's entry next to LAION's, from one look at the photo", async () => {
+describe("background indexing after one model", () => {
+  it("stores one entry with the one model, whatever model the settings of an earlier version named", async () => {
     vi.resetModules();
     const { getSodium, b64 } = await import("@crypto/sodium");
     const { fingerprint } = await import("../prints");
     const s = await getSodium();
-    st.settings = { enabled: true, background: true, chargingOnly: false, faces: true, clip: "laion-b32", server: "https://a.test", userId: "alice", pubkey: b64(s, s.crypto_box_keypair().publicKey) };
+    st.settings = { enabled: true, background: true, chargingOnly: false, faces: true, clip: "mobileclip-s2", server: "https://a.test", userId: "alice", pubkey: b64(s, s.crypto_box_keypair().publicKey) };
     st.local = { userId: "alice", prints: { [await fingerprint("IMG_1.jpg", 10)]: ID }, done: [] };
     st.sent = []; st.models = []; st.saved = "https://a.test";
     const { runBackgroundIndex } = await import("./background");
     expect(await runBackgroundIndex()).toBe(1);
-    expect(st.models).toEqual([["laion-b32", "mobileclip-s2"]]);
-    expect(st.sent.filter((r) => r.startsWith("PUT"))).toHaveLength(2);
+    expect(st.models).toEqual([["clip-b32"]]);
+    expect(st.sent.filter((r) => r.startsWith("PUT"))).toHaveLength(1);
   });
 });

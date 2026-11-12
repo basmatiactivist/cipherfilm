@@ -181,7 +181,7 @@ func TestAlbumWritesUnderConcurrentWrites(t *testing.T) {
 				code, _ := admin.do("PUT", "/api/albums/"+album+"/items", map[string]any{"item_ids": ids}, true)
 				done <- code
 			} else {
-				code, _ := admin.do("PUT", "/api/items/"+ids[i%len(ids)]+"/index", map[string]any{"data_enc": rb(200)}, true)
+				code, _ := admin.do("PUT", "/api/items/"+ids[i%len(ids)]+"/index", map[string]any{"data_enc": rb(200), "model": "laionb32/1"}, true)
 				done <- code
 			}
 		}(i)

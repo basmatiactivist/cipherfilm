@@ -5,9 +5,9 @@ import { join } from "node:path";
 import { pw } from "./creds";
 
 // Search by what is in a photo: the Android or Mac app stores an image vector per photo in the index, sealed to the
-// account's public key. Here two photos get the MobileCLIP text vectors of "dog" and "city at night" from the Python
-// reference (onnxruntime 1.31.1) as their image vectors, a third a random one. The browser downloads the real text
-// model from the server, turns the typed words into a vector in its worker and must rank the right photo first.
+// account's public key. Here two photos get the text vectors of "dog" and "city at night" (LAION's ViT-B/32, the one
+// search model) from the Python reference (onnxruntime 1.31.1) as their image vectors, a third a random one. The
+// browser downloads the real text model from Hugging Face, turns the typed words into a vector in its worker and must rank the right photo first.
 const BASE = process.env.BASE_URL ?? "https://cipherfilm.orb.local";
 const CAROL = "carol@example.org";
 const CAROL_PW = pw("carol");
@@ -60,16 +60,25 @@ test.describe.serial("search by what is in a photo", () => {
     const items = (await (await page.request.get("/api/items")).json()).items.filter((x: { kind: string }) => x.kind === "image").slice(0, 3);
     expect(items.length).toBe(3);
     const rnd = Array.from({ length: 512 }, () => Math.random() - 0.5);
-    for (const [i, v] of [REF["dog"], REF["city at night"], rnd].entries()) await putEntry(page, me, items[i].id, "mcs2/2", v);
+    for (const [i, v] of [REF["dog"], REF["city at night"], rnd].entries()) await putEntry(page, me, items[i].id, "laionb32/1", v);
 
     // a fresh sign-in reads the index; the settings say what can be searched
     await page.reload(); // stays unlocked: the tab keeps the key across a reload (web/src/keep.ts)
     await expect(page.locator(".tile").first()).toBeVisible({ timeout: 30_000 });
     const all = await page.locator(".tile").count();
     const search = page.getByLabel("Search your photos");
-    // ranked like Immich: every photo with a vector, best match first, no day headings; photos without one don't show
+    // nothing goes to Hugging Face before the yes (docs/MODELS.md): the first search asks
+    const hf: string[] = [];
+    page.on("request", (r) => { if (/^https:\/\/([\w-]+\.)*(huggingface\.co|hf\.co)\//.test(r.url())) hf.push(r.url()); });
     await search.fill("dog");
-    await expect(page.locator(".tile")).toHaveCount(3, { timeout: 120_000 }); // the first search downloads the 64 MB model
+    await expect(page.getByRole("heading", { name: "Download the search model?" })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("the public site where these open models are published", { exact: false })).toBeVisible();
+    await page.waitForTimeout(1000);
+    expect(hf).toEqual([]);
+    await page.getByRole("button", { name: "Download and turn on" }).click();
+    // ranked like Immich: every photo with a vector, best match first, no day headings; photos without one don't show
+    await expect(page.locator(".tile")).toHaveCount(3, { timeout: 240_000 }); // the first search downloads the 258 MB model
+    expect(hf.length).toBeGreaterThan(0);
     await expect(page.locator(".tile").first()).toHaveAttribute("data-id", items[0].id);
     await expect(page.locator(".dayhead")).toHaveCount(0);
     await search.fill("city at night");
@@ -82,6 +91,7 @@ test.describe.serial("search by what is in a photo", () => {
     await page.getByRole("menuitem", { name: "Account" }).click();
     await page.getByText("Search", { exact: true }).click();
     await expect(page.getByText("3 photos can be found by what is in them")).toBeVisible();
+    await expect(page.getByText(/Search model downloaded on .*, \d+ MB\./)).toBeVisible();
     await expect(page.getByRole("switch", { name: "Explicit search" })).toHaveCount(0); // not allowed for carol
 
     // leave carol's library as it was
@@ -89,9 +99,8 @@ test.describe.serial("search by what is in a photo", () => {
     await ctx.close();
   });
 
-  test("explicit search: an admin allows it, the person turns it on for all devices, the browser searches with LAION", async ({ browser }) => {
+  test("explicit content: filtered unless an admin allows explicit search and the person chooses it, for all devices", async ({ browser }) => {
     test.setTimeout(300_000);
-    // the admin allows it for carol (off by default)
     const actx = await browser.newContext({ baseURL: BASE, ignoreHTTPSErrors: true });
     const admin = await actx.newPage();
     await admin.goto("/");
@@ -102,39 +111,53 @@ test.describe.serial("search by what is in a photo", () => {
     const am = await (await admin.request.get("/api/me")).json();
     const carolId = (await (await admin.request.get("/api/admin/users")).json()).users.find((u: { email: string }) => u.email === CAROL).id;
     const allow = (on: boolean) => admin.request.patch(`/api/admin/users/${carolId}`, { headers: { "X-CSRF-Token": am.csrf }, data: { nsfw: on } });
-    expect((await allow(true)).ok()).toBeTruthy();
 
     const ctx = await browser.newContext({ baseURL: BASE, ignoreHTTPSErrors: true, viewport: { width: 1280, height: 800 } });
     const page = await ctx.newPage();
     await signIn(page);
     const me = await (await page.request.get("/api/me")).json();
-    const item = (await (await page.request.get("/api/items")).json()).items.find((x: { kind: string }) => x.kind === "image").id;
-    await putEntry(page, me, item, "laionb32/1", REF["laion:dog"]); // as an app indexes it after the switch
+    const items = (await (await page.request.get("/api/items")).json()).items.filter((x: { kind: string }) => x.kind === "image").slice(0, 2);
+    // the second photo's vector is the explicit concept "a photo of a naked person" itself (server/explicit-filter.json)
+    const filter = JSON.parse(readFileSync(join(__dirname, "..", "server", "explicit-filter.json"), "utf8"));
+    const hv = Buffer.from(filter.concepts.find((c: { text: string }) => c.text === "a photo of a naked person").vec.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+    const explicitVec = Array.from({ length: 512 }, (_, i) => {
+      const h = hv.readUInt16LE(2 * i), e = (h >> 10) & 31, m = h & 1023, sg = h & 0x8000 ? -1 : 1;
+      return e ? sg * (1 + m / 1024) * 2 ** (e - 15) : sg * m * 2 ** -24;
+    });
+    await putEntry(page, me, items[0].id, "laionb32/1", REF["dog"]);
+    await putEntry(page, me, items[1].id, "laionb32/1", explicitVec);
+    await page.reload();
+    await expect(page.locator(".tile").first()).toBeVisible({ timeout: 30_000 });
+    const search = page.getByLabel("Search your photos");
+    await search.fill("dog");
+    const ok = page.getByRole("button", { name: "Download and turn on" });
+    if (await ok.waitFor({ timeout: 10_000 }).then(() => true, () => false)) await ok.click(); // a new browser: asked first
+    // filtered: the explicit photo is left out, and explicit words find nothing
+    await expect(page.locator(".tile")).toHaveCount(1, { timeout: 240_000 });
+    await expect(page.locator(`.tile[data-id="${items[0].id}"]`)).toBeVisible();
+    await search.fill("nude");
+    await expect(page.locator(".tile")).toHaveCount(0, { timeout: 30_000 });
 
+    // the admin allows it and carol turns it on: everything is found, nothing is indexed again
+    expect((await allow(true)).ok()).toBeTruthy();
+    await page.reload();
     await page.getByRole("button", { name: "Account menu" }).click();
     await page.getByRole("menuitem", { name: "Account" }).click();
     await page.getByText("Search", { exact: true }).click();
     const sw = page.getByRole("switch", { name: "Explicit search" });
     await expect(sw).not.toBeChecked();
-    await expect(page.getByText("This applies to all your devices:")).toBeVisible();
     await sw.check();
     await expect(sw).toBeChecked();
-    await expect(page.getByText("1 photo can be found by what is in them")).toBeVisible(); // counted for LAION now
-
-    const search = page.getByLabel("Search your photos");
     await search.fill("dog");
-    // the search is debounced, so the library still shows every tile at first; wait for the one result
-    await expect(page.locator(".tile")).toHaveCount(1, { timeout: 240_000 }); // the 254 MB model, once
-    await expect(page.locator(`.tile[data-id="${item}"]`)).toBeVisible();
-
-    // off again: back to MobileCLIP, which has no vectors here, so nothing is found by content
+    await expect(page.locator(".tile")).toHaveCount(2, { timeout: 60_000 });
+    // off again: filtered again, and the index stays
     await page.getByRole("button", { name: "Account menu" }).click();
     await page.getByRole("menuitem", { name: "Account" }).click();
     await page.getByText("Search", { exact: true }).click();
     await page.getByRole("switch", { name: "Explicit search" }).uncheck();
-    await expect(page.getByRole("switch", { name: "Explicit search" })).not.toBeChecked();
     await search.fill("dog");
-    await expect(page.locator(".tile")).toHaveCount(0);
+    await expect(page.locator(".tile")).toHaveCount(1, { timeout: 60_000 });
+    expect((await (await page.request.get("/api/index?model=laionb32")).json()).entries).toHaveLength(2);
 
     expect((await page.request.delete("/api/index", { headers: { "X-CSRF-Token": me.csrf } })).ok()).toBeTruthy();
     expect((await allow(false)).ok()).toBeTruthy();

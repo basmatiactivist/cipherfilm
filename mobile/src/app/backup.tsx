@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AppState, PermissionsAndroid, ScrollView, StyleSheet, View } from "react-native";
+import { AppState, ScrollView, StyleSheet, View } from "react-native";
 import { router } from "expo-router";
 import { Appbar, Button, Divider, List, ProgressBar, RadioButton, Switch, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -14,7 +14,8 @@ import { Icon, type IconName } from "../icons";
 import { Problem, SwitchItem, useAppTheme } from "../ui";
 import { radius, text } from "../tokens";
 import { useMediaDisclosure } from "../disclosure";
-import { away, expectAway } from "../autolock";
+import { expectAway } from "../autolock";
+import { requestNotifications } from "../mediaAccess";
 import { backgroundUse, ownBatteryRules, useOnReturn } from "../deviceState";
 import { Loader, Loading } from "../Loader";
 import { locale, t } from "../i18n";
@@ -102,11 +103,8 @@ export default function Backup() {
   };
   const appSettings = () => { expectAway(); N.openAppSettings(); };
   const askNotifications = async () => {
-    // before Android 13 there is no prompt: notifications are switched off in the app settings
-    if (device.sdk < 33) { appSettings(); return; }
-    const r = await away(() => PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS));
-    // refused for good, or allowed with the backup's own notifications switched off: both only in the app settings
-    if (r === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN || (r === PermissionsAndroid.RESULTS.GRANTED && !N.backupState().notifications)) appSettings();
+    // the backup's own notifications switched off counts as not allowed (mediaAccess.ts)
+    await requestNotifications(() => N.backupState().notifications);
     await refresh();
   };
 
@@ -199,14 +197,14 @@ export default function Backup() {
         <Check ok={background === "unrestricted" || (background === "allowed" && !xiaomi)} warn={background !== "restricted"} icon="lock" title={t("Run in the background")}
           text={background === "unrestricted" ? t("Allowed, without battery limits")
             : background === "restricted" ? t("Android stops the backup when the app is closed. In the app settings, open Battery and allow background usage.")
-            : xiaomi ? t("On Xiaomi: app settings › Battery saver › No restrictions. This box stays unticked, because Android can't see that setting.")
+            : xiaomi ? t("On this phone: app settings › Battery saver › No restrictions. This box stays unticked, because Android can't see that setting.")
             : t("Allowed. Android may wait a little with a backup while the phone is idle.")}
           action={background === "restricted" || (background === "allowed" && xiaomi) ? [t("Open"), appSettings] : undefined} />
         <Check ok={device.notifications} icon="upload" title={t("Notifications")}
           text={device.notifications ? t("Shows backup progress") : t("Shows progress and tells you when to sign in again")}
           action={device.notifications ? undefined : [t("Allow"), askNotifications]} />
         <Text variant="bodySmall" style={[st.hint, { color: theme.colors.onSurfaceVariant }]}>
-          {t("Samsung, Xiaomi, Huawei, OPPO, OnePlus and some others have their own battery rules: in the app settings, open Battery and choose \"Unrestricted\" or \"Allow background activity\".")}
+          {t("Some phone makers have their own battery rules: in the app settings, open Battery and choose \"Unrestricted\" or \"Allow background activity\".")}
         </Text>
         <Button mode="text" style={{ alignSelf: "flex-start", marginLeft: 8 }} onPress={appSettings}>{t("Open app settings")}</Button>
         {device.powerSave ? <Text variant="bodySmall" style={[st.hint, { color: theme.colors.error }]}>{t("Battery saver is on. Android delays the backup until it's off.")}</Text> : null}

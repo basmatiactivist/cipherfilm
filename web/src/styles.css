@@ -73,7 +73,7 @@ main.appmain { max-width: none; padding: 0; }
 /* forms and buttons */
 .field { margin: 0 0 var(--space-4); }
 .field label { display: block; margin-bottom: var(--space-1); font-weight: 600; }
-input[type="text"], input[type="email"], input[type="password"], textarea, .linkbox input {
+input[type="text"], input[type="email"], input[type="password"], input[type="datetime-local"], textarea, .linkbox input {
   width: 100%; min-height: var(--touch); padding: 9px var(--space-3); font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--rule-strong); border-radius: var(--radius-control);
 }
 input::placeholder, textarea::placeholder { color: var(--faint); }
@@ -311,6 +311,15 @@ form.inline { max-width: 420px; }
 .albumcard { display: flex; flex-direction: column; gap: var(--space-1); width: 100%; padding: 0; text-align: left; font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
 .cover { display: block; aspect-ratio: 1; border-radius: var(--radius-card); overflow: hidden; background: var(--paper-deep); border: 2px solid var(--rule); }
 .cover .tile { pointer-events: none; width: 100%; }
+/* "On this day" (memories/ui.tsx): a slim row of year cards above the timeline, scrolling sideways when they don't fit */
+.memories { margin: 0 0 var(--space-4); }
+.memhead { margin: 0 0 var(--space-2); font-family: var(--serif); font-weight: 400; font-size: var(--text-heading); color: var(--ink); }
+.memrow { display: flex; gap: var(--space-3); margin: 0 calc(-1 * var(--space-1)); padding: var(--space-1); /* room for the focus ring */ list-style: none; overflow-x: auto; scroll-snap-type: x proximity; overscroll-behavior-x: contain; }
+.memrow > li { flex: none; width: 136px; scroll-snap-align: start; }
+.memcard { display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 0; text-align: left; font: inherit; color: inherit; background: none; border: 0; cursor: pointer; border-radius: var(--radius-card); }
+.memcard .cover { margin-bottom: var(--space-1); }
+.memcard:hover .cover { border-color: var(--rule-strong); }
+.memago { font-size: var(--text-label); font-weight: 600; color: var(--ink); }
 .aname { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-family: var(--serif); font-size: var(--text-heading); overflow-wrap: anywhere; }
 .albumhead { margin-bottom: var(--space-4); }
 .face { display: inline-grid; flex: none; place-items: center; overflow: hidden; color: var(--faint); background: var(--paper-deep); border: 1px solid var(--rule); border-radius: var(--radius-round); }
@@ -323,6 +332,16 @@ form.inline { max-width: 420px; }
 .pname { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-family: var(--serif); font-size: var(--text-heading); overflow-wrap: anywhere; }
 .pname.unnamed { font-family: var(--font); font-size: var(--text-label); font-weight: 600; color: var(--teal-ink); }
 .peoplehead { margin: var(--space-2) 0 var(--space-3); font-size: var(--text-title); }
+/* duplicates and similar photos (cleanup/ui.tsx): each group a row of tiles with what each one is */
+.dupsection { margin-bottom: var(--space-6); }
+.dupchecks { margin: var(--space-2) 0 var(--space-3); padding-left: 1.2em; color: var(--muted); }
+.dupchecks li + li { margin-top: var(--space-1); }
+.dupgroup { margin: var(--space-3) 0 var(--space-4); padding-bottom: var(--space-3); border-bottom: 1px solid var(--rule); }
+.duprow { display: flex; flex-wrap: wrap; gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
+.dupitem { display: flex; flex-direction: column; gap: var(--space-1); width: 150px; }
+.dupitem .tile { width: 100%; height: 150px; }
+.dupitem .small { font-variant-numeric: tabular-nums; }
+@media (max-width: 600px) { .dupitem { width: calc(50% - var(--space-2)); } .dupitem .tile { height: auto; aspect-ratio: 1; } }
 .personhead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4); margin-bottom: var(--space-4); }
 .personhead .nameform { flex: 1; min-width: 220px; max-width: 420px; }
 .nameform input { margin-bottom: var(--space-2); }
@@ -413,6 +432,7 @@ form.inline { max-width: 420px; }
   .selbar .selword { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .selbar .btn.small { flex-direction: column; justify-content: center; gap: 0; min-width: 56px; min-height: 52px; padding: var(--space-1) var(--space-2); font-size: var(--text-micro); line-height: 1.2; }
   .albums { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: var(--space-4); }
+  .memrow > li { width: 112px; }
   .persons { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: var(--space-3) var(--space-2); }
   .actions .btn { padding: 0 14px; }
   .panel.profile { flex-wrap: wrap; }
@@ -457,8 +477,13 @@ kbd { display: inline-block; padding: 1px 7px; font: inherit; font-size: var(--t
 .mappage.withpanel { grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); }
 .mapwrap { position: relative; min-height: 0; border: 1px solid var(--rule); border-radius: var(--radius-card); overflow: hidden; background: var(--paper-deep); }
 .mapwrap .mapbox { position: absolute; inset: 0; } /* over MapLibre's own .maplibregl-map { position: relative } */
-.mapbar { position: absolute; left: var(--space-3); top: var(--space-3); display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; max-width: calc(100% - 120px); padding: 6px 6px 6px var(--space-3); font-size: var(--text-label); color: var(--ink); background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius-control); box-shadow: 0 2px 10px var(--shade); }
-.mapfail { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: max-content; max-width: min(420px, calc(100% - 32px)); margin: 0; z-index: 2; } /* in the middle of the empty map, clear of the bar */
+/* "Photos in this area": a small control like the zoom buttons, top left */
+.mapctl { position: absolute; left: 10px; top: 10px; z-index: 2; display: grid; place-items: center; width: 32px; height: 32px; padding: 0; color: var(--ink); background: var(--card); border: 0; border-radius: 4px; box-shadow: 0 0 0 2px var(--shade-2); cursor: pointer; }
+.mapctl:hover { background: var(--paper-deep); }
+.mapctl:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+/* no located photos: a quiet line in the corner, no bar */
+.mapempty { position: absolute; left: var(--space-3); bottom: var(--space-2); z-index: 1; margin: 0; color: var(--muted); text-shadow: 0 0 3px var(--card), 0 0 3px var(--card); pointer-events: none; }
+.mapfail { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: max-content; max-width: min(420px, calc(100% - 32px)); margin: 0; z-index: 2; } /* in the middle of the empty map */
 .mapmarker { position: relative; width: 52px; height: 52px; padding: 0; border: 3px solid var(--card); border-radius: 50%; background: var(--teal-tint); box-shadow: 0 2px 8px var(--shade), 0 0 0 1px var(--shade-2); cursor: pointer; }
 .mapmarker img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
 .mapmarker img:not([src]) { visibility: hidden; }
@@ -473,7 +498,6 @@ kbd { display: inline-block; padding: 1px 7px; font: inherit; font-size: var(--t
 @media (max-width: 600px) {
   .mappage { height: calc(100dvh - var(--topbar) - 120px); }
   .mappage.withpanel { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 55%); }
-  .mapbar { max-width: calc(100% - 24px); }
 }
 
 .minimap { position: relative; width: 100%; height: 180px; margin-top: var(--space-2); border-radius: var(--radius-control); overflow: hidden; border: 1px solid var(--rule); }
@@ -488,3 +512,63 @@ kbd { display: inline-block; padding: 1px 7px; font: inherit; font-size: var(--t
 .mapconsent { max-width: 560px; margin: var(--space-6) auto; display: grid; gap: var(--space-3); justify-items: start; }
 .mapconsent h2 { margin: 0; }
 .mapconsent p { margin: 0; }
+
+/* two-step sign-in (screens.tsx TwoFactorPanel) */
+.qr { display: block; width: 200px; height: 200px; margin: var(--space-3) 0; border: 1px solid var(--rule); border-radius: var(--radius-control); }
+/* two-step sign-in: the parts of the panel (app, passkeys, recovery codes) */
+.acc .subhead { font-size: var(--text-label); font-weight: 600; margin: var(--space-4) 0 var(--space-2); }
+/* "Open in authenticator app": on a phone the app is on the same device, on a computer the QR code is the way */
+.touch-only { display: none; }
+@media (pointer: coarse) { .touch-only { display: inline-flex; margin-bottom: var(--space-3); } }
+.secret { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); }
+.secret code, .codes code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: var(--text-label); letter-spacing: 0.04em; overflow-wrap: anywhere; }
+.words.codes { grid-template-rows: repeat(10, auto); }
+@media (min-width: 560px) { .words.codes { grid-template-rows: repeat(5, auto); } }
+/* notices under the bell in the top bar (noticesui.tsx): a count on the bell, a panel like the account menu */
+.bellwrap { position: relative; }
+.bellbtn { position: relative; border-radius: var(--radius-round); }
+.bellbtn[aria-expanded="true"] { background: var(--paper-deep); }
+.bellbadge { position: absolute; top: 5px; right: 3px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--radius-round); background: var(--danger); color: var(--on-danger); font-size: var(--text-micro); font-weight: 700; line-height: 18px; text-align: center; box-shadow: 0 0 0 2px var(--paper); }
+.noticepanel { width: 360px; max-height: min(70vh, 560px); overflow-y: auto; padding: var(--space-2) var(--space-2) var(--space-1); }
+.noticehead { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: 0 var(--space-2); border-bottom: 1px solid var(--rule); margin-bottom: var(--space-1); }
+.noticehead h2 { margin: 0; font-size: var(--text-heading); }
+.noticehead h2:focus { outline: none; }
+.noticehead h2:focus-visible { outline: var(--focus-ring) solid var(--teal); outline-offset: 2px; }
+.noticeempty { margin: var(--space-3) var(--space-2); color: var(--muted); }
+.noticelist { list-style: none; margin: 0; padding: 0; }
+.noticelist li { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-2) 0 var(--space-1) var(--space-2); border-radius: var(--radius-control); font-size: var(--text-label); }
+.noticelist li + li { border-top: 1px solid var(--rule); border-top-left-radius: 0; border-top-right-radius: 0; }
+.noticelist li > .icon { flex: none; margin-top: 2px; color: var(--teal-ink); }
+.noticelist li.fresh { background: var(--teal-tint); }
+.noticebody { flex: 1; min-width: 0; }
+.noticebody p { margin: 0; text-wrap: pretty; color: var(--ink); }
+.noticebody .link { min-height: 36px; padding: var(--space-1) 0; }
+@media (max-width: 600px) {
+  .noticepanel { position: fixed; top: calc(var(--topbar) + 4px); left: var(--space-2); right: var(--space-2); width: auto; }
+}
+/* the editor (edit/editor.tsx): the lightbox's stage and side panel, with a crop frame over the turned photo */
+.editor .edstage { padding: var(--space-4); touch-action: none; }
+.edpic { position: relative; line-height: 0; user-select: none; }
+.edshade { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.edshade > div { position: absolute; box-shadow: 0 0 0 100vmax color-mix(in srgb, var(--stage) 62%, transparent); }
+.edpic canvas { display: block; width: 100%; height: 100%; }
+.edframe { position: absolute; box-sizing: border-box; border: 1px solid var(--on-stage); cursor: move; touch-action: none; }
+.edframe:focus-visible { outline: 2px solid var(--on-stage); outline-offset: 2px; }
+.edh { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%; background: var(--on-stage); border: 2px solid var(--stage); touch-action: none; }
+.edh.nw { left: 0; top: 0; cursor: nwse-resize; } .edh.n { left: 50%; top: 0; cursor: ns-resize; } .edh.ne { left: 100%; top: 0; cursor: nesw-resize; }
+.edh.e { left: 100%; top: 50%; cursor: ew-resize; } .edh.se { left: 100%; top: 100%; cursor: nwse-resize; } .edh.s { left: 50%; top: 100%; cursor: ns-resize; }
+.edh.sw { left: 0; top: 100%; cursor: nesw-resize; } .edh.w { left: 0; top: 50%; cursor: ew-resize; }
+.edratios { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: center; width: 100%; }
+.edratios .btn[aria-pressed="true"] { background: var(--teal-tint); border-color: var(--teal); }
+.edpanel input[type="datetime-local"] { width: 100%; }
+.edplace { margin: 0 0 var(--space-2); font-weight: 600; }
+.edfound { list-style: none; margin: var(--space-2) 0; padding: 0; display: grid; gap: 2px; }
+.edfound .link { text-align: left; padding: 6px 0; }
+.edpanel .row { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
+.edpanel .pickmap { height: 240px; }
+.edactions { margin-top: var(--space-5); }
+.edrevert { display: block; margin: var(--space-4) 0 var(--space-2); }
+@media (max-width: 860px) {
+  .lightbox.editor[open] { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(200px, 1fr) auto auto; overflow: auto; }
+  .editor .edpanel { position: static; grid-column: 1; grid-row: auto; width: auto; }
+}

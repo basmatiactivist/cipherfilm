@@ -78,7 +78,7 @@ jobs:
             -PreactNativeArchitectures=arm64-v8a --parallel --console=plain
           mkdir -p ../../unsigned && cp app/build/outputs/apk/release/app-release-unsigned.apk "../../unsigned/cipherfilm-android-${VERSION#v}.apk"
       - name: Native project for Google Play
-        # CF_STORE=play: no REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, no explicit search model (app.config.js, src/store.ts)
+        # CF_STORE=play: no REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, search always filtered (app.config.js, src/store.ts)
         run: |
           cd mobile
           CF_STORE=play CF_VERSION="${VERSION#v}" npx expo prebuild --platform android --clean --no-install

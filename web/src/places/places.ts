@@ -124,6 +124,29 @@ export class Places {
     return out;
   }
 
+  /** Places to pick by name ("zur", "Zürich", "paris france"): the first word starts the place's name, further words
+   *  its region or country; the largest places first. For setting a photo's place by hand (docs/EDITING.md). */
+  find(query: string, limit = 8): Place[] {
+    const words = fold(query).split(/[\s,]+/).filter(Boolean);
+    if (!words.length || words[0].length < 2) return [];
+    this.folded ??= this.names.map(fold);
+    const [first, ...rest] = words;
+    const hits: number[] = [];
+    for (let i = 0; i < this.n; i++) {
+      const f = this.folded[i];
+      if (!(f === first || (first.length >= 2 && f.startsWith(first)))) continue;
+      if (rest.length) {
+        const a = this.admin[i], [code, country] = this.countries[this.country[i]];
+        const more = fold(`${f.slice(first.length)} ${a === 65535 ? "" : this.admins[a][1]} ${country} ${code}`);
+        if (!rest.every((w) => more.split(/[\s,]+/).some((m) => m.startsWith(w)))) continue;
+      }
+      hits.push(i);
+    }
+    // exact names before longer ones, then the larger place
+    hits.sort((a, b) => (Number(this.folded![b] === first) - Number(this.folded![a] === first)) || this.size[b] - this.size[a]);
+    return hits.slice(0, limit).map((i) => this.place(i));
+  }
+
   /** The index of the nearest place (for match()), -1 if none within 50 km. */
   nearestIndex(lat: number, lon: number): number {
     const r = this.nearest(lat, lon);

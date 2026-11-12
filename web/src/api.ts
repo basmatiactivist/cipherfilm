@@ -1,7 +1,9 @@
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  /** body: the server's JSON answer (its "code", and the pending token of a sign-in that needs a code) */
+  constructor(public status: number, message: string, public body: any = null) {
     super(message);
   }
+  get code(): string { return typeof this.body?.code === "string" ? this.body.code : ""; }
 }
 
 let csrf = "";
@@ -66,7 +68,7 @@ export async function api<T = any>(method: string, path: string, body?: unknown,
   } catch {
     if (res.ok) throw new ApiError(0, "Couldn't read the server's answer. Try again.");
   }
-  if (!res.ok) { sessionEnded(res, path); throw new ApiError(res.status, sentence(data?.error ?? "Something went wrong.")); }
+  if (!res.ok) { sessionEnded(res, path); throw new ApiError(res.status, sentence(data?.error ?? "Something went wrong."), data); }
   return data as T;
 }
 

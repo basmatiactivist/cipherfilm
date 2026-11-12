@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Item } from "../items";
 import { cachedPreview, cachedThumb, dropImage, thumbUrl, wantImage } from "../cache";
+import { pictureKey } from "../edit/edit";
 import { Icon } from "../icons";
 import { useAction } from "../components";
 import { Loader, Loading } from "../loader";
@@ -11,7 +12,7 @@ export const NO_INDEX = "Turn on search in the Android or Mac app to find the fa
 
 /** The decrypted image a face is cut from: the preview when it is at hand (sharper), else the thumbnail. */
 async function imageOf(it: Item): Promise<string> {
-  const have = cachedPreview(it.id) ?? cachedThumb(it.id);
+  const have = cachedPreview(it) ?? cachedThumb(it);
   if (have) return have;
   wantImage("thumb", it.id);
   try { return await thumbUrl(it); } finally { dropImage("thumb", it.id); }
@@ -27,7 +28,7 @@ export function Face(p: { cover?: Cover; item?: Item; size?: number }) {
       imageOf(p.item).then((src) => faceCrop(p.cover!, src)).then((u) => alive && setUrl(u), () => {});
     }
     return () => { alive = false; };
-  }, [p.cover?.key, p.item?.id]);
+  }, [p.cover?.key, p.item && pictureKey(p.item.id, p.item.meta)]);
   const size = p.size ?? 44;
   return (
     <span class="face" style={{ width: `${size}px`, height: `${size}px` }} aria-hidden="true">

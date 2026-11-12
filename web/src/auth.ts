@@ -10,9 +10,14 @@ import { clearCaches } from "./cache";
 import { clearPeople } from "./people/people";
 import { clearPlayer } from "./player";
 import { clearUploadMemory, forgetDecrypted } from "./items";
+import { forgetAlbums } from "./albums";
 import { forgetKeptForGood, keepKey, keptKey } from "./keep";
 import { open, LABEL } from "./crypto/wrap";
 import { announce, sameSession } from "./tabs";
+import { forgetBrowserAlerts } from "./noticeAlerts";
+import { getPasskey } from "./passkeys";
+import { httpsMap } from "./places/mapHosts";
+import { type SecondStep, stepFields } from "./twofactor";
 
 /** Give the browser a frame to paint a busy state before Argon2 blocks the thread. */
 export const paint = (): Promise<void> => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
@@ -36,7 +41,7 @@ const kept = (userId: string, key: Uint8Array) => Promise.race([keepKey(userId, 
 async function adopt(me: Me, masterKey: Uint8Array | null): Promise<void> {
   if (me.server_version) serverVersion = me.server_version; // the sign-in screen after a sign-out shows it too
   setCsrf(me.csrf);
-  mem.me = me;
+  mem.me = { ...me, map: httpsMap(me.map) }; // only https styles, from the hosts the map question names
   mem.masterKey = masterKey;
   if (masterKey) await kept(me.user.id, masterKey); // for a reload of this tab (keep.ts)
 }
@@ -85,7 +90,7 @@ export async function needsSetup(): Promise<boolean> {
  *  saved the words: if commit's response is lost, nobody is left with a key that works but was never seen. A new
  *  account's key is stored with the account itself (storedKey: commit does nothing); closing the tab before saving it
  *  leaves a key never seen, which a new one under Account replaces. */
-export interface PendingKey { words: string[]; email: string; commit: () => Promise<void> }
+export interface PendingKey { words: string[]; email: string; commit: (second?: SecondStep) => Promise<void> }
 
 /** Runs send; if it fails, the request may still have gone through with only the response lost. verify checks that
  *  (by signing in with the new password), so a retry never fails on "already done" and a stored key is never lost. */
@@ -98,8 +103,8 @@ async function sendChecked(send: () => Promise<void>, verify?: () => Promise<voi
   }
 }
 
-function pendingKey(words: string[], email: string, send: () => Promise<void>, verify?: () => Promise<void>): PendingKey {
-  return { words, email, commit: () => sendChecked(send, verify) };
+function pendingKey(words: string[], email: string, send: (second?: SecondStep) => Promise<void>, verify?: () => Promise<void>): PendingKey {
+  return { words, email, commit: (second) => sendChecked(() => send(second), verify) };
 }
 
 /** A key already stored: only the words are left to show. */
@@ -122,10 +127,16 @@ async function createChecked(acc: NewAccount, email: string, password: string, s
   try {
     await send();
   } catch (e) {
+    let step: CodeStep | null;
     try {
-      await login(email, password);
+      step = await login(email, password);
     } catch {
       throw e;
+    }
+    // a new account has no two-step sign-in: one that asks for a code was there before
+    if (step) {
+      step.cancel();
+      throw new Error("This account already exists. Sign in with your password, then make a new recovery key under Account.");
     }
     const s = await getSodium();
     if (!mem.masterKey || s.memcmp(mem.masterKey, acc.masterKey) !== true) {
@@ -158,15 +169,129 @@ export async function acceptInvite(token: string, email: string, password: strin
   });
 }
 
-export async function login(email: string, password: string): Promise<void> {
+/** The second step of a sign-in to an account with two-step sign-in: the password was right, and the server wants a
+ *  code from the authenticator app (or a recovery code) before it hands out a session or any of the account's keys.
+ *  It holds the key derived from the password until the code is accepted or the person starts over. */
+export interface CodeStep {
+  /** Which second steps the account has (the server says so after the right password): an authenticator app, and a
+   *  passkey for this address. Older servers say neither: then a code is asked for. */
+  totp: boolean;
+  passkey: boolean;
+  /** Sends the code and signs in when it is right. A wrong code throws and the step stays; CodeExpired means the
+   *  password is needed again (too old, too many wrong codes, the password changed). */
+  finish(code: string): Promise<void>;
+  /** The same with a passkey: the browser asks for it, the server checks its answer to this sign-in's challenge. */
+  usePasskey(): Promise<void>;
+  /** Fetches the challenge ahead of the tap (some browsers allow the passkey dialog only right after a tap). */
+  preparePasskey(): void;
+  /** Starting over: the key derived from the password is overwritten. */
+  cancel(): void;
+}
+
+export class CodeExpired extends Error {}
+
+/** The pending token of a password step that needs a code, or "" (any other failure). */
+export function pendingToken(e: unknown): string {
+  return e instanceof ApiError && e.status === 401 && e.code === "two_factor_required" && typeof e.body?.pending === "string" ? e.body.pending : "";
+}
+
+/** What went wrong with a code or passkey: "wrong" (try again), "expired" (back to the password) or "other". */
+export function codeProblem(e: unknown): "wrong" | "expired" | "other" {
+  if (!(e instanceof ApiError) || e.status !== 401) return "other";
+  return e.code === "wrong_code" || e.code === "wrong_passkey" ? "wrong" : e.code === "two_factor_expired" ? "expired" : "other";
+}
+
+/** Which second steps the password step said the account has; an older server says nothing (a code, then). */
+export function methods(e: unknown): { totp: boolean; passkey: boolean } {
+  const b = e instanceof ApiError ? e.body : null;
+  if (!b || (typeof b.totp !== "boolean" && typeof b.passkey !== "boolean")) return { totp: true, passkey: false };
+  return { totp: b.totp === true, passkey: b.passkey === true };
+}
+
+const EXPIRED = "This sign-in expired. Enter your password again.";
+
+function codeStep(s: Awaited<ReturnType<typeof getSodium>>, email: string, kek: Uint8Array, pending: string, has: { totp: boolean; passkey: boolean }): CodeStep {
+  let open = true;
+  const cancel = () => { if (open) { open = false; s.memzero(kek); } };
+  const send = async (second: { code: string } | { passkey: Record<string, unknown> }, wrong: string) => {
+    let me: Me;
+    try {
+      me = await api<Me>("POST", "/api/auth/login/2fa", { pending, ...second });
+    } catch (e) {
+      if (codeProblem(e) === "expired") { cancel(); throw new CodeExpired(EXPIRED); }
+      if (codeProblem(e) === "wrong") throw new Error(wrong);
+      throw e;
+    }
+    open = false;
+    try { await signedIn(me, unlockMasterKey(s, email, kek, me.wrapped_master_pw)); } finally { s.memzero(kek); }
+  };
+  // a challenge is answered once: each try fetches a new one (ahead of the tap when it can)
+  let challenge: Promise<Record<string, unknown>> | null = null;
+  const fetchChallenge = () => api<{ options: Record<string, unknown> }>("POST", "/api/auth/login/2fa/passkey", { pending }).then((r) => r.options);
+  return {
+    ...has,
+    cancel,
+    async finish(code: string) {
+      if (!open) throw new CodeExpired(EXPIRED);
+      challenge = null; // a code check uses up the passkey challenge too
+      await send({ code: code.trim() }, "That code isn't right. Check the time on your phone and try the newest code.");
+    },
+    preparePasskey() {
+      if (open && !challenge) { challenge = fetchChallenge(); challenge.catch(() => {}); }
+    },
+    async usePasskey() {
+      if (!open) throw new CodeExpired(EXPIRED);
+      const ready = challenge ?? fetchChallenge();
+      challenge = null;
+      let options: Record<string, unknown>;
+      try {
+        options = await ready;
+      } catch (e) {
+        if (codeProblem(e) === "expired") { cancel(); throw new CodeExpired(EXPIRED); }
+        throw e;
+      }
+      const passkey = await getPasskey(options);
+      if (!open) throw new CodeExpired(EXPIRED);
+      await send({ passkey }, "That passkey wasn't accepted. Try again, or use a code.");
+    },
+  };
+}
+
+/** Signs in. Returns a code step when the account has two-step sign-in (null when signed in already). */
+export async function login(email: string, password: string): Promise<CodeStep | null> {
   const s = await getSodium();
   const e = normEmail(email);
   const kdf = await api<KdfParams>("GET", `/api/auth/params?email=${encodeURIComponent(e)}`);
   assertSaneKdf(kdf);
   clearPlayer(); // a different account may sign in on this browser: drop anything the Service Worker still holds
   const { auth, kek } = await loginProof(s, password, kdf);
-  const me = await api<Me>("POST", "/api/auth/login", { email: e, auth });
-  await signedIn(me, unlockMasterKey(s, e, kek, me.wrapped_master_pw));
+  let me: Me;
+  try {
+    me = await api<Me>("POST", "/api/auth/login", { email: e, auth });
+  } catch (err) {
+    const pending = pendingToken(err);
+    if (!pending) { s.memzero(kek); throw err; }
+    return codeStep(s, e, kek, pending, methods(err));
+  }
+  try { await signedIn(me, unlockMasterKey(s, e, kek, me.wrapped_master_pw)); } finally { s.memzero(kek); }
+  return null;
+}
+
+/** The sign-in proof of the signed-in account's password, checked here first (a typo shows before anything is sent):
+ *  what changing two-step sign-in sends to the server. */
+export async function passwordProof(password: string): Promise<string> {
+  const s = await getSodium();
+  const me = mem.me!;
+  assertSaneKdf(me.kdf);
+  const { auth, kek } = await loginProof(s, password, me.kdf);
+  try {
+    s.memzero(unlockMasterKey(s, me.user.email, kek, me.wrapped_master_pw));
+  } catch {
+    throw new Error("That password isn't right.");
+  } finally {
+    s.memzero(kek);
+  }
+  return auth;
 }
 
 /** Session cookie is still valid after a reload; only the password is needed to rebuild the keys. */
@@ -201,10 +326,12 @@ export function forgetLocal(): void {
   dropMasterKey();
   leaveSession();
   forgetDecrypted();
+  forgetAlbums();
   clearCaches();
   clearPeople(true);
   clearPlayer();
   clearUploadMemory();
+  forgetBrowserAlerts();
 }
 
 /** This tab no longer holds a session (what it stores is dropped by the caller). */
@@ -227,15 +354,23 @@ export async function checkSession(): Promise<void> {
   if (!sameSession(mem.me, me.user.id, me.session_id)) { replaced(); throw new Error("Signed in elsewhere."); }
 }
 
-export async function changePassword(current: string, next: string): Promise<void> {
+/** Changes the password. second: the second step while two-step sign-in is on (sent only when given). */
+export async function changePassword(current: string, next: string, second?: SecondStep): Promise<void> {
   const s = await getSodium();
   const me = mem.me!;
   if (!mem.masterKey) throw new Error("Unlock your library first.");
   assertSaneKdf(me.kdf);
-  const { auth } = await loginProof(s, current, me.kdf);
+  const { auth, kek } = await loginProof(s, current, me.kdf);
+  try {
+    s.memzero(unlockMasterKey(s, me.user.email, kek, me.wrapped_master_pw)); // a typo shows here, before a code is used up
+  } catch {
+    throw new Error("That password isn't right.");
+  } finally {
+    s.memzero(kek);
+  }
   const ch = await rewrapForPassword(s, me.user.email, mem.masterKey, next);
   try {
-    await api("POST", "/api/auth/password", { current_auth: auth, ...ch });
+    await api("POST", "/api/auth/password", { current_auth: auth, ...ch, ...stepFields(second) });
   } catch (e) {
     // the change may have gone through with only the response lost: pick up what the server now has, so the next
     // attempt (or an unlock) uses the current password settings instead of the old ones
@@ -247,7 +382,7 @@ export async function changePassword(current: string, next: string): Promise<voi
 
 /** Deletes the account permanently, after checking the password here first (a typo shows before anything is sent), then
  *  forgets everything this browser keeps. The server refuses for the only administrator. */
-export async function deleteAccount(password: string): Promise<void> {
+export async function deleteAccount(password: string, second?: SecondStep): Promise<void> {
   const s = await getSodium();
   const me = mem.me!;
   assertSaneKdf(me.kdf);
@@ -256,8 +391,10 @@ export async function deleteAccount(password: string): Promise<void> {
     s.memzero(unlockMasterKey(s, me.user.email, kek, me.wrapped_master_pw));
   } catch {
     throw new Error("That password isn't right.");
+  } finally {
+    s.memzero(kek);
   }
-  await api("DELETE", "/api/me", { current_auth: auth });
+  await api("DELETE", "/api/me", { current_auth: auth, ...stepFields(second) });
   announce({ t: "signed-out", user: me.user.id }); // every session of the account
   forgetLocal();
 }
@@ -293,8 +430,8 @@ export async function recoverFinish(h: RecoveryHandle, newPassword: string): Pro
     async () => { await recoverStart(h.email, fin.recoveryWords.join(" ")); });
 }
 
-/** Makes a new recovery key; the old one stops working once commit() stores the new one. Needs the current password
- *  and an unlocked library. Sending the same key again is harmless, so a retry needs no check. */
+/** Makes a new recovery key; the old one stops working once commit() stores the new one. Needs the current password,
+ *  an unlocked library and, while two-step sign-in is on, the second step given to commit(). Sending the same key again is harmless, so a retry needs no check. */
 export async function rotateRecoveryKey(currentPassword: string): Promise<PendingKey> {
   const s = await getSodium();
   const me = mem.me!;
@@ -302,13 +439,16 @@ export async function rotateRecoveryKey(currentPassword: string): Promise<Pendin
   assertSaneKdf(me.kdf);
   const { auth, kek } = await loginProof(s, currentPassword, me.kdf);
   try {
-    unlockMasterKey(s, me.user.email, kek, me.wrapped_master_pw); // a typo shows here, not after the words
+    s.memzero(unlockMasterKey(s, me.user.email, kek, me.wrapped_master_pw)); // a typo shows here, not after the words
   } catch {
     throw new Error("That password isn't right.");
+  } finally {
+    s.memzero(kek);
   }
   const kit = await newRecoveryKit(s, me.user.email, mem.masterKey);
-  return pendingKey(kit.words, me.user.email, async () => {
-    await api("POST", "/api/auth/recovery-key", { current_auth: auth, wrapped_master_recovery: kit.wrapped_master_recovery, recovery_verifier: kit.recovery_verifier });
+  // the second step (while two-step sign-in is on) comes with commit, after the words are saved: a code is used up
+  return pendingKey(kit.words, me.user.email, async (second) => {
+    await api("POST", "/api/auth/recovery-key", { current_auth: auth, wrapped_master_recovery: kit.wrapped_master_recovery, recovery_verifier: kit.recovery_verifier, ...stepFields(second) });
   });
 }
 

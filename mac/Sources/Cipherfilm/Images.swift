@@ -25,24 +25,26 @@ final class ImageStore: @unchecked Sendable {
     thumbs.removeAllObjects(); previews.removeAllObjects(); faces.removeAllObjects()
   }
 
-  func cachedThumb(_ id: String) -> NSImage? { thumbs.object(forKey: id as NSString) }
+  // cached by item and picture version: a photo turned or cropped elsewhere has new ones (Item.pictureKey)
+  func cachedThumb(_ it: Item) -> NSImage? { thumbs.object(forKey: it.pictureKey as NSString) }
 
   private let batcher = ThumbBatcher()
 
   /** A thumbnail, decoded off the main thread; asked for together with the other tiles on screen in one request. */
   func thumb(_ it: Item, _ vault: Vault) async -> NSImage? {
-    if let hit = thumbs.object(forKey: it.id as NSString) { return hit }
+    if let hit = thumbs.object(forKey: it.pictureKey as NSString) { return hit }
     guard it.hasThumb, !it.broken else { return nil }
     let g = generation
     guard let d = await batcher.get(it, vault), let img = await Task.detached(priority: .userInitiated, operation: { Self.decode(d) }).value else { return nil }
     guard vault.isOpen, g == generation else { return nil }
-    thumbs.setObject(img, forKey: it.id as NSString)
+    thumbs.setObject(img, forKey: it.pictureKey as NSString)
     return img
   }
 
   /** Thumbnails of the items the grid will show next, fetched ahead in the background. */
   func prefetch(_ items: [Item], _ vault: Vault) {
-    let want = items.filter { $0.hasThumb && !$0.broken && thumbs.object(forKey: $0.id as NSString) == nil }
+    let want = items.filter { $0.hasThumb && !$0.broken && thumbs.object(forKey: $0.pictureKey as NSString) == nil }
+    let keys = Dictionary(want.map { ($0.id, $0.pictureKey) }, uniquingKeysWith: { a, _ in a })
     guard !want.isEmpty else { return }
     let g = generation
     Task.detached(priority: .utility) {
@@ -50,7 +52,7 @@ final class ImageStore: @unchecked Sendable {
         guard vault.isOpen, g == self.generation, let got = try? await vault.thumbnails(chunk) else { return }
         for (id, d) in got {
           guard vault.isOpen, g == self.generation else { return } // locked meanwhile: nothing goes into memory
-          if let img = Self.decode(d) { self.thumbs.setObject(img, forKey: id as NSString) }
+          if let img = Self.decode(d) { self.thumbs.setObject(img, forKey: (keys[id] ?? id) as NSString) }
         }
       }
     }
@@ -64,13 +66,13 @@ final class ImageStore: @unchecked Sendable {
   }
 
   func preview(_ it: Item, _ vault: Vault) async -> NSImage? {
-    if let hit = previews.object(forKey: it.id as NSString) { return hit }
+    if let hit = previews.object(forKey: it.pictureKey as NSString) { return hit }
     guard it.hasPreview || it.hasThumb, !it.broken else { return nil }
     let g = generation
     guard let d = try? await vault.picture(it.hasPreview ? .preview : .thumb, of: it),
           let img = await Task.detached(priority: .userInitiated, operation: { Self.decode(d) }).value else { return nil }
     guard vault.isOpen, g == generation else { return nil }
-    previews.setObject(img, forKey: it.id as NSString)
+    previews.setObject(img, forKey: it.pictureKey as NSString)
     return img
   }
 
@@ -83,7 +85,25 @@ final class ImageStore: @unchecked Sendable {
       data.append(s)
     }
     guard vault.isOpen else { return nil }
+    // turned or cropped in another app: drawn so from the upright original (the original itself stays as it was)
+    if let e = it.meta?.edit, !e.isIdentity {
+      return await Task.detached(priority: .userInitiated) { () -> NSImage? in
+        guard let up = Self.upright(data), let cg = e.apply(to: up) else { return nil }
+        return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+      }.value
+    }
     return NSImage(data: data)
+  }
+
+  /** The whole picture with its EXIF orientation applied (as NSImage shows it), as a bitmap. */
+  nonisolated static func upright(_ d: Data) -> CGImage? {
+    guard let src = CGImageSourceCreateWithData(d as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+          let p = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+          let w = p[kCGImagePropertyPixelWidth] as? Int, let h = p[kCGImagePropertyPixelHeight] as? Int, w > 0, h > 0 else { return nil }
+    return CGImageSourceCreateThumbnailAtIndex(src, 0, [
+      kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true,
+      kCGImageSourceThumbnailMaxPixelSize: max(w, h), kCGImageSourceShouldCacheImmediately: true,
+    ] as CFDictionary)
   }
 
   /** A round-ready square crop of a face from the item's thumbnail. */

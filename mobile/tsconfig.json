@@ -14,6 +14,18 @@
       ],
       "@places/*": [
         "../web/src/places/*"
+      ],
+      "@memories/*": [
+        "../web/src/memories/*"
+      ],
+      "@cleanup/*": [
+        "../web/src/cleanup/*"
+      ],
+      "@edit/*": [
+        "../web/src/edit/*"
+      ],
+      "@websearch/*": [
+        "../web/src/search/*"
       ]
     }
   },
@@ -23,6 +35,12 @@
     "../web/src/crypto/*.ts",
     "../web/src/places/places.ts",
     "../web/src/places/videoLocation.ts",
+    "../web/src/memories/memories.ts",
+    "../web/src/cleanup/duplicates.ts",
+    "../web/src/edit/edit.ts",
+    "../web/src/edit/exif.ts",
+    "../web/src/search/explicit.ts",
+    "../web/src/search/rank.ts",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
   ],

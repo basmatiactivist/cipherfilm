@@ -69,19 +69,30 @@ and visitors are signed out every hour. To keep your own photos, [run your own s
 - **Automatic backup from Android.** New photos in the folders you choose are encrypted and uploaded in the background.
   The backup never holds your master key: it seals each new photo to your account's public key, so it can add photos
   but never read any.
-- **Search and people, on your device.** Find photos by content and group faces into people, with open CLIP and face
-  models that run locally ([docs/SEARCH.md](docs/SEARCH.md), [docs/MODELS.md](docs/MODELS.md)).
+- **Search and people, on your device.** Find photos by content and group faces into people, with one open CLIP model
+  (LAION's ViT-B/32, MIT) and open face models that run locally, the same in every app. Search leaves explicit photos
+  out unless an admin allows otherwise ([docs/SEARCH.md](docs/SEARCH.md), [docs/MODELS.md](docs/MODELS.md)).
 - **Map and places.** See your photos on a map, find them by town, region or country, and see where each was taken.
   Coordinates stay encrypted and are only read on your devices. Place names come from a file inside the apps, so
   naming a place sends nothing anywhere; the map is off until you turn it on, and what its tile server sees is in
   [docs/MAP.md](docs/MAP.md).
+- **On this day.** Photos from around today's date in earlier years at the top of your library, picked on the device
+  from the encrypted capture dates.
+- **Simple editing.** Turn and crop photos, fix when and where a photo or video was taken, on the web and Android;
+  the original is never changed and "Revert to original" brings it back ([docs/EDITING.md](docs/EDITING.md)).
 - **Free up space.** Remove photos from the phone once they are in Cipherfilm.
+- **Duplicates and similar photos.** Find photos uploaded twice and bursts of nearly the same shot, worked out on
+  your device, and move the extras to the trash (web and Android).
 - **Locks itself.** Fingerprint unlock, automatic lock after a time you choose or when the screen turns off, and
-  shake to lock and close.
+  shake to lock and close. On Android, screenshots and the recent-apps preview are blocked unless you allow them.
+- **Two-step sign-in and your devices.** Optional codes from an authenticator app (added in one tap) or a passkey at
+  every new sign-in, with one-time recovery codes; the password is still needed and still unlocks the photos; a list of
+  signed-in devices to sign out one or all others; a notice on your other devices when a new one signs in, also as a
+  notification on Android and the Mac while the app is closed (no push service).
 - **Mac app.** Keeps an export folder up to date, uploads watched folders and indexes for search in the background
   ([docs/MAC.md](docs/MAC.md)).
 - **Made for a small group.** Invite-only, a private library per person, storage limits, an admin area that never
-  shows anyone's photos.
+  shows anyone's photos, on the web and in the Android and Mac apps.
 - **Light to run.** One Docker container with SQLite; about 35 MB of RAM when idle, fine on a 1–2 vCPU / 2 GB server.
 - **Your data stays yours.** Plain backups with one script, and a standalone tool that decrypts everything from the
   data folder without the server ([docs/TOOLS.md](docs/TOOLS.md)).
@@ -96,7 +107,7 @@ and visitors are signed out every hour. To keep your own photos, [run your own s
 | **Mac** | from the [latest release](https://github.com/basmatiactivist/cipherfilm/releases/latest) | Apple silicon, macOS 15 or newer |
 | **Web** | comes with your server, in any current browser | also iPhone and iPad |
 
-The Play build differs in three ways Google Play requires (no explicit search, automatic backup in shorter background
+The Play build differs in three ways Google Play requires (search always leaves explicit photos out, automatic backup in shorter background
 runs, battery settings opened instead of asked). **For automatic backup the APK is the better choice:** it keeps
 uploading in the background until everything is done, large videos included; on Google Play a video too large for one
 background run waits until you tap Back up now. Photos are backed up the same way by both.
@@ -143,7 +154,11 @@ controls the server could deliver modified JavaScript), is in [docs/THREAT_MODEL
 
 - Young software, written with the help of AI agents. Several rounds of AI-agent source audits found and fixed issues
   ([SECURITY.md](SECURITY.md)), but there has been **no independent human security review**.
-- No two-factor sign-in yet, and no sharing between people.
+- No sharing between people. Two-step sign-in uses authenticator-app codes (TOTP), which the server must be able to
+  check: whoever runs the server could make codes (it could also serve altered web code, see the threat model).
+  Passkeys are only a second step: they can't replace the password, which derives the keys. On Android they need
+  Android 14 and a server Google can reach on the internet (it checks the server's assetlinks.json), so not a
+  tailnet-only one; the Mac uses them through the browser.
 - No server-side thumbnails or transcoding (the server can't see the content). iPhone HEVC videos don't play in every
   browser.
 - Not tested at large scale (tens of thousands of photos).
@@ -161,6 +176,7 @@ Don't rely on it where losing or leaking the data would be catastrophic, and kee
 | [CRYPTO.md](docs/CRYPTO.md) · [THREAT_MODEL.md](docs/THREAT_MODEL.md) | the encryption and what it does and doesn't protect |
 | [SEARCH.md](docs/SEARCH.md) · [MODELS.md](docs/MODELS.md) | on-device search and the models it uses |
 | [MAP.md](docs/MAP.md) | the map, place names, and using your own map server |
+| [EDITING.md](docs/EDITING.md) | turning, cropping, and changing a photo's date and place |
 | [MAC.md](docs/MAC.md) | the Mac app |
 | [RELEASING.md](docs/RELEASING.md) | how releases are built and signed |
 

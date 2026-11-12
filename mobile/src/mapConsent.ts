@@ -53,7 +53,7 @@ export function mapProvider(): string {
 /** Who serves the map images, as the question before the map says it: with the CDN and the fallback for the default. */
 export function mapProviderLong(): string {
   const p = mapProvider();
-  return p === "OpenFreeMap" ? t("OpenFreeMap (through Cloudflare; VersaTiles if OpenFreeMap doesn't answer)") : p || t("the map server");
+  return p === "OpenFreeMap" ? t("an external map service") : p || t("the map server");
 }
 
 /** The privacy policy's part about the map. */

@@ -155,7 +155,7 @@ func TestExpiredSessionIsNoIndexer(t *testing.T) {
 	phone := e.login("admin@x.org", ab)
 	i1 := e.readyItem(admin)
 	put := func(c *client) int {
-		code, _ := c.do("PUT", "/api/items/"+i1+"/index", map[string]any{"data_enc": rb(200), "model": "mcs2/2"}, true)
+		code, _ := c.do("PUT", "/api/items/"+i1+"/index", map[string]any{"data_enc": rb(200), "model": "laionb32/1"}, true)
 		return code
 	}
 	if put(phone) != 200 || put(admin) != 409 {

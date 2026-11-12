@@ -17,6 +17,8 @@ final class Agent {
   var askNow = false
   /** opens the library window from outside a view (a second launch asking for it) */
   @ObservationIgnored var opener: OpenWindowAction?
+  /** opens Settings from outside a view (a click on a notice's notification) */
+  @ObservationIgnored var settingsOpener: OpenSettingsAction?
 
   static let showNote = Notification.Name("app.cipherfilm.show-window")
 
@@ -72,6 +74,13 @@ final class Agent {
       if visible { if NSApp.activationPolicy() != .regular { NSApp.setActivationPolicy(.regular) } }
       else if self.keepRunning { NSApp.setActivationPolicy(.accessory) }
     }
+  }
+
+  /** Settings › Security, in front (a click on a notice's notification, Notifier.swift). */
+  func openSecurity() {
+    AppModel.shared.settingsTab = "security"
+    NSApp.activate()
+    settingsOpener?()
   }
 
   func showWindow(_ open: OpenWindowAction) {

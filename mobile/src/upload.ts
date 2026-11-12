@@ -7,6 +7,7 @@ type Sodium = Awaited<ReturnType<typeof getSodium>>;
 import N from "../modules/cf-native/src/CfNativeModule";
 import { api, putBytes, type Remote } from "./api";
 import { session } from "./session";
+import { noteOwnUpload } from "./ownUploads";
 import { keepRunning, letGo, onlyHolder } from "./keepAlive";
 import type { ItemMeta } from "./library";
 import { locale, t, tn } from "./i18n";
@@ -88,12 +89,28 @@ export async function uploadShared(f: Shared, onProgress: (done: number, total: 
   // goes on when the person leaves the app (TransferService)
   keepRunning("upload", t("Uploading to Cipherfilm"), f.name);
   try {
-    return await uploadFile(f, s, (itemKey, id) => wrapItemKey(s, itemKey, masterKey, id), mine, onProgress);
+    let sent = "";
+    const id = await uploadFile(f, s, (itemKey, id) => { const w = wrapItemKey(s, itemKey, masterKey, id); sent = b64(s, w); return w; }, mine, onProgress);
+    await noteOwnUpload(owner, id, sent); // this phone's own upload (ownUploads.ts)
+    return id;
   } finally {
     running--;
     letGo("upload");
     if (!running) idle.forEach((f) => f());
   }
+}
+
+/** SHA-256 part by part through the native module (the state crosses back and forth); null once anything fails. */
+function sha256Start(): Uint8Array | null {
+  try { return typeof N.sha256_init === "function" ? N.sha256_init() : null; } catch { return null; }
+}
+function sha256Add(state: Uint8Array | null, part: Uint8Array): Uint8Array | null {
+  if (!state || !part.length) return state;
+  try { return N.sha256_update(state, part); } catch { return null; }
+}
+function sha256End(s: Sodium, state: Uint8Array | null): { sha256?: string } {
+  if (!state) return {};
+  try { return { sha256: s.to_hex(N.sha256_final(state)) }; } catch { return {}; }
 }
 
 /** The upload itself. wrap() locks the new item key: under the master key, or sealed to the account's public key by
@@ -129,6 +146,10 @@ export async function uploadFile(f: Shared, s: Sodium, wrap: (itemKey: Uint8Arra
     })();
     const infoWork = bounded(N.mediaInfo(f.uri, kind === "video"), DECODE_MS).catch(() => ({}));
 
+    // the original's SHA-256 for the metadata (finding the same file again, docs/CRYPTO.md): from the parts as they
+    // are read, in native code; without it (an older native build, an error) the field is simply left out
+    let hash = sha256Start();
+
     let done = 0;
     onProgress(0, f.size || 1);
     const inflight = new Set<Promise<void>>();
@@ -137,6 +158,7 @@ export async function uploadFile(f: Shared, s: Sodium, wrap: (itemKey: Uint8Arra
       mine();
       const len = f.size === 0 ? 0 : segmentPlainLen(f.size, i);
       const plain = len ? await bounded(N.readRange(f.uri, i * SEG_PLAIN, len), READ_MS) : new Uint8Array(0);
+      hash = sha256Add(hash, plain);
       const ct = encryptSegment(s, itemKey, id, i, count, f.size, plain);
       plain.fill(0);
       if (ct.length !== cipherLen(len)) throw new Error("internal size error");
@@ -159,6 +181,7 @@ export async function uploadFile(f: Shared, s: Sodium, wrap: (itemKey: Uint8Arra
       width: info.width ?? dims.width, height: info.height ?? dims.height, duration: info.duration,
       ...(info.make ? { make: info.make } : {}), ...(info.model ? { model: info.model } : {}),
       ...(info.lat != null && info.lon != null ? { gps: { lat: info.lat, lon: info.lon } } : {}),
+      ...sha256End(s, hash),
     };
     mine();
     await api("POST", `/api/items/${id}/finalize`, { wrapped_item_key: wrapped, meta_enc: b64(s, encryptMeta(s, meta, itemKey, id)) }, to);

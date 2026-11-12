@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { NoticesButton } from "../NoticesButton";
 import { FlatList, Pressable, RefreshControl, StyleSheet, useWindowDimensions, View } from "react-native";
 import { router } from "expo-router";
-import { Appbar, Button, Dialog, FAB, Portal, Text, TextInput } from "react-native-paper";
+import { Appbar, Button, FAB, Portal, Text, TextInput } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { NAV_HEIGHT, NavBar } from "../NavBar";
 import { Icon } from "../icons";
@@ -10,7 +11,7 @@ import { ThumbView } from "../../modules/cf-native/src/CfNativeModule";
 import { refreshLibrary, useLibrary } from "../libraryStore";
 import { refreshAlbums, useAlbums } from "../albumsStore";
 import { createAlbum, type Album } from "../albums";
-import { Problem, useAppTheme } from "../ui";
+import { Problem, useAppTheme, Dialog } from "../ui";
 import { radius, text } from "../tokens";
 import { busyIcon, Loading } from "../Loader";
 import { t, tn } from "../i18n";
@@ -37,7 +38,8 @@ export default function Albums() {
       <Appbar.Header style={{ backgroundColor: th.colors.background }}>
         <Appbar.Content title={t("Albums")} titleStyle={text.page} />
         <Appbar.Action icon="trash" accessibilityLabel={t("Trash")} onPress={() => router.push("/trash")} />
-        <Appbar.Action icon="user" accessibilityLabel={t("Account")} onPress={() => router.push("/account")} />
+        <NoticesButton />
+              <Appbar.Action icon="user" accessibilityLabel={t("Account")} onPress={() => router.push("/account")} />
       </Appbar.Header>
       <FlatList
         data={albums ? [FAVORITES, ...albums] : []}

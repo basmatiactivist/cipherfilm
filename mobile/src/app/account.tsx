@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { AppState, Linking, ScrollView, StyleSheet, View } from "react-native";
 import { router } from "expo-router";
-import { Appbar, Button, Dialog, Divider, List, Portal, ProgressBar, RadioButton, Text } from "react-native-paper";
+import { Appbar, Button, Divider, List, Portal, ProgressBar, RadioButton, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import N from "../../modules/cf-native/src/CfNativeModule";
 import { api } from "../api";
@@ -9,15 +9,21 @@ import { demoNote, biometricPossible, deleteAccount, disableBiometric, enableBio
 import { forgetLibrary } from "../libraryStore";
 import { clearImages } from "../library";
 import { Icon } from "../icons";
-import { Field, Problem, SwitchItem, useAppTheme } from "../ui";
+import { Field, Problem, SwitchItem, useAppTheme, Dialog } from "../ui";
 import { setShake, useShake } from "../shake";
+import { setScreenshots, useScreenshots } from "../screenshots";
+import { setMemoriesOn, useMemoriesOn } from "../memories";
 import { CHOICES, away, expectAway, setAutoLock, useAutoLock } from "../autolock";
 import { privacyUrl } from "../store";
-import { mapProvider, setMapOn, useMapOn } from "../mapConsent";
+import { mapProvider, mapProviderLong, setMapOn, useMapOn } from "../mapConsent";
 import { reportUrl, summary, thisPhone } from "../report";
+import { isAdmin } from "../admin";
+import { NoticeAlertsSwitch } from "../NoticeAlertsSetting";
 import { text } from "../tokens";
 import { busyIcon } from "../Loader";
 import { locale, t } from "../i18n";
+import { stepButtons, stepError, stepNeeded } from "../twoStep";
+import { SecondStepFields, stepReady, takeStep, useSecondStep, useStepWays } from "../SecondStep";
 
 /** GitHub's issue form in the browser: the GitHub app would open its start page and drop the prefilled details. */
 const inBrowser = (url: string) => { let ok = false; try { ok = N.openInBrowser(url); } catch { /* older native build */ } if (!ok) Linking.openURL(url); };
@@ -33,13 +39,22 @@ export default function Account() {
   const [usage, setUsage] = useState<{ used_bytes: number; quota_bytes: number; unlimited: boolean }>();
   const [error, setError] = useState<string>();
   const [confirmOut, setConfirmOut] = useState(false);
-  // Delete account: a warning, then the password (checked here first, then sent as the sign-in proof)
+  // Delete account: a warning, then the password (checked here first, then sent as the sign-in proof) and, while
+  // two-step sign-in is on, the second step (also when the server says so: it was turned on elsewhere meanwhile)
   const [del, setDel] = useState<"" | "warn" | "password">("");
   const [delPw, setDelPw] = useState("");
   const [delBusy, setDelBusy] = useState(false);
   const [delError, setDelError] = useState<string>();
+  const [delNeedsStep, setDelNeedsStep] = useState(false);
+  const delStep = useSecondStep();
+  const delSecond = del === "password" && (!!me?.two_factor || delNeedsStep);
+  const delWays = useStepWays(delSecond);
+  const delButtons = delWays ? stepButtons(delWays, delStep.recovery) : { passkey: false, code: false };
+  const delStacked = delSecond && delButtons.passkey;
   const [bioOk, setBioOk] = useState(() => biometricPossible());
   const shake = useShake();
+  const shots = useScreenshots();
+  const memoriesOn = useMemoriesOn();
   const auto = useAutoLock();
   const [pickLock, setPickLock] = useState(false);
   const [report, setReport] = useState(false);
@@ -66,16 +81,18 @@ export default function Account() {
     else { await signOut(); await forgetServer(); }
     router.replace("/");
   };
-  const closeDel = () => { if (!delBusy) { setDel(""); setDelPw(""); setDelError(undefined); } };
-  const doDelete = async () => {
+  const closeDel = () => { if (!delBusy) { setDel(""); setDelPw(""); setDelError(undefined); setDelNeedsStep(false); delStep.reset(); } };
+  const doDelete = async (withPasskey = false) => {
     setDelError(undefined); setDelBusy(true);
     try {
-      await deleteAccount(delPw);
+      await deleteAccount(delPw, delSecond && delWays ? () => takeStep(delStep, withPasskey) : undefined);
       setDel(""); setDelPw("");
       clearImages();
       forgetLibrary();
       router.replace("/");
-    } catch (e) {
+    } catch (err) {
+      if (stepNeeded(err)) setDelNeedsStep(true);
+      const e = stepError(err);
       setDelError(e instanceof Error ? e.message : t("That didn't work."));
     } finally {
       setDelBusy(false);
@@ -112,11 +129,23 @@ export default function Account() {
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="cloud" color={th.colors.primary} /></View>} onPress={() => router.push("/backup")} style={st.item} />
         <List.Item title={t("Search and people")} description={t("Find photos by what and who is in them")}
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="search" color={th.colors.primary} /></View>} onPress={() => router.push("/search-settings")} style={st.item} />
+        <List.Item title={t("Devices")} description={t("Where you're signed in")}
+          descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="phone" color={th.colors.primary} /></View>} onPress={() => router.push("/devices")} style={st.item} />
+        {me?.demo ? null : <List.Item title={t("Two-step sign-in")} description={me?.two_factor ? t("On: a new sign-in also needs a code") : t("Off: ask for a code from an authenticator app too")}
+          descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="key" color={th.colors.primary} /></View>} onPress={() => router.push("/two-step")} style={st.item} />}
+        {me?.demo ? null : <NoticeAlertsSwitch style={st.item} iconStyle={st.icon} />}
+        {isAdmin(me) ? <List.Item title={t("Administration")} description={t("People, invites, storage limits and the server")}
+          descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="users" color={th.colors.primary} /></View>} onPress={() => router.push("/admin")} style={st.item} /> : null}
         <List.Item title={t("Free up space")} description={t("Remove photos from this phone that are already in Cipherfilm")}
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="phone" color={th.colors.primary} /></View>} onPress={() => router.push("/free-space")} style={st.item} />
-        {me?.map ? <SwitchItem title={t("Map")} description={t("Your photos on a map. Map images from {who}.", { who: mapProvider() || t("the map server") })}
+        <List.Item title={t("Duplicates and similar photos")} description={t("Find photos that are there twice or look nearly the same")}
+          descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="similar" color={th.colors.primary} /></View>} onPress={() => router.push("/duplicates")} style={st.item} />
+        {me?.map ? <SwitchItem title={t("Map")} description={t("Your photos on a map. Map images from {who}.", { who: mapProviderLong() })}
           left={() => <View style={st.icon}><Icon name="map" color={th.colors.primary} /></View>}
           value={mapOn} onValueChange={(v) => setMapOn(v)} style={st.item} /> : null}
+        <SwitchItem title={t("Memories")} description={t("Show photos from this day in earlier years above Photos. Found on this phone; the server learns nothing.")}
+          left={() => <View style={st.icon}><Icon name="photos" color={th.colors.primary} /></View>}
+          value={memoriesOn} onValueChange={setMemoriesOn} style={st.item} />
         <SwitchItem title={t("Unlock with fingerprint or face")}
           description={bioOk || biometric ? t("Your key stays in this phone's secure hardware") : t("Set up fingerprint or face unlock in Android settings first")}
           left={() => <View style={st.icon}><Icon name="fingerprint" color={bioOk || biometric ? th.colors.primary : th.colors.onSurfaceDisabled} /></View>}
@@ -130,6 +159,10 @@ export default function Account() {
           description={t("Two strong shakes lock and close Cipherfilm")}
           left={() => <View style={st.icon}><Icon name="phone" color={th.colors.primary} /></View>}
           value={shake} onValueChange={setShake} style={st.item} />
+        <SwitchItem title={t("Allow screenshots")}
+          description={shots ? t("Other apps and the recent-apps preview can see what's on screen") : t("Blocked, and recent apps show only the icon")}
+          left={() => <View style={st.icon}><Icon name="phone" color={th.colors.primary} /></View>}
+          value={shots} onValueChange={setScreenshots} style={st.item} />
         <List.Item title={t("Lock now")} description={t("Unlock again to see your photos")}
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="lock" color={th.colors.primary} /></View>} onPress={() => leave("lock")} style={st.item} />
         <List.Item title={t("Sign out")} description={t("Removes your account from this phone")}
@@ -138,7 +171,7 @@ export default function Account() {
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="trash" color={th.colors.error} /></View>} onPress={() => setDel("warn")} style={st.item} />}
         <Divider />
         <Text variant="bodySmall" style={[st.block, { color: th.colors.onSurfaceVariant }]}>
-          {t("Photos are encrypted on this phone before upload. The server only stores encrypted data. Change your password, invite people and make a new recovery key in Cipherfilm in the browser.")}
+          {t("Photos are encrypted on this phone before upload. The server only stores encrypted data. Change your password and make a new recovery key in Cipherfilm in the browser.")}
         </Text>
         <Divider />
         <List.Subheader>{t("About")}</List.Subheader>
@@ -147,9 +180,9 @@ export default function Account() {
         <List.Item title={t("Privacy policy")} description={privacyUrl().replace("https://", "")}
           onPress={() => { expectAway(); Linking.openURL(privacyUrl()); }} style={st.item} />
         {/* the sources ask to be named: GeoNames for the place names (always used), OpenStreetMap for the map */}
-        <List.Item title={t("Credits")} description={[t("Place names: GeoNames, CC BY 4.0."), me?.map ? (mapProvider() === "OpenFreeMap" ? t("Map data © OpenStreetMap contributors, OpenFreeMap.") : t("Map data: see the credits on the map.")) : ""].filter(Boolean).join(" ")}
+        <List.Item title={t("Credits")} description={[t("Place names: GeoNames, CC BY 4.0."), me?.map ? (mapProvider() === "OpenFreeMap" ? t("Map data © OpenStreetMap contributors, © OpenMapTiles.") : t("Map data: see the credits on the map.")) : ""].filter(Boolean).join(" ")}
           descriptionNumberOfLines={4} style={st.item} />
-        <List.Item title={t("Report a problem")} description={t("Opens a form on GitHub")}
+        <List.Item title={t("Report a problem")} description={t("Opens the issue form in the browser")}
           onPress={() => setReport(true)} style={st.item} />
       </ScrollView>
       <Portal>
@@ -164,9 +197,9 @@ export default function Account() {
         </Dialog>
         {/* asks first and shows exactly what the link fills in; the browser opens it, the app sends nothing */}
         <Dialog visible={report} onDismiss={() => setReport(false)}>
-          <Dialog.Title>{t("Report a problem on GitHub")}</Dialog.Title>
+          <Dialog.Title>{t("Report a problem")}</Dialog.Title>
           <Dialog.Content>
-            <Text variant="bodyMedium">{t("You'll continue on github.com (a free GitHub account is needed to post). We'll fill in this phone's details:")}</Text>
+            <Text variant="bodyMedium">{t("You'll continue in the browser, on the project's issue tracker (posting needs a free account there). We'll fill in this phone's details:")}</Text>
             <Text variant="bodyMedium" style={{ marginVertical: 12, fontWeight: "600" }}>{phone ? summary(phone) : ""}</Text>
             <Text variant="bodySmall" style={{ color: th.colors.onSurfaceVariant }}>{t("Nothing else is sent: no server address, e-mail, photos or names.")}</Text>
           </Dialog.Content>
@@ -202,11 +235,20 @@ export default function Account() {
           <Dialog.Content>
             <Field label={t("Password")} value={delPw} onChangeText={setDelPw} secureTextEntry textContentType="password" autoComplete="current-password" autoFocus
               hint={delBusy ? t("Checking your password…") : undefined} />
+            {delSecond && delWays ? <SecondStepFields step={delStep} ways={delWays} /> : null}
             <Problem>{delError}</Problem>
           </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={closeDel} disabled={delBusy}>{t("Cancel")}</Button>
-            <Button textColor={th.colors.error} onPress={doDelete} icon={delBusy ? busyIcon : undefined} disabled={delBusy || !delPw}>{t("Delete account")}</Button>
+          {/* with the passkey, three actions: stacked, as for signing out */}
+          <Dialog.Actions style={delStacked ? st.stacked : undefined}>
+            {delStacked ? null : <Button onPress={closeDel} disabled={delBusy}>{t("Cancel")}</Button>}
+            {delStacked ? (
+              <Button textColor={th.colors.error} onPress={() => doDelete(true)} disabled={delBusy || !delPw}>{t("Delete with a passkey")}</Button>
+            ) : null}
+            {!delSecond || !delWays || delButtons.code ? (
+              <Button textColor={th.colors.error} onPress={() => doDelete(false)} icon={delBusy ? busyIcon : undefined}
+                disabled={delBusy || !delPw || (delSecond && (!delWays || !stepReady(delStep, delWays)))}>{t("Delete account")}</Button>
+            ) : null}
+            {delStacked ? <Button onPress={closeDel} disabled={delBusy}>{t("Cancel")}</Button> : null}
           </Dialog.Actions>
         </Dialog>
       </Portal>

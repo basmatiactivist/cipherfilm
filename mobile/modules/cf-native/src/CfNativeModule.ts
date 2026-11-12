@@ -20,6 +20,10 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   // shake to lock and close (Shake.kt)
   shakeWatch(on: boolean): void;
   closeApp(): void;
+  // screenshots, screen recordings and the recent-apps preview (ScreenGuard.kt): blocked unless allowed; this
+  // phone's setting, applied to the window at once and at every launch before the first frame
+  screenshotsAllowed(): boolean;
+  allowScreenshots(on: boolean): void;
   // automatic lock (AutoLock.kt): onLockDue after lockAfter(ms), and at screen off while watchScreen(true)
   lockAfter(ms: number): void;
   lockCancel(): void;
@@ -29,6 +33,10 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   randombytes_buf(n: number): Bytes;
   memcmp(a: Bytes, b: Bytes): boolean;
   crypto_hash_sha256(m: Bytes): Bytes;
+  /** SHA-256 part by part: the state goes in and comes back (an upload's original, src/upload.ts) */
+  sha256_init(): Bytes;
+  sha256_update(state: Bytes, m: Bytes): Bytes;
+  sha256_final(state: Bytes): Bytes;
   crypto_generichash(outLen: number, m: Bytes, key: Bytes | null): Bytes;
   crypto_pwhash(outLen: number, password: Bytes, salt: Bytes, ops: number, mem: number, alg: number): Bytes;
   crypto_kdf_derive_from_key(outLen: number, id: number, ctx: string, key: Bytes): Bytes;
@@ -65,6 +73,13 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   openAppSettings(): void;
   backupNotify(title: string, text: string, progress: number, ongoing: boolean): void;
   backupNotifyCancel(): void;
+  // account notices as notifications (Notices.kt, src/noticeCheck.ts)
+  /** Android allows them: the app's notifications and the Security channel are on */
+  noticesAllowed(): boolean;
+  /** Shows a notice's notification (the lock screen shows only publicTitle); false when Android doesn't allow it. */
+  noticeShow(id: number, title: string, text: string, publicTitle: string): boolean;
+  noticeCancel(id: number): void;
+  noticeCancelAll(): void;
   /** Keeps the app running while uploads go on (a foreground service with the notification); false if Android
    *  doesn't allow it right now. Each keepRunning(holder) needs its letGo(holder). */
   keepRunning(holder: string, title: string, text: string): boolean;
@@ -80,16 +95,22 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   /** Forgets the session cookie (sign-out). */
   clearCookies(): void;
 
+  // passkeys (Passkeys.kt): Credential Manager, Android 14 and newer; JSON in (the server's options), JSON out
+  passkeysSupported(): boolean;
+  passkeyCreate(optionsJson: string): Promise<string>;
+  passkeyGet(optionsJson: string): Promise<string>;
+  /** A secret the person copies on purpose (setup key, recovery codes): marked sensitive, cleared after a minute. */
+  copySecret(label: string, text: string): void;
+
   // search on the phone, see android/.../Vision.kt, SearchIndex.kt, Models.kt
   downloadModel(url: string, path: string, sha256: string, size: number): Promise<boolean>;
   checkModel(path: string, sha256: string): Promise<boolean>;
-  /** clip: "mobileclip-s2" or "laion-b32" (explicit search, docs/SEARCH.md) */
-  /** indexes = false: only the text model (a phone that only searches); also: a second image model to run on every
-   *  photo (MobileCLIP next to LAION on the phone that indexes, docs/SEARCH.md "Explicit search"), or null */
-  visionOpen(dir: string, faces: boolean, clip: string, indexes: boolean, also: string | null): Promise<void>;
+  /** clip: "clip-b32" (docs/SEARCH.md) */
+  /** indexes = false: only the text model (a phone that only searches) */
+  visionOpen(dir: string, faces: boolean, clip: string, indexes: boolean): Promise<void>;
   visionClose(): void;
   /** what visionOpen has open (dir is the model folder's path) */
-  visionState(): { clip: string | null; dir: string | null; text: boolean; image: boolean; faces: boolean; also: string | null };
+  visionState(): { clip: string | null; dir: string | null; text: boolean; image: boolean; faces: boolean };
   /** clips: the open image models to run (the main one, the second one, or both) */
   visionAnalyze(jpeg: Bytes, faces: boolean, clips: string[]): Promise<Analysis>;
   visionText(ids: number[]): Promise<Bytes>;
@@ -104,9 +125,18 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   indexSave(path: string, key: Bytes, ad: Bytes, extra: string): Promise<void>;
   /** Replaces the index with that copy and returns its extra; null (index unchanged) if none or it doesn't open. */
   indexLoad(path: string, key: Bytes, ad: Bytes, faces: boolean): Promise<string | null>;
-  indexSearch(query: Bytes, limit: number, minScore: number): Promise<Hit[]>;
+  /** The explicit-content filter's concepts (docs/SEARCH.md "Explicit content", @websearch/explicit): their text
+   *  vectors (float16, one after the other), which are explicit and which are worded for images, and the threshold.
+   *  Each item's score is worked out when its vector comes in (and for all at once here). */
+  indexConcepts(vecs: Bytes, explicit: boolean[], image: boolean[], threshold: number): Promise<void>;
+  /** filtered: items whose explicit score reaches the threshold are left out */
+  indexSearch(query: Bytes, limit: number, minScore: number, filtered: boolean): Promise<Hit[]>;
   indexSimilar(item: string, limit: number, minScore: number): Promise<Hit[]>;
   indexFacesOf(item: string): { key: string; box: number[]; score: number }[];
+  /** for each item, whether it has an image vector */
+  indexHasAll(items: string[]): Promise<boolean[]>;
+  /** the cosine of the image vectors of a[k] and b[k]; -2 where either has none */
+  indexScores(a: string[], b: string[]): Promise<number[]>;
   indexCluster(threshold: number, anchors: Record<string, string[]>, rejects: Record<string, string[]>, minFaces: number): Promise<FaceGroup[]>;
   phoneMedia(): Promise<PhoneMedia[]>;
 
@@ -118,6 +148,9 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   /** the item keys, 32 bytes each in the order of `ids` (zeroed by the caller after) */
   thumbKeys(ids: string[], keys: Bytes): void;
   thumbsPrefetch(ids: string[]): void;
+  /** These items have new thumbnails (an edit): the bitmaps and cached copies go, the views load the new ones. Optional:
+   *  an app with an older native module simply shows the old ones until the next lock. */
+  thumbsForget?(ids: string[]): void;
   thumbsClearImages(): void;
   forgetThumbs(): void;
   /** an https page in the browser, never an app that claims the address; false when nothing could open it */
@@ -134,6 +167,9 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   saveToLibrary(path: string, name: string, mime: string): Promise<string>;
   /** country names in a language ("CH" → "Schweiz" for "de"), from Android's own translations */
   countryNames(codes: string[], lang: string): Record<string, string>;
+  /** The language the app shows now (BCP 47): the per-app language from Android 13, else the phone's. It changes
+   *  while the app runs: the activity handles locale changes itself (plugins/withConfigChanges.js). */
+  appLocale?(): string | null;
   trashFromLibrary(uris: string[]): Promise<boolean>;
 }
 

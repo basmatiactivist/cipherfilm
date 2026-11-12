@@ -19,9 +19,11 @@ import { keepRunning, letGo } from "./keepAlive";
 import { RunProgress, fmtSpeed, type LiveProgress } from "./backupProgress";
 import { isPlayBuild } from "./store";
 import { fingerprint } from "./prints";
+import { noteOwnUpload } from "./ownUploads";
 import { indexUploaded, rememberUploaded, runBackgroundIndex } from "./search/background";
 import { forgetSettings, loadSettings } from "./search/settings";
 import { onSessionChange, onSignOut, savedServer } from "./session";
+import { checkNotices, noticeCheckWanted } from "./noticeCheck";
 import { t, tn } from "./i18n";
 
 export const TASK = "cipherfilm-backup";
@@ -412,10 +414,12 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
         for (let attempt = 0; ; attempt++) {
           try {
             if (attempt) await stillMine(); // after each wait
-            id = await uploadFile(file, s, (itemKey, id) => sealItemKey(s, itemKey, pk, id), () => {
+            let wrapped = "";
+            id = await uploadFile(file, s, (itemKey, id) => { const w = sealItemKey(s, itemKey, pk, id); wrapped = b64(s, w); return w; }, () => {
               if (abandon) throw new Error(OTHER_ACCOUNT);
               if (Date.now() > deadline + 90_000 || (held && N.keepRunningLost()) || !current()) throw new Error("out of time"); // finish next time
             }, (d, all) => { progress.sent(key, all ? d / all : 0, d - sent); sent = d; show(); }, to);
+            await noteOwnUpload(c.userId, id, wrapped); // this phone's own upload (ownUploads.ts)
             break;
           } catch (e) {
             if (attempt >= 2 || !(e instanceof ApiError) || !(e.status === 0 || e.status >= 500) || outOfTime()) throw e;
@@ -608,15 +612,17 @@ export async function waitingCount(): Promise<number> {
   return n;
 }
 
-/** The one background task runs the backup and background search indexing; it stays scheduled while either is on. */
+/** The one background task runs the backup, background search indexing and the check for account notices
+ *  (noticeCheck.ts); it stays scheduled while any of them is on. */
 export async function scheduleBackground() {
   const [c, st] = await Promise.all([loadConfig(), loadSettings()]);
-  const want = !!c?.enabled || (st.enabled && st.background);
+  const media = !!c?.enabled || (st.enabled && st.background);
+  const want = media || noticeCheckWanted();
   try {
     if (want) await BackgroundTask.registerTaskAsync(TASK, { minimumInterval: 15 });
     else await BackgroundTask.unregisterTaskAsync(TASK);
   } catch { /* already in that state */ }
-  N.watchNewMedia(want); // and seconds after a new photo or video
+  N.watchNewMedia(media); // and seconds after a new photo or video
 }
 
 // A session end, another sign-in or another server: a run still going stops before its next request.
@@ -635,6 +641,8 @@ onSignOut(async () => {
 
 // The background entry: defined when the bundle loads (index.js), also when Android starts the app only for this.
 TaskManager.defineTask(TASK, async () => {
+  // first, and on its own: one small request, before a backup that may take minutes
+  await checkNotices().catch(() => {});
   try {
     await runBackup("background");
     // a backup still going from an earlier run (in the service) uses the models itself

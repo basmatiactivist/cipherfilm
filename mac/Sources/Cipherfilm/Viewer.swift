@@ -20,7 +20,7 @@ struct Viewer: View {
         topBar(item)
         ZStack {
           if let item {
-            if item.kind == .video { VideoView(item: item).id(item.id) } else { PhotoView(item: item).id(item.id) }
+            if item.kind == .video { VideoView(item: item).id(item.id) } else { PhotoView(item: item).id(item.pictureKey) }
           }
           HStack {
             NavArrow(icon: "chevron.left", enabled: state.index > 0) { move(-1) }
@@ -207,8 +207,8 @@ struct StripThumb: View {
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(item.date.formatted(date: .long, time: .shortened))
     .accessibilityAddTraits(current ? [.isButton, .isSelected] : .isButton)
-    .task(id: item.id) {
-      if let hit = model.images.cachedThumb(item.id) { image = hit; return }
+    .task(id: item.pictureKey) {
+      if let hit = model.images.cachedThumb(item) { image = hit; return }
       if let v = model.vault { image = await model.images.thumb(item, v) }
     }
   }
@@ -243,7 +243,7 @@ struct PhotoView: View {
     .clipped()
     .task {
       guard let v = model.vault else { return }
-      if let t = model.images.cachedThumb(item.id) { image = t }
+      if let t = model.images.cachedThumb(item) { image = t }
       if let p = await model.images.preview(item, v) { image = p }
       if let o = await model.images.original(item, v) { image = o }
     }
@@ -301,6 +301,8 @@ struct InfoPanel: View {
   @State private var error: String?
   /** the town and country of the photo's coordinates, looked up on this Mac (PlaceBook) */
   @State private var placeName: String?
+  /** the photo whose small map the person asked for (MiniMapGate) */
+  @State private var mapAsked: String?
 
   var body: some View {
     ScrollView {
@@ -348,6 +350,7 @@ struct InfoPanel: View {
         if let m = [item.meta?.make, item.meta?.model].compactMap({ $0 }).joined(separator: " ").nilIfEmpty { row("Camera", cameraName(m)) }
         if let g = item.meta?.gps { place(g) }
         row("Type", item.meta?.mime ?? item.kind.rawValue)
+        if item.isEditedPicture { row("Edited", "Turned or cropped in another app. The original is kept as it was: Save Original and the export folder save it as taken.") }
         let albums = model.albums.filter { $0.itemIds.contains(item.id) }
         if !albums.isEmpty { row("Albums", albums.map(\.name).joined(separator: ", ")) }
         Label("Encrypted on your devices", systemImage: "lock.fill").font(Typo.caption).foregroundStyle(Ink.teal).padding(.top, 4)
@@ -358,7 +361,7 @@ struct InfoPanel: View {
     .foregroundStyle(Ink.ink)
     .background(Ink.card)
     .task(id: item.id + "\(model.search.version)") { faces = await model.search.facesIn(item.id) }
-    .task(id: item.id) {
+    .task(id: "\(item.id) \(item.meta?.gps?.lat ?? 0) \(item.meta?.gps?.lon ?? 0)") { // also after the place was changed elsewhere
       placeName = nil
       if let g = item.location { placeName = await PlaceBook.label(g) }
     }
@@ -372,8 +375,9 @@ struct InfoPanel: View {
     }
   }
 
-  /** "Minato City, Japan" over the coordinates, and the spot on a small map (only while this panel is open, so the
-   *  base map's server learns the area of just the photos whose details someone looks at). */
+  /** "Minato City, Japan" over the coordinates, and the spot on a small map: only after "Show Map" for this photo (the
+   *  details column stays open from photo to photo, so opening it is no choice about each photo's area), so the base
+   *  map's server learns the area of just the photos someone asked to see on a map. */
   @ViewBuilder private func place(_ g: GPS) -> some View {
     VStack(alignment: .leading, spacing: 2) {
       Text("Place").font(Typo.caption.weight(.semibold)).foregroundStyle(Ink.muted)
@@ -381,9 +385,12 @@ struct InfoPanel: View {
       Text(String(format: "%.5f, %.5f", g.lat, g.lon)).font(placeName == nil ? Typo.body : Typo.caption)
         .foregroundStyle(placeName == nil ? Ink.ink : Ink.muted).textSelection(.enabled)
       // only once the person turned the map on (its images come from a third party)
-      if model.mapOn, let at = item.location, let styles = model.me?.map, model.me?.hasMap == true {
+      let gate = MiniMapGate.state(mapOn: model.mapOn, serverMap: model.me?.hasMap == true, located: item.location != nil, asked: mapAsked, item: item.id)
+      if gate == .show, let at = item.location, let styles = model.me?.map {
         MiniMap(at: at, styles: styles).padding(.top, 6)
-      } else if model.me?.hasMap == true {
+      } else if gate == .offer {
+        Button("Show Map") { mapAsked = item.id }.buttonStyle(TextLink()).padding(.top, 4)
+      } else if gate == .mapOff {
         // the map is off on this Mac: the way to it (the question about it comes first)
         Button("Show on the map") { nav.go(.map) }.buttonStyle(TextLink()).padding(.top, 4)
       }
@@ -406,3 +413,24 @@ struct InfoPanel: View {
 }
 
 extension String { var nilIfEmpty: String? { isEmpty ? nil : self } }
+
+/** Whether a photo's details show its small map. The map's images come from a third party, which learns the area the
+ *  small map shows: it loads only for the photo the person asked it for ("Show Map"), never just because the details
+ *  column is open (it stays open from photo to photo). */
+enum MiniMapGate: Equatable {
+  /** nothing: no map on this server, or no place */
+  case none
+  /** the map is off on this Mac: the way to it */
+  case mapOff
+  /** a "Show Map" button */
+  case offer
+  /** the small map */
+  case show
+
+  static func state(mapOn: Bool, serverMap: Bool, located: Bool, asked: String?, item: String) -> MiniMapGate {
+    guard serverMap else { return .none }
+    guard mapOn else { return .mapOff }
+    guard located else { return .none }
+    return asked == item ? .show : .offer
+  }
+}

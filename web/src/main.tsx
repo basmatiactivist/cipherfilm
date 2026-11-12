@@ -9,6 +9,7 @@ import { clearCaches } from "./cache";
 import { clearPeople } from "./people/people";
 import { clearPlayer } from "./player";
 import { clearUploadMemory, forgetDecrypted } from "./items";
+import { forgetAlbums } from "./albums";
 import { forgetKept } from "./keep";
 import { Card } from "./components";
 import { Logo } from "./icons";
@@ -23,9 +24,10 @@ const Setup = lazy(() => import("./screens").then((m) => m.Setup));
 const Invite = lazy(() => import("./screens").then((m) => m.Invite));
 const Recover = lazy(() => import("./screens").then((m) => m.Recover));
 const RecoveryKey = lazy(() => import("./screens").then((m) => m.RecoveryKey));
+const PasskeyHandoff = lazy(() => import("./screens").then((m) => m.PasskeyHandoff));
 
 type Screen =
-  | { n: "boot" } | { n: "setup" } | { n: "login" } | { n: "recover" } | { n: "unlock" } | { n: "home" }
+  | { n: "boot" } | { n: "setup" } | { n: "login" } | { n: "recover" } | { n: "unlock" } | { n: "home" } | { n: "passkey" }
   | { n: "invite"; token: string }
   | { n: "keys"; pending: auth.PendingKey; then: "home" | "login"; title?: string; replacing?: boolean };
 
@@ -37,12 +39,13 @@ function forgetKeys(shared = true) {
   dropMasterKey();
   forgetKept(); // a lock asks for the password again, also after a reload
   forgetDecrypted();
+  forgetAlbums();
   clearCaches(shared);
   clearPeople();
   if (shared) { clearPlayer(); clearUploadMemory(); }
 }
 
-const TITLES: Partial<Record<Screen["n"], string>> = { setup: "Set up", login: "Sign in", recover: "Reset password", unlock: "Unlock", invite: "Create your account", keys: "Recovery key" };
+const TITLES: Partial<Record<Screen["n"], string>> = { passkey: "Passkey", setup: "Set up", login: "Sign in", recover: "Reset password", unlock: "Unlock", invite: "Create your account", keys: "Recovery key" };
 
 function App() {
   const [screen, setScreen] = useState<Screen>({ n: "boot" });
@@ -59,6 +62,8 @@ function App() {
       }
     }
     if (path === "/recover") return setScreen({ n: "recover" });
+    // the Mac app's passkey step, done here on the server's own address (it needs nothing of a session)
+    if (path === "/passkey") return setScreen({ n: "passkey" });
     if (await auth.loadSession()) return setScreen(mem.masterKey ? { n: "home" } : { n: "unlock" });
     try {
       setScreen({ n: (await auth.needsSetup()) ? "setup" : "login" });
@@ -144,6 +149,7 @@ function App() {
       {screen.n === "login" && <Login nav={nav} notice={notice} onDone={() => { setNotice(""); history.replaceState(null, "", "/"); setScreen({ n: "home" }); }} />}
       {screen.n === "unlock" && <Unlock onDone={() => setScreen({ n: "home" })} onSignOut={signOut} />}
       {screen.n === "invite" && <Invite token={screen.token} nav={nav} onKeys={(k) => keys(k, "home")} />}
+      {screen.n === "passkey" && <PasskeyHandoff />}
       {screen.n === "recover" && <Recover nav={nav} onKeys={(k) => keys(k, "login", "Save your new recovery key", true)} />}
       {screen.n === "keys" && (
         <RecoveryKey pending={screen.pending} title={screen.title} replacing={screen.replacing}

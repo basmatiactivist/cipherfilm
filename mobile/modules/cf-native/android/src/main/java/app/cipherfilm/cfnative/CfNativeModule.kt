@@ -17,7 +17,6 @@ import android.os.Build
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.view.HapticFeedbackConstants
-import android.view.WindowManager
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -53,6 +52,7 @@ private class SodiumFailed(what: String) : CodedException("ERR_SODIUM", "$what f
  */
 class CfNativeModule : Module() {
   private val na get() = Sodium.lib
+  private val sha256State by lazy { na.crypto_hash_sha256_statebytes().toInt() }
   private val resolver get() = appContext.reactContext!!.contentResolver
   private var pendingTrash: Promise? = null
   private var pendingPick: Promise? = null
@@ -73,28 +73,17 @@ class CfNativeModule : Module() {
   /** Output sizes are checked before the buffer is made, instead of relying on libsodium refusing them afterwards. */
   private fun bounded(v: Int, range: IntRange, what: String) { if (v !in range) throw SodiumFailed(what) }
 
-  /** No screenshots or screen recordings of the library, and the app switcher shows the icon, not the last screen. */
-  private fun protect(activity: Activity?) {
-    activity ?: return
-    if (BuildConfig.TEST_BUILD &&
-      runCatching { Class.forName("android.os.SystemProperties").getMethod("get", String::class.java).invoke(null, "debug.cipherfilm.shots") == "1" }.getOrDefault(false)) return
-    activity.runOnUiThread {
-      activity.window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-      if (Build.VERSION.SDK_INT >= 33) activity.setRecentsScreenshotEnabled(false)
-    }
-  }
-
   override fun definition() = ModuleDefinition {
     Name("CfNative")
 
     Events("onModelProgress", "onShake", "onLockDue")
 
     OnCreate {
-      protect(appContext.currentActivity)
+      ScreenGuard.apply(appContext.currentActivity)
       Shake.onShake = { sendEvent("onShake", emptyMap<String, Any>()) }
       AutoLock.onDue = { why -> sendEvent("onLockDue", mapOf("why" to why)) }
     }
-    OnActivityEntersForeground { protect(appContext.currentActivity); appContext.reactContext?.let { Shake.resume(it) } }
+    OnActivityEntersForeground { ScreenGuard.apply(appContext.currentActivity); appContext.reactContext?.let { Shake.resume(it) } }
     OnActivityEntersBackground { CfVideoView.pauseAll(); Shake.pause() }
     OnDestroy { files.cancel(); filePool.shutdown() }
 
@@ -106,11 +95,25 @@ class CfNativeModule : Module() {
       Unit
     }
 
+    // ---- screenshots and the recent-apps preview: blocked unless allowed in Account (ScreenGuard.kt) ----
+    Function("screenshotsAllowed") { appContext.reactContext?.let { ScreenGuard.allowed(it) } ?: false }
+    Function("allowScreenshots") { on: Boolean ->
+      appContext.reactContext?.let { ScreenGuard.set(it, appContext.currentActivity, on) }
+      Unit
+    }
+
     // ---- country names in the app's language, for the place names on the device (src/places.ts) ----
     Function("countryNames") { codes: List<String>, lang: String ->
       val inLang = java.util.Locale.Builder().setLanguage(lang).build()
       codes.filter { it.matches(Regex("^[A-Z]{2}$")) }.associateWith { java.util.Locale.Builder().setRegion(it).build().getDisplayCountry(inLang) }
         .filterValues { it.isNotBlank() }
+    }
+
+    /** The app's language as the configuration has it now (per-app language or the phone's), read at each call: the
+     *  activity isn't recreated when it changes (withConfigChanges.js), so the JavaScript side asks again (i18n.ts). */
+    Function("appLocale") {
+      val ctx = appContext.currentActivity ?: appContext.reactContext
+      ctx?.resources?.configuration?.locales?.takeIf { !it.isEmpty }?.get(0)?.toLanguageTag()
     }
 
     // ---- automatic lock (AutoLock.kt) ----
@@ -127,6 +130,11 @@ class CfNativeModule : Module() {
     Function("openAppSettings") { BackupNative.openAppSettings(appContext.reactContext!!) }
     Function("backupNotify") { title: String, text: String, progress: Double, ongoing: Boolean -> BackupNative.notify(appContext.reactContext!!, title, text, progress, ongoing) }
     Function("backupNotifyCancel") { BackupNative.cancel(appContext.reactContext!!) }
+    // ---- account notices as notifications (Notices.kt, src/noticeCheck.ts) ----
+    Function("noticesAllowed") { Notices.allowed(appContext.reactContext!!) }
+    Function("noticeShow") { id: Int, title: String, text: String, publicTitle: String -> Notices.show(appContext.reactContext!!, id, title, text, publicTitle) }
+    Function("noticeCancel") { id: Int -> Notices.cancel(appContext.reactContext!!, id) }
+    Function("noticeCancelAll") { Notices.cancelAll(appContext.reactContext!!) }
     Function("keepRunning") { holder: String, title: String, text: String ->
       JsTimers.keep(appContext.reactContext, holder) // also when Android refuses the service: the run still needs timers
       TransferService.hold(appContext.reactContext!!, holder, title, text)
@@ -148,6 +156,15 @@ class CfNativeModule : Module() {
       android.webkit.CookieManager.getInstance().apply { removeAllCookies(null); flush() }
     }
 
+    // ---- passkeys (Credential Manager) and secrets copied on purpose (Passkeys.kt) ----
+    Function("passkeysSupported") { Passkeys.supported() }
+    AsyncFunction("passkeyCreate") Coroutine { options: String -> Passkeys.create(appContext.currentActivity, options) }
+    AsyncFunction("passkeyGet") Coroutine { options: String -> Passkeys.get(appContext.currentActivity, options) }
+    Function("copySecret") { label: String, text: String ->
+      appContext.reactContext?.let { SecretClip.copy(it.applicationContext, label, text) }
+      Unit
+    }
+
     // ---- search on the phone (Vision.kt, SearchIndex.kt, Models.kt) ----
     // the long ones run on their own threads (Lanes.kt), not on the one every module's AsyncFunctions share
     AsyncFunction("downloadModel") Coroutine { url: String, path: String, sha256: String, size: Double ->
@@ -156,8 +173,8 @@ class CfNativeModule : Module() {
       }
     }
     AsyncFunction("checkModel") Coroutine { path: String, sha256: String -> withContext(Lanes.files) { Models.check(File(path), sha256) } }
-    AsyncFunction("visionOpen") Coroutine { dir: String, faces: Boolean, clip: String, indexes: Boolean, also: String? ->
-      withContext(Lanes.vision) { Vision.open(dir, faces, clip, indexes, also) }
+    AsyncFunction("visionOpen") Coroutine { dir: String, faces: Boolean, clip: String, indexes: Boolean ->
+      withContext(Lanes.vision) { Vision.open(dir, faces, clip, indexes) }
     }
     // after the jobs already asked for (an analysis still running finishes first); doesn't wait for them
     Function("visionClose") { Lanes.visionExecutor.execute { Vision.close() } }
@@ -177,9 +194,15 @@ class CfNativeModule : Module() {
     Function("indexClear") { SearchIndex.clear() }
     AsyncFunction("indexSave") Coroutine { path: String, key: ByteArray, ad: ByteArray, extra: String -> withContext(Lanes.index) { SearchIndex.save(path, key, ad, extra) } }
     AsyncFunction("indexLoad") Coroutine { path: String, key: ByteArray, ad: ByteArray, faces: Boolean -> withContext(Lanes.index) { SearchIndex.load(path, key, ad, faces) } }
-    AsyncFunction("indexSearch") Coroutine { query: ByteArray, limit: Int, minScore: Double -> withContext(Lanes.index) { SearchIndex.search(query, limit, minScore) } }
+    AsyncFunction("indexConcepts") Coroutine { vecs: ByteArray, explicit: List<Boolean>, image: List<Boolean>, threshold: Double ->
+      withContext(Lanes.index) { SearchIndex.concepts(vecs, explicit, image, threshold) }
+    }
+    AsyncFunction("indexSearch") Coroutine { query: ByteArray, limit: Int, minScore: Double, filtered: Boolean -> withContext(Lanes.index) { SearchIndex.search(query, limit, minScore, filtered) } }
     AsyncFunction("indexSimilar") Coroutine { item: String, limit: Int, minScore: Double -> withContext(Lanes.index) { SearchIndex.similar(item, limit, minScore) } }
     Function("indexFacesOf") { item: String -> SearchIndex.facesOf(item) }
+    // duplicates and similar photos: which items have a vector, and the cosine of pairs (src/app/duplicates.tsx)
+    AsyncFunction("indexHasAll") Coroutine { items: List<String> -> withContext(Lanes.index) { SearchIndex.hasAll(items) } }
+    AsyncFunction("indexScores") Coroutine { a: List<String>, b: List<String> -> withContext(Lanes.index) { SearchIndex.scores(a, b) } }
     AsyncFunction("indexCluster") Coroutine { threshold: Double, anchors: Map<String, List<String>>, rejects: Map<String, List<String>>, minFaces: Int ->
       withContext(Lanes.index) { SearchIndex.cluster(threshold, anchors, rejects, minFaces) }
     }
@@ -207,6 +230,7 @@ class CfNativeModule : Module() {
     Function("thumbKeys") { ids: List<String>, keys: ByteArray -> Thumbs.putKeys(ids, keys) }
     Function("thumbsPrefetch") { ids: List<String> -> Thumbs.prefetch(ids) }
     Function("thumbsClearImages") { Thumbs.clearBitmaps() }
+    Function("thumbsForget") { ids: List<String> -> Thumbs.forget(ids) }
     Function("forgetThumbs") { Thumbs.clear() }
     View(CfThumbView::class) {
       Name("CfThumbView")
@@ -223,6 +247,17 @@ class CfNativeModule : Module() {
     Function("randombytes_buf") { size: Int -> bounded(size, 0..(16 shl 20), "randombytes"); ByteArray(size).also { na.randombytes_buf(it, n(size)) } }
     Function("memcmp") { a: ByteArray, b: ByteArray -> a.size == b.size && na.sodium_memcmp(a, b, n(a.size)) == 0 }
     Function("crypto_hash_sha256") { m: ByteArray -> ByteArray(32).also { check(na.crypto_hash_sha256(it, m, len(m)), "sha256") } }
+    // SHA-256 fed part by part (an upload's original, src/upload.ts): the state crosses into JavaScript and back
+    Function("sha256_init") { ByteArray(sha256State).also { check(na.crypto_hash_sha256_init(it), "sha256_init") } }
+    Function("sha256_update") { state: ByteArray, m: ByteArray ->
+      if (state.size != sha256State) throw SodiumFailed("sha256_update")
+      check(na.crypto_hash_sha256_update(state, m, len(m)), "sha256_update")
+      state
+    }
+    Function("sha256_final") { state: ByteArray ->
+      if (state.size != sha256State) throw SodiumFailed("sha256_final")
+      ByteArray(32).also { check(na.crypto_hash_sha256_final(state, it), "sha256_final") }
+    }
     Function("crypto_generichash") { outLen: Int, m: ByteArray, key: ByteArray? ->
       bounded(outLen, 16..64, "generichash")
       ByteArray(outLen).also { check(na.crypto_generichash(it, n(outLen), m, len(m), key, n(key?.size ?: 0)), "generichash") }

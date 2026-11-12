@@ -2,6 +2,7 @@
 // format, keys and metadata, so every client and cipherfilm-decrypt read it. Only ciphertext leaves the Mac.
 import AVFoundation
 import CoreGraphics
+import CryptoKit
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
@@ -113,16 +114,120 @@ public enum Media {
 
   /** Where a video was recorded. iPhones write it as QuickTime metadata (moov/meta keys), Android and most cameras as
    *  user data (moov/udta/©xyz). AVFoundation finds both, but in an MP4 (Android's) it hands the ©xyz atom over as
-   *  raw bytes, its 16-bit text length and language still in front: those are read here. */
+   *  raw bytes, its 16-bit text length and language still in front: those are read here. The iPhone's key in a meta
+   *  box inside udta (as ffmpeg writes it) AVFoundation doesn't report: for that, and anything else it missed, the
+   *  file's moov box is read directly, like the web app and the upload tool do (web/src/places/videoLocation.ts). */
   static func videoLocation(_ a: AVURLAsset) async -> (lat: Double, lon: Double)? {
-    guard let items = try? await a.load(.metadata) else { return nil }
-    let ids: Set<AVMetadataIdentifier> = [
-      .quickTimeMetadataLocationISO6709, .quickTimeUserDataLocationISO6709, .commonIdentifierLocation,
-      AVMetadataIdentifier(rawValue: "uiso/%A9xyz"), // the ©xyz atom of an MP4
-    ]
-    for item in items where item.identifier.map(ids.contains) == true || item.commonKey == .commonKeyLocation {
-      if let s = try? await item.load(.stringValue), let p = iso6709(s) { return p }
-      if let d = try? await item.load(.dataValue), let p = xyzAtom(d) { return p }
+    if let items = try? await a.load(.metadata) {
+      let ids: Set<AVMetadataIdentifier> = [
+        .quickTimeMetadataLocationISO6709, .quickTimeUserDataLocationISO6709, .commonIdentifierLocation,
+        AVMetadataIdentifier(rawValue: "uiso/%A9xyz"), // the ©xyz atom of an MP4
+      ]
+      for item in items where item.identifier.map(ids.contains) == true || item.commonKey == .commonKeyLocation {
+        if let s = try? await item.load(.stringValue), let p = iso6709(s) { return p }
+        if let d = try? await item.load(.dataValue), let p = xyzAtom(d) { return p }
+      }
+    }
+    return a.url.isFileURL ? fileVideoLocation(a.url) : nil
+  }
+
+  // ---- the video's boxes, read directly: only the box headers on the way to moov and moov itself ----
+
+  private static let maxMoov = 32 << 20 // a moov box that large is not a phone's video: not read
+  private static let maxBoxes = 10_000
+  static let locationKey = "com.apple.quicktime.location.ISO6709"
+
+  struct Box { let type: String; let start: Int; let end: Int } // start: first byte after the header
+
+  private static func u32(_ b: [UInt8], _ o: Int) -> Int { Int(b[o]) << 24 | Int(b[o + 1]) << 16 | Int(b[o + 2]) << 8 | Int(b[o + 3]) }
+  /** A box type, each byte as one character (Latin-1), so 0xA9 is "©" as in "©xyz". */
+  private static func fourCC(_ b: [UInt8], _ o: Int) -> String { String(b[o..<o + 4].map { Character(UnicodeScalar($0)) }) }
+
+  /** The boxes in b[from, to). */
+  static func children(_ b: [UInt8], _ from: Int, _ to: Int) -> [Box] {
+    var out: [Box] = [], o = from
+    let to = min(to, b.count)
+    while o + 8 <= to && out.count < maxBoxes {
+      var size = u32(b, o), head = 8
+      if size == 1 {
+        guard o + 16 <= to else { break }
+        let hi = u32(b, o + 8), lo = u32(b, o + 12)
+        guard hi == 0 else { break } // larger than any moov read here
+        size = lo; head = 16
+      } else if size == 0 { size = to - o }
+      guard size >= head, o + size <= to else { break }
+      out.append(Box(type: fourCC(b, o + 4), start: o + head, end: o + size))
+      o += size
+    }
+    return out
+  }
+
+  /** The location in a meta box (keys + ilst), QuickTime style (no version and flags, starts with hdlr) or ISO style
+   *  (a full box: version and flags first, as ffmpeg writes it into udta). */
+  static func inMeta(_ b: [UInt8], _ box: Box) -> (lat: Double, lon: Double)? {
+    guard box.end - box.start >= 8 else { return nil }
+    let start = fourCC(b, box.start + 4) == "hdlr" ? box.start : box.start + 4
+    let parts = children(b, start, box.end)
+    var keys: [String] = []
+    if let k = parts.first(where: { $0.type == "keys" }), k.end - k.start >= 8 {
+      let count = u32(b, k.start + 4)
+      var o = k.start + 8, i = 0
+      while i < count && o + 8 <= k.end {
+        let size = u32(b, o)
+        guard size >= 8, o + size <= k.end else { break }
+        keys.append(String(decoding: b[o + 8..<o + size], as: UTF8.self)) // after the size and the namespace ("mdta")
+        o += size; i += 1
+      }
+    }
+    guard let ilst = parts.first(where: { $0.type == "ilst" }) else { return nil }
+    for entry in children(b, ilst.start, ilst.end) {
+      // the entry's type is its 1-based number in keys, as 4 bytes
+      let index = entry.type.unicodeScalars.reduce(0) { $0 << 8 | Int($1.value) }
+      guard index >= 1, index <= keys.count, keys[index - 1] == locationKey else { continue }
+      for d in children(b, entry.start, entry.end) where d.type == "data" && d.end - d.start > 8 {
+        if let p = iso6709(String(decoding: b[d.start + 8..<d.end], as: UTF8.self)) { return p }
+      }
+    }
+    return nil
+  }
+
+  /** The location inside a moov box's bytes: udta/©xyz, or a meta box in moov (iPhone) or in udta (ffmpeg and others). */
+  static func locationInMoov(_ moov: [UInt8]) -> (lat: Double, lon: Double)? {
+    for box in children(moov, 0, moov.count) {
+      if box.type == "udta" {
+        for c in children(moov, box.start, box.end) {
+          if c.type == "\u{a9}xyz", c.end - c.start >= 4, let p = xyzAtom(Data(moov[c.start..<c.end])) { return p }
+          if c.type == "meta", let p = inMeta(moov, c) { return p }
+        }
+      }
+      if box.type == "meta", let p = inMeta(moov, box) { return p }
+    }
+    return nil
+  }
+
+  /** The location of an MP4 or QuickTime file, from its moov box (at the start or the end); none when it has none. */
+  static func fileVideoLocation(_ url: URL) -> (lat: Double, lon: Double)? {
+    guard let h = try? FileHandle(forReadingFrom: url) else { return nil }
+    defer { try? h.close() }
+    guard let size = try? h.seekToEnd() else { return nil }
+    var o: UInt64 = 0
+    for _ in 0..<maxBoxes {
+      // compared by what is left (size - o), never o + len: a crafted 64-bit box size would overflow the sum and trap
+      guard o <= size, size - o >= 8, (try? h.seek(toOffset: o)) != nil, let hd = try? h.read(upToCount: 16) else { return nil }
+      let b = [UInt8](hd)
+      guard b.count >= 8 else { return nil }
+      var len = UInt64(u32(b, 0)), head: UInt64 = 8
+      if len == 1 {
+        guard b.count >= 16 else { return nil }
+        len = UInt64(u32(b, 8)) << 32 | UInt64(u32(b, 12)); head = 16
+      } else if len == 0 { len = size - o }
+      guard len >= head, len <= size - o else { return nil }
+      if fourCC(b, 4) == "moov" {
+        guard len - head <= UInt64(maxMoov), (try? h.seek(toOffset: o + head)) != nil,
+              let m = try? h.read(upToCount: Int(len - head)), m.count == Int(len - head) else { return nil }
+        return locationInMoov([UInt8](m))
+      }
+      o += len
     }
     return nil
   }
@@ -243,6 +348,9 @@ public enum Uploader {
 
       progress(0, max(size, 1))
       let done = Counter()
+      // the original's SHA-256 for the metadata (finding the same file again, docs/CRYPTO.md): from the parts as they
+      // are read for encryption, never a second read of the file
+      var hash = SHA256()
       try await withThrowingTaskGroup(of: Void.self) { g in
         var inFlight = 0
         for i in 0..<count {
@@ -251,6 +359,7 @@ public enum Uploader {
           try fh.seek(toOffset: UInt64(i) * UInt64(Segments.plain))
           var plain = len > 0 ? (try fh.read(upToCount: len) ?? Data()) : Data()
           guard plain.count == len else { throw APIError(status: -1, message: "The file changed while it was being read.") }
+          hash.update(data: plain)
           let ct = try Segments.encrypt(itemKey: key, itemId: id, index: i, count: count, total: size, plain: plain)
           Sodium.memzero(&plain)
           if inFlight >= 2 { try await g.next(); inFlight -= 1 }
@@ -264,17 +373,7 @@ public enum Uploader {
       }
       let dims = (try? await thumbs.value) ?? nil
       let mi = await info.value
-      var meta: [String: Any] = [
-        "name": name, "mime": mime, "size": size, "lastModified": (modified.timeIntervalSince1970 * 1000).rounded(),
-        "capture_ts": (mi.captureTs ?? modified.timeIntervalSince1970 * 1000).rounded(),
-      ]
-      if let w = mi.width ?? dims?.0 { meta["width"] = w }
-      if let h = mi.height ?? dims?.1 { meta["height"] = h }
-      if let d = mi.duration { meta["duration"] = d }
-      if let m = mi.make { meta["make"] = m }
-      if let m = mi.model { meta["model"] = m }
-      if let la = mi.lat, let lo = mi.lon { meta["gps"] = ["lat": la, "lon": lo] }
-      let json = try JSONSerialization.data(withJSONObject: meta, options: [.withoutEscapingSlashes])
+      let json = try metaJSON(name: name, mime: mime, size: size, modified: modified, info: mi, dims: dims, sha256: hex(hash.finalize()))
       try live()
       try await api.json("POST", "/api/items/\(id)/finalize", body: ["wrapped_item_key": wrapped, "meta_enc": B64.encode(Crypto.encryptMeta(json, itemKey: key, itemId: id))])
       return id
@@ -284,6 +383,26 @@ public enum Uploader {
       throw error
     }
   }
+}
+
+extension Uploader {
+  /** The item's metadata as every client writes it (docs/CRYPTO.md). */
+  static func metaJSON(name: String, mime: String, size: Int64, modified: Date, info mi: Media.Info, dims: (Int, Int)?, sha256: String?) throws -> Data {
+    var meta: [String: Any] = [
+      "name": name, "mime": mime, "size": size, "lastModified": (modified.timeIntervalSince1970 * 1000).rounded(),
+      "capture_ts": (mi.captureTs ?? modified.timeIntervalSince1970 * 1000).rounded(),
+    ]
+    if let w = mi.width ?? dims?.0 { meta["width"] = w }
+    if let h = mi.height ?? dims?.1 { meta["height"] = h }
+    if let d = mi.duration { meta["duration"] = d }
+    if let m = mi.make { meta["make"] = m }
+    if let m = mi.model { meta["model"] = m }
+    if let la = mi.lat, let lo = mi.lon { meta["gps"] = ["lat": la, "lon": lo] }
+    if let h = sha256 { meta["sha256"] = h }
+    return try JSONSerialization.data(withJSONObject: meta, options: [.withoutEscapingSlashes])
+  }
+
+  static func hex(_ d: SHA256.Digest) -> String { d.map { String(format: "%02x", $0) }.joined() }
 }
 
 final class Counter: @unchecked Sendable {

@@ -1,0 +1,47 @@
+# Overlay: private access through Tailscale, no public ports (docs/TAILNET.md). The only port published on the host
+# is Tailscale's own WireGuard port (UDP, encrypted tailnet traffic only): with it, devices connect directly instead of
+# through Tailscale's relays, which can be very slow. Set TS_UDP_PORT to another port if 41641 is taken.
+# The app shares the Tailscale container's network namespace; Tailscale Serve terminates HTTPS on your tailnet name
+# and forwards to the app on 127.0.0.1:8080 (deploy/tailnet/tailscale/serve.json).
+#   COMPOSE_FILE=compose.yaml:deploy/tailnet/compose.tailscale.yaml
+# Needs in .env: TS_AUTHKEY, TS_HOSTNAME, PUBLIC_HOSTS=<TS_HOSTNAME>.<your-tailnet>.ts.net
+services:
+  tailscale:
+    image: tailscale/tailscale:v1.104.4@sha256:ed6480b33c6eb67c9cbd203ed42b9fb57e361986725b6856def71b7a3d9e276c
+    hostname: ${TS_HOSTNAME:-photos}
+    restart: unless-stopped
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:?set TS_AUTHKEY in .env (Tailscale admin console > Settings > Keys)}
+      TS_HOSTNAME: ${TS_HOSTNAME:-photos}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_AUTH_ONCE: "true"          # log in with the key only the first time; state is persisted afterwards
+      # kernel networking: Linux's own TCP instead of Tailscale's userspace stack, which held downloads to about
+      # 2 MB/s over a long route; it needs the tun device and two capabilities (in this container's namespace only)
+      TS_USERSPACE: "false"
+      TS_SERVE_CONFIG: /config/serve.json
+      TS_TAILSCALED_EXTRA_ARGS: "--port=${TS_UDP_PORT:-41641}"
+    ports:
+      - "${TS_UDP_PORT:-41641}:${TS_UDP_PORT:-41641}/udp"
+    volumes:
+      - tsstate:/var/lib/tailscale
+      - ./deploy/tailnet/tailscale:/config:ro   # Tailscale wants the config mounted as a directory
+    devices: ["/dev/net/tun:/dev/net/tun"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    cap_add: [NET_ADMIN, NET_RAW]   # create the tailscale0 interface and its routes
+    mem_limit: 256m
+    pids_limit: 256
+  app:
+    network_mode: service:tailscale
+    depends_on: [tailscale]
+    ports: !reset []   # no host port: the app is reached only through Tailscale Serve (and Caddy) in this namespace
+    environment:
+      LISTEN_ADDR: "127.0.0.1:8080"   # not even tailnet peers reach it directly, only Serve
+      TRUST_PROXY: "0"   # Tailscale Serve does not document X-Forwarded-For, so per-IP limits are not used here
+      # every client reaches the app from 127.0.0.1: per-source sign-in limits are kept per tailnet user instead, by
+      # the Tailscale-User-Login header Serve sets (and removes from what clients send); tagged devices share one
+      TRUST_TAILSCALE_HEADERS: "1"
+
+volumes:
+  tsstate:
+    name: ${TS_STATE_VOLUME:-cipherfilm_tsstate}

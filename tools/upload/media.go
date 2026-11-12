@@ -115,6 +115,8 @@ type itemMeta struct {
 	Make         string   `json:"make,omitempty"`
 	Model        string   `json:"model,omitempty"`
 	GPS          *gpsMeta `json:"gps,omitempty"`
+	// SHA256 is the original file's SHA-256 in lowercase hex (docs/CRYPTO.md): the same file found again.
+	SHA256 string `json:"sha256,omitempty"`
 }
 
 type gpsMeta struct {

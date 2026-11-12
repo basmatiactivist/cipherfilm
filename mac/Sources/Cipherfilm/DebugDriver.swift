@@ -27,6 +27,23 @@ enum DebugDriver {
     return false
   }
 
+  /** "Index on This Mac Instead" as the person does it: the role first, then the question for the image models (a Mac
+   *  that only read deleted them, and with them the yes to download them: docs/MODELS.md), the yes, and the indexing.
+   *  Settings asks before it calls indexHere; asked afterwards, the run waits in .consent until the yes, the same gate.
+   *  Returns whether it asked (the image models weren't here). */
+  @discardableResult
+  static func takeOverIndexing(_ api: API) async throws -> Bool {
+    let m = AppModel.shared
+    try await m.search.indexHere(api: api)
+    _ = await wait("taking over: the run starts", timeout: 120) { m.search.phase != .off && m.search.phase != .loading }
+    let asked = m.search.phase == .consent
+    if asked { m.search.agree(m.search.pendingAsk()) }
+    if !(await wait("indexing here again", timeout: 1200) { m.search.indexes && m.search.phase == .ready }) {
+      log("  search phase \(m.search.phase), indexes \(m.search.indexes), \(m.search.message ?? "-"), indexer \(m.me?.indexer ?? "-") (this Mac \(m.me?.session_id ?? "-"))")
+    }
+    return asked
+  }
+
   static func snapshot(_ name: String) {
     guard let dir = env["CF_SNAPSHOTS"], let w = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil && $0.frame.width > 500 }), let v = w.contentView else { return }
     guard let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) else { return }
@@ -200,8 +217,12 @@ enum DebugDriver {
     if env["CF_FRESH_MODELS"] == "1" { m.search.models.delete() }
     m.settings.faces = true
     m.settings.indexOnBattery = true
-    // where explicit search is allowed, turning search on asks for the model first; standard here
-    m.turnOnSearch(explicit: m.me?.user.nsfw == true ? false : nil)
+    m.turnOnSearch()
+    // nothing is downloaded before the yes (docs/MODELS.md): with fresh models search waits for it; then the driver
+    // gives it, as the person would in the question
+    _ = await wait("search starts", timeout: 120) { m.search.phase != .off && m.search.phase != .loading }
+    if env["CF_FRESH_MODELS"] == "1" { check(m.search.phase == .consent, "search waits for the yes before downloading the models") }
+    if m.search.phase == .consent { m.search.agree(m.search.pendingAsk()) }
     let tIndex = Date()
     var sawError: String?, retries = 0, sawRate = 0.0, lastRetry = false, reasons: [String] = []
     _ = await wait("search ready", timeout: 1800) {
@@ -214,15 +235,21 @@ enum DebugDriver {
       }
       return s.phase == .ready
     }
+    // the account may be indexed by another device (a phone signed in to it too): this Mac takes over, as the person
+    // would in Settings › Search & People, so the checks below run against this Mac's own index
+    if !m.search.indexes, let api = m.api {
+      log("another device indexes this account (\(m.me?.indexer ?? "-")): this Mac takes over")
+      do { try await takeOverIndexing(api) } catch { check(false, "take over indexing: \(error)") }
+    }
     log("model download: \(retries) drops resumed, top speed \(bytes(Int64(sawRate)))/s, said: \(reasons.joined(separator: " | "))")
     check(sawError == nil, "search came up without an error on the way\(sawError.map { ": " + $0 } ?? "")")
-    check(!FileManager.default.fileExists(atPath: m.search.models.dir.appendingPathComponent(ClipModel.laion.vision.name).path),
-          "standard search chosen: only MobileCLIP downloaded")
+    check(!Models.oldFiles.contains { FileManager.default.fileExists(atPath: m.search.models.dir.appendingPathComponent($0.old).path) },
+          "no file of an earlier model left (MobileCLIP's deleted, LAION's under the new names)")
     log("indexing took \(Int(Date().timeIntervalSince(tIndex))) s for \(m.search.index.count.items) items (from the server's entries plus new ones)")
     check(m.search.phase == .ready, "search index ready: \(m.search.index.count.items) items, \(m.search.index.count.faces) faces")
     let r = await m.search.search("person", library: m.items)
     log("search 'person': \(r.items.count) items")
-    check(r.items.count == m.search.index.count.items, "MobileCLIP search ranks every indexed photo, no cut-off (\(r.items.count) of \(m.search.index.count.items))")
+    check(r.items.count <= m.search.index.count.items && !r.items.isEmpty, "search ranks the indexed photos, no cut-off besides the explicit-content filter (\(r.items.count) of \(m.search.index.count.items))")
     let r2 = await m.search.search(m.items.first(where: { $0.kind == .video }) != nil ? "videos" : "2026", library: m.items)
     check(!r2.items.isEmpty, "search by kind/date works (\(r2.items.count))")
     if let first = m.items.first(where: { m.search.index.has($0.id) }) {
@@ -404,25 +431,19 @@ enum DebugDriver {
         try await api.json("PATCH", "/api/admin/users/\(me.user.id)", body: ["nsfw": true])
         m.me = try JSONDecoder().decode(Me.self, from: try await api.json("GET", "/api/me"))
         check(m.me?.user.nsfw == true, "explicit search allowed by the admin")
-        let t0 = Date()
         try await m.search.setExplicit(true)
-        _ = await wait("LAION index", timeout: 900) { m.search.clip == .laion && m.search.phase == .ready }
-        check(!FileManager.default.fileExists(atPath: m.search.models.dir.appendingPathComponent(ClipModel.mobileclip.vision.name).path)
-              && !FileManager.default.fileExists(atPath: m.search.models.dir.appendingPathComponent(ClipModel.mobileclip.text.name).path)
-              && FileManager.default.fileExists(atPath: m.search.models.dir.appendingPathComponent(Models.tokenizer.name).path),
-              "switching to LAION deleted MobileCLIP's two files (tokenizer and face models stay)")
-        check(m.search.clip == .laion && m.search.phase == .ready && m.search.models.have(faces: m.settings.faces, clip: .laion),
-              "explicit on: LAION models downloaded with the session and the library indexed again (\(Int(Date().timeIntervalSince(t0))) s, \(m.search.index.count.items) items)")
+        check(!m.search.filtered && m.search.phase == .ready, "explicit on: search unfiltered, nothing indexed again")
         let (people0, _) = try await People.load(m.vault!)
         check(people0.explicit == true, "the choice is in the encrypted people document")
         let hits = await m.search.textHits("a man in a suit")
-        log("LAION 'a man in a suit': \(hits.count) hits, best \(hits.first.map { String(format: "%.3f", $0.score) } ?? "-")")
+        log("'a man in a suit' unfiltered: \(hits.count) hits, best \(hits.first.map { String(format: "%.3f", $0.score) } ?? "-")")
         check(!hits.isEmpty && hits.count == m.search.index.count.items && zip(hits, hits.dropFirst()).allSatisfy { $0.score >= $1.score },
-              "LAION search ranks every indexed photo, best first, no cut-off (\(hits.count))")
+              "unfiltered search ranks every indexed photo, best first, no cut-off (\(hits.count))")
+        let blocked = await m.search.textHits("nude")
+        check(blocked.count == m.search.index.count.items, "unfiltered: explicit words search as any others")
         try await m.search.setExplicit(false)
-        _ = await wait("MobileCLIP index", timeout: 900) { m.search.clip == .mobileclip && m.search.phase == .ready }
-        check(m.search.clip == .mobileclip && m.search.phase == .ready && !FileManager.default.fileExists(atPath: m.search.models.dir.appendingPathComponent(ClipModel.laion.vision.name).path),
-              "explicit off: back to MobileCLIP, indexed again, the LAION model deleted")
+        check(m.search.filtered, "explicit off: filtered again")
+        check(await m.search.textHits("nude").isEmpty, "filtered: explicit words find nothing")
         try await api.json("PATCH", "/api/admin/users/\(me.user.id)", body: ["nsfw": wasAllowed])
         m.me = try JSONDecoder().decode(Me.self, from: try await api.json("GET", "/api/me"))
       } catch { check(false, "explicit search: \(error)") }
@@ -456,6 +477,11 @@ enum DebugDriver {
         _ = await wait("search ready again", timeout: 600) { m.search.phase == .ready }
         m.me = try JSONDecoder().decode(Me.self, from: try await api.json("GET", "/api/me"))
         let mine = m.me?.session_id ?? ""
+        // another device of the account may have taken the role meanwhile (a phone signed in to it too): taken back
+        if let ix = m.me?.indexer, !ix.isEmpty, ix != mine {
+          log("another device indexes this account (\(ix)): this Mac takes over")
+          try await takeOverIndexing(api)
+        }
         // after signing in again this is a new session: it is the indexer once it writes, or none is set yet
         check(!mine.isEmpty && (m.me?.indexer == mine || m.me?.indexer == "") && m.search.indexes, "this Mac may index (indexer: \(m.me?.indexer ?? "-"))")
         struct Sessions: Decodable { let sessions: [SearchEngine.Device] }
@@ -466,23 +492,25 @@ enum DebugDriver {
         _ = await wait("this Mac becomes a reader", timeout: 180) { !m.search.indexes && m.search.phase == .ready }
         let dir = m.search.models.dir
         func has(_ f: ModelFile) -> Bool { FileManager.default.fileExists(atPath: dir.appendingPathComponent(f.name).path) }
-        check(!m.search.indexes && !has(ClipModel.mobileclip.vision) && !Models.faceFiles.contains(where: has) && has(ClipModel.mobileclip.text) && has(Models.tokenizer),
+        check(!m.search.indexes && !has(ClipModel.clip.vision) && !Models.faceFiles.contains(where: has) && has(ClipModel.clip.text) && has(Models.tokenizer),
               "another device indexes: this Mac only reads and keeps just the text model and the tokenizer")
         let hits = await m.search.textHits("person")
-        check(!hits.isEmpty && hits.count == m.search.index.count.items, "a reading Mac still searches every indexed photo (\(hits.count))")
+        check(!hits.isEmpty && hits.count <= m.search.index.count.items, "a reading Mac still searches the indexed photos (\(hits.count))")
         do {
           // a well-formed body (the server checks the format first); refused before it is stored
-          try await SearchEngine.put(B64.encode(Data(count: 1100)), model: ClipModel.mobileclip.tag, item: m.items[0].id, api: api)
+          try await SearchEngine.put(B64.encode(Data(count: 1100)), model: ClipModel.clip.tag, item: m.items[0].id, api: api)
           check(false, "a reading Mac's index write is refused")
         } catch let e as APIError { check(e.status == 409 && e.code == "not_indexer", "a reading Mac's index write is refused with not_indexer (\(e.status) \(e.code ?? e.message))") }
         let shown = await m.search.indexingDevice(api: api)
         check(shown != nil && shown?.current == false, "settings name the other device as the indexing one")
-        let before = try await api.get(Page.self, "/api/index?model=mcs2").entries.count
-        try await other.json("DELETE", "/api/index?model=laionb32")
-        check(try await api.get(Page.self, "/api/index?model=mcs2").entries.count == before && before > 0, "deleting the other family's entries leaves this model's (\(before))")
-        try await m.search.indexHere(api: api)
-        _ = await wait("indexing here again", timeout: 600) { m.search.indexes && m.search.phase == .ready }
-        check(m.search.indexes && has(ClipModel.mobileclip.vision) && m.me?.indexer == mine, "Index on This Mac Instead: the image models are back and this Mac indexes")
+        let before = try await api.get(Page.self, "/api/index?model=laionb32").entries.count
+        do { try await other.json("DELETE", "/api/index?model=laionb32"); check(false, "an older app's request to delete the index by family is refused") }
+        catch let e as APIError { check(e.status == 409, "an older app's request to delete the index by family is refused (\(e.status))") }
+        check(try await api.get(Page.self, "/api/index?model=laionb32").entries.count == before && before > 0, "the index stays (\(before))")
+        // its image models went when it became a reader, and the yes with them: taking over asks again first
+        let asked = try await takeOverIndexing(api)
+        check(asked, "Index on This Mac Instead asks before downloading the image models again")
+        check(m.search.indexes && has(ClipModel.clip.vision) && m.me?.indexer == mine, "Index on This Mac Instead: the image models are back and this Mac indexes")
         // signed out from the other device: the next request gets 401 and nothing of the account stays here
         let userId = m.me!.user.id
         try await other.json("DELETE", "/api/me/sessions/\(mine)")
@@ -567,10 +595,10 @@ enum DebugDriver {
     let drawn = await wait("map markers", timeout: 20) { (nav.map?.markers ?? 0) > 0 }
     check(drawn, "the map draws cluster markers (\(nav.map?.markers ?? 0))")
     await pause(3) // tiles and thumbnails
-    snapshot("map-01-world")
+    snapshot("map-01-home")
     if let c = nav.map {
       let ids = await c.inView()
-      check(ids.count == 30, "“Photos in This Area” on the whole world lists every located photo (\(ids.count))")
+      check(!ids.isEmpty && ids.count < 30, "the map opens on the area with the most photos, not the whole world (\(ids.count) of 30)")
       c.onPhotos?(located.filter { near($0, 48.86, 2.35) }.map(\.id))
       await pause(2.5)
       snapshot("map-02-panel")

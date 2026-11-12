@@ -6,7 +6,9 @@ import { mem } from "./state";
 import { uploadQueue } from "./upqueue";
 import { haystack, matches, splitQuery } from "./search";
 import { contentSearch, vectorCount } from "./search/content";
-import { TEXT_MODELS } from "./search/rank";
+import { agreeModels, askedLater, askLater, NeedsConsent, useModelConsent } from "./search/consent";
+import { ModelConsent } from "./search/consentui";
+import { FAMILY as family, TEXT_MODELS, type Family } from "./search/rank";
 import { downloadItems, downloadOriginal } from "./downloads";
 import { prefetchThumbs } from "./cache";
 import { Album, addToAlbum, createAlbum, deleteAlbum, loadAlbums, removeFromAlbum, renameAlbum } from "./albums";
@@ -17,10 +19,16 @@ import { ReportDialog } from "./reportdialog";
 import { Field, KeepButton, Submit, fmtGB, useAction } from "./components";
 import { Icon, IconName, Logo } from "./icons";
 import { checkSession, loadUsage } from "./auth";
-import { hasIndex, loadPeople, refreshIndex, searchFamily, usePeople } from "./people/people";
+import { hasIndex, loadPeople, refreshIndex, searchFiltered, usePeople } from "./people/people";
 import { coalesce, startLive } from "./live";
+import { dismissNotice, loadNotices, noticeAction, type Notice } from "./notices";
+import { alertNotices } from "./noticeAlerts";
+import { NoticesButton } from "./noticesui";
 import { lazy } from "./lazy";
 import { Loading } from "./loader";
+import { findMemories, todayKey, type Memory } from "./memories/memories";
+import { useMemoriesOn } from "./memories/setting";
+import { MemoriesRow } from "./memories/ui";
 
 // Loaded when first shown; the lightbox is fetched ahead once the grid is up, so the first photo opens at once.
 const Lightbox = lazy(() => import("./lightbox").then((m) => m.Lightbox), () => <div class="lightbox lbwait"><Loading stage label="Opening the viewer…" /></div>);
@@ -30,10 +38,11 @@ const PersonHeader = lazy(() => import("./people/ui").then((m) => m.PersonHeader
 const MapPage = lazy(() => import("./map/ui").then((m) => m.MapPage));
 const Account = lazy(() => import("./screens").then((m) => m.Account));
 const Admin = lazy(() => import("./screens").then((m) => m.Admin));
+const Duplicates = lazy(() => import("./cleanup/ui").then((m) => m.Duplicates));
 
 interface Job { key: number; owner: string; name: string; file: File; done: number; total: number; state: "queued" | "working" | "done" | "error"; error?: string; retryable?: boolean; stop: { cancelled: boolean } }
 type View = { n: "timeline" } | { n: "favorites" } | { n: "albums" } | { n: "album"; id: string } | { n: "people" } | { n: "person"; key: string; cover?: string } | { n: "map" } | { n: "trash" };
-type Page = View | { n: "account" } | { n: "admin" };
+type Page = View | { n: "account"; open?: string } | { n: "admin" } | { n: "duplicates" };
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : "Something went wrong.");
 const isMedia = (f: File) => f.type.startsWith("image/") || f.type.startsWith("video/") || /\.(heic|heif)$/i.test(f.name);
@@ -96,6 +105,22 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const refreshAlbums = () => loadAlbums().then(setAlbums, (e) => setError(msg(e))).finally(() => setAlbumsLoaded(true));
   const refreshTrash = () => loadTrash().then((r) => { setTrash(r.items); setRetention(r.retentionDays); }, (e) => setError(msg(e)));
   const refreshUsage = () => loadUsage().then(setUsage, () => {});
+  // a new sign-in elsewhere, or an admin turning off two-step sign-in (notices.ts): listed under the bell in the top bar
+  // (noticesui.tsx) until removed, which removes it on every device
+  const [notices, setNotices] = useState<Notice[]>([]);
+  const dismissed = useRef(new Set<number>());
+  // and, while this tab is hidden, as the browser's notifications if turned on (noticeAlerts.ts)
+  const refreshNotices = () => (demo ? Promise.resolve() : loadNotices(dismissed.current).then((l) => {
+    setNotices(l);
+    alertNotices(l, (n) => go({ n: "account", open: noticeAction(n).open }));
+  }, () => {}));
+  useEffect(() => { refreshNotices(); }, []);
+  const dismiss = (n: Notice) => {
+    dismissed.current.add(n.id);
+    setNotices((l) => l.filter((x) => x.id !== n.id));
+    dismissNotice(n.id).catch(() => {}); // sent again at the next load if it didn't arrive (loadNotices)
+  };
+  const dismissAll = () => { for (const n of notices) dismiss(n); };
   useEffect(() => { refreshItems(); refreshAlbums(); refreshTrash(); refreshUsage(); }, []);
   // while the map is on: videos uploaded before their location was read get it now (map/relocate.ts, loaded only then)
   const mapIsOn = useMapOn();
@@ -114,6 +139,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
       if (what.has("albums")) jobs.push(refreshAlbums());
       if (what.has("people")) jobs.push(loadPeople().catch(() => {}));
       if (what.has("index")) jobs.push(refreshIndex(true).catch(() => {}));
+      if (what.has("notices")) jobs.push(refreshNotices());
       await Promise.all(jobs);
     });
     const stop = startLive({ onChange: (what) => sync.ping(what), probe: checkSession }); // the same account and session, or back to sign-in
@@ -307,7 +333,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   useEffect(() => { if (!uploading) setUnfinished(unfinishedUploads().filter((n) => !active.some((j) => j.name === n))); }, [uploading]);
   const empty = items && items.length === 0 && active.length === 0;
   const libraryView = page.n === "timeline" || page.n === "favorites" || page.n === "albums" || page.n === "album" || page.n === "people" || page.n === "person" || page.n === "map" || page.n === "trash";
-  const title = page.n === "timeline" ? "Timeline" : page.n === "favorites" ? "Favorites" : page.n === "albums" ? "Albums" : page.n === "trash" ? "Trash" : page.n === "people" ? "People" : page.n === "map" ? "Map" : page.n === "person" ? person?.person?.name || "Not named yet" : page.n === "account" ? "Account" : page.n === "admin" ? { users: "Users", defaults: "Defaults", server: "Server", activity: "Activity" }[adminSection] : album?.name ?? "Album";
+  const title = page.n === "timeline" ? "Timeline" : page.n === "favorites" ? "Favorites" : page.n === "albums" ? "Albums" : page.n === "trash" ? "Trash" : page.n === "people" ? "People" : page.n === "map" ? "Map" : page.n === "person" ? person?.person?.name || "Not named yet" : page.n === "account" ? "Account" : page.n === "duplicates" ? "Duplicates and similar photos" : page.n === "admin" ? { users: "Users", defaults: "Defaults", server: "Server", activity: "Activity" }[adminSection] : album?.name ?? "Album";
   const pct = usage && !usage.unlimited && usage.quota_bytes ? Math.min(100, Math.round((usage.used_bytes / usage.quota_bytes) * 100)) : 0;
 
   // the library is filtered 150 ms after typing stops, not on every key: matching a big library takes a moment.
@@ -345,23 +371,26 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   // what is in the photos: the words that aren't a date, a kind or a name go to the text model (search/content.ts),
   // over the image vectors the Android and Mac apps stored; asked a moment after typing stops
   const split = useMemo(() => splitQuery(q, personNames), [q, personNames]);
-  const [content, setContent] = useState<{ q: string; ids: string[] | null; status: string }>({ q: "", ids: null, status: "" });
-  const family = searchFamily();
+  // need: the model isn't here and the person wasn't asked yet (search/consent.ts): the question shows, nothing is fetched
+  const [content, setContent] = useState<{ q: string; ids: string[] | null; status: string; need?: Family }>({ q: "", ids: null, status: "" });
+  const filtered = searchFiltered();
   const searchable = items ? vectorCount(family) : 0;
+  const consentTick = useModelConsent();
   useEffect(() => {
     const cq = split.content;
-    if (cq.length < 2 || !searchable) { setContent({ q: cq, ids: null, status: "" }); return; }
+    if (cq.length < 2 || !searchable || askedLater(family)) { setContent({ q: cq, ids: null, status: "" }); return; }
     let alive = true;
     const size = TEXT_MODELS[family].size;
     const t = setTimeout(() => {
       setContent((c) => ({ ...c, q: cq, status: "Looking at what's in your photos…" }));
-      contentSearch(cq, family, (done, total) => {
+      contentSearch(cq, family, filtered, (done, total) => {
         if (alive && done < total) setContent((c) => ({ ...c, status: `Downloading the search model: ${Math.round(done / 1e6)} of ${Math.round(total / 1e6)} MB…` }));
       }).then((hits) => alive && setContent({ q: cq, ids: hits.map((h) => h.id), status: "" }),
-        (e) => alive && setContent({ q: cq, ids: null, status: `Couldn't search photo content. ${e instanceof Error ? e.message : "Try again."}` }));
+        (e) => alive && setContent(e instanceof NeedsConsent ? { q: cq, ids: null, status: "", need: e.family }
+          : { q: cq, ids: null, status: `Couldn't search photo content. ${e instanceof Error ? e.message : "Try again."}` }));
     }, size > 1e8 ? 400 : 250);
     return () => { alive = false; clearTimeout(t); };
-  }, [split.content, family, searchable > 0]);
+  }, [split.content, filtered, searchable > 0, consentTick]);
   // ranked like Immich (docs/SEARCH.md): every photo the model indexed, best match first, page by page
   const ranked = content.q === split.content && split.content ? content.ids : null;
   const PAGE = 200;
@@ -390,7 +419,24 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const trashItemsShown = useMemo(() => match(trash ?? [], false), [trash, q]);
   const moreLeft = !!ranked && (view.n === "timeline" ? timelineAll : shownAll).length > limit;
   const [mapList, setMapList] = useState<Item[]>([]);
-  const lbList = view.n === "timeline" ? timelineItems : view.n === "trash" ? trashItemsShown : view.n === "map" ? mapList : shownItems;
+  // "On this day" (memories/): worked out here from the capture dates, again when the library or the day changes
+  const memOn = useMemoriesOn();
+  const today = todayKey();
+  const memories = useMemo(() => (memOn && items ? findMemories(items) : []), [items, memOn, today]);
+  // a memory's photos while the viewer shows them; dropped when it closes
+  const [memList, setMemList] = useState<Item[] | null>(null);
+  useEffect(() => { if (lb === null) setMemList(null); }, [lb]);
+  const openMemory = (m: Memory<Item>) => { setMemList(m.items); openLb(0); };
+  const lbList = memList ?? (view.n === "timeline" ? timelineItems : view.n === "trash" ? trashItemsShown : view.n === "map" ? mapList : shownItems);
+  // after an edit the photo may move (a new date) or leave the list (its place removed on the map): the viewer stays on it
+  const follow = useRef<{ id: string; old?: Item } | null>(null);
+  useEffect(() => {
+    const f = follow.current;
+    if (!f || lb === null) return;
+    const i = lbList.findIndex((x) => x.id === f.id);
+    if (i >= 0 && lbList[i] !== f.old) { follow.current = null; if (i !== lb) setLb(i); }
+    else if (i < 0) { follow.current = null; if (lb >= lbList.length) closeLb(); }
+  }, [lbList]);
   /** The photos on screen, in order: what select all, a range and the selection work on. */
   function listed() { return view.n === "trash" ? trashItemsShown : view.n === "album" || view.n === "person" || view.n === "favorites" ? shownItems : view.n === "timeline" ? timelineItems : []; }
   const selectAll = () => { setSelectMode(true); setSelected(new Set(listed().map((i) => i.id))); };
@@ -529,6 +575,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
           {!adminPage && !demo && <button class="btn" aria-label="Upload photos and videos" onClick={() => input.current?.click()}><Icon name="upload" /><span class="lbl">Upload</span></button>}
           <input ref={input} class="sr" type="file" multiple accept="image/*,video/*,.heic,.heif" tabIndex={-1} aria-label="Choose photos and videos"
             onChange={(e) => { const t = e.target as HTMLInputElement; if (t.files?.length) add(t.files); t.value = ""; }} />
+          {!demo && <NoticesButton account={mem.me!.user.id} notices={notices} onAct={(n) => go({ n: "account", open: noticeAction(n).open })} onRemove={dismiss} onRemoveAll={dismissAll} />}
           <div class="menuwrap">
             <button class="avatarbtn" ref={avatarBtn} aria-label="Account menu" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((v) => !v)}>
               <span class="avatar" aria-hidden="true">{props.email.slice(0, 1).toUpperCase()}</span>
@@ -537,6 +584,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
               <div class="menu" role="menu" aria-label="Account" onKeyDown={menuKeys}>
                 <div class="menuhead"><span class="avatar" aria-hidden="true">{props.email.slice(0, 1).toUpperCase()}</span><span class="email">{props.email}</span></div>
                 <button class="menuitem" role="menuitem" onClick={() => { setMenuOpen(false); go({ n: "account" }); }}><Icon name="user" />Account</button>
+                <button class="menuitem" role="menuitem" onClick={() => { setMenuOpen(false); go({ n: "duplicates" }); }}><Icon name="copy" />Duplicates and similar</button>
                 {props.admin && <button class="menuitem" role="menuitem" onClick={() => { setMenuOpen(false); go({ n: "admin" }); }}><Icon name="shield" />Admin</button>}
                 <button class="menuitem" role="menuitem" onClick={() => { setMenuOpen(false); if (uploading) setError("Files are still uploading. Wait or cancel them, then lock."); else props.onLock(); }}><Icon name="lock" />Lock</button>
                 <button class="menuitem kbditem" role="menuitem" onClick={() => { setMenuOpen(false); setHelp(true); }}><Icon name="keyboard" />Keyboard shortcuts</button>
@@ -614,8 +662,9 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
             </p>
           )}
 
-          {page.n === "account" && <Account />}
+          {page.n === "account" && <Account open={page.open} />}
           {page.n === "admin" && <Admin section={adminSection} />}
+          {page.n === "duplicates" && <Duplicates items={items} demo={demo} retention={retention} onTrash={moveToTrash} />}
 
           {view.n === "timeline" && (
             <>
@@ -629,7 +678,11 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
                 </section>
               )}
               {q && content.status && <Loading inline={timelineItems.length > 0} label={content.status} />}
+              {q && content.need && content.q === split.content && !askedLater(content.need) && (
+                <ModelConsent family={content.need} onYes={() => agreeModels(content.need!)} onLater={() => askLater(content.need!)} />
+              )}
               {q && items && items.length > 0 && timelineItems.length === 0 && !content.status && <p class="small">Nothing matches “{searched.trim()}”. Search covers file names, dates (2023, March, 14.03.2023), cameras, albums and people{searchable ? ", and what's in your photos" : ""}.{!searchable && " To search by what's in photos (dog, beach), turn on search in the Android or Mac app."}</p>}
+              {!q && <MemoriesRow memories={memories} onOpen={openMemory} />}
               {items && items.length > 0 && albums.length > 0 && !selectMode && !q && <p class="small hint desktoponly">Tip: drag photos onto an album to file them.</p>}
               {timelineItems.length > 0 && <Timeline items={timelineItems} flat={!!ranked} selectMode={selectMode} selected={selected} onToggle={pick} onContext={(id, e) => setCtx({ x: e.clientX, y: e.clientY, kind: "item", id })} dragIds={dragIds} onOpen={(id) => openLb(timelineItems.findIndex((i) => i.id === id))} />}
             </>
@@ -751,6 +804,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
 
       {lb !== null && libraryView && lbList[lb] && (
         <Lightbox items={lbList} index={lb} onIndex={setLb} onClose={closeLb} people={people} onPerson={(key) => { closeLb(); openPerson(key); }} onMap={() => { closeLb(); go({ n: "map" }); }}
+          onEdited={view.n === "trash" ? undefined : (id) => { follow.current = { id, old: lbList.find((x) => x.id === id) }; refreshItems(); }}
           onFavorite={view.n === "trash" ? undefined : (it) => favorite([it.id], !it.favorite)}
           action={view.n === "trash"
             ? { label: "Restore", run: async (it) => { await restore([it.id]); closeLb(); setTimeout(() => document.getElementById("main")?.focus(), 60); } }

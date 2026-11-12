@@ -25,7 +25,13 @@ class CfThumbView(context: Context, appContext: AppContext) : ExpoView(context, 
   /** a software copy of the bitmap: where the view is drawn into a software canvas (the map's markers, MapLibre's
    *  view annotations), a hardware bitmap would crash the app */
   private var software = false
-  private val changed: () -> Unit = { if (Thumbs.cached(item ?: "") == null && !Thumbs.hasKey(item ?: "")) blank(); load() }
+  private var shownVersion = 0 // Thumbs.version of the item when its bitmap was asked for
+  private val changed: () -> Unit = {
+    val id = item ?: ""
+    if (Thumbs.cached(id) == null && !Thumbs.hasKey(id)) blank()
+    else if (shown == id && Thumbs.version(id) != shownVersion) { ask?.wanted = false; ask = null; shown = null } // made anew: the old one stays until the new one is there
+    load()
+  }
 
   init {
     addView(image, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -62,6 +68,7 @@ class CfThumbView(context: Context, appContext: AppContext) : ExpoView(context, 
   fun load() {
     val id = item ?: return
     if (shown == id || ask != null) return
+    shownVersion = Thumbs.version(id)
     Thumbs.cached(id)?.let { show(id, it, fade = false); return }
     if (!contain && width == 0) return // decoded at its size: once it has one
     val px = if (contain) 0 else maxOf(width, height) // the viewer's: whole

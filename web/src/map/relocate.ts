@@ -6,10 +6,12 @@ import { api, getBytes } from "../api";
 import { b64, getSodium } from "../crypto/sodium";
 import { decryptSegment, SEG_PLAIN } from "../crypto/file";
 import { encryptMeta } from "../crypto/item";
+import { nextVersion } from "../crypto/metaVersion";
 import { mem } from "../state";
 import type { Item } from "../items";
 import { coords } from "./locations";
 import { videoLocation } from "../places/videoLocation";
+import { placeChanged } from "../edit/edit";
 
 const key = () => `cf-relocated:${mem.me?.user.id ?? ""}`;
 const PER_RUN = 25; // videos looked at in one go; the rest the next time
@@ -21,9 +23,10 @@ function loadDone(): Set<string> {
 function saveDone(done: Set<string>) {
   try { localStorage.setItem(key(), JSON.stringify([...done])); } catch { /* looked at again next time */ }
 }
-/** Videos that could still get a location: finished, decrypted, none yet, not looked at before. */
+/** Videos that could still get a location: finished, decrypted, none yet, not looked at before, and not one whose
+ *  place the person removed or set themselves (edit/edit.ts). */
 export const lackingVideos = (items: Item[], done: Set<string>) =>
-  items.filter((it) => it.kind === "video" && !it.broken && !it.trashed_at && it.meta && it.itemKey && !coords(it) && !done.has(it.id));
+  items.filter((it) => it.kind === "video" && !it.broken && !it.trashed_at && it.meta && it.itemKey && !coords(it) && !done.has(it.id) && !placeChanged(it.meta));
 
 /** Reads a stored item's plain bytes by range, decrypting only the segments the range touches. */
 export function segmentReader(it: Item, fetchSegment: (i: number) => Promise<Uint8Array>) {
@@ -76,7 +79,7 @@ async function run(items: Item[]): Promise<number> {
       const read = segmentReader(it, async (i) => decryptSegment(s, it.itemKey!, it.id, i, it.segment_count, it.size, await getBytes(`/api/items/${it.id}/segments/${i}`)));
       const g = await videoLocation(it.size, read);
       if (g) {
-        await api("PUT", `/api/items/${it.id}/meta`, { meta_enc: b64(s, encryptMeta(s, { ...it.meta!, gps: g }, it.itemKey!, it.id)) });
+        await api("PUT", `/api/items/${it.id}/meta`, { meta_enc: b64(s, encryptMeta(s, nextVersion({ ...it.meta!, gps: g }), it.itemKey!, it.id)) });
         added++;
       }
       done.add(it.id);

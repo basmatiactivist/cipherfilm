@@ -5,6 +5,167 @@ All notable changes to Cipherfilm are listed here. The format follows
 [Semantic Versioning](https://semver.org/). The release workflow copies the section of the tagged
 version into the GitHub release notes, so a release cannot be published without an entry here.
 
+## [Unreleased]
+
+## [2.7.0] - 2026-11-12
+
+### Note
+- Going back to an older server version is not supported once anyone has added a passkey: older servers don't know
+  passkeys, so an account with only passkeys would sign in with the password alone there (docs/RELEASING.md).
+
+### Added
+- Web, Android, Mac: before the search models are downloaded from Hugging Face, the app asks: what, how big, from
+  whom and what Hugging Face sees. Turning search off deletes them; the settings show when they were downloaded.
+- Two-step sign-in with a passkey: instead of a code from the authenticator app, confirm a new sign-in with a passkey
+  from your password manager, phone or a security key (web; Android 14 and newer; Mac through your browser). Your
+  password is still needed and still unlocks your photos. Add, rename and remove passkeys under Account › Two-step
+  sign-in; a passkey alone can turn two-step sign-in on (with recovery codes, as for the app).
+- Setting up the authenticator app takes one tap: "Add to authenticator app" (Android, and on phones in the browser)
+  and "Open in Password Manager or Authenticator App" (Mac) hand the account to the app; the key can be copied (Android and
+  Mac clear it from the clipboard after a minute), and the recovery codes copied or shared.
+- Server: `/.well-known/assetlinks.json` lets the Android app use the server's passkeys; `ANDROID_APP_CERTS` and
+  `ANDROID_APP_PACKAGES` name the apps (docs/SELF-HOSTING.md).
+- Android and Mac: the admin area is in the apps too (Account › Administration on Android, Settings › Administration
+  on the Mac): people and their usage, invites to share, storage limits, roles, disabling and deleting accounts,
+  turning off someone's two-step sign-in, explicit search, the server's state and the activity log.
+- Server: a ready-made private setup in your tailnet (Tailscale, your own name, Kopia backups, optional Portainer)
+  in `deploy/tailnet`, the same one the project's own server runs; guide in docs/TAILNET.md.
+- Android: Account › "Allow screenshots" lets this phone take screenshots and screen recordings of the app and show
+  it in the recent apps. Off by default, so the app stays blocked as before; the change applies at once.
+- Android and Mac: a new sign-in to your account (and the other security notices) also arrives as a notification
+  while the app is closed or in the background, at most once each; on Android it never shows on the lock screen (the
+  device and time appear once the phone is unlocked), whatever the phone's setting for notification content. No push service is used: the app asks your server itself (Android about every 15 minutes). On by
+  default; Account › Security notifications (Android) and Settings › Security (Mac) turn it off. The web app can do
+  the same while its tab is open in the background, if you turn it on under Account › Devices.
+- Mac: when another device indexes your photos and some aren't indexed yet, Settings › Search & People and an empty
+  search say how many, next to "Index on This Mac Instead" (for when that device stopped, for example because it waits
+  for its OK to download the models after an update).
+
+### Fixed
+- Android: the location added afterwards from the phone's originals goes only into photos and videos this phone
+  uploaded itself, never into items someone else added to the account under a key of their own.
+- Server: one account's large library no longer slows other accounts' uploads; the storage check reads a counter
+  instead of adding up the whole library each time.
+- Android: locking or signing out closes every screen of the library, also the edit screen and screens further back
+  (such as the map), not only the one on top.
+- Android: release builds always block screenshots unless you allow them; only test builds made for the local test
+  server react to the e2e screenshot switch.
+- Two-step sign-in: "Add to authenticator app" (Android, web) and "Open in Password Manager or Authenticator App" (Mac) only
+  open an `otpauth://totp/` address. Android uses a passkey only for the server it is set up with.
+- Map: the apps load only https map styles with a plain host name, the hosts the question before the map names; the
+  Account › Map switch also names VersaTiles, the default map's fallback. Mac: a photo's small map in its details loads
+  after "Show Map" for that photo, not for every photo while the details column is open.
+- Android and Mac: search models already on the device count as agreed only after their SHA-256 was checked, so a
+  changed model asks again. Mac: the models and the tokenizer are loaded from exactly the checked bytes.
+- Mac: locking or signing out also clears the export's and search's copy of the decrypted library; a video with a
+  malformed box size no longer crashes the app while its place is read.
+- Web and Android: every change of a photo's details (an edit, a new date or place) now carries a version, and the apps
+  never go back to an older copy of the details the server might hand out (such a photo is never downloaded, shared or
+  saved as the original by default). docs/THREAT_MODEL.md lists what this covers.
+- Web and Android: a photo whose place you removed or changed (or whose date you changed) downloads, shares and saves
+  with the place and date as you set them, also when it wasn't turned or cropped; "Download original", "Share
+  original" and "Save original" still give the file as uploaded.
+- Android: the library could stay behind its loading badge for minutes after unlocking (seen on the first unlock
+  after an update) when photos changed on another device since the last visit; it now shows after 12 seconds at
+  the latest.
+- Android: several notices (new sign-ins) no longer stack up as large cards above the photos: one banner says
+  "3 new sign-ins (latest: …)", with "Review devices" and "Dismiss all".
+- Android: the search index kept on the phone (both the standard and the explicit model's) was deleted with the
+  cleanup of cached pictures after every library load, so search had to fetch and open the whole index again at each
+  start. Both copies now stay; phones that lost them fetch them again once.
+- Android: a language changed in Android's settings (the phone's, or the app's own from Android 13) applies as soon as
+  you come back to the app, without restarting it; the open screens stay.
+- Mac: videos with the iPhone's location key in a meta box inside udta (as ffmpeg writes it) uploaded without
+  their place; the Mac app now reads it there too, like the web app and the upload tool.
+- Server: replacing a thumbnail or preview reserves its room before anything is written to disk, and the storage
+  check of one account no longer holds up uploads of the others.
+- Server: a restore over the same server's data keeps storage limits (and the default one for new people) and
+  explicit search as an administrator set them after the backup, like roles and disabled accounts.
+- Server: after a restore (also onto a new machine) new sign-in notices get ids the devices haven't seen before, so
+  the phones and the Mac announce them again instead of taking them for ones already shown.
+- Server: a restore whose last step failed is marked in the data: the server doesn't start and a second restore or
+  demo reset doesn't run until it is finished, so the replaced data in `.previous/` is never dropped.
+- Server: `ANDROID_APP_CERTS`, `ANDROID_APP_PACKAGES` and `MAP_STYLE` set in `.env` now reach the app (compose.yaml
+  didn't pass them on); `make prod-config` checks that every server setting does.
+- Tailnet setup: Portainer's admin password now comes from a file named in `.env` (`PORTAINER_ADMIN_PASSWORD_FILE`),
+  so a fresh Portainer can't be claimed by someone else; docs/TAILNET.md shows Tailscale access rules that keep
+  Kopia's UI and Portainer to the owner's devices.
+
+- With two-step sign-in on, changing the password, making a new recovery key and deleting the account also ask for
+  a code, a recovery code or a passkey (older app versions show a message that they need updating for this).
+- Your other devices now show a notice when an authenticator app or passkey is added or removed, new recovery codes
+  are made or two-step sign-in is turned off.
+- Server hardening for sign-in limits, notices and invites: unfinished-sign-in notices can't be postponed, old
+  notices go after 90 days, invites stop working when the session or administrator that made them loses access, at
+  most 50 signed-in devices per account, and per-tailnet-user limits behind Tailscale Serve (`TRUST_TAILSCALE_HEADERS`).
+### Changed
+- Apps: no other companies' names in what people read (map service, model download site, authenticator apps, phone
+  makers, issue tracker); the privacy policy names the services. License credits stay.
+- Server: on a demo server (DEMO_ACCOUNTS), other administrators can't delete, disable, promote, re-limit or reset
+  two-step sign-in of the public demo account, so a reviewer's account may be an administrator.
+- Android: notifications behind a bell next to Account, with a badge for unread ones and a list to remove them, instead of
+  the banner over the photos. An administrator's reset notice goes away by itself once two-step sign-in is on again.
+- Android: passkeys work with servers only on a private network (Tailscale, a home LAN): the app uses the server's
+  `/passkey` page in the browser there, as the Mac app does, and a passkey error says what to do instead of showing the
+  system's message.
+- Android: the map opens on the region with the most photos, like the web and the Mac.
+- Android: dialogs with a field stay above the keyboard; Enter continues in the password dialog; the editor asks before
+  discarding changes and shows the place suggestions above the keyboard; storage limits keep their decimals; device
+  names are translated and include the maker; no brand names of other apps or phone makers in the texts; clearer
+  German for two-step sign-in, uptime and the invite field.
+- Web: security notices (a new sign-in, changes to two-step sign-in) are listed under a bell next to the account
+  button, with a count of the unread ones, instead of a banner above the library; each can be removed, or all at once.
+- Web: the passkey page for the apps also serves the Android app (for servers it can't reach from the internet) and
+  always shows a "Back to the app" button.
+- Web: texts name no third-party apps ("an authenticator app or password manager").
+- Web, admin: storage limits show one decimal and accept decimals, so saving one unchanged keeps it exactly; the
+  server's uptime says "1 hour", not "1 hours"; the backup hint names the `cipherfilm backup-report` command.
+- Mac: security notices no longer appear as a banner over the library. They collect behind a bell in the toolbar
+  (next to Lock) with a badge for new ones; the list says what happened, on which device and when, leads to Review
+  Devices or Two-Step Sign-In, and each notice (or all with Remove All) can be removed. macOS notifications stay.
+- Mac: the texts no longer name other companies' apps (password managers, authenticator apps).
+- Mac admin: storage limits keep their decimals in the editor (21.5 GB no longer shows as 21 and shrinks on save),
+  the invite field asks for the invited person's e-mail address, the uptime says "1 hour" and "1 day", and the
+  backup hint names `cipherfilm backup-report`.
+- Web: adding a passkey opens the browser's dialog right after the name and password, without a second button
+  (it comes back only when the browser wants a tap of its own or the dialog was cancelled).
+- Web and Mac: the map opens on the region with the most photos (at region level, never street level), with those
+  photos in the panel beside it, instead of on the whole world. The tile server sees that region.
+- Search uses one open model for everyone, in every app and build: LAION's CLIP ViT-B/32 (MIT), the model explicit
+  search already used. MobileCLIP S2, the standard model until now, is gone: its license only allows research use.
+  Accounts that used explicit search keep their index; for all others the indexing device (also a phone from Google
+  Play) builds the index once with the new model, keeping the faces and names of people, and search by content finds
+  more photos as it goes. The new model is a bigger download (about 650 MB on the indexing device, 258 MB on a device
+  that only searches and in the browser), and you're asked before it. Older apps need the update to keep searching.
+- Search leaves out photos and words it takes for explicit content. Where an admin allows explicit search, the person
+  can turn that off for their account (web, Mac, Android from GitHub; never in the Google Play app). Switching no
+  longer downloads another model or indexes the library again.
+- Duplicates and similar photos (web and Android) say what was checked: all photos and videos for exact copies, and
+  for similar photos whether search is off (with a button to turn it on on Android), or how many photos are indexed.
+- Exact duplicates are also found under other names ("IMG_1.jpg" and "IMG_1 (1).jpg", or the same photo from two
+  devices): new uploads from every app store a fingerprint of the original in their encrypted metadata, and older
+  ones match by size and capture time.
+- The map no longer shows a bar with the number of photos: "Photos in this area" is a small button on the map (web)
+  or in the top bar (Android); the Mac shows it only while the list isn't open.
+- Albums update incrementally on every platform: after the first load, a change fetches only the albums that changed
+  and which were deleted (`GET /api/albums?since=`), not every album again.
+- Two-step sign-in: turn on codes from an authenticator app under Account (web, Android, Mac); a new sign-in then
+  asks for a code or one of ten one-time recovery codes. Unlocking a device that is already signed in doesn't. An
+  admin can turn it off for someone who lost their phone (Admin › Users, or `reset-2fa` on the server).
+- Devices under Account on Android and the Mac too (the web had it): see where you're signed in and sign out one or
+  all other devices. Your other devices show a notice when a new one signs in, when an admin turned off two-step
+  sign-in, and, with two-step sign-in on, when your password was used for a sign-in that wasn't finished.
+- "On this day": above Photos, the web, Android and Mac apps show a card for each earlier year with photos from
+  around today's date. Worked out on the device; the server learns nothing. Turn it off in Account (Settings on Mac).
+- Web and Android: "Duplicates and similar photos" finds photos uploaded more than once and bursts of nearly the same
+  shot, on your device, suggests which to keep and moves the rest to the trash (restorable for 30 days).
+- Editing on the web and Android: turn photos, crop them (free or in common shapes), and change when and where a photo
+  or video was taken (search a town, or pick the spot on the map). The original is never changed; downloads, shares and
+  saves give the edited photo with its date and place, the original stays one click away, and "Revert to original"
+  brings everything back. The Mac shows edits made elsewhere.
+- Server: `PUT /api/items/{id}/replace/thumb` and `/replace/preview` store the new encrypted pictures of an edited
+  photo (owner only, counted toward the storage limit; refused for the public demo).
+
 ## [2.6.1] - 2026-11-10
 
 Photos and videos keep where they were taken, however they are uploaded, and what arrived without it gets it.

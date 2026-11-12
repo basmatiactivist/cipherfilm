@@ -37,11 +37,41 @@ private func me(_ session: String?, _ indexer: String?, id: String = "0123456789
   }
 
   @Test func readerDownloadsTextOnly() {
-    #expect(Models.needed(faces: true, clip: .mobileclip, reader: true).map(\.name) == ["mobileclip-s2-text.onnx", "mobileclip-s2-tokenizer.json"])
-    #expect(Models.needed(faces: true, clip: .laion, reader: true).map(\.name) == ["nsfw-laion-b32-text.onnx", "mobileclip-s2-tokenizer.json"])
-    #expect(ClipModel.mobileclip.family == "mcs2" && ClipModel.laion.family == "laionb32")
+    #expect(Models.needed(faces: true, clip: .clip, reader: true).map(\.name) == ["clip-b32-text.onnx", "clip-b32-tokenizer.json"])
+    #expect(Models.needed(faces: true).map(\.name) == ["clip-b32-vision.onnx", "clip-b32-text.onnx", "clip-b32-tokenizer.json", "yunet-2023mar.onnx", "sface-2021dec.onnx"])
+    #expect(ClipModel.clip.family == "laionb32")
     // the family is the tag up to "+" or "/", as the server cuts it
-    #expect(ClipModel.laion.tag.hasPrefix(ClipModel.laion.family + "+") && ClipModel.mobileclip.tagNoFaces.hasPrefix(ClipModel.mobileclip.family + "/"))
+    #expect(ClipModel.clip.tag.hasPrefix(ClipModel.clip.family + "+") && ClipModel.clip.tagNoFaces.hasPrefix(ClipModel.clip.family + "/"))
+  }
+
+  /** A reading Mac counts the photos still waiting for the indexing device, the same ones that device would index:
+   *  not those it can't (broken, no key, not a photo or video, no picture), not those with an up-to-date entry. */
+  @Test func waitingForTheIndexingDevice() {
+    func item(_ id: String, kind: Kind = .image, pic: Bool = true, broken: Bool = false, key: Bool = true) -> Item {
+      Item(id: id, kind: kind, size: 1, segmentCount: 1, createdAt: 0, hasThumb: pic, hasPreview: false, favorite: false,
+           trashedAt: nil, purgeAt: nil, meta: nil, itemKey: key ? Data(repeating: 1, count: 32) : nil, broken: broken)
+    }
+    let items = [item("a"), item("b"), item("c", kind: .video), item("d", kind: .other), item("e", pic: false), item("f", broken: true), item("g", key: false), item("h")]
+    #expect(items.filter(Models.indexable).map(\.id) == ["a", "b", "c", "h"])
+    let clip = ClipModel.clip
+    let tags = ["a": clip.tag, "b": clip.tagNoFaces, "h": "mcs2+yunet23+sface21/1"]
+    #expect(Models.waiting(items, tags: tags, faces: true) == 3)  // b without faces, c none, h the old model
+    #expect(Models.waiting(items, tags: tags, faces: false) == 2) // b is enough without faces
+    #expect(Models.waiting(items, tags: ["a": clip.tag, "b": clip.tag, "c": clip.tag, "h": clip.tag], faces: true) == 0)
+  }
+
+  /** Becoming a reader deletes the image and face models and the yes to download them; "Index on This Mac Instead"
+   *  asks again for exactly those (the reason the autotest's takeover waited forever when it skipped the question). */
+  @Test func takingOverAsksForTheImageModelsAgain() throws {
+    let s = ModelStore(dir: FileManager.default.temporaryDirectory.appendingPathComponent("cf-takeover-\(UUID().uuidString)"))
+    defer { s.delete() }
+    s.agree(faces: true)
+    #expect(s.unagreed(faces: true).isEmpty)
+    s.removeIndexing()
+    #expect(s.unagreed(faces: true, reader: true).isEmpty) // reading needs nothing new
+    #expect(Set(s.unagreed(faces: true).map(\.name)) == Set(([ClipModel.clip.vision] + Models.faceFiles).map(\.name)))
+    s.agree(faces: true, reader: false)
+    #expect(s.unagreed(faces: true).isEmpty)
   }
 
   @Test func deviceName() {

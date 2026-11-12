@@ -34,6 +34,9 @@ const paths = {
   map: <><path d="M9 4L3 6.5v13L9 17l6 2.5 6-2.5v-13L15 6.5 9 4z" /><path d="M9 4v13M15 6.5v13" /></>,
   heart: <path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.2a4.3 4.3 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20z" />,
   slash: <><circle cx="12" cy="12" r="8" /><path d="M6.3 6.3l11.4 11.4" /></>,
+  turnLeft: <><rect x="9" y="11" width="11" height="9" rx="2" /><path d="M13 4H9a5 5 0 0 0-5 5v4" /><path d="M1.5 10.5L4 13l2.5-2.5" /></>,
+  turnRight: <><rect x="4" y="11" width="11" height="9" rx="2" /><path d="M11 4h4a5 5 0 0 1 5 5v4" /><path d="M17.5 10.5L20 13l2.5-2.5" /></>,
+  bell: <><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z" /><path d="M10 20.5a2 2 0 0 0 4 0" /></>,
 } as const;
 
 export type IconName = keyof typeof paths;

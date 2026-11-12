@@ -16,8 +16,8 @@ export function ReportDialog({ serverVersion, onClose }: { serverVersion?: strin
   const go = (withDetails: boolean) => { window.open(reportUrl(withDetails ? details : undefined), "_blank", "noopener,noreferrer"); onClose(); };
   return (
     <dialog ref={dlg} class="helpdlg reportdlg" aria-labelledby="report-title" onCancel={(e) => { e.preventDefault(); onClose(); }} onClick={(e) => { if (e.target === dlg.current) onClose(); }}>
-      <div class="helphead"><h2 id="report-title"><Icon name="info" />Report a problem on GitHub</h2><button class="iconbtn" aria-label="Close" onClick={onClose}><Icon name="x" /></button></div>
-      <p>You'll continue on github.com (a free GitHub account is needed to post). We'll fill in this device's details:</p>
+      <div class="helphead"><h2 id="report-title"><Icon name="info" />Report a problem</h2><button class="iconbtn" aria-label="Close" onClick={onClose}><Icon name="x" /></button></div>
+      <p>You'll continue in the browser, on the project's issue tracker (posting needs a free account there). We'll fill in this device's details:</p>
       <p class="reportline"><strong>{summary(details)}</strong></p>
       <p class="small">Nothing else is sent: no server address, e-mail, photos or names.</p>
       <div class="row">

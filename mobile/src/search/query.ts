@@ -1,4 +1,4 @@
-// One search box for everything the phone knows about a photo: people by name, what is in it (MobileCLIP), file
+// One search box for everything the phone knows about a photo: people by name, what is in it (CLIP), file
 // names, dates ("2023", "july 2021", "christmas"), cameras, videos and favorites. All of it runs on the decrypted
 // library in memory; nothing is sent anywhere.
 import { when, type Item } from "../library";

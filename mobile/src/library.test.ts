@@ -10,6 +10,7 @@ const st = vi.hoisted(() => ({
   decrypted: [] as string[],
   keyed: [] as string[],
   master: new Uint8Array(32),
+  forgot: [] as string[],
 }));
 vi.mock("expo-file-system", () => {
   const pathOf = (p: unknown) => (typeof p === "string" ? p : (p as { uri: string }).uri);
@@ -18,7 +19,8 @@ vi.mock("expo-file-system", () => {
     constructor(parent: unknown, name: string) { this.uri = `${pathOf(parent)}/${name}`; }
     get exists() { return [...st.files.keys()].some((k) => k.startsWith(this.uri + "/")); }
     create() {}
-    list() { return []; }
+    // the files right in this folder (pruneCache)
+    list() { return [...st.files.keys()].filter((k) => k.startsWith(this.uri + "/") && !k.slice(this.uri.length + 1).includes("/")).map((k) => new File(this.uri, k.slice(this.uri.length + 1))); }
   }
   class File {
     uri: string;
@@ -26,12 +28,16 @@ vi.mock("expo-file-system", () => {
     get exists() { return st.files.has(this.uri); }
     get parentDirectory() { return new Directory(this.uri.slice(0, this.uri.lastIndexOf("/")), ""); }
     async text() { return st.files.get(this.uri)!; }
+    textSync() { return st.files.get(this.uri)!; }
     async write(v: string) { st.files.set(this.uri, v); }
+    get name() { return this.uri.slice(this.uri.lastIndexOf("/") + 1); }
+    get modificationTime() { return 0; }
+    delete() { st.files.delete(this.uri); }
   }
-  return { Directory, File, Paths: { cache: "/cache" } };
+  return { Directory, File, Paths: { cache: "/cache", document: "/doc" } };
 });
 vi.mock("../modules/cf-native/src/CfNativeModule", () => ({
-  default: { thumbsSetup: () => {}, thumbKeys: (ids: string[]) => { st.keyed.push(...ids); }, thumbsPrefetch: () => {} },
+  default: { thumbsSetup: () => {}, thumbKeys: (ids: string[]) => { st.keyed.push(...ids); }, thumbsPrefetch: () => {}, thumbsForget: (ids: string[]) => { st.forgot.push(...ids); } },
 }));
 vi.mock("./api", () => ({
   api: async (_m: string, p: string) => { st.asked.push(p); if (!st.answers[p]) throw new Error("unexpected " + p); return structuredClone(st.answers[p]); },
@@ -63,7 +69,7 @@ describe("the library on the phone", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.useRealTimers();
-    Object.assign(st, { files: new Map(), answers: {}, asked: [], decrypted: [], keyed: [] });
+    Object.assign(st, { files: new Map(), answers: {}, asked: [], decrypted: [], keyed: [], forgot: [] });
   });
 
   it("after the whole list, a live update fetches and decrypts only what changed", async () => {
@@ -86,6 +92,53 @@ describe("the library on the phone", () => {
     // nothing new: the same array back (the store redoes nothing then)
     st.answers["/api/items?since=e.8"] = { items: [], removed: [], cursor: "e.8", more: false };
     expect(await lib.loadLibrary()).toBe(after);
+  });
+
+  it("checks an edit like the rest, and drops the pictures kept here when another device made new ones", async () => {
+    const lib = await import("./library");
+    const meta = (extra: object) => JSON.stringify({ name: "a.jpg", mime: "image/jpeg", size: 10, lastModified: 0, capture_ts: 1, ...extra });
+    st.answers["/api/items"] = { items: [rec(A, 1, { meta_enc: meta({ edit: { rot: 45, crop: "x" }, orig: { gps: "far" } }) })], next: "", cursor: "e.1" };
+    const first = await lib.loadLibrary();
+    expect(first[0].meta).not.toHaveProperty("edit"); // nonsense from some device: dropped
+    expect(first[0].meta).not.toHaveProperty("orig");
+    st.files.set(`/cache/cf-ct/alice/thumb-${A}`, "old");
+    st.answers["/api/items?since=e.1"] = { items: [rec(A, 1, { meta_enc: meta({ edit: { rot: 90, v: "n1" }, capture_ts: 1.6 }) })], removed: [], cursor: "e.2", more: false };
+    const after = await lib.loadLibrary();
+    expect(after[0].meta!.edit).toEqual({ rot: 90, v: "n1" });
+    expect(after[0].meta!.capture_ts).toBe(2);
+    expect(st.forgot).toEqual([A]); // the native thumbnails load the new one
+    expect(st.files.has(`/cache/cf-ct/alice/thumb-${A}`)).toBe(false); // and the encrypted copy kept here goes
+    // a change that leaves the picture as it is (a new date) keeps them
+    st.answers["/api/items?since=e.2"] = { items: [rec(A, 1, { meta_enc: meta({ edit: { rot: 90, v: "n1" }, capture_ts: 5 }) })], removed: [], cursor: "e.3", more: false };
+    await lib.loadLibrary();
+    expect(st.forgot).toEqual([A]);
+  });
+
+  it("never goes back to older metadata the server kept: the newer stays, or after a lock the item is stale", async () => {
+    let lib = await import("./library");
+    const meta = (extra: object) => JSON.stringify({ name: "a.jpg", mime: "image/jpeg", size: 10, lastModified: 0, capture_ts: 1, ...extra });
+    const placeRemoved = meta({ orig: { gps: { lat: 46.5, lon: 7.5 } }, mv: 1 });
+    const uploaded = meta({ gps: { lat: 46.5, lon: 7.5 } });
+    st.answers["/api/items"] = { items: [rec(A, 1, { meta_enc: placeRemoved })], next: "", cursor: "e.1" };
+    expect((await lib.loadLibrary())[0].meta!.gps).toBeUndefined();
+    expect(JSON.parse(st.files.get(`/doc/cf-mv/alice.json`)!)).toEqual([[A, 1]]); // ids and numbers only
+    // the server replays the upload's metadata: the newer one stays
+    st.answers["/api/items?since=e.1"] = { items: [rec(A, 1, { meta_enc: uploaded })], removed: [], cursor: "e.2", more: false };
+    const kept = (await lib.loadLibrary())[0];
+    expect(kept.meta!.gps).toBeUndefined();
+    expect(kept.stale).toBeFalsy();
+    // after a restart only the version is known: shown as sent, marked stale, and never shared as the original
+    vi.resetModules();
+    st.files.delete(LIST);
+    lib = await import("./library");
+    st.answers["/api/items"] = { items: [rec(A, 1, { meta_enc: uploaded })], next: "", cursor: "e.3" };
+    const stale = (await lib.loadLibrary())[0];
+    expect(stale.stale).toBe(true);
+    const { leavesAs } = await import("@edit/edit");
+    expect(leavesAs(stale.kind, stale.meta, stale.stale)).toBe("retag");
+    // a newer version is taken as usual
+    st.answers["/api/items?since=e.3"] = { items: [rec(A, 1, { meta_enc: meta({ mv: 2 }) })], removed: [], cursor: "e.4", more: false };
+    expect((await lib.loadLibrary())[0].stale).toBeFalsy();
   });
 
   it("an item's kind comes from its encrypted metadata, never from the server's plain field", async () => {
@@ -157,5 +210,26 @@ describe("the library on the phone", () => {
     const r = await lib.loadTrash();
     expect(ids(r.items)).toEqual([B]);
     expect(r.retentionDays).toBe(30);
+  });
+
+  it("pruning the cache keeps the search index's copies of both model families (explicit search, the Play build)", async () => {
+    const lib = await import("./library");
+    const dir = "/cache/cf-ct/alice";
+    for (const f of ["list.json", "index-mcs2.json", "index-mcs2.bin", "index-laionb32.json", "index-laionb32.bin",
+      `thumb-${A}`, `preview-${A}`, `thumb-${B}`, `preview-${B}`, ".index-mcs2.bin.tmp", "stray"]) st.files.set(`${dir}/${f}`, "x");
+    lib.pruneCache(new Set([A]));
+    expect([...st.files.keys()].map((k) => k.slice(dir.length + 1)).sort()).toEqual(
+      ["index-laionb32.bin", "index-laionb32.json", "index-mcs2.bin", "index-mcs2.json", "list.json", `preview-${A}`, `thumb-${A}`].sort());
+  });
+});
+
+describe("the original's SHA-256 in the metadata", () => {
+  it("is kept when it is 64 lowercase hex characters, and dropped otherwise", async () => {
+    const { checkedMeta } = await import("./library");
+    const base = { name: "a.jpg", mime: "image/jpeg", size: 1, lastModified: 0, capture_ts: 1 };
+    const good = "0f".repeat(32);
+    expect(checkedMeta({ ...base, sha256: good }).sha256).toBe(good);
+    for (const bad of ["0F".repeat(32), "0f".repeat(31), 42, null, ""]) expect(checkedMeta({ ...base, sha256: bad as never })).not.toHaveProperty("sha256");
+    expect(checkedMeta({ ...base })).not.toHaveProperty("sha256");
   });
 });

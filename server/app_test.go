@@ -53,6 +53,7 @@ type client struct {
 	e    *env
 	c    *http.Client
 	csrf string
+	host string // the name the requests reach the server by (Host), when not the test server's address
 }
 
 func (e *env) client() *client {
@@ -69,6 +70,9 @@ func (c *client) do(method, path string, body any, csrf bool) (int, map[string]a
 		rd = bytes.NewReader(b)
 	}
 	req, _ := http.NewRequest(method, c.e.srv.URL+path, rd)
+	if c.host != "" {
+		req.Host = c.host
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -750,4 +754,218 @@ func TestCredentialChecksQueueOnlySoFar(t *testing.T) {
 	}
 	qcancel()
 	waitFor(0)
+}
+
+// One account's known browser can't grow the Argon2 queue without bound: it has at most knownInFlight checks waiting
+// (the rest get 503 at once), and those don't count in the queue that turns unknown browsers away.
+func TestKnownBrowserQueueIsBoundedPerAccount(t *testing.T) {
+	e := newEnv(t)
+	_, ab := e.setupAdmin("admin@x.org")
+	known := e.client()
+	if code, out := known.do("POST", "/api/auth/login", map[string]any{"email": "admin@x.org", "auth": ab["auth"]}, false); code != 200 {
+		t.Fatalf("login: %d %v", code, out)
+	}
+	for i := 0; i < cap(argonSlots); i++ {
+		argonSlots <- struct{}{}
+	}
+	held := true
+	free := func() {
+		if held {
+			held = false
+			for i := 0; i < cap(argonSlots); i++ {
+				<-argonSlots
+			}
+		}
+	}
+	t.Cleanup(free)
+	const n = 20
+	codes := make(chan int, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			bb, _ := json.Marshal(map[string]any{"email": "admin@x.org", "auth": ab["auth"]})
+			req, _ := http.NewRequest("POST", e.srv.URL+"/api/auth/login", bytes.NewReader(bb))
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := known.c.Do(req)
+			if err != nil {
+				codes <- 0
+				return
+			}
+			resp.Body.Close()
+			codes <- resp.StatusCode
+		}()
+	}
+	busy := 0
+	for end := time.Now().Add(5 * time.Second); busy < n-knownInFlight && time.Now().Before(end); {
+		select {
+		case c := <-codes:
+			if c != 503 {
+				t.Fatalf("answered while every slot was taken: %d", c)
+			}
+			busy++
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	if busy != n-knownInFlight || argonKnownWaiting.Load() != knownInFlight {
+		t.Fatalf("%d turned away, %d waiting; want %d and %d", busy, argonKnownWaiting.Load(), n-knownInFlight, knownInFlight)
+	}
+	if w := argonWaiting.Load(); w != 0 {
+		t.Fatalf("known browsers fill the unknown browsers' queue: %d", w)
+	}
+	free()
+	wg.Wait()
+	close(codes)
+	for c := range codes {
+		if c != 200 {
+			t.Fatalf("a waiting known sign-in: %d", c)
+		}
+	}
+}
+
+// Behind Tailscale Serve (TRUST_PROXY=0, the peer is loopback) per-source limits are keyed by the tailnet user Serve
+// names, but only with TRUST_TAILSCALE_HEADERS=1: otherwise, or from any other peer, the header is ignored.
+func TestTailscaleUserHeaderOnlyWhenTrusted(t *testing.T) {
+	r := httptest.NewRequest("POST", "/", nil)
+	r.Header.Set("Tailscale-User-Login", "alice@example.com")
+	r.RemoteAddr = "127.0.0.1:5000"
+	if got := (&App{}).clientIP(r); got != "127.0.0.1" {
+		t.Fatalf("option off: %s", got)
+	}
+	a := &App{tsHeaders: true}
+	if got := a.clientIP(r); got != "tailscale:alice@example.com" {
+		t.Fatalf("option on, loopback peer: %s", got)
+	}
+	r.RemoteAddr = "[::1]:5000"
+	if got := a.clientIP(r); got != "tailscale:alice@example.com" {
+		t.Fatalf("option on, IPv6 loopback peer: %s", got)
+	}
+	for _, peer := range []string{"100.64.0.7:5000", "172.18.0.5:5000", "198.51.100.7:5000"} {
+		r.RemoteAddr = peer
+		if got := a.clientIP(r); strings.HasPrefix(got, "tailscale:") {
+			t.Fatalf("header believed from %s", peer)
+		}
+	}
+	// with TRUST_PROXY the proxy's X-Forwarded-For counts, never this header
+	r.RemoteAddr = "127.0.0.1:5000"
+	if got := (&App{tsHeaders: true, trustProxy: true}).clientIP(r); got != "127.0.0.1" {
+		t.Fatalf("with TRUST_PROXY: %s", got)
+	}
+	// two values, or one that isn't printable, are no user
+	r.Header.Add("Tailscale-User-Login", "bob@example.com")
+	if got := a.clientIP(r); got != "127.0.0.1" {
+		t.Fatalf("two values: %s", got)
+	}
+	r.Header.Set("Tailscale-User-Login", "x\x00y")
+	if got := a.clientIP(r); got != "127.0.0.1" {
+		t.Fatalf("control character: %s", got)
+	}
+
+	// end to end: one tailnet user's failures don't block another's sign-in; without the option they do
+	for _, on := range []bool{true, false} {
+		e := newEnv(t)
+		e.app.tsHeaders = on
+		_, ab := e.setupAdmin("admin@x.org")
+		as := func(login string, auth any) int {
+			bb, _ := json.Marshal(map[string]any{"email": "admin@x.org", "auth": auth})
+			req, _ := http.NewRequest("POST", e.srv.URL+"/api/auth/login", bytes.NewReader(bb))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Tailscale-User-Login", login)
+			resp, err := e.client().c.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp.Body.Close()
+			return resp.StatusCode
+		}
+		for i := 0; i < 30; i++ {
+			as("mallory@example.com", rb(32))
+		}
+		code := as("alice@example.com", ab["auth"])
+		if on && code != 200 {
+			t.Fatalf("another tailnet user blocked: %d", code)
+		}
+		if !on && code != 429 {
+			t.Fatalf("header believed without the option: %d", code)
+		}
+	}
+}
+
+// A signed-in session sending right password proofs (here: turning two-step sign-in off while it is off, which checks
+// the password and then answers 409) gets at most proofsPerAccount of them per window, at most knownInFlight at once,
+// and none of them waits in the queue that turns unknown browsers away.
+func TestSignedInPasswordProofsAreBounded(t *testing.T) {
+	e := newEnv(t)
+	admin, ab := e.setupAdmin("admin@x.org")
+	proof := map[string]any{"current_auth": ab["auth"]}
+	for i := 0; i < cap(argonSlots); i++ {
+		argonSlots <- struct{}{}
+	}
+	held := true
+	free := func() {
+		if held {
+			held = false
+			for i := 0; i < cap(argonSlots); i++ {
+				<-argonSlots
+			}
+		}
+	}
+	t.Cleanup(free)
+	const n = 10
+	codes := make(chan int, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			bb, _ := json.Marshal(proof)
+			req, _ := http.NewRequest("POST", e.srv.URL+"/api/me/2fa/disable", bytes.NewReader(bb))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-CSRF-Token", admin.csrf)
+			resp, err := admin.c.Do(req)
+			if err != nil {
+				codes <- 0
+				return
+			}
+			resp.Body.Close()
+			codes <- resp.StatusCode
+		}()
+	}
+	busy := 0
+	for end := time.Now().Add(5 * time.Second); busy < n-knownInFlight && time.Now().Before(end); {
+		select {
+		case c := <-codes:
+			if c != 503 {
+				t.Fatalf("answered while every slot was taken: %d", c)
+			}
+			busy++
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	if busy != n-knownInFlight || argonWaiting.Load() != 0 {
+		t.Fatalf("%d turned away, %d in the unknown browsers' queue; want %d and 0", busy, argonWaiting.Load(), n-knownInFlight)
+	}
+	free()
+	wg.Wait()
+	close(codes)
+	for c := range codes {
+		if c != 409 {
+			t.Fatalf("a waiting proof: %d", c)
+		}
+	}
+	// per window, right or wrong: the endpoint's own bucket resets on a right proof, this one doesn't
+	u, _ := e.app.userByEmail("admin@x.org")
+	e.app.proofs.clear(u.ID)
+	for i := 0; i < proofsPerAccount; i++ {
+		if code, _ := admin.do("POST", "/api/me/2fa/disable", proof, true); code != 409 {
+			t.Fatalf("proof %d: %d", i, code)
+		}
+	}
+	if code, _ := admin.do("POST", "/api/me/2fa/disable", proof, true); code != 429 {
+		t.Fatalf("over the limit: %d", code)
+	}
+	if code, _ := admin.do("POST", "/api/auth/recovery-key", with(proof, "wrapped_master_recovery", rb(wrappedLen), "recovery_verifier", rb(32)), true); code != 429 {
+		t.Fatalf("another proof endpoint over the limit: %d", code)
+	}
 }

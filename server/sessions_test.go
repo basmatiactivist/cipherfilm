@@ -4,7 +4,10 @@ import (
 	"database/sql"
 	"net/http"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
+	"time"
 )
 
 func (e *env) login(email string, b map[string]any) *client {
@@ -93,10 +96,10 @@ func TestOneDeviceIndexes(t *testing.T) {
 		code, _ := c.do("PUT", "/api/items/"+i1+"/index", map[string]any{"data_enc": rb(200), "model": model}, true)
 		return code
 	}
-	if put(phone, "mcs2/2") != 200 {
+	if put(phone, "laionb32/1") != 200 {
 		t.Fatal("first device to index")
 	}
-	if code := put(admin, "mcs2/2"); code != 409 {
+	if code := put(admin, "laionb32/1"); code != 409 {
 		t.Fatalf("second device indexed too: %d", code)
 	}
 	_, me := admin.do("GET", "/api/me", nil, false)
@@ -105,12 +108,12 @@ func TestOneDeviceIndexes(t *testing.T) {
 		t.Fatalf("indexer %v, phone %v", me["indexer"], pm["session_id"])
 	}
 	// the person moves indexing to this device
-	if code, _ := admin.do("PUT", "/api/me/indexer", nil, true); code != 200 || put(admin, "mcs2/2") != 200 || put(phone, "mcs2/2") != 409 {
+	if code, _ := admin.do("PUT", "/api/me/indexer", nil, true); code != 200 || put(admin, "laionb32/1") != 200 || put(phone, "laionb32/1") != 409 {
 		t.Fatal("claiming the indexer")
 	}
 	// the indexer signs out: the next device takes over
 	admin.do("POST", "/api/auth/logout", nil, true)
-	if put(phone, "mcs2/2") != 200 {
+	if put(phone, "laionb32/1") != 200 {
 		t.Fatal("after the indexer signed out")
 	}
 	if code, _ := phone.do("DELETE", "/api/me/indexer", nil, true); code != 200 {
@@ -121,36 +124,61 @@ func TestOneDeviceIndexes(t *testing.T) {
 	}
 }
 
-func TestIndexEntriesArePerModel(t *testing.T) {
+// One model family: MobileCLIP's entries (and untagged ones from before 1.9.0) left from older apps are read only with
+// ?model=mcs2, a new entry for an item replaces its old one, and they can be deleted on their own; the index itself
+// can't be deleted by family (older apps asked that for LAION's when explicit search was turned off).
+func TestLegacyEntriesStayReadableUntilReplaced(t *testing.T) {
 	e := newEnv(t)
 	admin, _ := e.setupAdmin("admin@x.org")
-	i1 := e.readyItem(admin)
-	a, b := rb(200), rb(200)
-	admin.do("PUT", "/api/items/"+i1+"/index", map[string]any{"data_enc": a, "model": "mcs2+yunet23+sface21/2"}, true)
-	admin.do("PUT", "/api/items/"+i1+"/index", map[string]any{"data_enc": b, "model": "laionb32+yunet23+sface21/1"}, true)
+	_, me := admin.do("GET", "/api/me", nil, false)
+	uid := me["user"].(map[string]any)["id"].(string)
+	i1, i2, i3 := e.readyItem(admin), e.readyItem(admin), e.readyItem(admin)
+	for _, r := range []struct{ id, model string }{{i1, "mcs2"}, {i2, ""}, {i3, "mcs2"}} {
+		if _, err := e.app.db.Exec(`INSERT INTO item_index(item_id,user_id,model,data_enc,updated_at) VALUES(?,?,?,?,1)`, r.id, uid, r.model, rb(200)); err != nil {
+			t.Fatal(err)
+		}
+	}
 	get := func(q string) []string {
 		_, out := admin.do("GET", "/api/index?since=0"+q, nil, false)
 		var l []string
 		for _, x := range out["entries"].([]any) {
-			l = append(l, x.(map[string]any)["data_enc"].(string))
+			l = append(l, x.(map[string]any)["item_id"].(string))
 		}
 		return l
 	}
-	if l := get("&model=mcs2"); len(l) != 1 || l[0] != a {
+	if l := get("&model=mcs2"); len(l) != 3 {
 		t.Fatalf("mcs2: %v", l)
 	}
-	if l := get("&model=laionb32"); len(l) != 1 || l[0] != b {
+	if l := get("&model=laionb32"); len(l) != 0 {
+		t.Fatalf("laionb32 before indexing: %v", l)
+	}
+	b := rb(200)
+	if code, _ := admin.do("PUT", "/api/items/"+i1+"/index", map[string]any{"data_enc": b, "model": "laionb32+yunet23+sface21/1"}, true); code != 200 {
+		t.Fatalf("index: %d", code)
+	}
+	if l := get("&model=laionb32"); len(l) != 1 || l[0] != i1 {
 		t.Fatalf("laionb32: %v", l)
 	}
-	if l := get(""); len(l) != 2 {
+	if l := get("&model=mcs2"); len(l) != 2 || slices.Contains(l, i1) {
+		t.Fatalf("the item's MobileCLIP entry stayed: %v", l)
+	}
+	if code, _ := admin.do("PUT", "/api/items/"+i2+"/index", map[string]any{"data_enc": rb(200), "model": "laionb32/1"}, true); code != 200 {
+		t.Fatalf("index: %d", code)
+	}
+	if l := get(""); len(l) != 3 {
 		t.Fatalf("all: %v", l)
 	}
 	if code, _ := admin.do("GET", "/api/index?model=bad!", nil, false); code != 400 {
 		t.Fatalf("bad model: %d", code)
 	}
-	admin.do("DELETE", "/api/index?model=laionb32", nil, true)
-	if l := get(""); len(l) != 1 || l[0] != a {
-		t.Fatalf("after deleting one model: %v", l)
+	if code, _ := admin.do("DELETE", "/api/index?model=laionb32", nil, true); code != 409 || len(get("&model=laionb32")) != 2 {
+		t.Fatalf("an older app deleted the index: %d", code)
+	}
+	if code, _ := admin.do("DELETE", "/api/index?model=mcs2", nil, true); code != 200 {
+		t.Fatalf("delete mcs2: %d", code)
+	}
+	if l := get(""); len(l) != 2 || len(get("&model=mcs2")) != 0 {
+		t.Fatalf("after deleting MobileCLIP's: %v", l)
 	}
 }
 
@@ -229,5 +257,94 @@ func TestOwnSignOutsDoNotFlushTheActivityLog(t *testing.T) {
 	}
 	if invites != 2 {
 		t.Fatalf("admin entries shown: %d", invites)
+	}
+}
+
+// The notices table of the development versions had a CHECK on kind; it is rebuilt without one, keeping the rows and
+// the id counter (the apps remember dismissed ids: an id must not come again), once.
+func TestNoticesTableLosesItsCheck(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "app.db")
+	db, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := strings.Replace(schema, "  kind TEXT NOT NULL,\n", "  kind TEXT NOT NULL CHECK (kind IN ('sign_in','2fa_reset')),\n", 1)
+	if old == schema {
+		t.Fatal("the schema's notices table changed: update this test")
+	}
+	for _, q := range []string{
+		old,
+		`INSERT INTO users(id,email,role,kdf,auth_hash,pubkey,wrapped_master_pw,wrapped_master_recovery,wrapped_privkey,recovery_hash,created_at) VALUES ('u1','a@x.org','admin','','','','','','','',1)`,
+		`INSERT INTO notices(user_id,kind,device,session_pub,at,dismissed) VALUES ('u1','sign_in','Phone','p1',5,0), ('u1','2fa_reset','','',6,1), ('u1','sign_in','x','',7,0)`,
+		`DELETE FROM notices WHERE at=7`, // pruned: its id is not to come again
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(q, err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO notices(user_id,kind,at) VALUES ('u1','password_used',8)`); err == nil {
+		t.Fatal("the old table took a new kind")
+	}
+	db.Close()
+	for i := 0; i < 2; i++ { // and again at the next start
+		db, err := openDB(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var def string
+		db.QueryRow(`SELECT sql FROM sqlite_master WHERE name='notices'`).Scan(&def)
+		if strings.Contains(def, "CHECK") {
+			t.Fatalf("still: %s", def)
+		}
+		var n, idx int
+		db.QueryRow(`SELECT COUNT(*) FROM notices WHERE (id=1 AND kind='sign_in' AND device='Phone' AND session_pub='p1' AND at=5 AND dismissed=0)
+			OR (id=2 AND kind='2fa_reset' AND dismissed=1)`).Scan(&n)
+		db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='notices_user'`).Scan(&idx)
+		if n != 2 || idx != 1 {
+			t.Fatalf("rows %d, index %d", n, idx)
+		}
+		if i == 0 {
+			res, err := db.Exec(`INSERT INTO notices(user_id,kind,at) VALUES ('u1','password_used',8)`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if id, _ := res.LastInsertId(); id != 4 {
+				t.Fatalf("new id %d: an old one again", id)
+			}
+		}
+		db.Close()
+	}
+}
+
+// An account has at most sessionsMax live sessions: a new sign-in beyond that ends the one idle longest, not one in use.
+func TestLiveSessionsPerAccountAreCapped(t *testing.T) {
+	e := newEnv(t)
+	clk := e.pinClock()
+	first, ab := e.setupAdmin("admin@x.org")
+	second := e.login("admin@x.org", ab)
+	var rest []*client
+	for i := 0; i < sessionsMax+5; i++ {
+		clk.tick(2 * time.Minute)
+		if i == 10 {
+			if code, _ := first.do("GET", "/api/me", nil, false); code != 200 { // the first device is in use
+				t.Fatalf("first: %d", code)
+			}
+		}
+		rest = append(rest, e.login("admin@x.org", ab))
+	}
+	u, _ := e.app.userByEmail("admin@x.org")
+	var n int
+	e.app.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE user_id=?`, u.ID).Scan(&n)
+	if n != sessionsMax {
+		t.Fatalf("%d live sessions, want %d", n, sessionsMax)
+	}
+	if code, _ := second.do("GET", "/api/me", nil, false); code != 401 {
+		t.Fatalf("the session idle longest still works: %d", code)
+	}
+	if code, _ := first.do("GET", "/api/me", nil, false); code != 200 {
+		t.Fatalf("a session in use was ended: %d", code)
+	}
+	if code, _ := rest[len(rest)-1].do("GET", "/api/me", nil, false); code != 200 {
+		t.Fatalf("the newest: %d", code)
 	}
 }

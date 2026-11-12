@@ -72,3 +72,22 @@ describe("a big city reaches farther than its point", () => {
     expect(label(p.nearest(47.3717, 8.5423))).toBe("Zürich, Switzerland");
   });
 });
+
+describe("picking a place by name", () => {
+  it("finds places as the name is typed, the largest first", () => {
+    expect(p.find("zurich")[0]).toMatchObject({ name: "Zürich", country: "Switzerland" });
+    expect(p.find("Zür")[0].name).toBe("Zürich");
+    expect(p.find("paris")[0]).toMatchObject({ name: "Paris", countryCode: "FR" });
+  });
+  it("narrows by region or country with more words", () => {
+    const tx = p.find("paris texas");
+    expect(tx.length).toBeGreaterThan(0);
+    expect(tx.every((x) => x.region === "Texas")).toBe(true);
+    expect(p.find("paris, us").every((x) => x.countryCode === "US")).toBe(true);
+  });
+  it("needs two letters and keeps to the limit", () => {
+    expect(p.find("p")).toEqual([]);
+    expect(p.find("  ")).toEqual([]);
+    expect(p.find("san", 5)).toHaveLength(5);
+  });
+});

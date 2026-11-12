@@ -71,6 +71,11 @@ photos.example.com {
 
 For private use with no open ports, [Tailscale Serve](https://tailscale.com/kb/1312/serve) works too:
 `tailscale serve --bg 8080` on the host, with `PUBLIC_HOSTS=<machine>.<tailnet>.ts.net` and `TRUST_PROXY=0`.
+Add `TRUST_TAILSCALE_HEADERS=1` so sign-in limits are kept per tailnet user (the `Tailscale-User-Login` header Serve
+adds) instead of one bucket for everyone, but only if nothing else that passes on client headers reaches the app on
+loopback (no other proxy in front of it on the same host).
+A complete private setup in Docker (Tailscale, your own name, Kopia backups, all without open web ports):
+[TAILNET.md](TAILNET.md).
 
 A public site puts the login page on the internet. The app is invite-only (no public sign-up), rate-limits logins and
 stores nothing readable, but keep it updated. Hardening the host: [SERVER-HARDENING.md](SERVER-HARDENING.md).
@@ -122,8 +127,14 @@ scripts/restore.sh /path/to/cipherfilm-20261102-035500.tar --yes
 From your own tool's backup: `tar -cf restore.tar -C restored-folder backup blobs`, then restore that. The script ends
 every session (an older backup would revive revoked ones) and prints a health report. What happened to the accounts
 after the backup is taken over from the replaced data: devices signed out since, changed passwords and recovery keys,
-roles, and disabled or deleted accounts (those stay disabled; their e-mail addresses are printed). This applies only
+two-step sign-in turned on or off, passkeys and new recovery codes (and the notices for the devices),
+roles, storage limits (and the default one for new people), explicit search, and disabled or deleted accounts (those stay disabled; their e-mail addresses are printed). This applies only
 when the replaced data is from the same server (the same `secret`).
+
+If the last step (`after-restore`) fails, the script stops with the app stopped: the replaced data stays in
+`.previous/`, and a `.restore-pending` file in the volume keeps the server from starting and `restore.sh` (and the
+demo's `reset.sh`) from running again, which would drop `.previous/`. Fix the cause, then
+`docker compose run --rm --no-deps -T app after-restore` (it removes the file) and `docker compose up -d app`.
 
 **Test your restore** on a spare machine with `scripts/restore.sh`, and sign in as a user.
 
@@ -157,10 +168,13 @@ lost device, make an invite link, status). A password can't be reset from the se
 |---|---|---|---|
 | `PUBLIC_HOSTS` | `.env` | required | names your proxy serves, e.g. `photos.example.com`; others get 421 |
 | `TRUST_PROXY` | `.env` | `1` | trust the last `X-Forwarded-For` entry from exactly one proxy; `0` for a chain, a Cloudflare Tunnel or Tailscale Serve |
+| `TRUST_TAILSCALE_HEADERS` | `.env` | `0` | `1` behind Tailscale Serve with `TRUST_PROXY=0`: requests from loopback are limited per tailnet user (`Tailscale-User-Login`) instead of all as `127.0.0.1`. Only when Serve is the only thing reaching the app on loopback |
 | `TRUSTED_PROXIES` | `.env` | empty (loopback and private networks) | addresses or CIDRs whose `X-Forwarded-For` is believed, comma-separated |
 | `MAP_STYLE` | `.env` | empty (OpenFreeMap, VersaTiles as fallback) | the map tab's base map: `off`, or `LIGHT_STYLE_URL DARK_STYLE_URL` (your own MapLibre styles over https); photo locations never leave the devices, the tile server only sees which map areas are viewed ([docs/MAP.md](MAP.md); your own map server: [Your own map tiles](MAP.md#your-own-map-tiles)) |
 | `DEMO_ACCOUNTS` | `.env` | empty | e-mail addresses of public demo accounts, comma-separated: they can sign in, look and search, but not upload, edit, delete or change the account (403); see [deploy/demo](../deploy/demo/README.md) |
 | `DEMO_LOGIN` | `.env` | empty | `EMAIL PASSWORD` of one `DEMO_ACCOUNTS` login: the sign-in page shows it with an "Open the demo" button. The password is published, so only for a demo |
+| `ANDROID_APP_CERTS` | `.env` | the official app's release key | SHA-256 fingerprints of the Android app signing certificates whose passkey requests are accepted (as `keytool -list -v` or Play Console › App integrity show them, with or without colons; comma-separated), and listed in `/.well-known/assetlinks.json`; `none` for no app. Add your own key for a self-built app, or the debug key of a test build |
+| `ANDROID_APP_PACKAGES` | `.env` | `app.cipherfilm` | the Android packages listed in `/.well-known/assetlinks.json` (`app.cipherfilm.test` for a test build) |
 | `APP_PORT` | `.env` | `8080` | port your proxy connects to |
 | `APP_BIND` | `.env` | `127.0.0.1` | address the app listens on; the Docker bridge's address for a proxy in a container (see Deploy) |
 | `DATA_VOLUME` | `.env` | `cipherfilm_data` | Docker volume for database and files |
@@ -170,6 +184,20 @@ lost device, make an invite link, status). A password can't be reset from the se
 list an account with real photos or an administrator: anyone with the password can see everything in it.
 
 Built-in limits: 20 GB per invited user (changeable; thumbnails and previews count too), 50 unfinished uploads per user, 8 GB per file, sessions end 30 days after their last use or a year after signing in, trash empties after 30 days, 10 failed sign-ins per account and source address and 30 per source address overall, per 15 minutes. There is no ceiling across all sources, on purpose: it would let a stranger lock you out. Browsers that signed in before have their own limit of 20 per account. Live-update streams: 8 per session (browser tabs share one), 32 per account, 2000 in all.
+
+## Passkeys
+
+Two-step sign-in can use passkeys instead of the authenticator app's code (the password stays needed). They are made
+for the name the server is reached by, so:
+
+- Reach the server by its https name, the one in `PUBLIC_HOSTS`, never by an IP address; a passkey made under one name
+  doesn't work under another. The proxy must pass the `Host` header on (it already must, for the CSRF check).
+- The Android app (Android 14 and newer) asks Android, which checks `https://<name>/.well-known/assetlinks.json`
+  through Google: the server serves it by itself, but the name and that file must be reachable from the internet. A
+  tailnet-only server (Tailscale Serve, no Funnel) can't offer passkeys on Android; its people keep the code from the
+  authenticator app, and passkeys still work in the browser and on the Mac. A self-built app needs its signing key
+  in `ANDROID_APP_CERTS`.
+- The Mac app opens the server's `/passkey` page in the default browser for each passkey step.
 
 ## Troubleshooting
 
@@ -196,3 +224,8 @@ only on the server your administrator runs.
 ## Admin area
 
 **Admin** (visible to administrators only) shows who is on the server and how much they use, last sign-in per person, open invites (revocable), a default storage limit for new people, per-person limits, role changes (make someone an administrator or a regular user), server status (disk, data size, signed-in devices, last backup) and a log of recent admin actions. None of it exposes photos, album names or file names.
+
+The same is in the apps for administrators: on Android under **Account › Administration** (an invite link goes out
+through the share sheet), on the Mac under **Settings › Administration**. They use the same API; the server checks
+every request, so a regular account or a public demo login gets "not found" whatever an app shows. The Google Play
+build leaves out the explicit-search permission (manage it on the web or the Mac).

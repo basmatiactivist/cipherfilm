@@ -14,6 +14,8 @@ ${ind}release {
 ${ind}    if (System.getenv("CF_KEYSTORE")) {
 ${ind}        // a tree prebuilt for a test build trusts the local test CA (withTestCA.js): never signed with the release key
 ${ind}        if (file("src/main/res/raw/cf_test_ca.pem").exists()) throw new GradleException("android/ was prebuilt with CF_TEST_CA: run expo prebuild --clean before a release build")
+${ind}        // nor one prebuilt as the test package (CF_TEST_PACKAGE: its own id and passkey address)
+${ind}        if (android.defaultConfig.applicationId == "app.cipherfilm.test") throw new GradleException("android/ was prebuilt with CF_TEST_PACKAGE: run expo prebuild --clean before a release build")
 ${ind}        storeFile file(System.getenv("CF_KEYSTORE"))
 ${ind}        storePassword System.getenv("CF_KEYSTORE_PASSWORD")
 ${ind}        keyAlias System.getenv("CF_KEY_ALIAS") ?: "cipherfilm"

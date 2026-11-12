@@ -6,15 +6,20 @@ const server = vi.hoisted(() => ({
   calls: [] as string[],
   created: null as null | ((id: string) => void),
   asked: null as null | (() => void),
+  bodies: new Map<string, any>(),
+  resume: null as null | object,
+  puts: [] as string[],
 }));
 vi.mock("./api", () => ({
-  api: async (method: string, path: string) => {
+  api: async (method: string, path: string, body?: unknown) => {
     server.calls.push(`${method} ${path}`);
+    server.bodies.set(`${method} ${path}`, body);
+    if (method === "GET" && path.endsWith("/upload") && server.resume) return server.resume;
     if (method === "POST" && path === "/api/items") return new Promise((r) => { server.created = (id) => r({ id }); server.asked?.(); });
     return {};
   },
   getBytes: async () => new Uint8Array(),
-  putBytes: async () => {},
+  putBytes: async (path: string) => { server.puts.push(path); },
 }));
 vi.mock("./media", () => ({ kindOf: () => "other", readMeta: async () => ({}), THUMB_PX: 1, PREVIEW_PX: 1 }));
 
@@ -29,6 +34,8 @@ const keys = () => [...store.keys()];
 import { mem } from "./state";
 import { discardUpload, isItemId, SignedOut, uploadFile } from "./items";
 import { uploadQueue } from "./upqueue";
+import { b64, getSodium, unb64 } from "./crypto/sodium";
+import { decryptMeta, newItemKey, unwrapItemKey, wrapItemKey } from "./crypto/item";
 
 const signIn = (id: string) => {
   mem.me = { user: { id, email: `${id}@example.com`, role: "user" } } as any;
@@ -74,6 +81,34 @@ describe("an upload and the account that started it", () => {
     await discardUpload(file(), "a");
     expect(server.calls).toEqual([`DELETE /api/items/${"1".repeat(32)}`]);
     expect(keys()).toEqual([]);
+  });
+});
+
+describe("the original's SHA-256 in the metadata", () => {
+  beforeEach(() => { store.clear(); server.calls = []; server.puts = []; server.resume = null; signIn("a"); });
+  const id = "2".repeat(32);
+  const metaOf = async () => {
+    const s = await getSodium();
+    const body = server.bodies.get(`POST /api/items/${id}/finalize`);
+    const key = unwrapItemKey(s, unb64(s, body.wrapped_item_key), mem.masterKey!, id);
+    return decryptMeta<{ sha256?: string }>(s, unb64(s, body.meta_enc), key, id);
+  };
+  const want = "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81"; // SHA-256 of the bytes 1, 2, 3
+
+  it("is computed from the parts as they are encrypted", async () => {
+    const { run } = await startUpload();
+    server.created!(id);
+    await run;
+    expect((await metaOf()).sha256).toBe(want);
+  });
+
+  it("covers the parts the server already had when an upload resumes", async () => {
+    const s = await getSodium();
+    store.set("cf-upload:a:private-name.jpg:3:7", JSON.stringify({ id, wrapped: b64(s, wrapItemKey(s, newItemKey(s), mem.masterKey!, id)) }));
+    server.resume = { state: "uploading", size: 3, segment_count: 1, received: [0], has_thumb: false };
+    await uploadFile(file(), () => {});
+    expect(server.puts).toEqual([]); // nothing sent again
+    expect((await metaOf()).sha256).toBe(want);
   });
 });
 

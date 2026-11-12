@@ -3,7 +3,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { Tokenizer, words } from "./tokenizer";
 
-// Ids from Hugging Face's own tokenizers library for the same tokenizer.json (Xenova/mobileclip_s2). The file is 2 MB
+// Ids from Hugging Face's own tokenizers library for the same tokenizer.json (clip-b32-tokenizer.json, Immich's export of
+// LAION's ViT-B/32). The file is 3.6 MB
 // and not in the repository: set CF_TOKENIZER to its path to check the ids; the pre-tokenizer is always checked.
 const expected: Record<string, number[]> = {
   "a dog": [49406, 320, 1929, 49407],

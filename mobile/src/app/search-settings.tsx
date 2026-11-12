@@ -13,7 +13,8 @@ import { loadPeople, setExplicit } from "../search/people";
 import { explicitSearchOffered } from "../store";
 import { expectAway } from "../autolock";
 import { backgroundUse, ownBatteryRules, useOnReturn } from "../deviceState";
-import { deleteModels, downloadSize } from "../search/models";
+import { agreeModels, checkModelsHere, CLIP, deleteModels, downloadSize, modelsOnPhone, onConsentChange, unagreed } from "../search/models";
+import { ModelConsentDialog, type ConsentAsk } from "../modelConsent";
 import { loadSettings, onSettingsChange, pinAccount, saveSettings, type SearchSettings } from "../search/settings";
 import { Problem, SwitchItem, useAppTheme } from "../ui";
 import { radius, text } from "../tokens";
@@ -28,7 +29,7 @@ export default function SearchSettingsScreen() {
   const th = useAppTheme();
   const inset = useSafeAreaInsets();
   const [s, setS] = useState<SearchSettings | null>(null);
-  // explicit search: offered only where an admin allowed it; the choice is the account's (docs/SEARCH.md). The
+  // explicit search (no filter): offered only where an admin allowed it; the choice is the account's (docs/SEARCH.md). The
   // account is fetched again here, so a permission the admin gave since sign-in shows once it arrives. The screen
   // doesn't wait for it: it shows the account as the phone knows it, and the rows follow when the answer comes.
   const me = useSession().me;
@@ -50,11 +51,18 @@ export default function SearchSettingsScreen() {
   const [device, setDevice] = useState(() => N.backupState());
   const p = useSearchProgress();
   useOnReturn(() => setDevice(N.backupState())); // back from Android's settings
+  const [, setConsentTick] = useState(0);
   useEffect(() => {
     loadSettings().then(setS);
     const a = onSettingsChange(() => loadSettings().then(setS));
-    return () => { a(); };
+    const b = onConsentChange(() => setConsentTick((n) => n + 1));
+    checkModelsHere().catch(() => {}); // the files here count once their hash is checked (models.ts)
+    return () => { a(); b(); };
   }, []);
+
+  // before anything is downloaded from Hugging Face, the question (modelConsent.tsx); then what was asked for goes on
+  const [ask, setAsk] = useState<(ConsentAsk & { then: () => void }) | null>(null);
+  const withConsent = (a: ConsentAsk, then: () => void) => { if (unagreed(a.faces, a.clip, a.indexes).length) setAsk({ ...a, then }); else then(); };
 
   const restart = () => { startSearch(libraryItems()).catch(() => {}); };
   const change = async (patch: Partial<SearchSettings>, again = true) => {
@@ -66,22 +74,12 @@ export default function SearchSettingsScreen() {
     } catch (e) { setError(e instanceof Error ? e.message : t("That didn't work.")); }
   };
 
-  // where explicit search is allowed, the model is chosen before anything downloads (it can be changed later)
-  const [choose, setChoose] = useState(false);
-  const turnOn = async (model?: "standard" | "explicit") => {
-    if (!model) {
-      setBusy(true);
-      // the permission as it is now, then always the question where it is allowed
-      const now = await refreshMe().catch(() => session().me);
-      setBusy(false);
-      if (now?.user.nsfw && explicitSearchOffered()) { loadPeople().then((d) => setExplicitState(!!d.explicit), () => {}); setChoose(true); return; }
-    }
-    setChoose(false);
+  const turnOn = async (agreed = false) => {
+    if (!agreed && s && unagreed(s.faces, CLIP, here).length) { setAsk({ faces: s.faces, clip: CLIP, indexes: here, then: () => turnOn(true) }); return; }
     setBusy(true); setError(undefined);
     try {
       const { me, masterKey } = session();
       if (!me || !masterKey) throw new Error(t("Unlock your library first."));
-      if (model) { const on = model === "explicit"; await setExplicit(on); setExplicitState(on); }
       await saveSettings({ enabled: true, asked: true, ...(await pinAccount(me, server(), masterKey)) });
       await scheduleBackground();
       restart();
@@ -106,10 +104,11 @@ export default function SearchSettingsScreen() {
   );
   // (the settings are read once per start, then kept in memory: this shows only for a moment, if at all)
   if (!s) return <View style={{ flex: 1, backgroundColor: th.colors.background }}>{header}<View style={st.waiting}><Loader /></View></View>;
-  const size = downloadSize(s.faces, allowed && explicit ? "laion-b32" : "mobileclip-s2", here);
-  // what this phone would download for each model: all of it if it indexes, only the text side if it only searches
-  const need = (c: "mobileclip-s2" | "laion-b32") => { const n = downloadSize(s.faces, c, here); return n ? t("a {size} download", { size: mb(n) }) : t("already on this phone"); };
-  const moveHere = async () => {
+  const current = CLIP;
+  const size = downloadSize(s.faces, current, here);
+  const onPhone = modelsOnPhone();
+  const moveHere = () => withConsent({ faces: s.faces, clip: current, indexes: true }, moveHereNow);
+  const moveHereNow = async () => {
     setBusy(true); setError(undefined);
     try { await indexHere(libraryItems()); } catch (e) { setError(e instanceof Error ? e.message : t("That didn't work.")); } finally { setBusy(false); }
   };
@@ -128,7 +127,8 @@ export default function SearchSettingsScreen() {
             <View style={{ flex: 1 }}>
               <Text variant="titleMedium">{t("Search what's in your photos")}</Text>
               <Text variant="bodySmall" style={{ color: th.colors.onSurfaceVariant, marginTop: 2 }}>
-                {!s.enabled ? t("Off") : p.phase === "download" ? t("Downloading models · {done} of {total}", { done: mb(p.done), total: mb(p.total) })
+                {!s.enabled ? t("Off") : p.phase === "consent" ? t("Waiting for your OK to download the models ({size})", { size: mb(p.total) })
+                  : p.phase === "download" ? t("Downloading models · {done} of {total}", { done: mb(p.done), total: mb(p.total) })
                   : p.phase === "waitWifi" ? t("Waiting for Wi-Fi to download the models")
                   : p.phase === "indexing" ? t("Indexing for search · {done} of {total}", { done: num(p.done), total: num(p.total) })
                   : p.phase === "ready" ? tn(p.total, "Ready · {n} photo or video", "Ready · {n} photos and videos")
@@ -143,6 +143,11 @@ export default function SearchSettingsScreen() {
             // getting ready (opening the models, the server's entries) has no count yet: it moves without one
             <ProgressBar progress={p.total ? p.done / p.total : 0} indeterminate={p.phase === "loading" && !p.total} color={th.colors.primary} style={{ height: 5, borderRadius: 3, marginTop: 12, backgroundColor: th.colors.outlineVariant }} />
           ) : null}
+          {s.enabled && p.phase === "consent" ? (
+            <Button mode="contained" style={{ marginTop: 12, alignSelf: "flex-start" }} onPress={() => setAsk({ faces: s.faces, clip: current, indexes: here, then: restart })}>
+              {t("Download…")}
+            </Button>
+          ) : null}
           {s.enabled && (p.phase === "waitWifi" || p.phase === "error") ? (
             <Button mode="contained" style={{ marginTop: 12, alignSelf: "flex-start" }} onPress={() => (p.phase === "waitWifi" ? change({ wifiOnly: false }) : restart())}>
               {p.phase === "waitWifi" ? t("Download now ({size})", { size: mb(size) }) : t("Try again")}
@@ -150,15 +155,21 @@ export default function SearchSettingsScreen() {
           ) : null}
           {!s.enabled ? (
             <Text variant="bodySmall" style={{ marginTop: 8, color: th.colors.onSurfaceVariant }}>
-              {allowed
-                ? t("Runs on this phone. Downloads once from Hugging Face: standard search {standard}, explicit search {explicit}. You choose when you turn it on.", { standard: need("mobileclip-s2"), explicit: need("laion-b32") })
-                : size ? t("Runs on this phone. Downloads {size} once from Hugging Face.", { size: mb(size) }) : t("The models are already on this phone.")}
+              {size ? t("Runs on this phone. Downloads {size} once.", { size: mb(size) }) : t("The models are already on this phone.")}
             </Text>
           ) : null}
           {/* where the models come from, said before anything is downloaded (docs/MODELS.md) */}
-          {(!s.enabled && (size || allowed)) || p.phase === "waitWifi" ? (
+          {(!s.enabled && size) || p.phase === "waitWifi" ? (
             <Text variant="bodySmall" style={{ marginTop: 8, color: th.colors.onSurfaceVariant }}>
-              {p.phase === "waitWifi" ? t("Downloaded once from Hugging Face. Hugging Face sees this phone's IP address, nothing of your photos.") : t("Hugging Face sees this phone's IP address, nothing of your photos.")}
+              {p.phase === "waitWifi" ? t("Downloaded once from the site where the models are published. That site sees this phone's IP address, nothing of your photos.") : t("The site the models come from sees this phone's IP address, nothing of your photos. You're asked before anything is downloaded.")}
+            </Text>
+          ) : null}
+          {/* the models already here: where from, when, how big (docs/MODELS.md) */}
+          {onPhone ? (
+            <Text variant="bodySmall" style={{ marginTop: 8, color: th.colors.onSurfaceVariant }}>
+              {onPhone.at
+                ? t("Models downloaded on {date}, {size}.", { date: new Date(onPhone.at).toLocaleDateString(locale(), { day: "numeric", month: "short", year: "numeric" }), size: mb(onPhone.bytes) })
+                : t("Models downloaded, {size}.", { size: mb(onPhone.bytes) })}
             </Text>
           ) : null}
         </View>
@@ -172,13 +183,14 @@ export default function SearchSettingsScreen() {
             right={() => (here ? null : <Button mode="outlined" compact disabled={busy} onPress={moveHere} style={{ alignSelf: "center" }}>{t("Index here")}</Button>)} />
         ) : null}
 
-        <SwitchItem title={t("Find people")} description={t("Group photos by face. You can name people.")} value={s.faces} onValueChange={(v) => change({ faces: v })} />
+        <SwitchItem title={t("Find people")} description={t("Group photos by face. You can name people.")} value={s.faces}
+          onValueChange={(v) => (v && s.enabled ? withConsent({ faces: true, clip: current, indexes: here }, () => change({ faces: true })) : change({ faces: v }))} />
         <SwitchItem title={t("Download models only on Wi-Fi")} value={s.wifiOnly} onValueChange={(v) => change({ wifiOnly: v })} />
         {allowed && s.enabled && explicit !== null ? (
           <SwitchItem title={t("Explicit search")} disabled={busy}
             description={explicit
-              ? t("Uses an uncensored model (LAION CLIP ViT-B/32). Turn off to go back to MobileCLIP.")
-              : t("Your admin allowed it. An uncensored model (LAION CLIP ViT-B/32) that also finds explicit content; {size}. Applies to all your devices; the index is rebuilt.", { size: need("laion-b32") })}
+              ? t("Search also finds explicit photos. Applies to all your devices.")
+              : t("Your admin allowed it. Search leaves out photos and words it takes for explicit content; turn on to find everything. Applies to all your devices.")}
             value={explicit} onValueChange={switchExplicit} />
         ) : null}
 
@@ -192,37 +204,24 @@ export default function SearchSettingsScreen() {
             default ("Optimized") lets it run, as the Backup screen says too (deviceState.ts backgroundUse) */}
         {s.background && (backgroundUse(device) === "restricted" || (ownBatteryRules() && !device.batteryExempt)) ? (
           <List.Item title={t("Run in the background")} descriptionNumberOfLines={4}
-            description={backgroundUse(device) === "restricted" ? t("Android stops indexing when the app is closed. In the app settings, open Battery and allow background usage.") : t("On Xiaomi phones: app settings › Battery saver › No restrictions.")}
+            description={backgroundUse(device) === "restricted" ? t("Android stops indexing when the app is closed. In the app settings, open Battery and allow background usage.") : t("On this phone: app settings › Battery saver › No restrictions.")}
             right={() => <Button mode="outlined" compact style={{ alignSelf: "center" }}
               onPress={() => { expectAway(); N.openAppSettings(); }}>{t("Open")}</Button>} />
         ) : null}
 
         <Divider style={{ marginTop: 8 }} />
         <Text variant="bodySmall" style={[st.hint, { color: th.colors.onSurfaceVariant, marginTop: 12 }]}>
-          {t("Runs on this phone with open models (MobileCLIP for content, YuNet and SFace for faces). Results are encrypted before they are stored and shared with your other devices. The server never learns what your photos show or who is in them. Photos only on the server are indexed while the app is open and unlocked.")}
-        </Text>
-        <Text variant="bodySmall" style={[st.hint, { color: th.colors.onSurfaceVariant, marginTop: 8 }]}>
-          {t("Hugging Face is a trademark of Hugging Face, Inc. Cipherfilm is not affiliated with or endorsed by Hugging Face.")}
+          {t("Runs on this phone with open models. Results are encrypted before they are stored and shared with your other devices. The server never learns what your photos show or who is in them. Photos only on the server are indexed while the app is open and unlocked.")}
         </Text>
       </ScrollView>
+      <ModelConsentDialog ask={ask} wifiOnly={s.wifiOnly}
+        onYes={() => { if (!ask) return; agreeModels(ask.faces, ask.clip, ask.indexes); const go = ask.then; setAsk(null); go(); }}
+        onLater={() => setAsk(null)} />
       <Portal>
-        <Dialog visible={choose} onDismiss={() => setChoose(false)}>
-          <Dialog.Title>{t("Which search?")}</Dialog.Title>
-          <Dialog.Content>
-            <Text variant="bodyMedium">{t("Your admin allowed explicit search. It applies to all your devices, and you can change it later.")}</Text>
-            <Text variant="bodyMedium" style={{ marginTop: 12 }}><Text style={{ fontWeight: "600" }}>{t("Standard")}</Text> · {t("MobileCLIP, {size}. Best for everyday searches.", { size: need("mobileclip-s2") })}</Text>
-            <Text variant="bodyMedium" style={{ marginTop: 8 }}><Text style={{ fontWeight: "600" }}>{t("Explicit")}</Text> · {t("LAION CLIP, {size}. Also finds explicit content.", { size: need("laion-b32") })}</Text>
-          </Dialog.Content>
-          <Dialog.Actions style={{ flexDirection: "column", alignItems: "flex-end" }}>
-            <Button onPress={() => turnOn("standard")}>{t("Standard search")}</Button>
-            <Button onPress={() => turnOn("explicit")}>{t("Explicit search")}</Button>
-            <Button onPress={() => setChoose(false)}>{t("Cancel")}</Button>
-          </Dialog.Actions>
-        </Dialog>
         <Dialog visible={off} onDismiss={() => setOff(false)}>
           <Dialog.Title>{t("Turn off search?")}</Dialog.Title>
           <Dialog.Content>
-            <Text variant="bodyMedium">{t("The models are removed from this phone. You can also delete the search data on all your devices, including the names of people.")}</Text>
+            <Text variant="bodyMedium">{t("The models are deleted from this phone; turning search on again asks before downloading them. You can also delete the search data on all your devices, including the names of people.")}</Text>
           </Dialog.Content>
           <Dialog.Actions style={st.stacked}>
             <Button onPress={() => turnOff(false)}>{t("Turn off")}</Button>

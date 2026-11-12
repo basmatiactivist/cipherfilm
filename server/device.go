@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 )
 
 const deviceCookie = "__Host-dev"
@@ -43,4 +45,42 @@ func (a *App) setDevice(w http.ResponseWriter, u *user) {
 	}
 	http.SetCookie(w, &http.Cookie{Name: deviceCookie, Value: u.ID + "." + a.deviceMAC(u.ID, u.AuthHash), Path: "/",
 		MaxAge: 180 * 24 * 3600, HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode})
+}
+
+// knownInFlight is how many credential checks from known browsers one account may have running or waiting at once.
+// The known lane is not turned away when the server is busy, so without this one account (anyone who has its
+// password and signed in once) could queue checks without end and keep every other sign-in waiting.
+const knownInFlight = 2
+
+// Password proofs of signed-in sessions (proofOK), per account, right or wrong: plenty for a person, few for a flood.
+const (
+	proofsPerAccount = 30
+	proofWindow      = 15 * time.Minute
+)
+
+type inFlight struct {
+	mu sync.Mutex
+	m  map[string]int
+}
+
+// knownTurn admits one credential check from a known browser of the account; false when it has knownInFlight
+// already. release must be called when the check is done.
+func (a *App) knownTurn(userID string) (release func(), ok bool) {
+	f := &a.knownBusy
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.m == nil {
+		f.m = map[string]int{}
+	}
+	if f.m[userID] >= knownInFlight {
+		return nil, false
+	}
+	f.m[userID]++
+	return func() {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		if f.m[userID]--; f.m[userID] <= 0 {
+			delete(f.m, userID)
+		}
+	}, true
 }

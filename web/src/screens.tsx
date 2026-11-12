@@ -1,14 +1,21 @@
 import { Icon, IconName } from "./icons";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { api } from "./api";
 import * as auth from "./auth";
 import { mem } from "./state";
-import { mapProvider, PRIVACY_URL, setMapOn, useMapOn } from "./map/consent";
+import { mapProvider, mapProviderLong, PRIVACY_URL, setMapOn, useMapOn } from "./map/consent";
+import { setMemoriesOn, useMemoriesOn } from "./memories/setting";
+import { browserAlertsPossible, setBrowserAlerts, useBrowserAlerts } from "./noticeAlerts";
 import { Loader, Loading } from "./loader";
 import { BackupReport, backupState } from "./backup";
-import { explicitChosen, indexChecked, loadPeople, refreshIndex, searchFamily, setExplicit } from "./people/people";
-import { vectorCount } from "./search/content";
-import { TEXT_MODELS } from "./search/rank";
+import { gbBytes, gbText, uptimeText } from "./limits";
+import { explicitChosen, indexChecked, loadPeople, refreshIndex, setExplicit } from "./people/people";
+import { forgetContentModels, loadModel, oldCount, vectorCount } from "./search/content";
+import { adoptCached, agreeModels, downloaded, mb, modelsAgreed, useModelConsent } from "./search/consent";
+import { ModelConsent } from "./search/consentui";
+import { FAMILY as family, TEXT_MODELS, TOKENIZER } from "./search/rank";
+import * as tf from "./twofactor";
+import * as pk from "./passkeys";
 import { Card, ErrorLine, Field, KeepButton, NewPasswordFields, Submit, VersionLine, fmtGB, passwordProblem, useAction } from "./components";
 
 type Nav = (to: string) => void;
@@ -74,6 +81,10 @@ export function RecoveryKey({ pending, onDone, title = "Save your recovery key",
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
   const { busy, error, run } = useAction();
+  // a replaced key is stored on Continue: with two-step sign-in on, the second step goes with it (a code is used up)
+  const step = useSecondStep(replacing ? {} : { on: false });
+  useEffect(() => { if (saved) step.warm(); }, [saved, step.passkey]);
+  const go = (withPasskey = false) => run(() => step.send(async (sec) => { await pending.commit(sec); onDone(); }, withPasskey));
   const text = words.join(" ");
   const file = `Cipherfilm recovery key for ${email}\n\n${words.map((w, i) => `${i + 1}. ${w}`).join("\n")}\n\nKeep this somewhere safe and private. Anyone with it can reset your password.\n`;
   return (
@@ -90,8 +101,10 @@ export function RecoveryKey({ pending, onDone, title = "Save your recovery key",
       <p class="warning"><strong>If you lose both your password and your recovery key, your photos are lost.</strong> Not even the administrator can recover them.</p>
       {replacing && <p class="small">Server backups made before today still need your old password or old recovery key. Keep the old key until those backups are gone.</p>}
       <label class="check no-print"><input type="checkbox" checked={saved} onChange={(e) => setSaved((e.target as HTMLInputElement).checked)} /> I've saved my recovery key somewhere safe</label>
+      {step.on && <div class="no-print"><p class="small">Your account uses two-step sign-in: confirm the new key with a code from your app or a recovery code{step.passkey ? ", or a passkey" : ""}.</p>{step.field}</div>}
       {error && <ErrorLine text={`The new key isn't saved yet. ${error} Press Continue to try again.`} />}
-      <button class="btn no-print" disabled={!saved || busy} onClick={() => run(async () => { await pending.commit(); onDone(); })}>{busy ? <><Loader />Saving…</> : "Continue"}</button>
+      <button class="btn no-print" disabled={!saved || busy || (step.on && !step.code.trim())} onClick={() => go()}>{busy ? <><Loader />Saving…</> : "Continue"}</button>
+      {step.passkey && <button class="btn secondary no-print" disabled={!saved || busy} onClick={() => go(true)}>Continue with a passkey</button>}
     </Card>
   );
 }
@@ -142,7 +155,8 @@ export function Recover({ nav, onKeys }: { nav: Nav; onKeys: (k: auth.PendingKey
   );
 }
 
-export function Account() {
+/** open: the panel a notice led to ("devices" or "2fa"). */
+export function Account({ open }: { open?: string }) {
   const [kit, setKit] = useState<auth.PendingKey | null>(null);
   if (kit) return <RecoveryKey pending={kit} title="Save your new recovery key" replacing onDone={() => setKit(null)} />;
   return (
@@ -153,17 +167,19 @@ export function Account() {
       </section>
       {/* the public demo login: one stranger must not lock out the next (the server refuses these anyway) */}
       {!mem.me!.demo && <RecoveryKeyPanel onNew={setKit} />}
-      {!mem.me!.demo && <ChangePassword />}
-      {!mem.me!.demo && <DevicesPanel />}
+      {!mem.me!.demo && <ChangePassword open={open === "password"} />}
+      {!mem.me!.demo && <TwoFactorPanel open={open === "2fa"} />}
+      {!mem.me!.demo && <DevicesPanel open={open === "devices"} />}
       <SearchPanel />
       {mem.me!.map && <MapPanel />}
+      <MemoriesPanel />
       <StoragePanel />
       {!mem.me!.demo && <DeleteAccount />}
       <VersionLine server={mem.me!.server_version} />
       {/* the sources ask to be named: GeoNames (CC BY 4.0) for the place names, always used; OpenStreetMap (ODbL) for the map */}
       <p class="hint small">
         Place names: GeoNames (geonames.org), CC BY 4.0.
-        {mem.me!.map ? (mapProvider() === "OpenFreeMap" ? " Map data © OpenStreetMap contributors, tiles OpenFreeMap / OpenMapTiles, drawn with MapLibre GL JS (BSD-3-Clause)." : " Map drawn with MapLibre GL JS (BSD-3-Clause); its data is credited on the map.") : ""}
+        {mem.me!.map ? (mapProvider() === "OpenFreeMap" ? " Map data © OpenStreetMap contributors, © OpenMapTiles, drawn with MapLibre GL JS (BSD-3-Clause)." : " Map drawn with MapLibre GL JS (BSD-3-Clause); its data is credited on the map.") : ""}
       </p>
     </div>
   );
@@ -174,32 +190,46 @@ function MapPanel() {
   return (
     <Acc icon="map" title="Map" sub={on ? "On in this browser" : "Off"}>
       <label class="check"><input type="checkbox" checked={on} onChange={(e) => setMapOn((e.target as HTMLInputElement).checked)} /> Show the map and the small maps in a photo's details</label>
-      <p class="hint">Your photos on a map. Map images from {mapProvider() || "the map server"}; what it sees is in the <a href={PRIVACY_URL} target="_blank" rel="noopener noreferrer">privacy policy</a>.</p>
+      <p class="hint">Your photos on a map. Map images from {mapProviderLong()}; what it sees is in the <a href={PRIVACY_URL} target="_blank" rel="noopener noreferrer">privacy policy</a>.</p>
     </Acc>
   );
 }
 
-function ChangePassword() {
+function MemoriesPanel() {
+  const on = useMemoriesOn();
+  return (
+    <Acc icon="photos" title="Memories" sub={on ? "On in this browser" : "Off in this browser"}>
+      <label class="check"><input type="checkbox" checked={on} onChange={(e) => setMemoriesOn((e.target as HTMLInputElement).checked)} /> Show “On this day” above the timeline</label>
+      <p class="hint">Photos from around today's date in earlier years. Worked out in this browser from the encrypted dates; the server learns nothing about it.</p>
+    </Acc>
+  );
+}
+
+function ChangePassword({ open }: { open?: boolean }) {
   const [cur, setCur] = useState("");
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
   const [done, setDone] = useState(false);
   const { busy, error, setError, run } = useAction();
+  const step = useSecondStep();
+  const go = (withPasskey = false) => {
+    setDone(false);
+    const p = passwordProblem(pw, pw2);
+    if (p) return setError(p);
+    run(() => step.send(async (sec) => { await auth.changePassword(cur, pw, sec); setCur(""); setPw(""); setPw2(""); step.setCode(""); setDone(true); }, withPasskey));
+  };
   return (
-    <Acc icon="lock" title="Change password" sub="Signs out your other devices">
+    <Acc icon="lock" title="Change password" sub="Signs out your other devices" open={open}>
       <p>Your photos stay as they are. Your other devices are signed out.</p>
-      <form onSubmit={(e) => {
-        e.preventDefault();
-        setDone(false);
-        const p = passwordProblem(pw, pw2);
-        if (p) return setError(p);
-        run(async () => { await auth.changePassword(cur, pw); setCur(""); setPw(""); setPw2(""); setDone(true); });
-      }}>
+      {/* the passkey's challenge only once the form is used, not each time Account opens */}
+      <form onFocusIn={step.warm} onSubmit={(e) => { e.preventDefault(); go(); }}>
         <Field label="Current password" id="current" type="password" value={cur} onInput={setCur} autocomplete="current-password" />
         <NewPasswordFields label="New password" pw={pw} setPw={setPw} pw2={pw2} setPw2={setPw2} />
+        {step.field}
         <ErrorLine text={error} />
         {done && <p class="ok" role="status">Password changed.</p>}
         <Submit busy={busy} label="Change password" busyLabel="Changing…" />
+        {step.passkey && <button type="button" class="btn secondary" disabled={busy || !cur || !pw} onClick={() => go(true)}>Change password with a passkey</button>}
       </form>
     </Acc>
   );
@@ -211,6 +241,8 @@ function DeleteAccount() {
   const [cur, setCur] = useState("");
   const [sure, setSure] = useState(false);
   const { busy, error, run } = useAction();
+  const step = useSecondStep();
+  const go = (withPasskey = false) => run(() => step.send(async (sec) => { await auth.deleteAccount(cur, sec); window.dispatchEvent(new Event("cf-account-deleted")); }, withPasskey));
   return (
     <Acc icon="trash" title="Delete account" sub="Delete your account and all your photos">
       <p class="warning">Deletes your account and <strong>all your photos, videos, albums, people and search data</strong> from this server right away. Not even an administrator can bring them back. All your devices are signed out and delete what they keep.</p>
@@ -219,20 +251,275 @@ function DeleteAccount() {
       {!open ? (
         <button class="btn secondary warn" onClick={() => setOpen(true)}>Delete my account…</button>
       ) : (
-        <form onSubmit={(e) => {
-          e.preventDefault();
-          run(async () => { await auth.deleteAccount(cur); window.dispatchEvent(new Event("cf-account-deleted")); });
-        }}>
+        <form onFocusIn={step.warm} onSubmit={(e) => { e.preventDefault(); go(); }}>
           <Field label="Your password" id="del-password" type="password" value={cur} onInput={setCur} autocomplete="current-password" autofocus />
+          {step.field}
           <label class="check"><input type="checkbox" checked={sure} onChange={(e) => setSure((e.target as HTMLInputElement).checked)} /> I understand my photos and videos are deleted permanently</label>
           <ErrorLine text={error} />
           <div class="row">
             <button type="submit" class="btn danger" disabled={busy || !sure || !cur}>{busy ? <><Loader />Deleting…</> : "Delete account"}</button>
-            <button type="button" class="btn secondary" onClick={() => { setOpen(false); setCur(""); setSure(false); }}>Cancel</button>
+            {step.passkey && <button type="button" class="btn secondary" disabled={busy || !sure || !cur} onClick={() => go(true)}>Delete account with a passkey</button>}
+            <button type="button" class="btn secondary" onClick={() => { setOpen(false); setCur(""); setSure(false); step.setCode(""); }}>Cancel</button>
           </div>
         </form>
       )}
     </Acc>
+  );
+}
+
+/** Two-step sign-in: a code from an authenticator app, or a passkey, at every new sign-in. Unlocking this browser again
+ *  doesn't ask. */
+type TfMode = "" | "setup" | "qr" | "off" | "new" | "codes" | "addkey" | "removeapp" | { remove: pk.Passkey } | { rename: pk.Passkey };
+
+function TwoFactorPanel({ open }: { open?: boolean }) {
+  const [st, setSt] = useState<tf.TwoFactorStatus | null>(null);
+  const [keys, setKeys] = useState<pk.Passkey[]>([]);
+  const [mode, setMode] = useState<TfMode>("");
+  const [code, setCode] = useState("");
+  const [secret, setSecret] = useState<tf.TwoFactorSetup | null>(null);
+  const [codes, setCodes] = useState<string[]>([]);
+  const [saved, setSaved] = useState(false);
+  const [copied, setCopied] = useState("");
+  // once the person worked in it, the panel stays open when a step ends (it would close and hide the new state)
+  const [stay, setStay] = useState(false);
+  useEffect(() => { if (mode) setStay(true); }, [mode]);
+  const { busy, error, setError, run } = useAction();
+  const load = () => {
+    // the other panels that ask for the second step follow (useSecondStep)
+    tf.status().then((s) => { setSt(s); if (mem.me) mem.me.two_factor = s.enabled; window.dispatchEvent(new Event("cf-two-factor")); }, () => {});
+    pk.list().then((l) => setKeys(l.passkeys), () => setKeys([]));
+  };
+  useEffect(() => { load(); }, []);
+  const reset = () => { setMode(""); setCode(""); setSecret(null); setError(""); setSaved(false); setCopied(""); };
+  const done = () => { reset(); load(); };
+  const showCodes = (c: string[] | null) => { if (c && c.length) { setCodes(c); setMode("codes"); } else done(); };
+  const copy = (what: string, text: string) => navigator.clipboard.writeText(text).then(() => setCopied(what), () => setCopied(""));
+  const on = st?.enabled ?? !!mem.me!.two_factor;
+  const totp = st?.totp ?? on; // an older server: on means the app
+  const canPasskey = pk.passkeysSupported();
+  const hereKeys = keys.filter((k) => k.here).length;
+  if (st && !st.available) return null;
+  const email = mem.me!.user.email;
+  const methods = [totp && "a code from your app", keys.length > 0 && "a passkey"].filter(Boolean).join(" or ");
+
+  if (mode === "codes") {
+    return (
+      <Acc icon="key" title="Two-step sign-in" sub="Save your recovery codes" open>
+        <p>Each of these codes signs you in once instead of a code from your app or a passkey, for when your phone is lost. <strong>They're shown only now.</strong></p>
+        <ol class="words codes" aria-label="Recovery codes">{codes.map((c) => <li key={c}><code>{c}</code></li>)}</ol>
+        <div class="row">
+          <button class="btn secondary" onClick={() => copy("codes", codes.join("\n"))}>{copied === "codes" ? "Copied" : "Copy"}</button>
+          <a class="btn secondary" download="cipherfilm-recovery-codes.txt" href={"data:text/plain;charset=utf-8," + encodeURIComponent(tf.codesFile(email, codes))}>Download</a>
+        </div>
+        <label class="check"><input type="checkbox" checked={saved} onChange={(e) => setSaved((e.target as HTMLInputElement).checked)} /> I've saved these codes somewhere safe</label>
+        <button class="btn" disabled={!saved} onClick={() => { setCodes([]); done(); }}>Done</button>
+      </Acc>
+    );
+  }
+  const proofFor = (intro: string, submit: string, act: (p: pk.Proof) => Promise<void>, danger = false, second = on) => (
+    <ProofForm intro={intro} submit={submit} danger={danger} second={second} passkey={canPasskey && hereKeys > 0} onSubmit={act} onCancel={reset} />
+  );
+  return (
+    <Acc icon="key" title="Two-step sign-in" sub={on ? `On: ${methods} at every new sign-in` : "Off"} open={open || stay || mode !== "" || undefined}>
+      {mode === "" && !on && (
+        <>
+          <p>Ask for a second step when you sign in on a new device or browser: a 6-digit code from an authenticator app or password manager, or a passkey in your password manager or on a security key. Unlocking a device that is already signed in doesn't ask for it. Your password still unlocks your photos.</p>
+          <div class="row">
+            <button class="btn secondary" onClick={() => setMode("setup")}>Use an authenticator app…</button>
+            {canPasskey && <button class="btn secondary" onClick={() => setMode("addkey")}>Use a passkey…</button>}
+          </div>
+        </>
+      )}
+      {mode === "" && on && (
+        <>
+          <p>A new sign-in asks for {methods}. {st ? `${st.recovery_codes_left} of 10 recovery codes left.` : ""}</p>
+          {st && st.recovery_codes_left <= 2 && <p class="warning small">Few recovery codes left. Make new ones so you aren't locked out if you lose your phone.</p>}
+          <h3 class="subhead">Authenticator app</h3>
+          {totp ? (
+            <div class="row">
+              <span class="small">On</span>
+              {keys.length > 0 && <button class="btn secondary" onClick={() => setMode("removeapp")}>Remove…</button>}
+            </div>
+          ) : <button class="btn secondary" onClick={() => setMode("setup")}>Add an authenticator app…</button>}
+          <h3 class="subhead">Passkeys</h3>
+          {keys.length > 0 && (
+            <ul class="devices passkeys">
+              {keys.map((k) => (
+                <li key={k.id}>
+                  <div class="devtext">
+                    <strong>{k.name}</strong>
+                    <p class="small">Added {new Date(k.created_at * 1000).toLocaleDateString()}{k.last_used_at ? `, last used ${new Date(k.last_used_at * 1000).toLocaleDateString()}` : ", not used yet"}{k.here ? "" : ` · for ${k.rp_id}`}</p>
+                  </div>
+                  <div class="row">
+                    <button class="btn secondary" onClick={() => setMode({ rename: k })}>Rename</button>
+                    <button class="btn secondary warn" onClick={() => setMode({ remove: k })}>Remove…</button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          {canPasskey ? <button class="btn secondary" onClick={() => setMode("addkey")}>Add a passkey…</button>
+            : <p class="small">This browser can't use passkeys here{location.protocol === "https:" ? "" : " (it needs the https address)"}.</p>}
+          <h3 class="subhead">Recovery codes</h3>
+          <div class="row">
+            <button class="btn secondary" onClick={() => setMode("new")}>New recovery codes…</button>
+            <button class="btn secondary warn" onClick={() => setMode("off")}>Turn off…</button>
+          </div>
+        </>
+      )}
+      {mode === "setup" && proofFor("", "Continue", async (p) => { setSecret(await tf.setup(p)); setMode("qr"); })}
+      {mode === "qr" && secret && (() => {
+        const qr = tf.qrFor(secret.uri);
+        return (
+          <form onSubmit={(e) => { e.preventDefault(); run(async () => { const c = await tf.enable(code); setCode(""); setSecret(null); showCodes(c); }); }}>
+            <p>Scan this code with your authenticator app, or add it with the button on a phone, or type the key into it. Then enter the 6-digit code the app shows.</p>
+            {/* on a phone the app is on the same device: the otpauth: address opens it (or a password manager) directly */}
+            {tf.totpUri(secret.uri) && <a class="btn touch-only" href={secret.uri}>Open in authenticator app</a>}
+            {/* drawn here from the key: the key never goes to a QR service */}
+            <svg class="qr" viewBox={`0 0 ${qr.size} ${qr.size}`} role="img" aria-label="QR code for your authenticator app" shape-rendering="crispEdges">
+              <rect width={qr.size} height={qr.size} fill="#fff" />
+              <path d={qr.d} fill="#000" />
+            </svg>
+            <p class="secret"><span class="small">Key</span> <code>{tf.groupSecret(secret.secret)}</code> <button type="button" class="link" onClick={() => copy("key", secret.secret)}>{copied === "key" ? "Copied" : "Copy"}</button></p>
+            <Field label="Code from the app" id="tf-code" value={code} onInput={setCode} autocomplete="one-time-code" inputmode="numeric" pattern="[0-9 ]*" maxLength={7} autofocus={!tf.touchDevice()} />
+            <ErrorLine text={error} />
+            <div class="row">
+              <Submit busy={busy} label="Turn on" busyLabel="Checking…" />
+              <button type="button" class="btn secondary" onClick={reset}>Cancel</button>
+            </div>
+          </form>
+        );
+      })()}
+      {mode === "addkey" && <AddPasskey second={on} passkey={canPasskey && hereKeys > 0} onDone={showCodes} onCancel={reset} />}
+      {mode === "off" && proofFor("Turning it off removes the authenticator app, your passkeys and recovery codes: your password alone signs in again.", "Turn off",
+        async (p) => { await tf.disable(p); done(); }, true)}
+      {mode === "new" && proofFor("Your old recovery codes stop working.", "Make new codes", async (p) => { setCodes(await tf.newCodes(p)); setMode("codes"); })}
+      {mode === "removeapp" && proofFor("A new sign-in then asks for a passkey (or a recovery code).", "Remove the app", async (p) => { await tf.removeApp(p); done(); }, true)}
+      {typeof mode === "object" && "remove" in mode && proofFor(
+        keys.length === 1 && !totp ? `Removing "${mode.remove.name}", your only second step, turns two-step sign-in off.` : `Remove "${mode.remove.name}"? It can't be used to sign in any more.`,
+        "Remove", async (p) => { await pk.remove(mode.remove.id, p); done(); }, true)}
+      {typeof mode === "object" && "rename" in mode && <RenamePasskey key={mode.rename.id} k={mode.rename} onDone={done} onCancel={reset} />}
+    </Acc>
+  );
+}
+
+/** The second step of a change that asks for one while two-step sign-in is on (ProofForm; the password, the recovery
+ *  key and deleting the account): a code from the app or a recovery code, or a passkey where this address has one.
+ *  on, passkey: what the caller knows; left out, they follow the account (mem.me, the passkeys listed here), and a
+ *  "second step required" answer turns the step on (two-step sign-in was turned on elsewhere). */
+function useSecondStep(o: { on?: boolean; passkey?: boolean; eager?: boolean; id?: string } = {}) {
+  const [known, setKnown] = useState(() => !!mem.me?.two_factor);
+  const [asked, setAsked] = useState(false);
+  const [hereKeys, setHereKeys] = useState(false);
+  const [code, setCode] = useState("");
+  const [changed, setChanged] = useState(0);
+  const on = o.on ?? (known || asked);
+  useEffect(() => {
+    if (o.on !== undefined) return;
+    const f = () => { setKnown(!!mem.me?.two_factor); setAsked(false); setChanged((n) => n + 1); };
+    window.addEventListener("cf-two-factor", f);
+    return () => window.removeEventListener("cf-two-factor", f);
+  }, []);
+  useEffect(() => {
+    if (o.passkey === undefined && on && pk.passkeysSupported()) pk.list().then((l) => setHereKeys(l.passkeys.some((k) => k.here)), () => setHereKeys(false));
+  }, [on, changed]);
+  const passkey = on && (o.passkey ?? (pk.passkeysSupported() && hereKeys));
+  // the passkey's challenge is fetched ahead, so the browser's dialog opens right on the tap (some allow it only then)
+  const challenge = useRef<Promise<Record<string, any>> | null>(null);
+  const fetchChallenge = () => api<{ options: Record<string, any> }>("POST", "/api/me/2fa/passkey", {}).then((r) => r.options);
+  const warm = () => { if (passkey && !challenge.current) { challenge.current = fetchChallenge(); challenge.current.catch(() => {}); } };
+  useEffect(() => { if (o.eager) warm(); }, [passkey]);
+  /** Runs act with the second step: the code typed (nothing while the step is off), or a passkey's answer. */
+  const send = async (act: (second: tf.SecondStep) => Promise<void>, withPasskey = false) => {
+    try {
+      if (!withPasskey) return await act(on ? { code } : {});
+      const ready = challenge.current ?? fetchChallenge();
+      challenge.current = null; // a challenge is answered once
+      try {
+        await act({ passkey: await pk.getPasskey(await ready) });
+      } catch (e) { warm(); throw e; }
+    } catch (e) {
+      if (tf.needsStep(e)) setAsked(true);
+      throw tf.stepError(e);
+    }
+  };
+  const field = on ? <Field label="Code from your app, or a recovery code" id={o.id ?? "step-code"} value={code} onInput={setCode} autocomplete="one-time-code" required={!passkey} /> : null;
+  return { on, passkey, code, setCode, field, warm, send };
+}
+
+/** The password and, when two-step sign-in is on, a second step: a code (from the app or a recovery code) or a passkey. */
+function ProofForm(p: { intro: string; submit: string; danger?: boolean; second: boolean; passkey: boolean; onSubmit: (proof: pk.Proof) => Promise<void>; onCancel: () => void }) {
+  const [pw, setPw] = useState("");
+  const { busy, error, run } = useAction();
+  const step = useSecondStep({ on: p.second, passkey: p.second && p.passkey, eager: true, id: "tf-code" });
+  // the step sends nothing when off; the endpoints of two-step sign-in itself want the code field while it is on
+  const go = (withPasskey = false) => run(() => step.send(async (sec) => p.onSubmit({ current_auth: await auth.passwordProof(pw), ...(p.second && !withPasskey ? { code: step.code.trim() } : {}), ...tf.stepFields(sec) }), withPasskey));
+  return (
+    <form onSubmit={(e) => { e.preventDefault(); go(); }}>
+      {p.intro && <p>{p.intro}</p>}
+      <Field label="Your password" id="tf-password" type="password" value={pw} onInput={setPw} autocomplete="current-password" autofocus />
+      {step.field}
+      <ErrorLine text={error} />
+      <div class="row">
+        <Submit busy={busy} label={p.submit} busyLabel="Checking…" danger={p.danger} />
+        {step.passkey && <button type="button" class="btn secondary" disabled={busy || !pw} onClick={() => go(true)}>{p.submit} with a passkey</button>}
+        <button type="button" class="btn secondary" onClick={p.onCancel}>Cancel</button>
+      </div>
+    </form>
+  );
+}
+
+/** Adding a passkey: a name, the password (and the second step while two-step sign-in is on), then the browser makes it. */
+function AddPasskey(p: { second: boolean; passkey: boolean; onDone: (codes: string[] | null) => void; onCancel: () => void }) {
+  const [name, setName] = useState(pk.suggestName(navigator.userAgent));
+  const [options, setOptions] = useState<Record<string, any> | null>(null);
+  const [first, setFirst] = useState("");
+  const { busy, error, run } = useAction();
+  // right after the password the browser's dialog opens; only a browser that wants a tap of its own for it (or a
+  // dialog that was cancelled) gets the button below
+  const begin = async (pr: pk.Proof) => {
+    const o = await pk.beginAdd(pr);
+    try {
+      p.onDone(await pk.finishAdd(o, name));
+    } catch (e) {
+      setFirst(e instanceof Error ? e.message : String(e));
+      setOptions(o);
+    }
+  };
+  if (!options) {
+    return (
+      <>
+        <p>A passkey lives in your password manager, your phone or computer, or on a security key. When you sign in on a new device, you confirm it instead of typing a code. Your password is still needed.</p>
+        <Field label="Name" id="pk-name" value={name} onInput={setName} hint="To tell your passkeys apart, like the password manager or key it's in." />
+        <ProofForm intro="" submit="Continue" second={p.second} passkey={p.passkey} onSubmit={begin} onCancel={p.onCancel} />
+      </>
+    );
+  }
+  // the browser's dialog right on this tap: some browsers allow it only then
+  return (
+    <>
+      <p>The passkey wasn't created yet. Try again: your browser or password manager creates it.</p>
+      <ErrorLine text={error || first} />
+      <div class="row">
+        <button class="btn" disabled={busy} onClick={() => run(async () => p.onDone(await pk.finishAdd(options, name)))}>{busy ? "Waiting…" : "Create the passkey"}</button>
+        <button class="btn secondary" onClick={p.onCancel}>Cancel</button>
+      </div>
+    </>
+  );
+}
+
+function RenamePasskey(p: { k: pk.Passkey; onDone: () => void; onCancel: () => void }) {
+  const [name, setName] = useState(p.k.name);
+  const { busy, error, run } = useAction();
+  return (
+    <form onSubmit={(e) => { e.preventDefault(); run(async () => { await pk.rename(p.k.id, name); p.onDone(); }); }}>
+      <Field label="Name" id="pk-rename" value={name} onInput={setName} autofocus />
+      <ErrorLine text={error} />
+      <div class="row">
+        <Submit busy={busy} label="Save" busyLabel="Saving…" />
+        <button type="button" class="btn secondary" onClick={p.onCancel}>Cancel</button>
+      </div>
+    </form>
   );
 }
 
@@ -284,7 +571,7 @@ const seenAgo = (sec: number) => {
 
 /** Every device signed in to this account (docs/SEARCH.md "Devices"): sign out one that is lost or not yours. It
  *  deletes what it keeps of the library the next time it reaches the server. */
-function DevicesPanel() {
+function DevicesPanel({ open }: { open?: boolean }) {
   const [list, setList] = useState<Device[] | null>(null);
   const [ask, setAsk] = useState<Device | "others" | null>(null);
   const { busy, error, run } = useAction();
@@ -292,7 +579,7 @@ function DevicesPanel() {
   useEffect(() => { load(); }, []);
   const others = list?.filter((d) => !d.current).length ?? 0;
   return (
-    <Acc icon="shield" title="Devices" sub="Where you're signed in">
+    <Acc icon="shield" title="Devices" sub="Where you're signed in" open={open}>
       {!list ? <Loading inline label="Checking…" /> : (
         <ul class="devices">
           {list.map((d) => (
@@ -322,8 +609,26 @@ function DevicesPanel() {
         </div>
       ) : <button class="btn secondary" onClick={() => setAsk("others")}>Sign out all other devices…</button>)}
       <p class="hint">Search: one device indexes your photos and stores the index encrypted; the others use it. To change which one, open Search and people in that app and choose “Index here”.</p>
+      <BrowserAlerts />
       <ErrorLine text={error} />
     </Acc>
+  );
+}
+
+/** Notices as this browser's notifications while the tab is hidden (noticeAlerts.ts): off unless turned on here. */
+function BrowserAlerts() {
+  const on = useBrowserAlerts();
+  const [refused, setRefused] = useState(false);
+  if (!on && !browserAlertsPossible()) return <p class="hint">This browser doesn't allow notifications from Cipherfilm. The banner still shows a new sign-in when you come back.</p>;
+  return (
+    <>
+      <label class="check"><input type="checkbox" checked={on} onChange={async (e) => {
+        const want = (e.target as HTMLInputElement).checked;
+        setRefused(want && !(await setBrowserAlerts(want))); // the browser's own question, on this click
+        if (!want) await setBrowserAlerts(false);
+      }} /> Notify me in this browser about a new sign-in while this tab is in the background</label>
+      <p class="hint">{refused ? "The browser didn't allow notifications." : "Only while this tab is open. The notification's title says only “New sign-in to Cipherfilm”; the text names the device and the time, as the banner does."}</p>
+    </>
   );
 }
 
@@ -338,16 +643,44 @@ function SearchPanel() {
     return () => { alive = false; };
   }, []);
   const allowed = !!mem.me?.user.nsfw;
-  const family = searchFamily();
-  const n = vectorCount(family), other = vectorCount(family === "mcs2" ? "laionb32" : "mcs2");
+  const n = vectorCount(family), other = oldCount();
+  // the search model from Hugging Face: asked before it is downloaded, shown when it is here (search/consent.ts)
+  useModelConsent();
+  const [adopted, setAdopted] = useState(false);
+  useEffect(() => { adoptCached().then(() => setAdopted(true)); }, []);
+  const [ask, setAsk] = useState(false);
+  const [loading, setLoading] = useState<string | null>(null);
+  const model = useAction();
+  const got = downloaded();
+  const agreed = modelsAgreed(family);
+  const yes = () => model.run(async () => {
+    agreeModels(family);
+    setAsk(false);
+    setLoading("Downloading the search model…");
+    try { await loadModel(family, (done, total) => setLoading(`Downloading the search model: ${Math.round(done / 1e6)} of ${Math.round(total / 1e6)} MB…`)); } finally { setLoading(null); }
+  });
+  const off = () => model.run(async () => { await forgetContentModels(); setAsk(false); });
   return (
     <Acc icon="search" title="Search" sub="Find photos by what is in them">
       {!indexChecked() ? <Loading inline label="Checking…" /> : n === 0 && other === 0 ? (
         <p>To find photos by what's in them (dog, beach, birthday), <strong>turn on search in the Android or Mac app</strong> (Search and people). This browser then uses what the app found.</p>
       ) : (
-        <p>{n === 1 ? "1 photo" : `${n} photos`} can be found by what is in them. Combine with a date or a name, like “beach 2023” or “Anna cake”.{n === 0 && " Your Android or Mac app is still indexing them with the model you chose."} Runs in this browser; your search words never leave it. Downloads {Math.round(TEXT_MODELS[family].size / 1e6)} MB once from Hugging Face.</p>
+        <p>{n === 1 ? "1 photo" : `${n} photos`} can be found by what is in them. Combine with a date or a name, like “beach 2023” or “Anna cake”.{other > 0 && ` ${other === 1 ? "1 more photo" : `${other} more photos`} can be found once your Android or Mac app has updated the index to the new search model.`} Runs in this browser; your search words never leave it. Needs a {mb(TEXT_MODELS[family].size + TOKENIZER.size)} model, downloaded once from Hugging Face after you agree.</p>
       )}
-      {indexChecked() && n + other > 0 && <p class="hint">Hugging Face sees this browser's IP address, nothing of your photos. Hugging Face is a trademark of Hugging Face, Inc. Cipherfilm is not affiliated with or endorsed by Hugging Face.</p>}
+      {adopted && (got || (indexChecked() && n + other > 0)) && (
+        got ? (
+          <>
+            <p class="hint">{got.at ? `Search model downloaded on ${new Date(got.at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}, ${mb(got.bytes)}.` : `Search model downloaded, ${mb(got.bytes)}.`} The site it came from saw this device's IP address, nothing of your photos.</p>
+            {loading ? <Loading inline label={loading} /> : agreed ? (
+              <button class="btn secondary" disabled={model.busy} onClick={off}>Turn off and delete the model</button>
+            ) : <button class="btn" disabled={model.busy} onClick={() => setAsk(true)}>Download the model…</button>}
+          </>
+        ) : loading ? <Loading inline label={loading} /> : !ask && (
+          <button class="btn" disabled={model.busy} onClick={() => setAsk(true)}>Turn on search in this browser…</button>
+        )
+      )}
+      {ask && <ModelConsent family={family} busy={model.busy} onYes={yes} onLater={() => setAsk(false)} />}
+      <ErrorLine text={model.error} />
       {allowed && explicit !== null && (
         <>
           <label class="check">
@@ -359,7 +692,7 @@ function SearchPanel() {
               }} />
             Explicit search
           </label>
-          <p class="hint">Uses a model that also knows explicit content. <strong>This applies to all your devices:</strong> the indexing device (Account › Devices) indexes your whole library again, and search finds fewer photos until it's done. In this browser it's a {Math.round(TEXT_MODELS.laionb32.size / 1e6)} MB download, removed when you sign out.</p>
+          <p class="hint">Off, search leaves out photos and words it takes for explicit content. On, it finds everything. <strong>This applies to all your devices</strong> (not the Android app from the app store, which always leaves them out).</p>
           <ErrorLine text={error} />
         </>
       )}
@@ -367,9 +700,12 @@ function SearchPanel() {
   );
 }
 
-function Acc(p: { icon: IconName; title: string; sub: string; children: any }) {
+function Acc(p: { icon: IconName; title: string; sub: string; children: any; open?: boolean }) {
+  // opened (and shown) when a notice led here ("Review devices")
+  const ref = useRef<HTMLDetailsElement>(null);
+  useEffect(() => { if (p.open) ref.current?.scrollIntoView({ block: "start" }); }, [p.open]);
   return (
-    <details class="acc">
+    <details class="acc" ref={ref} open={p.open || undefined}>
       <summary>
         <span class="accicon"><Icon name={p.icon} size={22} /></span>
         <span class="acctext"><strong>{p.title}</strong><span>{p.sub}</span></span>
@@ -380,19 +716,23 @@ function Acc(p: { icon: IconName; title: string; sub: string; children: any }) {
   );
 }
 
-interface AdminUser { id: string; email: string; role: string; status: string; created_at: number; last_login_at: number; quota_bytes: number; used_bytes: number; item_count: number; nsfw: boolean }
+interface AdminUser { id: string; email: string; role: string; status: string; created_at: number; last_login_at: number; quota_bytes: number; used_bytes: number; item_count: number; nsfw: boolean; two_factor?: boolean }
 
 
 function Storage({ u, onSaved }: { u: AdminUser; onSaved: () => void }) {
   const [editing, setEditing] = useState(false);
-  const [gb, setGb] = useState(String(Math.round(u.quota_bytes / 1e9)));
+  const [gb, setGb] = useState(gbText(u.quota_bytes));
   const { busy, error, run } = useAction();
   const limit = u.quota_bytes === 0 ? "no limit" : fmtGB(u.quota_bytes);
-  if (!editing) return <span>{fmtGB(u.used_bytes)}{u.quota_bytes === 0 ? " used, no limit" : ` of ${limit}`} · {u.item_count} {u.item_count === 1 ? "item" : "items"} <button class="link small" onClick={() => setEditing(true)} aria-label={`Change storage limit for ${u.email}`}>Change</button></span>;
+  if (!editing) return <span>{fmtGB(u.used_bytes)}{u.quota_bytes === 0 ? " used, no limit" : ` of ${limit}`} · {u.item_count} {u.item_count === 1 ? "item" : "items"} <button class="link small" onClick={() => { setGb(gbText(u.quota_bytes)); setEditing(true); }} aria-label={`Change storage limit for ${u.email}`}>Change</button></span>;
   return (
-    <form class="inline quota" onSubmit={(e) => { e.preventDefault(); run(async () => { await api("PATCH", `/api/admin/users/${u.id}`, { quota_bytes: Math.round(Number(gb) * 1e9) }); setEditing(false); onSaved(); }); }}>
+    <form class="inline quota" onSubmit={(e) => { e.preventDefault(); run(async () => {
+      const bytes = gbBytes(gb, u.quota_bytes);
+      if (bytes === null) throw new Error("Enter a number of GB (0 means no limit).");
+      await api("PATCH", `/api/admin/users/${u.id}`, { quota_bytes: bytes }); setEditing(false); onSaved();
+    }); }}>
       <label for={`q-${u.id}`}>Limit in GB (0 = no limit)</label>
-      <input id={`q-${u.id}`} type="number" min="0" step="1" value={gb} onInput={(e) => setGb((e.target as HTMLInputElement).value)} />
+      <input id={`q-${u.id}`} type="text" inputMode="decimal" autocomplete="off" value={gb} onInput={(e) => setGb((e.target as HTMLInputElement).value)} />
       {error && <p class="error" role="alert">{error}</p>}
       <div class="row"><button class="btn small" type="submit" disabled={busy}>Save</button><button class="btn secondary small" type="button" onClick={() => setEditing(false)}>Cancel</button></div>
     </form>
@@ -443,6 +783,10 @@ function describe(a: AuditEntry, myEmail: string): { icon: IconName; text: any; 
     case "default limit changed": return { icon: "cloud", text: <>{who} set the default storage limit to {size(a.detail)}</> };
     case "signed out a device": return { icon: "logout", text: <>{who} signed out {a.detail ? <strong>{a.detail}</strong> : "a device"}</> };
     case "signed out other devices": return { icon: "logout", text: <>{who} signed out all other devices</> };
+    case "two-step sign-in turned off": return { icon: "key", text: <>{who} turned off two-step sign-in for {t}</>, warn: true };
+    case "turned on two-step sign-in": return { icon: "key", text: <>{who} turned on two-step sign-in</> };
+    case "turned off two-step sign-in": return { icon: "key", text: <>{who} turned off two-step sign-in</> };
+    case "made new recovery codes": return { icon: "key", text: <>{who} made new recovery codes for two-step sign-in</> };
     case "signed out every device": return { icon: "logout", text: <>{who} signed out every device of {t}{a.detail ? ", and they delete what they keep" : ""}</>, warn: !!a.detail };
   }
   return { icon: "info", text: <>{who} {a.action}{a.target ? <> · {t}</> : null}{a.detail ? <span class="small"> ({a.detail})</span> : null}</> };
@@ -460,6 +804,7 @@ export function Admin({ section }: { section: "users" | "defaults" | "server" | 
   const [email, setEmail] = useState("");
   const [link, setLink] = useState<{ url: string; email: string; exp: number } | null>(null);
   const [confirm, setConfirm] = useState<string | null>(null);
+  const [confirm2fa, setConfirm2fa] = useState<string | null>(null);
   const [inviteGb, setInviteGb] = useState("");
   const [defaultQuota, setDefaultQuota] = useState(0);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
@@ -493,14 +838,14 @@ export function Admin({ section }: { section: "users" | "defaults" | "server" | 
         <h2 id="inv-h"><Icon name="plus" />Invite someone</h2>
         <p>Cipherfilm doesn't send e-mail. Send the link yourself. It works once and expires after 7 days.</p>
         <form onSubmit={(e) => { e.preventDefault(); run(async () => {
-          const gb = inviteGb.trim() === "" ? undefined : Number(inviteGb);
-          if (gb !== undefined && (!Number.isFinite(gb) || gb < 0)) throw new Error("Enter the storage limit as a number of GB, or leave it empty.");
-          const r = await api<{ token: string; email: string; expires_at: number }>("POST", "/api/admin/invites", { email, ...(gb === undefined ? {} : { quota_bytes: Math.round(gb * 1e9) }) });
+          const quota = inviteGb.trim() === "" ? undefined : gbBytes(inviteGb);
+          if (quota === null) throw new Error("Enter the storage limit as a number of GB, or leave it empty.");
+          const r = await api<{ token: string; email: string; expires_at: number }>("POST", "/api/admin/invites", { email, ...(quota === undefined ? {} : { quota_bytes: quota }) });
           setLink({ url: `${location.origin}/invite/${r.token}`, email: r.email, exp: r.expires_at });
           setEmail(""); setInviteGb(""); changed();
         }); }}>
           <Field label="Their e-mail" id="invite-email" type="email" value={email} onInput={setEmail} autocomplete="off" />
-          <Field label="Storage limit in GB (optional)" id="invite-quota" value={inviteGb} onInput={setInviteGb} autocomplete="off" required={false}
+          <Field label="Storage limit in GB (optional)" id="invite-quota" value={inviteGb} onInput={setInviteGb} autocomplete="off" required={false} inputmode="decimal"
             hint={`Leave empty for the default (${defaultQuota ? fmtGB(defaultQuota) : "no limit"}). 0 means no limit.`} />
           <ErrorLine text={error} />
           <Submit busy={busy} label="Create invite link" busyLabel="Creating…" />
@@ -529,7 +874,7 @@ export function Admin({ section }: { section: "users" | "defaults" | "server" | 
       )}
       <section class="panel" aria-labelledby="usr-h">
         <h2 id="usr-h"><Icon name="users" />Users</h2>
-        <p class="hint">Explicit search is off for everyone. Allow it for someone, and they can turn on an uncensored search model themselves.</p>
+        <p class="hint">Explicit search is off for everyone: search leaves out explicit photos. Allow it for someone, and they can turn that filter off for themselves.</p>
         {actError && <p class="error" role="alert">{actError}</p>}
         <ul class="people">
           {users.map((u) => (
@@ -537,17 +882,27 @@ export function Admin({ section }: { section: "users" | "defaults" | "server" | 
               <span class="avatar" aria-hidden="true">{u.email.slice(0, 1).toUpperCase()}</span>
               <div class="pmain">
                 <strong class="email">{u.email}</strong>
-                <span class="pmeta"><span class={"pill " + u.role}>{u.role}</span><span class={"pill " + u.status}>{u.status}</span>{u.nsfw && <span class="pill">explicit search</span>}<span class="small">{ago(u.last_login_at)}</span></span>
+                <span class="pmeta"><span class={"pill " + u.role}>{u.role}</span><span class={"pill " + u.status}>{u.status}</span>{u.nsfw && <span class="pill">explicit search</span>}{u.two_factor && <span class="pill">two-step sign-in</span>}<span class="small">{ago(u.last_login_at)}</span></span>
                 <Storage u={u} onSaved={changed} />
               </div>
               <div class="pactions">
                 {/* off for everyone by default; the person still turns it on in their app. Admins may allow it for themselves. */}
                 {confirm !== u.id && (
-                  <button class="btn secondary small" aria-pressed={u.nsfw} title="An uncensored search model in the Android and Mac apps and the web. Off for everyone by default."
+                  <button class="btn secondary small" aria-pressed={u.nsfw} title="Lets the person turn off the filter that leaves explicit photos out of search (not in the Android app from the app store). Off for everyone by default."
                     onClick={() => act(() => api("PATCH", `/api/admin/users/${u.id}`, { nsfw: !u.nsfw }))}>
                     <Icon name="search" size={18} />{u.nsfw ? "Turn off explicit search" : "Allow explicit search"}<span class="sr"> for {u.email}</span>
                   </button>
                 )}
+                {/* for someone who lost their phone and their recovery codes; they're told on their devices */}
+                {u.id !== me && u.two_factor && confirm !== u.id && (confirm2fa === u.id ? (
+                  <>
+                    <span class="small">Turn off two-step sign-in for {u.email}? Their password alone signs in until they turn it on again. Do this only when you're sure it's them asking.</span>
+                    <button class="btn danger small" onClick={() => act(async () => { await api("DELETE", `/api/admin/users/${u.id}/2fa`); setConfirm2fa(null); })}>Turn off</button>
+                    <KeepButton label="Cancel" onClick={() => setConfirm2fa(null)} />
+                  </>
+                ) : (
+                  <button class="btn secondary small" onClick={() => { setConfirm(null); setConfirm2fa(u.id); }}><Icon name="key" size={18} />Turn off two-step sign-in…<span class="sr"> for {u.email}</span></button>
+                ))}
                 {u.id !== me && (confirm === u.id ? (
                     <>
                       <span class="small">Delete {u.email} and everything they stored?</span>
@@ -558,7 +913,7 @@ export function Admin({ section }: { section: "users" | "defaults" | "server" | 
                     <>
                       <button class="btn secondary small" onClick={() => act(() => api("PATCH", `/api/admin/users/${u.id}`, { status: u.status === "active" ? "disabled" : "active" }))}><Icon name={u.status === "active" ? "slash" : "check"} size={18} />{u.status === "active" ? "Disable" : "Enable"}</button>
                       <button class="btn secondary small" onClick={() => act(() => api("PATCH", `/api/admin/users/${u.id}`, { role: u.role === "admin" ? "user" : "admin" }))}><Icon name="shield" size={18} />{u.role === "admin" ? "Make regular user" : "Make admin"}</button>
-                      <button class="btn secondary small warn" onClick={() => setConfirm(u.id)}><Icon name="trash" size={18} />Delete…</button>
+                      <button class="btn secondary small warn" onClick={() => { setConfirm2fa(null); setConfirm(u.id); }}><Icon name="trash" size={18} />Delete…</button>
                     </>
                   ))}
               </div>
@@ -579,7 +934,7 @@ export function Admin({ section }: { section: "users" | "defaults" | "server" | 
               <dt>Cipherfilm data</dt><dd>{fmtGB(status.data_bytes)}</dd>
               <dt>Signed-in devices</dt><dd>{status.active_sessions}</dd>
               <dt>Version</dt><dd>{status.version ?? "unknown"}</dd>
-              <dt>Running for</dt><dd>{status.uptime_seconds >= 86400 ? `${Math.floor(status.uptime_seconds / 86400)} days` : status.uptime_seconds >= 3600 ? `${Math.floor(status.uptime_seconds / 3600)} hours` : `${Math.floor(status.uptime_seconds / 60)} minutes`}</dd>
+              <dt>Running for</dt><dd>{uptimeText(status.uptime_seconds)}</dd>
               <dt>Off-site backup</dt><dd class={backupState(status).problem ? "bad" : undefined}>{backupState(status).text}</dd>
               <dt>Database snapshot</dt><dd>{status.last_backup_at ? new Date(status.last_backup_at * 1000).toLocaleString() : "None yet. Written by scripts/backup.sh or the nightly backup."}</dd>
             </dl>
@@ -624,15 +979,15 @@ function DefaultLimit({ current, onSaved }: { current: number; onSaved: () => vo
       <h2 id="def-h"><Icon name="cloud" />Default storage limit</h2>
       <p>New people get {current ? fmtGB(current) : "no limit"} unless the invite says otherwise. People who already joined keep their limit.</p>
       {!editing ? (
-        <button class="btn secondary" onClick={() => { setGb(String(Math.round(current / 1e9))); setEditing(true); }}>Change default…</button>
+        <button class="btn secondary" onClick={() => { setGb(gbText(current)); setEditing(true); }}>Change default…</button>
       ) : (
         <form onSubmit={(e) => { e.preventDefault(); run(async () => {
-          const n = Number(gb);
-          if (!Number.isFinite(n) || n < 0) throw new Error("Enter a number of GB (0 means no limit).");
-          await api("PATCH", "/api/admin/settings", { default_quota_bytes: Math.round(n * 1e9) });
+          const bytes = gbBytes(gb, current);
+          if (bytes === null) throw new Error("Enter a number of GB (0 means no limit).");
+          await api("PATCH", "/api/admin/settings", { default_quota_bytes: bytes });
           setEditing(false); onSaved();
         }); }}>
-          <Field label="Default limit in GB (0 = no limit)" id="default-quota" value={gb} onInput={setGb} autocomplete="off" />
+          <Field label="Default limit in GB (0 = no limit)" id="default-quota" value={gb} onInput={setGb} autocomplete="off" inputmode="decimal" />
           <ErrorLine text={error} />
           <div class="row"><Submit busy={busy} label="Save default" busyLabel="Saving…" /><button type="button" class="btn secondary" onClick={() => setEditing(false)}>Cancel</button></div>
         </form>
@@ -640,3 +995,60 @@ function DefaultLimit({ current, onSaved }: { current: number; onSaved: () => vo
     </section>
   );
 }
+
+/** /passkey: the Mac and Android apps' passkey step. A Mac app can't use passkeys of any server's name (Apple ties that
+ *  to names fixed when the app is built), and an Android app can't for a server that isn't reachable from the internet
+ *  (one only on a private network), so the app opens this page on the server's own address; the browser asks for the
+ *  passkey here and the answer goes back to the waiting app at its fixed address (docs/THREAT_MODEL.md, "Passkeys"). */
+export function PasskeyHandoff() {
+  const [h] = useState(() => { const x = pk.readHandoff(location.hash); history.replaceState(null, "", "/passkey"); return x; });
+  const [ret, setRet] = useState("");
+  const { busy, error, run } = useAction();
+  const rp = h ? (h.op === "get" ? h.options.rpId : h.options.rp?.id) : "";
+  if (!h || (rp && rp !== location.hostname)) {
+    return <Card title="Passkey"><p>{L.nothing}</p></Card>;
+  }
+  const where = h.app === "mac" ? L.onMac : L.onPhone;
+  // the jump to the app can be blocked after the passkey prompt (Chrome on Android): a link to tap always works
+  const back = (answer: Record<string, any> | null, why = "") => { const url = pk.handoffReturn(answer, why, h.app, h.state); setRet(url); location.href = url; };
+  if (ret) {
+    return (
+      <Card title={L.backTitle} sealed>
+        <p class="lead">{ret.includes("#error=") ? L.cancelled : L.done} {L.goBack(where)}</p>
+        <div class="row"><a class="btn" href={ret}>{L.backTitle}</a></div>
+      </Card>
+    );
+  }
+  return (
+    <Card title={h.op === "get" ? L.confirmTitle : L.createTitle} sealed>
+      <p class="lead">{L.asked(where)}</p>
+      <p class="small">{location.host}</p>
+      <ErrorLine text={error} />
+      <div class="row">
+        <button class="btn" disabled={busy} onClick={() => run(async () => back(h.op === "get" ? await pk.getPasskey(h.options) : await pk.createPasskey(h.options)))}>
+          {busy ? L.waiting : h.op === "get" ? L.use : L.create}
+        </button>
+        <button class="btn secondary" onClick={() => back(null, "cancelled")}>{L.cancel}</button>
+      </div>
+    </Card>
+  );
+}
+
+/** The /passkey page's words: German for a German browser (the apps that open it speak German then), else English. */
+const PASSKEY_PAGE = {
+  en: {
+    nothing: "The Cipherfilm app on your Mac or phone opens this page when it needs a passkey. There's nothing to do here.",
+    onMac: "on your Mac", onPhone: "on your phone", backTitle: "Back to the app", cancelled: "Cancelled.", done: "Done.",
+    goBack: (w: string) => `Go back to the Cipherfilm app ${w} to continue.`, confirmTitle: "Confirm your sign-in", createTitle: "Create a passkey",
+    asked: (w: string) => `The Cipherfilm app ${w} asked for this. Continue only if you just started it there.`,
+    waiting: "Waiting…", use: "Use your passkey", create: "Create the passkey", cancel: "Cancel",
+  },
+  de: {
+    nothing: "Die Cipherfilm-App auf Ihrem Mac oder Handy öffnet diese Seite, wenn sie einen Passkey braucht. Hier gibt es nichts zu tun.",
+    onMac: "auf Ihrem Mac", onPhone: "auf Ihrem Handy", backTitle: "Zurück zur App", cancelled: "Abgebrochen.", done: "Fertig.",
+    goBack: (w: string) => `Gehen Sie zurück zur Cipherfilm-App ${w}, um weiterzumachen.`, confirmTitle: "Anmeldung bestätigen", createTitle: "Passkey erstellen",
+    asked: (w: string) => `Die Cipherfilm-App ${w} hat das angefordert. Fahren Sie nur fort, wenn Sie es dort gerade gestartet haben.`,
+    waiting: "Warten …", use: "Passkey verwenden", create: "Passkey erstellen", cancel: "Abbrechen",
+  },
+};
+const L = (typeof navigator !== "undefined" && /^de\b/i.test(navigator.language ?? "")) ? PASSKEY_PAGE.de : PASSKEY_PAGE.en;

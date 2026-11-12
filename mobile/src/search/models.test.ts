@@ -1,4 +1,5 @@
-// Switching models deletes the other model's files and keeps the shared ones (docs/SEARCH.md).
+// One model for everyone (docs/SEARCH.md "One model"): which files a phone needs, where they come from, and what
+// becomes of the files earlier versions downloaded.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const files = new Set<string>();
@@ -10,6 +11,7 @@ vi.mock("expo-file-system", () => {
     get uri() { return this.path; }
     get exists() { return files.has(this.path); }
     delete() { files.delete(this.path); }
+    moveSync(to: File) { files.delete(this.path); files.add(to.path); }
   }
   return { Directory, File, Paths: { document: "docs" } };
 });
@@ -20,100 +22,83 @@ vi.mock("../../modules/cf-native/src/CfNativeModule", () => ({
     downloadModel: async (url: string) => { fetched.push(url); return true; },
   },
 }));
-const store = vi.hoisted(() => ({ play: false }));
-vi.mock("../store", () => ({ explicitSearchOffered: () => !store.play }));
 
-const { downloadModels, downloadSize, dropOtherModels, MODELS, needed, toCompute } = await import("./models");
-const all = () => MODELS.map((m) => `file:///docs/models/${m.name}`);
+const load = async () => { vi.resetModules(); return import("./models"); };
+const { agreeModels, CLIP, downloadModels, downloadSize, dropOtherModels, MODELS, needed, toCompute } = await load();
+const dir = "file:///docs/models/";
+const here = () => [...files].map((f) => f.replace(dir, "")).sort();
+const names = (l: { name: string }[]) => l.map((m) => m.name).sort();
 
-describe("dropOtherModels", () => {
-  beforeEach(() => { files.clear(); for (const f of all()) files.add(f); files.add("file:///docs/models/nsfw-laion-b32-vision.onnx.part"); });
+describe("the files", () => {
+  beforeEach(() => { files.clear(); fetched.length = 0; });
 
-  it("going to LAION removes MobileCLIP's text model, keeps its image model (to keep its index current), tokenizer and faces", () => {
-    expect(dropOtherModels("laion-b32").sort()).toEqual(["mobileclip-s2-text.onnx"]);
-    const left = [...files].map((f) => f.split("/").pop());
-    expect(left).toContain("mobileclip-s2-vision.onnx");
-    expect(left).toContain("mobileclip-s2-tokenizer.json");
-    expect(left).toContain("yunet-2023mar.onnx");
-    expect(left).toContain("sface-2021dec.onnx");
-    expect(left).toContain("nsfw-laion-b32-vision.onnx");
-  });
-
-  it("going back to MobileCLIP removes LAION's 600 MB, a half download included", () => {
-    expect(dropOtherModels("mobileclip-s2").sort()).toEqual(["nsfw-laion-b32-text.onnx", "nsfw-laion-b32-vision.onnx"]);
-    expect([...files].some((f) => f.includes("nsfw-laion"))).toBe(false);
-  });
-
-  it("a phone that only searches keeps only the text model and the tokenizer", () => {
-    expect(dropOtherModels("laion-b32", false).sort()).toEqual(["mobileclip-s2-text.onnx", "mobileclip-s2-vision.onnx", "nsfw-laion-b32-vision.onnx", "sface-2021dec.onnx", "yunet-2023mar.onnx"]);
-    expect([...files].map((f) => f.split("/").pop()).sort()).toEqual(["mobileclip-s2-tokenizer.json", "nsfw-laion-b32-text.onnx"]);
-  });
-});
-
-describe("where the models come from", () => {
-  beforeEach(() => { files.clear(); fetched.length = 0; store.play = false; });
-
-  it("every file has a role here and a URL pinned to a Hugging Face commit", () => {
-    expect(MODELS).toHaveLength(7);
+  it("are LAION's ViT-B/32 (Immich's export), its tokenizer and the face models, each pinned to a Hugging Face commit", () => {
+    expect(names(MODELS)).toEqual(["clip-b32-text.onnx", "clip-b32-tokenizer.json", "clip-b32-vision.onnx", "sface-2021dec.onnx", "yunet-2023mar.onnx"]);
     for (const m of MODELS) {
       expect(m.url).toMatch(/^https:\/\/huggingface\.co\/[\w.-]+\/[\w.-]+\/resolve\/[0-9a-f]{40}\//);
+      expect(m.url).not.toMatch(/mobileclip/i);
       expect(m.sha256).toMatch(/^[0-9a-f]{64}$/);
       expect(m.faces || m.clip || m.text).toBeTruthy();
     }
   });
 
-  it("downloads from the pinned URLs", async () => {
-    await downloadModels(false, "mobileclip-s2", () => {});
-    expect(fetched).toEqual(MODELS.filter((m) => !m.faces && m.clip !== "laion-b32").map((m) => m.url));
+  it("a phone that indexes needs everything (faces only with faces on), one that only searches the text side", () => {
+    expect(names(needed(true, CLIP))).toEqual(names(MODELS));
+    expect(names(needed(false, CLIP))).toEqual(["clip-b32-text.onnx", "clip-b32-tokenizer.json", "clip-b32-vision.onnx"]);
+    expect(names(needed(true, CLIP, false))).toEqual(["clip-b32-text.onnx", "clip-b32-tokenizer.json"]);
   });
 
-  it("the Play build never downloads the explicit model", async () => {
-    store.play = true;
-    await expect(downloadModels(true, "laion-b32", () => {})).rejects.toThrow(/isn't available/);
-    expect(fetched).toEqual([]);
-    await downloadModels(false, "mobileclip-s2", () => {});
-    expect(fetched.some((u) => u.includes("laion"))).toBe(false);
+  it("downloads from the pinned URLs, in the Play build too (one model for every build)", async () => {
+    agreeModels(false, CLIP);
+    await downloadModels(false, CLIP, () => {});
+    expect(fetched).toEqual(MODELS.filter((m) => !m.faces).map((m) => m.url));
+  });
+
+  it("counts what is missing", () => {
+    const size = (n: string) => MODELS.find((m) => m.name === n)!.size;
+    expect(downloadSize(false, CLIP, false)).toBe(size("clip-b32-text.onnx") + size("clip-b32-tokenizer.json"));
+    files.add(`${dir}clip-b32-text.onnx`);
+    expect(downloadSize(false, CLIP, false)).toBe(size("clip-b32-tokenizer.json"));
+  });
+
+  it("an item is done when its entry is the model's (explicit search's LAION entries are), with faces when they are on", () => {
+    expect(toCompute("laionb32+yunet23+sface21/1", true)).toEqual([]);
+    expect(toCompute("laionb32/1", false)).toEqual([]);
+    expect(toCompute("laionb32/1", true)).toEqual([CLIP]);
+    expect(toCompute("mcs2+yunet23+sface21/2", true)).toEqual([CLIP]); // MobileCLIP's, from before: made again
+    expect(toCompute(undefined, false)).toEqual([CLIP]);
   });
 });
 
-// Explicit search on: the indexing device keeps MobileCLIP's index complete too, for the devices that only read it
-describe("indexing with LAION", () => {
-  const names = (l: { name: string }[]) => l.map((m) => m.name).sort();
+describe("files of earlier versions", () => {
+  beforeEach(() => { files.clear(); fetched.length = 0; });
 
-  it("needs MobileCLIP's image model next to LAION's (not its text model); a phone that only searches doesn't", () => {
-    expect(names(needed(true, "laion-b32"))).toEqual(["mobileclip-s2-tokenizer.json", "mobileclip-s2-vision.onnx", "nsfw-laion-b32-text.onnx", "nsfw-laion-b32-vision.onnx", "sface-2021dec.onnx", "yunet-2023mar.onnx"]);
-    expect(names(needed(true, "laion-b32", false))).toEqual(["mobileclip-s2-tokenizer.json", "nsfw-laion-b32-text.onnx"]);
-    expect(names(needed(false, "mobileclip-s2"))).toEqual(["mobileclip-s2-text.onnx", "mobileclip-s2-tokenizer.json", "mobileclip-s2-vision.onnx"]);
+  it("explicit search's LAION files are moved to the new names (not downloaded again), MobileCLIP's are deleted", async () => {
+    for (const n of ["nsfw-laion-b32-vision.onnx", "nsfw-laion-b32-text.onnx", "mobileclip-s2-vision.onnx", "mobileclip-s2-text.onnx", "mobileclip-s2-tokenizer.json", "mobileclip-s2-vision.onnx.part", "yunet-2023mar.onnx"]) files.add(dir + n);
+    const m = await load();
+    const size = (n: string) => m.MODELS.find((x) => x.name === n)!.size;
+    expect(m.downloadSize(false, m.CLIP)).toBe(size("clip-b32-tokenizer.json")); // only the new tokenizer is missing
+    expect(here()).toEqual(["clip-b32-text.onnx", "clip-b32-vision.onnx", "yunet-2023mar.onnx"]);
   });
 
-  it("counts that model in the download", () => {
-    files.clear();
-    const size = (n: string) => MODELS.find((m) => m.name === n)!.size;
-    expect(downloadSize(false, "laion-b32")).toBe(size("nsfw-laion-b32-vision.onnx") + size("nsfw-laion-b32-text.onnx") + size("mobileclip-s2-tokenizer.json") + size("mobileclip-s2-vision.onnx"));
-    files.add("file:///docs/models/mobileclip-s2-vision.onnx"); // there from standard search
-    expect(downloadSize(false, "laion-b32")).toBe(size("nsfw-laion-b32-vision.onnx") + size("nsfw-laion-b32-text.onnx") + size("mobileclip-s2-tokenizer.json"));
+  it("a half download of the old name goes; a file already under the new name wins", async () => {
+    for (const n of ["nsfw-laion-b32-text.onnx", "nsfw-laion-b32-vision.onnx.part", "clip-b32-text.onnx"]) files.add(dir + n);
+    const m = await load();
+    m.tidyOldFiles();
+    expect(here()).toEqual(["clip-b32-text.onnx"]);
+  });
+});
+
+describe("dropOtherModels", () => {
+  beforeEach(() => { files.clear(); for (const m of MODELS) files.add(dir + m.name); });
+
+  it("a phone that indexes keeps everything", () => {
+    expect(dropOtherModels(CLIP)).toEqual([]);
+    expect(here()).toEqual(names(MODELS));
   });
 
-  it("an item is done only when both entries are current", () => {
-    const L = "laionb32+yunet23+sface21/1", M = "mcs2+yunet23+sface21/2";
-    expect(toCompute(L, M, true, "laion-b32")).toEqual([]);
-    expect(toCompute(undefined, undefined, true, "laion-b32")).toEqual(["laion-b32", "mobileclip-s2"]);
-    // MobileCLIP's deleted by an older app when explicit search was turned on: only it is made again
-    expect(toCompute(L, undefined, true, "laion-b32")).toEqual(["mobileclip-s2"]);
-    expect(toCompute(undefined, M, true, "laion-b32")).toEqual(["laion-b32"]);
-    // made without faces, and faces are on now
-    expect(toCompute(L, "mcs2/2", true, "laion-b32")).toEqual(["mobileclip-s2"]);
-    expect(toCompute(L, "mcs2/2", false, "laion-b32")).toEqual([]);
-    // standard search, or a phone that only searches: one model, as before
-    expect(toCompute(undefined, undefined, true, "mobileclip-s2")).toEqual(["mobileclip-s2"]);
-    expect(toCompute(M, undefined, true, "mobileclip-s2")).toEqual([]);
-    expect(toCompute(L, undefined, true, "laion-b32", false)).toEqual([]);
-  });
-
-  it("the Play build still never downloads the explicit model", async () => {
-    files.clear(); fetched.length = 0; store.play = true;
-    await downloadModels(true, "mobileclip-s2", () => {});
-    expect(fetched.some((u) => u.includes("laion"))).toBe(false);
-    store.play = false;
+  it("a phone that only searches keeps only the text model and the tokenizer", () => {
+    expect(dropOtherModels(CLIP, false).sort()).toEqual(["clip-b32-vision.onnx", "sface-2021dec.onnx", "yunet-2023mar.onnx"]);
+    expect(here()).toEqual(["clip-b32-text.onnx", "clip-b32-tokenizer.json"]);
   });
 });

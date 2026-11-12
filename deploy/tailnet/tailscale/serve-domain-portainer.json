@@ -1,0 +1,33 @@
+{
+  "TCP": {
+    "443": {
+      "TCPForward": "127.0.0.1:4443"
+    },
+    "8443": {
+      "HTTPS": true
+    },
+    "9443": {
+      "HTTPS": true
+    }
+  },
+  "Web": {
+    "${TS_CERT_DOMAIN}:8443": {
+      "Handlers": {
+        "/": {
+          "Proxy": "http://127.0.0.1:51515"
+        }
+      }
+    },
+    "${TS_CERT_DOMAIN}:9443": {
+      "Handlers": {
+        "/": {
+          "Proxy": "http://127.0.0.1:9000"
+        }
+      }
+    }
+  },
+  "AllowFunnel": {
+    "${TS_CERT_DOMAIN}:8443": false,
+    "${TS_CERT_DOMAIN}:9443": false
+  }
+}

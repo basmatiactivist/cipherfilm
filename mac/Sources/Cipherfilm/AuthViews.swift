@@ -86,6 +86,14 @@ struct SignInView: View {
   @State private var busy = false
 
   var body: some View {
+    if model.codeStep != nil {
+      CodeStepView()
+    } else {
+      passwordStep
+    }
+  }
+
+  private var passwordStep: some View {
     AuthCard(title: "Sign in", subtitle: nil, server: model.serverName) {
       if let n = model.notice { Note(text: n) }
       VStack(alignment: .leading, spacing: 6) {
@@ -113,6 +121,87 @@ struct SignInView: View {
   }
 }
 
+/** The second step of a sign-in with two-step sign-in on: a passkey (in the browser), the code from the authenticator
+ *  app, or a recovery code. */
+struct CodeStepView: View {
+  enum Way { case passkey, code, recovery }
+  @Environment(AppModel.self) private var model
+  @State private var code = ""
+  @State private var way: Way?
+  @State private var error: String?
+  @State private var busy = false
+  @FocusState private var focused: Bool
+
+  private var step: CodeStep? { model.codeStep }
+  private var current: Way { way ?? ((step?.passkey ?? false) && !(step?.totp ?? true) ? .passkey : (step?.totp ?? true) ? .code : .recovery) }
+  private var recovery: Bool { current == .recovery }
+
+  var body: some View {
+    AuthCard(title: "Two-step sign-in",
+             subtitle: current == .passkey ? "Confirm with your passkey. Your browser opens for it, on your server's own address."
+               : recovery ? "Enter one of your recovery codes. Each works once." : "Enter the 6-digit code from your authenticator app.",
+             server: model.serverName) {
+      if current == .passkey {
+        if let error { Note(text: error) }
+        Button(action: usePasskey) { BusyLabel(busy, "Use Your Passkey", "Waiting for the browser…").frame(maxWidth: .infinity) }
+          .buttonStyle(PrimaryButton()).disabled(busy).keyboardShortcut(.defaultAction)
+      } else {
+        VStack(alignment: .leading, spacing: 6) {
+          FieldLabel(text: recovery ? "Recovery code" : "Code")
+          if recovery {
+            TextField("xxxx-xxxx-xxxx-xxxx", text: $code).field().focused($focused).autocorrectionDisabled().onSubmit(go)
+          } else {
+            TextField("123456", text: $code).field().focused($focused).textContentType(.oneTimeCode).onSubmit(go)
+              .onChange(of: code) { _, v in
+                let digits = String(v.filter(\.isNumber).prefix(6))
+                if digits != v { code = digits }
+              }
+          }
+        }
+        if let error { Note(text: error) }
+        Button(action: go) { BusyLabel(busy, "Sign in", "Checking…").frame(maxWidth: .infinity) }
+          .buttonStyle(PrimaryButton()).disabled(busy || !TwoFactor.ready(code, recovery: recovery))
+          .keyboardShortcut(.defaultAction)
+      }
+      HStack(spacing: 14) {
+        if current != .passkey, step?.passkey == true { switchTo(.passkey, "Use a passkey") }
+        if current != .code, step?.totp != false { switchTo(.code, "Use the authenticator app") }
+        if current != .recovery { switchTo(.recovery, "Use a recovery code") }
+        Spacer()
+        Button("Start over") { model.startOver() }.buttonStyle(TextLink()).font(Typo.caption).disabled(busy)
+      }
+    }
+    .onAppear { focused = true }
+  }
+
+  private func switchTo(_ w: Way, _ label: String) -> some View {
+    Button(label) { way = w; code = ""; error = nil; focused = true }.buttonStyle(TextLink()).font(Typo.caption).disabled(busy)
+  }
+
+  private func go() {
+    guard TwoFactor.ready(code, recovery: recovery), !busy else { return }
+    attempt { try await model.finishSignIn(code: code) }
+  }
+
+  private func usePasskey() {
+    guard !busy else { return }
+    attempt { try await model.finishSignInWithPasskey() }
+  }
+
+  private func attempt(_ f: @escaping () async throws -> Void) {
+    busy = true; error = nil
+    Task {
+      do { try await f() } catch let e as APIError where e.code == "two_factor_expired" {
+        model.notice = e.message // back on the password page
+      } catch {
+        self.error = error.localizedDescription
+        code = ""
+      }
+      busy = false
+    }
+  }
+}
+
 struct UnlockView: View {
   @Environment(AppModel.self) private var model
   @State private var password = ""
@@ -131,7 +220,7 @@ struct UnlockView: View {
         .buttonStyle(PrimaryButton()).disabled(busy || password.isEmpty)
         .keyboardShortcut(.defaultAction)
       if model.touchID {
-        Button(action: touch) { Label("Unlock with Touch ID", systemImage: "touchid").frame(maxWidth: .infinity) }
+        Button(action: touch) { Label("Unlock with Your Fingerprint", systemImage: "touchid").frame(maxWidth: .infinity) }
           .buttonStyle(SecondaryButton()).disabled(busy)
       }
       if model.watcher.running || model.settings.watchOn {
@@ -193,7 +282,6 @@ struct SignOutSheet: View {
 struct AgentQuestion: View {
   @Environment(AppModel.self) private var model
   @State private var search = true
-  @State private var explicit = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
@@ -204,17 +292,9 @@ struct AgentQuestion: View {
         Toggle(isOn: $search) {
           VStack(alignment: .leading, spacing: 2) {
             Text("Search what and who is in your photos").font(Typo.label)
-            Text(model.search.downloadSize(explicit ? .laion : .mobileclip, faces: model.settings.faces).map { "Runs on this Mac. Downloads \($0) once from Hugging Face. Hugging Face sees this Mac's IP address, nothing of your photos. Hugging Face is a trademark of Hugging Face, Inc. Cipherfilm is not affiliated with or endorsed by Hugging Face." } ?? "Runs on this Mac. The models are already here.").font(Typo.caption).foregroundStyle(Ink.muted)
+            Text(model.search.downloadSize(.clip, faces: model.settings.faces).map { "Runs on this Mac. Needs \($0) of models; you're asked before anything is downloaded." } ?? "Runs on this Mac. The models are already here.").font(Typo.caption).foregroundStyle(Ink.muted)
           }
         }.toggleStyle(.checkbox)
-        // only for people an admin allowed explicit search: which model, before anything is downloaded
-        if model.me?.user.nsfw == true && search {
-          Picker("Model", selection: $explicit) {
-            Text("Standard search (MobileCLIP, \(model.search.downloadSize(.mobileclip, faces: model.settings.faces) ?? "already on this Mac"))").tag(false)
-            Text("Explicit search (LAION, \(model.search.downloadSize(.laion, faces: model.settings.faces) ?? "already on this Mac")): also understands explicit content").tag(true)
-          }
-          .pickerStyle(.radioGroup).labelsHidden().font(Typo.caption).padding(.leading, 20)
-        }
       }
       Text("You can change this any time in Settings.").font(Typo.caption).foregroundStyle(Ink.faint)
       HStack {
@@ -229,6 +309,6 @@ struct AgentQuestion: View {
 
   private func askSearch() {
     guard !model.settings.searchAsked else { return }
-    if search { model.turnOnSearch(explicit: model.me?.user.nsfw == true ? explicit : nil) } else { model.settings.searchAsked = true }
+    if search { model.turnOnSearch() } else { model.settings.searchAsked = true }
   }
 }

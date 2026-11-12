@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -44,6 +45,7 @@ func init() {
 		{"allow-explicit", "EMAIL", "allow explicit search for the account (docs/SEARCH.md)", cliExplicit(true)},
 		{"deny-explicit", "EMAIL", "turn explicit search off for the account", cliExplicit(false)},
 		{"list-sessions", "[EMAIL]", "signed-in devices: account, device, signed in, last active, indexer", cliListSessions},
+		{"reset-2fa", "EMAIL", "turn off two-step sign-in for someone who lost their authenticator and recovery codes", cliResetTwoFactor},
 		{"sign-out", "EMAIL [--wipe]", "sign out all the account's devices; --wipe also deletes their local copy of the library", cliSignOut},
 		{"invite", "EMAIL [--quota GB] [--url URL]", "make an invite link (valid 7 days); URL is your Cipherfilm address", cliInvite},
 		{"reset-password", "EMAIL", "why this isn't possible, and what to do instead", cliResetPassword},
@@ -391,6 +393,7 @@ func cliSignOut(a *App, out io.Writer, args []string) error {
 		return err
 	}
 	n, _ := res.RowsAffected()
+	a.dropInvitesOf(u.ID, `1`)
 	a.audit(consoleActor, "signed out every device", u.Email, map[bool]string{true: "and wiped", false: ""}[hasFlag(args, "--wipe")])
 	fmt.Fprintf(out, "signed out %d devices of %s\n", n, u.Email)
 	return nil
@@ -450,5 +453,22 @@ Instead:
       /app invite EMAIL                 (a new account for the same address)
   - To only block sign-in: /app disable-user EMAIL, or /app sign-out EMAIL.
 `)
+	return nil
+}
+
+// cliResetTwoFactor is the admin page's "Turn off two-step sign-in", for when no administrator can sign in (the only
+// one lost their phone): the password alone signs in again, and the account's devices show a notice.
+func cliResetTwoFactor(a *App, out io.Writer, args []string) error {
+	u, err := cliUser(a, args)
+	if err != nil {
+		return err
+	}
+	if !a.turnOff(context.Background(), u.ID, "") {
+		fmt.Fprintf(out, "two-step sign-in is already off for %s\n", u.Email)
+		return nil
+	}
+	a.notify(u.ID, noticeTwoFactorReset, "", "")
+	a.audit(consoleActor, "two-step sign-in turned off", u.Email, "")
+	fmt.Fprintf(out, "two-step sign-in is off for %s: the password alone signs in now\n", u.Email)
 	return nil
 }

@@ -32,6 +32,7 @@ as "server console".
 | `set-quota EMAIL GB` | Sets the storage limit, for example `50`, `1.5`, `unlimited` or `default`. |
 | `allow-explicit EMAIL` / `deny-explicit EMAIL` | Allows explicit search for the account, or turns it off (docs/SEARCH.md). |
 | `list-sessions [EMAIL]` | Signed-in devices, of everyone or of one account: device, when signed in, last active, which one indexes. |
+| `reset-2fa EMAIL` | Turns off two-step sign-in for someone who lost their authenticator app and their recovery codes (the same as Admin › Users › Turn off two-step sign-in), for example when the only administrator did. The password alone signs in again; the account's devices show a notice. |
 | `sign-out EMAIL [--wipe]` | Signs out all devices of the account. With `--wipe` the devices also delete what they keep of the library when they next reach the server (for a lost phone). |
 | `invite EMAIL [--quota GB] [--url URL]` | Makes an invite link, valid for 7 days. `--url` is your Cipherfilm address; without it the server uses `PUBLIC_HOSTS`, or prints the path to put after your address. |
 | `reset-password EMAIL` | Explains why this isn't possible, and what to do instead (below). |
@@ -61,3 +62,5 @@ reset the password would also give the administrator the photos.
 - **The recovery key is lost too:** nobody can open those photos any more. To start over with the same address:
   `delete-user EMAIL --yes`, then `invite EMAIL`.
 - **Only stop someone from signing in:** `disable-user EMAIL` or `sign-out EMAIL`.
+- **They lost the phone with their authenticator app, and their recovery codes:** `reset-2fa EMAIL` (their password
+  and photos are untouched; make sure it is really them asking).

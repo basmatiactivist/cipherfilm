@@ -10,8 +10,9 @@ const unit = (v: number[]) => normalize(Float32Array.from(v));
 
 describe("search by content: ranking", () => {
   it("reads the model from the index entry's tag", () => {
-    expect(familyOf("mcs2+yunet23+sface21/2")).toBe("mcs2");
-    expect(familyOf("mcs2/2")).toBe("mcs2");
+    // MobileCLIP's, from older apps, don't compare with this model's vectors: left out
+    expect(familyOf("mcs2+yunet23+sface21/2")).toBeUndefined();
+    expect(familyOf("mcs2/2")).toBeUndefined();
     expect(familyOf("laionb32+yunet23+sface21/1")).toBe("laionb32");
     expect(familyOf("laionb32/1")).toBe("laionb32");
     expect(familyOf("webqa-synthetic")).toBeUndefined();
@@ -47,16 +48,15 @@ describe("search by content: ranking", () => {
 });
 
 // The browser's text vector (this tokenizer and ONNX Runtime Web, as in content.worker.ts) against the Python reference
-// (onnxruntime 1.31.1 and Hugging Face's tokenizers on the same files). The models are 64 and 254 MB and not in the
+// (onnxruntime 1.31.1 and Hugging Face's tokenizers on the same files). The model is 254 MB and not in the
 // repository: set CF_MODELS to a folder with them (downloaded from the URLs in server/models.json) to run this.
 const dir = process.env.CF_MODELS;
 const have = (f: string) => !!dir && existsSync(join(dir, f));
 
 describe("search by content: text vectors match the reference", () => {
   for (const m of Object.values(TEXT_MODELS)) {
-    // LAION's fp32 model gives the reference's numbers; MobileCLIP's int8 one differs a little between ONNX Runtime's
-    // WebAssembly and x86 int8 kernels (0.998 to 1 measured), far less than the 0.09 the ranking works with
-    const min = m.family === "laionb32" ? 0.9999 : 0.997;
+    // the fp32 model gives the reference's numbers
+    const min = 0.9999;
     it.skipIf(!have(m.file) || !have(TOKENIZER.file))(`${m.file}: same ids and cosine ≥ ${min}`, async () => {
       const ort = await import("onnxruntime-web/wasm");
       ort.env.wasm.numThreads = 1;
@@ -67,7 +67,7 @@ describe("search by content: text vectors match the reference", () => {
       for (const [q, r] of Object.entries(reference.queries)) {
         expect(tok.encode(q), q).toEqual(r.ids);
         const v = await embed(s, tok, q, m.int32);
-        const c = cosine(v, Float32Array.from(m.family === "mcs2" ? r.mobileclip : r.laion));
+        const c = cosine(v, Float32Array.from(r.laion));
         expect(c, `${q}: ${c}`).toBeGreaterThanOrEqual(min);
       }
       await s.release();

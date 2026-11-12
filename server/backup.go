@@ -138,17 +138,63 @@ func runAfterRestore(dataDir string) error {
 	if _, err := tx.Exec(`INSERT INTO settings(key,value) VALUES ('sync_epoch', lower(hex(randomblob(8)))) ON CONFLICT(key) DO UPDATE SET value=excluded.value`); err != nil {
 		return err
 	}
+	if err := bumpNoticeIDs(tx, time.Now()); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
 	fmt.Printf("ended %d sessions; kept %d later sign-outs; %d items in the trash keep it for another 30 days\n", sessions, revoked, trashed)
+	if err := os.Remove(filepath.Join(dataDir, restorePending)); err != nil && !os.IsNotExist(err) {
+		return err
+	}
 	return nil
 }
 
+// restorePending is the file scripts/restore.sh writes into the data before it swaps it for the backup; after-restore
+// removes it once it succeeded. While it is there the server does not start (it would serve the backup's sessions and
+// cursors) and restore.sh does not run again (it would drop .previous/, which then holds the live data).
+const restorePending = ".restore-pending"
+
+func checkNoPendingRestore(dataDir string) error {
+	if _, err := os.Lstat(filepath.Join(dataDir, restorePending)); err == nil {
+		return fmt.Errorf("a restore is not finished (%s in the data): run `after-restore` first (docs/SELF-HOSTING.md); the replaced data is in .previous/", restorePending)
+	}
+	return nil
+}
+
+// bumpNoticeIDs moves the notices' id counter past every id this server can have handed out before the restore. The
+// counter went back with the database: without this, new notices would get ids the devices have already seen (and
+// remembered as shown), so a new sign-in after a restore onto a fresh machine would not be announced. The new base is
+// the time in milliseconds: later than any earlier restore's base plus the notices since (far fewer than one per
+// millisecond), and still an exact number in every app (below 2^53).
+func bumpNoticeIDs(tx *sql.Tx, now time.Time) error {
+	var seq, top int64
+	if err := tx.QueryRow(`SELECT COALESCE((SELECT MAX(seq) FROM sqlite_sequence WHERE name='notices'),0),
+		COALESCE((SELECT MAX(id) FROM notices),0)`).Scan(&seq, &top); err != nil {
+		return err
+	}
+	base := max(seq, top, now.UnixMilli())
+	res, err := tx.Exec(`UPDATE sqlite_sequence SET seq=? WHERE name='notices'`, base)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		_, err = tx.Exec(`INSERT INTO sqlite_sequence(name,seq) VALUES ('notices',?)`, base)
+	}
+	return err
+}
+
 // carryAccounts takes over from the replaced database what happened to the accounts since the backup: a changed
-// password or recovery key (it wraps the same master key), a changed role, a disabled account, and accounts deleted
-// since stay disabled. A restore brings photos back, not access that was taken away. The replaced activity log is
-// kept too, and invites that were withdrawn or used since stay so.
+// password or recovery key (it wraps the same master key), two-step sign-in turned on or off, passkeys added or
+// removed and new recovery codes,
+// a changed role, storage limit (and the default one for new people) or explicit search, a disabled account, and
+// accounts deleted since stay disabled. A restore brings photos back, not
+// access that was taken away (nor a second step that was added). The replaced activity log is kept too, invites that
+// were withdrawn or used since stay so, and the accounts' notices are the replaced database's (the newer ones; the
+// sign-in notices among them are not shown to the sessions after the restore, which all start later, an
+// administrator's reset of two-step sign-in is, until dismissed). The authenticator secrets are sealed under this
+// server's secret, which the caller checked is the same (so are the passkey records).
 func carryAccounts(tx *sql.Tx) error {
 	disabled := []string{}
 	rows, err := tx.Query(`SELECT email FROM main.users m WHERE status='active' AND (NOT EXISTS (SELECT 1 FROM prev.users p WHERE p.id=m.id)
@@ -175,6 +221,68 @@ func carryAccounts(tx *sql.Tx) error {
 	} {
 		if _, err := tx.Exec(q); err != nil {
 			return err
+		}
+	}
+	// storage limits and explicit search, as the administrator set them since (a restore must not lift a limit that was
+	// lowered or give back explicit search that was turned off); likewise only from a replaced database that knew them
+	var cols, tables int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('users','prev') WHERE name IN ('quota_bytes','nsfw')`).Scan(&cols); err != nil {
+		return err
+	}
+	if cols == 2 {
+		if _, err := tx.Exec(`UPDATE main.users SET quota_bytes=p.quota_bytes, nsfw=p.nsfw FROM prev.users p WHERE p.id=users.id`); err != nil {
+			return err
+		}
+	}
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM prev.sqlite_master WHERE type='table' AND name='settings'`).Scan(&tables); err != nil {
+		return err
+	}
+	if tables == 1 {
+		if _, err := tx.Exec(`DELETE FROM main.settings WHERE key=?1 AND NOT EXISTS (SELECT 1 FROM prev.settings WHERE key=?1)`, settingDefaultQuota); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`INSERT INTO main.settings(key,value) SELECT key,value FROM prev.settings WHERE key=?
+			ON CONFLICT(key) DO UPDATE SET value=excluded.value`, settingDefaultQuota); err != nil {
+			return err
+		}
+	}
+	// two-step sign-in, only from a replaced database that knew it (an older one: as the backup has it)
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('users','prev') WHERE name IN ('totp_secret','totp_pending','totp_last')`).Scan(&cols); err != nil {
+		return err
+	}
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM prev.sqlite_master WHERE type='table' AND name IN ('recovery_codes','notices')`).Scan(&tables); err != nil {
+		return err
+	}
+	if cols == 3 && tables == 2 {
+		for _, q := range []string{
+			`UPDATE main.users SET totp_secret=p.totp_secret, totp_pending=p.totp_pending, totp_last=p.totp_last
+				FROM prev.users p WHERE p.id=users.id`,
+			`DELETE FROM main.recovery_codes WHERE user_id IN (SELECT id FROM prev.users)`,
+			`INSERT INTO main.recovery_codes(user_id,code_hash) SELECT user_id,code_hash FROM prev.recovery_codes
+				WHERE user_id IN (SELECT id FROM main.users)`,
+			`DELETE FROM main.notices WHERE user_id IN (SELECT id FROM prev.users)`,
+			`INSERT INTO main.notices(id,user_id,kind,device,session_pub,at,dismissed) SELECT id,user_id,kind,device,session_pub,at,dismissed
+				FROM prev.notices WHERE user_id IN (SELECT id FROM main.users) AND id NOT IN (SELECT id FROM main.notices)`,
+		} {
+			if _, err := tx.Exec(q); err != nil {
+				return err
+			}
+		}
+	}
+	// passkeys, likewise only from a replaced database that had them
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM prev.sqlite_master WHERE type='table' AND name='passkeys'`).Scan(&tables); err != nil {
+		return err
+	}
+	if tables == 1 {
+		for _, q := range []string{
+			`DELETE FROM main.passkeys WHERE user_id IN (SELECT id FROM prev.users)`,
+			`INSERT INTO main.passkeys(id,user_id,cred_id,rp_id,cred,name,created_at,last_used_at)
+				SELECT id,user_id,cred_id,rp_id,cred,name,created_at,last_used_at FROM prev.passkeys
+				WHERE user_id IN (SELECT id FROM main.users) AND cred_id NOT IN (SELECT cred_id FROM main.passkeys)`,
+		} {
+			if _, err := tx.Exec(q); err != nil {
+				return err
+			}
 		}
 	}
 	for _, e := range disabled {

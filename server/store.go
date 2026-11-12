@@ -2,7 +2,9 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -119,6 +121,37 @@ CREATE TABLE IF NOT EXISTS setup_state (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   token_hash TEXT NOT NULL
 );
+-- two-step sign-in (twofactor.go): one row per unused recovery code, keyed HMAC of the code; a used one is deleted
+CREATE TABLE IF NOT EXISTS recovery_codes (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code_hash TEXT NOT NULL,
+  PRIMARY KEY (user_id, code_hash)
+);
+-- passkeys (passkeys.go), a second step instead of a code: cred_id is the credential id (base64url), rp_id the name it
+-- was made for, cred the credential record sealed under a key derived from the server's secret file
+CREATE TABLE IF NOT EXISTS passkeys (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  cred_id TEXT NOT NULL UNIQUE,
+  rp_id TEXT NOT NULL,
+  cred TEXT NOT NULL,
+  name TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  last_used_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS passkeys_user ON passkeys(user_id, rp_id);
+-- what the person's devices show once (notices.go): a new sign-in, two-step sign-in turned off by an admin, a password
+-- step without a right code; kind is checked in notices.go (a CHECK here would need a table rebuild for every new one)
+CREATE TABLE IF NOT EXISTS notices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  device TEXT NOT NULL DEFAULT '',
+  session_pub TEXT NOT NULL DEFAULT '',
+  at INTEGER NOT NULL,
+  dismissed INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS notices_user ON notices(user_id, id);
 `
 
 func openDB(path string) (*sql.DB, error) {
@@ -143,6 +176,15 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
+	if err := migrateAlbumSync(db); err != nil { // the same for albums (albumsince.go)
+		db.Close()
+		return nil, err
+	}
+	// the per-account storage counter and its triggers (usage.go): after migrate, which may rebuild item_index
+	if err := migrateUsage(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return db, nil
 }
 
@@ -163,7 +205,9 @@ func migrate(db *sql.DB) error {
 		}
 	}
 	rows.Close()
-	for _, col := range []string{"thumb_bytes", "preview_bytes", "favorite"} {
+	// items.aux_ver: counts replacements of a finished item's thumbnail or preview (items.go replaceAux), so the change
+	// list (since.go) shows the item again even when has_thumb/has_preview stay 1; adding it rewrites nothing
+	for _, col := range []string{"thumb_bytes", "preview_bytes", "favorite", "aux_ver"} {
 		if !have[col] {
 			if _, err := db.Exec(`ALTER TABLE items ADD COLUMN ` + col + ` INTEGER NOT NULL DEFAULT 0`); err != nil {
 				return err
@@ -186,7 +230,7 @@ func migrate(db *sql.DB) error {
 		}
 	}
 	urows.Close()
-	// users.nsfw: the admin allows this person search of explicit content (an extra model in the apps); off by default
+	// users.nsfw: the admin allows this person search of explicit content (search results unfiltered); off by default
 	for _, col := range []string{"last_login_at", "nsfw"} {
 		if !userCols[col] {
 			if _, err := db.Exec(`ALTER TABLE users ADD COLUMN ` + col + ` INTEGER NOT NULL DEFAULT 0`); err != nil {
@@ -215,9 +259,33 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	// invites.created_session: the session (pub id) that made the invite; signing that session out, or the creator's
+	// password change from another one, ends the invite ('' for older ones and the server console's)
+	if invCols, err := tableCols(db, "invites"); err != nil {
+		return err
+	} else if !invCols["created_session"] {
+		if _, err := db.Exec(`ALTER TABLE invites ADD COLUMN created_session TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
 	// users.indexer: the one device (session pub id) that computes the search index; the others only read it
 	if !userCols["indexer"] {
 		if _, err := db.Exec(`ALTER TABLE users ADD COLUMN indexer TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
+	// two-step sign-in (twofactor.go): totp_secret is the authenticator secret while it is on, totp_pending one shown
+	// but not yet confirmed with a code (both encrypted under a key derived from the server's secret file, '' = none),
+	// totp_last the last time step a code was accepted for (a code is never accepted twice)
+	for _, col := range []string{"totp_secret", "totp_pending"} {
+		if !userCols[col] {
+			if _, err := db.Exec(`ALTER TABLE users ADD COLUMN ` + col + ` TEXT NOT NULL DEFAULT ''`); err != nil {
+				return err
+			}
+		}
+	}
+	if !userCols["totp_last"] {
+		if _, err := db.Exec(`ALTER TABLE users ADD COLUMN totp_last INTEGER NOT NULL DEFAULT 0`); err != nil {
 			return err
 		}
 	}
@@ -239,8 +307,11 @@ func migrate(db *sql.DB) error {
 	if _, err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS sessions_pub ON sessions(pub)`); err != nil {
 		return err
 	}
-	// item_index.model: one entry per item and model family, so entries of the standard and the explicit model don't
-	// overwrite each other (before 1.9.0 an item had one entry; those keep the family '' and are read as either)
+	if err := migrateNotices(db); err != nil {
+		return err
+	}
+	// item_index.model: one entry per item and model family, so entries of two models didn't overwrite each other
+	// (before 1.9.0 an item had one entry; those keep the family ''). Now only LAION's are written (index.go).
 	icols, err := tableCols(db, "item_index")
 	if err != nil {
 		return err
@@ -274,6 +345,54 @@ func migrate(db *sql.DB) error {
 		}
 	}
 	return nil
+}
+
+// migrateNotices rebuilds the notices table of 2.5.0's development versions without the CHECK on kind, so a new kind
+// (password_used) can be stored; the rows and the AUTOINCREMENT counter are kept (the apps remember dismissed ids, so
+// an id must never come again). Once rebuilt, it finds no CHECK and does nothing.
+func migrateNotices(db *sql.DB) error {
+	var def string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='notices'`).Scan(&def); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	if !strings.Contains(strings.ToUpper(def), "CHECK") {
+		return nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var seq int64
+	tx.QueryRow(`SELECT COALESCE(MAX(seq),0) FROM sqlite_sequence WHERE name='notices'`).Scan(&seq)
+	for _, q := range []string{
+		`DROP TABLE IF EXISTS notices_new`,
+		`CREATE TABLE notices_new (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  device TEXT NOT NULL DEFAULT '',
+  session_pub TEXT NOT NULL DEFAULT '',
+  at INTEGER NOT NULL,
+  dismissed INTEGER NOT NULL DEFAULT 0
+)`,
+		`INSERT INTO notices_new(id,user_id,kind,device,session_pub,at,dismissed) SELECT id,user_id,kind,device,session_pub,at,dismissed FROM notices`,
+		`DROP TABLE notices`,
+		`ALTER TABLE notices_new RENAME TO notices`,
+		`CREATE INDEX IF NOT EXISTS notices_user ON notices(user_id, id)`,
+		`DELETE FROM sqlite_sequence WHERE name='notices'`,
+	} {
+		if _, err := tx.Exec(q); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(`INSERT INTO sqlite_sequence(name,seq) SELECT 'notices', MAX(?, COALESCE((SELECT MAX(id) FROM notices),0))`, seq); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func tableCols(db *sql.DB, table string) (map[string]bool, error) {

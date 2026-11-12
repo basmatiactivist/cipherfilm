@@ -8,9 +8,17 @@ public struct APIError: Error, LocalizedError, Sendable {
   public let message: String
   /** the server's machine-readable reason, where it gives one ("not_indexer") */
   public let code: String?
+  /** the token of a sign-in waiting for its two-step code ("two_factor_required"); nothing else carries one */
+  public let pending: String?
+  /** with a pending token: whether the account has an authenticator app and a passkey for this server (an older
+   *  server says neither) */
+  public let totp: Bool?
+  public let passkey: Bool?
   public var errorDescription: String? { message }
   public static let offline = "Can't connect to the server. Check your connection and try again."
-  public init(status: Int, message: String, code: String? = nil) { self.status = status; self.message = message; self.code = code }
+  public init(status: Int, message: String, code: String? = nil, pending: String? = nil, totp: Bool? = nil, passkey: Bool? = nil) {
+    self.status = status; self.message = message; self.code = code; self.pending = pending; self.totp = totp; self.passkey = passkey
+  }
 }
 
 /** The server's ids (accounts, items, albums): 16 random bytes in lowercase hex. An id goes into file names and
@@ -57,6 +65,8 @@ public struct Me: Codable, Sendable {
   /** the server's public demo login (DEMO_ACCOUNTS): it reads and searches, every change is refused */
   public let demo: Bool?
   public var isDemo: Bool { demo == true }
+  /** two-step sign-in is on for the account (missing from servers before it) */
+  public let two_factor: Bool?
   /** The map tab's base map (docs/MAP.md, server/mapconf.go): MapLibre style URLs, tried in order. Missing when the
    *  operator turned the map off (MAP_STYLE=off) and from servers before the map. */
   public let map: MapStyles?
@@ -198,7 +208,7 @@ public final class API: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
              .clientCertificateRejected, .secureConnectionFailed, .cancelled:
           throw APIError(status: -2, message: "The server's certificate isn't trusted by this Mac, so Cipherfilm didn't connect.")
         case .cannotFindHost, .dnsLookupFailed:
-          throw APIError(status: 0, message: "That server name can't be found. Check the address (and that Tailscale or your VPN is connected, if you use one).")
+          throw APIError(status: 0, message: "That server name can't be found. Check the address (and that your VPN is connected, if you use one).")
         default: throw APIError(status: 0, message: Self.network(u))
         }
       }
@@ -213,7 +223,7 @@ public final class API: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     case .timedOut: return "The server is slow to answer (the connection is slow or busy)."
     case .networkConnectionLost: return "The connection to the server dropped."
     case .notConnectedToInternet: return "This Mac is offline."
-    case .cannotConnectToHost: return "The server isn't answering. Check that it is running (and that Tailscale or your VPN is connected, if you use one)."
+    case .cannotConnectToHost: return "The server isn't answering. Check that it is running (and that your VPN is connected, if you use one)."
     case .dataNotAllowed, .internationalRoamingOff: return "This Mac isn't allowed to use the network right now."
     default: return APIError.offline
     }
@@ -223,14 +233,17 @@ public final class API: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any]
     // a body that isn't the server's JSON (a proxy's error page, or a server too old for this request) gets the status
     let fb = obj == nil ? "The server answered \(status)\(status == 404 ? " (not found; the server may be older than this app)" : status == 502 || status == 504 ? " (the server behind the proxy isn't answering)" : "")." : fallback
-    return APIError(status: status, message: Self.sentence(obj?["error"] as? String ?? fb), code: obj?["code"] as? String)
+    return APIError(status: status, message: Self.sentence(obj?["error"] as? String ?? fb), code: obj?["code"] as? String, pending: obj?["pending"] as? String,
+                    totp: obj?["totp"] as? Bool, passkey: obj?["passkey"] as? Bool)
   }
 
   /** A JSON request; body is encoded with JSONSerialization or Encodable. */
   @discardableResult
   /** timeout: how long the answer may pause (not its whole time); a minute, since a tailnet relay that a model download
-   *  fills may hold a small request back for a while. */
-  public func json(_ method: String, _ path: String, body: Any? = nil, timeout: TimeInterval = 60) async throws -> Data {
+   *  fills may hold a small request back for a while. background: a periodic check while nobody uses the app (the
+   *  notices while locked): the server doesn't count the GET as using this Mac (X-CF-Background), so it neither keeps
+   *  the session from ending nor shows the Mac as active. */
+  public func json(_ method: String, _ path: String, body: Any? = nil, timeout: TimeInterval = 60, background: Bool = false) async throws -> Data {
     var r = URLRequest(url: url(path), timeoutInterval: timeout)
     r.httpMethod = method
     r.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -239,6 +252,7 @@ public final class API: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
       r.httpBody = try (body as? Data) ?? JSONSerialization.data(withJSONObject: body, options: [.withoutEscapingSlashes])
     }
     if method != "GET", !csrf.isEmpty { r.setValue(csrf, forHTTPHeaderField: "X-CSRF-Token") }
+    if method == "GET", background { r.setValue("1", forHTTPHeaderField: "X-CF-Background") }
     let (d, h) = try await send(r)
     guard (200..<300).contains(h.statusCode) else {
       ended(h, path)
@@ -324,7 +338,7 @@ public final class API: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
   public static func download(_ source: URL, to file: URL, expected: Int64? = nil, event: @escaping @Sendable (DownloadEvent) -> Void) async throws {
     struct Refused: Error { let error: APIError }
     guard source.scheme?.lowercased() == "https" else { throw APIError(status: -1, message: "Search models are only downloaded over https.") }
-    let tooLong = Refused(error: APIError(status: -1, message: "The search models couldn't be downloaded (Hugging Face sent more than expected)."))
+    let tooLong = Refused(error: APIError(status: -1, message: "The search models couldn't be downloaded (the download site sent more than expected)."))
     var fruitless = 0
     while true {
       try Task.checkCancellation()
@@ -340,7 +354,7 @@ public final class API: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
         guard let h = resp as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         if h.statusCode == 416 { try? FileManager.default.removeItem(at: file); throw URLError(.networkConnectionLost) } // the file changed: from the start
         guard h.statusCode == 200 || h.statusCode == 206 else {
-          let e = APIError(status: h.statusCode, message: "The search models couldn't be downloaded (Hugging Face answered \(h.statusCode)).")
+          let e = APIError(status: h.statusCode, message: "The search models couldn't be downloaded (the download site answered \(h.statusCode)).")
           if Self.retryable.contains(h.statusCode) { throw e }
           throw Refused(error: e)
         }
@@ -387,9 +401,9 @@ public final class API: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
 
   private static func modelNetwork(_ u: URLError) -> String {
     switch u.code {
-    case .timedOut: return "Hugging Face is slow to answer (the connection is slow or busy)."
-    case .networkConnectionLost: return "The connection to Hugging Face dropped."
-    case .cannotFindHost, .cannotConnectToHost: return "Hugging Face can't be reached."
+    case .timedOut: return "The model download site is slow to answer (the connection is slow or busy)."
+    case .networkConnectionLost: return "The connection to the model download site dropped."
+    case .cannotFindHost, .cannotConnectToHost: return "The model download site can't be reached."
     default: return network(u)
     }
   }
@@ -473,16 +487,75 @@ public struct TestCA: @unchecked Sendable {
 #endif
 
 public enum Account {
-  /** Sign-in: the server's KDF settings for the address, then the password's auth key; returns the session and master key. */
-  public static func login(api: API, email: String, password: String) async throws -> (Me, Data) {
+  /** Sign-in: the server's KDF settings for the address, then the password's auth key. Returns the session and master
+   *  key, or, for an account with two-step sign-in, the code step (the server sent no session and no keys yet). */
+  public static func login(api: API, email: String, password: String) async throws -> SignIn {
     let e = Crypto.normEmail(email)
     let kdf = try await api.get(KdfParams.self, "/api/auth/params?email=" + (e.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? e))
     try Crypto.assertSaneKdf(kdf)
     var (auth, kek) = try Crypto.deriveFromPassword(password, kdf)
     defer { Sodium.memzero(&auth); Sodium.memzero(&kek) }
-    let me = try JSONDecoder().decode(Me.self, from: try await api.json("POST", "/api/auth/login", body: ["email": e, "auth": B64.encode(auth)]))
+    let body: Data
+    do {
+      body = try await api.json("POST", "/api/auth/login", body: ["email": e, "auth": B64.encode(auth)])
+    } catch let err as APIError {
+      if let step = CodeStep(err, email: e, kek: kek) { return .code(step) }
+      throw err
+    }
+    let me = try JSONDecoder().decode(Me.self, from: body)
     api.csrf = me.csrf
-    return (me, try Crypto.unlockMasterKey(email: e, kek: kek, wrappedMasterPw: me.wrapped_master_pw))
+    return .done(me, try Crypto.unlockMasterKey(email: e, kek: kek, wrappedMasterPw: me.wrapped_master_pw))
+  }
+
+  /** The second step of a sign-in: the code from the authenticator app or a recovery code. A wrong code may be tried
+   *  again with the same step; an expired one (APIError code "two_factor_expired") needs the password again. */
+  public static func finish(api: API, step: CodeStep, code: String) async throws -> (Me, Data) {
+    try await finish(api: api, step: step, second: ["code": TwoFactor.clean(code)])
+  }
+
+  /** The challenge for a passkey (server/passkeys.go), bound to this sign-in: the options for the browser. */
+  public static func passkeyChallenge(api: API, step: CodeStep) async throws -> Data {
+    guard step.key != nil else { throw CodeStep.expiredError }
+    do {
+      return try await Passkeys.options(try await api.json("POST", "/api/auth/login/2fa/passkey", body: ["pending": step.pending]))
+    } catch let err as APIError where err.code == "two_factor_expired" {
+      step.abandon(); throw CodeStep.expiredError
+    }
+  }
+
+  /** The same step with a passkey's answer (JSON) to that challenge. */
+  public static func finish(api: API, step: CodeStep, passkey answer: Data) async throws -> (Me, Data) {
+    guard let obj = try? JSONSerialization.jsonObject(with: answer) as? [String: Any] else { throw Passkeys.noAnswer }
+    return try await finish(api: api, step: step, second: ["passkey": obj])
+  }
+
+  private static func finish(api: API, step: CodeStep, second: [String: Any]) async throws -> (Me, Data) {
+    guard let kek = step.key else { throw CodeStep.expiredError }
+    let body: Data
+    do {
+      body = try await api.json("POST", "/api/auth/login/2fa", body: second.merging(["pending": step.pending]) { a, _ in a })
+    } catch let err as APIError {
+      if err.code == "two_factor_expired" { step.abandon(); throw CodeStep.expiredError }
+      if err.code == "wrong_code" { throw APIError(status: err.status, message: TwoFactor.wrongCode, code: err.code) }
+      if err.code == "wrong_passkey" { throw APIError(status: err.status, message: Passkeys.wrongPasskey, code: err.code) }
+      throw err
+    }
+    let me = try JSONDecoder().decode(Me.self, from: body)
+    api.csrf = me.csrf
+    defer { step.abandon() }
+    return (me, try Crypto.unlockMasterKey(email: step.email, kek: kek, wrappedMasterPw: me.wrapped_master_pw))
+  }
+
+  /** The password's auth key (the proof the server checks for account changes), after checking the password here
+   *  first: a typo shows before anything is sent. */
+  public static func proof(me: Me, password: String) throws -> String {
+    try Crypto.assertSaneKdf(me.kdf)
+    var (auth, kek) = try Crypto.deriveFromPassword(password, me.kdf)
+    defer { Sodium.memzero(&auth); Sodium.memzero(&kek) }
+    do { var key = try Crypto.unlockMasterKey(email: me.user.email, kek: kek, wrappedMasterPw: me.wrapped_master_pw); Sodium.memzero(&key) } catch {
+      throw APIError(status: -1, message: "That password isn't right.")
+    }
+    return B64.encode(auth)
   }
 
   /** After a restart the session cookie is still valid: only the password is needed for the keys. */
@@ -496,15 +569,11 @@ public enum Account {
   }
 
   /** Deletes the account and everything in it on the server, permanently, after checking the password here first (a
-   *  typo shows before anything is sent). The server refuses for its only administrator. */
-  public static func delete(api: API, me: Me, password: String) async throws {
-    try Crypto.assertSaneKdf(me.kdf)
-    var (auth, kek) = try Crypto.deriveFromPassword(password, me.kdf)
-    defer { Sodium.memzero(&auth); Sodium.memzero(&kek) }
-    do { var key = try Crypto.unlockMasterKey(email: me.user.email, kek: kek, wrappedMasterPw: me.wrapped_master_pw); Sodium.memzero(&key) } catch {
-      throw APIError(status: -1, message: "That password isn't right.")
-    }
-    _ = try await api.json("DELETE", "/api/me", body: ["current_auth": B64.encode(auth)])
+   *  typo shows before anything is sent). While two-step sign-in is on, the server also wants the second step (a code
+   *  or a passkey's answer; APIError code "second_step_required" without one). It refuses for its only administrator. */
+  public static func delete(api: API, me: Me, password: String, second: TwoFactor.Second = .none) async throws {
+    let auth = try Account.proof(me: me, password: password)
+    _ = try await TwoFactor.friendly { try await api.json("DELETE", "/api/me", body: try second.body(auth)) }
   }
 
   /** A master key is only accepted if it opens something the server keeps sealed under it. */

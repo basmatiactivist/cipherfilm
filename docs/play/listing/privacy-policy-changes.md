@@ -47,7 +47,7 @@ address is declared as collected; photos, videos and location are exempt because
   <li><strong>Notifications</strong>: to show backup and upload progress.</li>
   <li><strong>Network</strong>: to your server, and once to Hugging Face to download the search models; only over HTTPS.</li>
 </ul>
-<p>Search by content and faces runs on your phone, with open models that the app downloads once from Hugging Face, where they are published. Hugging Face sees your phone's IP address and that it downloaded these public files, nothing else: no account, photo or search. Nothing is sent anywhere to be analysed.</p>
+<p>Search by content and faces runs on your phone, with open models that the app downloads once from Hugging Face, where they are published, after it asked you (it says what, how big and from whom). Turning search off deletes them. Hugging Face sees your phone's IP address and that it downloaded these public files, nothing else: no account, photo or search. Nothing is sent anywhere to be analysed.</p>
 
 <h3>What is encrypted before it leaves your phone</h3>
 <p>Photos, videos, thumbnails, file names, dates taken, places, camera details, album names, names of people, the search index and the list of faces are encrypted on your device (XChaCha20-Poly1305, with keys that only your password or your recovery key can open). The server stores them but cannot read them, and neither can we. Your password and your recovery key never leave your device.</p>
@@ -97,7 +97,7 @@ Addition to **"Your rights"** (EN):
   <li><strong>Benachrichtigungen</strong>: um den Fortschritt von Backup und Uploads anzuzeigen.</li>
   <li><strong>Netzwerk</strong>: zu Ihrem Server und einmalig zu Hugging Face, um die Suchmodelle zu laden; nur über HTTPS.</li>
 </ul>
-<p>Die Suche nach Inhalten und Gesichtern läuft auf Ihrem Handy, mit offenen Modellen, die die App einmalig von Hugging Face lädt, wo sie veröffentlicht sind. Hugging Face sieht die IP-Adresse Ihres Handys und dass es diese öffentlichen Dateien geladen hat, sonst nichts: kein Konto, kein Foto, keine Suche. Nichts wird zur Analyse irgendwohin geschickt.</p>
+<p>Die Suche nach Inhalten und Gesichtern läuft auf Ihrem Handy, mit offenen Modellen, die die App einmalig von Hugging Face lädt, wo sie veröffentlicht sind, nachdem sie Sie gefragt hat (sie sagt, was, wie groß und von wem). Wenn Sie die Suche ausschalten, werden sie gelöscht. Hugging Face sieht die IP-Adresse Ihres Handys und dass es diese öffentlichen Dateien geladen hat, sonst nichts: kein Konto, kein Foto, keine Suche. Nichts wird zur Analyse irgendwohin geschickt.</p>
 
 <h3>Was verschlüsselt wird, bevor es Ihr Handy verlässt</h3>
 <p>Fotos, Videos, Vorschaubilder, Dateinamen, Aufnahmedaten, Orte, Kameradaten, Albumnamen, Namen von Personen, der Suchindex und die Liste der Gesichter werden auf Ihrem Gerät verschlüsselt (XChaCha20-Poly1305, mit Schlüsseln, die nur Ihr Passwort oder Ihr Wiederherstellungsschlüssel öffnet). Der Server speichert sie, kann sie aber nicht lesen, und wir auch nicht. Ihr Passwort und Ihr Wiederherstellungsschlüssel verlassen Ihr Gerät nie.</p>

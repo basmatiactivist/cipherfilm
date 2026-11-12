@@ -107,6 +107,7 @@ struct MainView: View {
         Button { UploadPicker.pick(model) } label: { Label("Upload", systemImage: "icloud.and.arrow.up").labelStyle(.titleAndIcon) }
           .help("Upload photos and videos, or drop them on the window")
       }
+      NoticeBell()
       Button { model.lock() } label: { Label("Lock", systemImage: "lock") }.help("Lock the library")
     }
   }
@@ -280,6 +281,7 @@ struct NavItem: View {
 struct StatusCard: View {
   @Environment(AppModel.self) private var model
   @State private var showUploads = false
+  @State private var consent: ModelConsentAsk?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
@@ -303,6 +305,9 @@ struct StatusCard: View {
       if model.settings.search {
         let s = model.search
         switch s.phase {
+        case .consent:
+          Button { consent = s.pendingAsk() } label: { StatusLine(icon: "arrow.down.circle", text: "Search waits for your OK to download the models") }
+            .buttonStyle(TileButton(radius: 6)).help("See what is downloaded")
         case .download: StatusLine(icon: "arrow.down.circle", text: s.downloadText, fraction: s.total > 0 ? Double(s.done) / Double(s.total) : nil)
         case .loading: StatusLine(icon: "sparkle.magnifyingglass", text: "Starting search")
         case .indexing: StatusLine(icon: "sparkle.magnifyingglass", text: "Indexing \(s.done) of \(s.total)", fraction: s.total > 0 ? Double(s.done) / Double(s.total) : nil)
@@ -324,6 +329,7 @@ struct StatusCard: View {
     .background(RoundedRectangle(cornerRadius: Radius.card).fill(Ink.card))
     .overlay(RoundedRectangle(cornerRadius: Radius.card).strokeBorder(Ink.rule, lineWidth: 1))
     .popover(isPresented: $showUploads, arrowEdge: .trailing) { UploadsPanel().environment(model) }
+    .sheet(item: $consent) { a in ModelConsentSheet(ask: a, yes: { consent = nil; model.search.agree(a) }, later: { consent = nil }) }
   }
 }
 
@@ -455,6 +461,7 @@ struct Detail: View {
     } else if items.isEmpty {
       Spacer(); EmptyState(icon: empty.0, title: empty.1, text: empty.2); Spacer()
     } else {
+      if title == "Photos" { MemoriesRow(items: items) }
       PhotoGrid(items: items, selection: selection) { it, list in nav.viewer = ViewerState(ids: list.map(\.id), index: list.firstIndex(of: it) ?? 0) }
     }
   }
@@ -469,6 +476,16 @@ struct SearchResults: View {
   /** how many of the ranked results are shown: a page of 200, then more as the end comes into view */
   @State private var shown = 200
 
+  /** Why nothing was found, and what helps: photos another device hasn't indexed yet are said (docs/SEARCH.md). */
+  private var emptyText: String {
+    guard model.settings.search else { return "Search covers names, dates and cameras. Turn on search in Settings to find what and who is in your photos." }
+    let s = model.search
+    if !s.indexes && s.phase == .ready && s.waiting > 0 {
+      return "\(s.waiting) \(s.waiting == 1 ? "photo or video isn't" : "photos and videos aren't") indexed yet by the device that indexes your photos. To index them on this Mac instead, go to Settings › Search & People."
+    }
+    return "Try what is in the photo (“dog on the beach”), a name, a year or a month."
+  }
+
   var body: some View {
     VStack(spacing: 0) {
       PageTitle(title: "Search", subtitle: result.map { r in r.items.isEmpty ? "Nothing found" : (r.ranked ? "Best matches first" : "\(r.items.count) found") + (r.how.isEmpty ? "" : " · " + r.how.joined(separator: " · ")) } ?? "Searching…")
@@ -480,7 +497,7 @@ struct SearchResults: View {
       if let r = result {
         if r.items.isEmpty {
           Spacer()
-          EmptyState(icon: "magnifyingglass", title: "Nothing found", text: model.settings.search ? "Try what is in the photo (“dog on the beach”), a name, a year or a month." : "Search covers names, dates and cameras. Turn on search in Settings to find what and who is in your photos.")
+          EmptyState(icon: "magnifyingglass", title: "Nothing found", text: emptyText)
           Spacer()
         } else {
           PhotoGrid(items: Array(r.items.prefix(shown)), grouping: .none, selection: selection,

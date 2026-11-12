@@ -1,10 +1,11 @@
 // Test builds only: trust the local test instance's certificate authority (mobile/dev), for https://10.0.2.2:8443 in
 // the emulator and https://localhost:8443 on a phone (adb reverse tcp:8443 tcp:8443). app.config.js adds this plugin
-// only when CF_TEST_CA names the CA file and the build is not signed with the release key, so a released app never
-// trusts it.
+// only for a test build (testBuild.js: CF_TEST_CA names the CA file, not a release), so a released app never trusts it.
+// It also sets the Gradle property cfTestBuild, the only thing that makes the native module's TEST_BUILD true (the
+// e2e screenshot switch, ScreenGuard.kt).
 const fs = require("fs");
 const path = require("path");
-const { withAndroidManifest, withDangerousMod } = require("expo/config-plugins");
+const { withAndroidManifest, withDangerousMod, withGradleProperties } = require("expo/config-plugins");
 
 module.exports = function withTestCA(config, { ca }) {
   config = withDangerousMod(config, ["android", (c) => {
@@ -23,6 +24,11 @@ module.exports = function withTestCA(config, { ca }) {
 `);
     return c;
   }]);
+  config = withGradleProperties(config, (c) => {
+    c.modResults = c.modResults.filter((p) => !(p.type === "property" && p.key === "cfTestBuild"));
+    c.modResults.push({ type: "property", key: "cfTestBuild", value: "true" });
+    return c;
+  });
   return withAndroidManifest(config, (c) => {
     c.modResults.manifest.application[0].$["android:networkSecurityConfig"] = "@xml/network_security_config";
     return c;

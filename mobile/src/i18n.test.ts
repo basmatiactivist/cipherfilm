@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { de } from "./i18n.de";
-import { detectLang, setLang, t, tn } from "./i18n";
+import { currentLang, detectLang, refreshLang, setLang, subscribeLang, t, tn } from "./i18n";
 
 // every literal handed to t() or tn() in the app, read from the source (Vite reads the files: no Node types here)
 declare global { interface ImportMeta { glob(pattern: string[], o: { query: "?raw"; import: "default"; eager: true }): Record<string, string> } }
@@ -50,3 +50,41 @@ describe("i18n", () => {
     setLang("en");
   });
 });
+
+describe("a language change while the app runs", () => {
+  it("is taken up when the app asks again, tells the root once, and the words follow at once", () => {
+    setLang("en");
+    let told = 0;
+    const off = subscribeLang(() => told++);
+    expect(refreshLang(() => "en-GB")).toBe(false); // still English: nothing renders again
+    expect(told).toBe(0);
+    expect(refreshLang(() => "de-AT")).toBe(true); // changed in Android's settings
+    expect(currentLang()).toBe("de");
+    expect(told).toBe(1);
+    expect(t("Trash")).toBe("Papierkorb");
+    expect(refreshLang(() => "de-DE")).toBe(false); // the same language again
+    expect(told).toBe(1);
+    setLang("de"); // no change: no render
+    expect(told).toBe(1);
+    expect(refreshLang(() => "fr-FR")).toBe(true); // anything else is English
+    expect(t("Trash")).toBe("Trash");
+    expect(told).toBe(2);
+    off();
+    setLang("de");
+    expect(told).toBe(2); // unsubscribed
+    setLang("en");
+  });
+
+  it("falls back to the JavaScript engine's language when the native side can't say", () => {
+    setLang("de");
+    const engine = detectLang();
+    refreshLang(() => null);
+    expect(currentLang()).toBe(engine);
+    refreshLang(() => { throw new Error("no native module"); });
+    expect(currentLang()).toBe(engine);
+    refreshLang(); // in plain Node there is no native module either
+    expect(currentLang()).toBe(engine);
+    setLang("en");
+  });
+});
+

@@ -6,7 +6,7 @@ import Testing
 @testable import CipherfilmCore
 
 private let models = ProcessInfo.processInfo.environment["CF_MODELS"].map { URL(fileURLWithPath: $0) }
-private let haveModels = models.map { FileManager.default.fileExists(atPath: $0.appendingPathComponent("mobileclip-s2-vision.onnx").path) } ?? false
+private let haveModels = models.map { FileManager.default.fileExists(atPath: $0.appendingPathComponent("clip-b32-vision.onnx").path) } ?? false
 
 @Suite struct SearchTests {
   @Test func preTokenizer() {
@@ -15,7 +15,7 @@ private let haveModels = models.map { FileManager.default.fileExists(atPath: $0.
   }
 
   @Test(.enabled(if: haveModels)) func tokenizerIds() throws {
-    let t = try Tokenizer(json: Data(contentsOf: models!.appendingPathComponent("mobileclip-s2-tokenizer.json")))
+    let t = try Tokenizer(json: Data(contentsOf: models!.appendingPathComponent("clip-b32-tokenizer.json")))
     let expected: [String: [Int]] = [
       "a dog": [49406, 320, 1929, 49407],
       "A photo of a DOG on the beach!": [49406, 320, 1125, 539, 320, 1929, 525, 518, 2117, 256, 49407],
@@ -35,10 +35,8 @@ private let haveModels = models.map { FileManager.default.fileExists(atPath: $0.
    *  between stays small (scaling the whole of a 1 × 2048 picture to a short side of 256 would take 512 MiB). */
   @Test func clipInputOfThinPictures() {
     for (w, h) in [(1, 2048), (2559, 1), (3, 4000)] {
-      for m in [ClipModel.mobileclip, .laion] {
-        let (buf, P) = Vision.clipInput(Pixels(w: w, h: h), m)
-        #expect(buf.count == 3 * P * P)
-      }
+      let (buf, P) = Vision.clipInput(Pixels(w: w, h: h), .clip)
+      #expect(buf.count == 3 * P * P && P == 224)
     }
     let p = Pixels(w: 10, h: 3, px: (0..<120).map { UInt8($0) })
     #expect(p.cropped(2, 1, 4, 2).px == Array(48..<64) + Array(88..<104))
@@ -92,7 +90,7 @@ private let haveModels = models.map { FileManager.default.fileExists(atPath: $0.
     let a = try v.analyze(jpeg, faces: true)
     #expect(a.clip.count == 1024)
     #expect(a.faces?.isEmpty == true)
-    let t = try Tokenizer(json: Data(contentsOf: models!.appendingPathComponent("mobileclip-s2-tokenizer.json")))
+    let t = try Tokenizer(json: Data(contentsOf: models!.appendingPathComponent("clip-b32-tokenizer.json")))
     let q = try v.textVector(t.encode("a colorful gradient"))
     #expect(q.count == 512)
     let img = Vision.unhalf(a.clip)

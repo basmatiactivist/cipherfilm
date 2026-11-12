@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -223,6 +224,10 @@ func (f *fakeServer) decryptAll(t *testing.T, master []byte) map[string][32]byte
 			t.Fatalf("%s uploaded twice", m.Name)
 		}
 		out[m.Name] = sha256.Sum256(all)
+		// the original's SHA-256 is in the metadata, also for a file whose upload resumed (docs/CRYPTO.md)
+		if sum := out[m.Name]; m.SHA256 != hex.EncodeToString(sum[:]) {
+			t.Fatalf("%s: meta sha256 %q, want %x", m.Name, m.SHA256, sum)
+		}
 	}
 	return out
 }

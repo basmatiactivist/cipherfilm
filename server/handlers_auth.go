@@ -36,6 +36,9 @@ func (a *App) routes() http.Handler {
 	a.sessionRoutes(m)
 	a.thumbRoutes(m)
 	a.eventRoutes(m)
+	a.twoFactorRoutes(m)
+	a.passkeyRoutes(m)
+	a.noticeRoutes(m)
 	m.HandleFunc("GET /api/admin/users", a.auth(true, a.adminListUsers))
 	m.HandleFunc("DELETE /api/admin/invites/{id}", a.auth(true, a.adminRevokeInvite))
 	m.HandleFunc("PATCH /api/admin/settings", a.auth(true, a.adminPatchSettings))
@@ -51,7 +54,7 @@ type userView struct {
 	ID    string `json:"id"`
 	Email string `json:"email"`
 	Role  string `json:"role"`
-	// the admin allows this person search of explicit content: the apps then offer it (and its model) in settings
+	// the admin allows this person search of explicit content: the apps then offer to turn off its filter in settings
 	NSFW bool `json:"nsfw"`
 }
 
@@ -67,6 +70,7 @@ func (a *App) sessionBundle(u *user, s *session) map[string]any {
 		"wrapped_privkey":   u.WrappedPrivkey,
 		"pubkey":            u.Pubkey,
 		"server_version":    version, // shown in the apps' settings
+		"two_factor":        u.twoFactor(),
 	}
 	if a.mapConf != nil {
 		b["map"] = a.mapConf // the base map's styles; absent when the operator turned the map off
@@ -201,6 +205,12 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 	if known {
 		// a browser that signed in before is limited per account, not per source (see device.go)
 		slots = []slot{{a.loginDev, "login|" + u.ID, true}}
+		release, ok := a.knownTurn(u.ID)
+		if !ok {
+			failBusy(w)
+			return
+		}
+		defer release()
 	}
 	at, ok := reserve(slots...)
 	if !ok {
@@ -222,6 +232,11 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	at.success()
+	// two-step sign-in: no session and none of the account's keys yet, only a token for the code step (twofactor.go)
+	if u.twoFactor() {
+		a.startPending(w, r, u)
+		return
+	}
 	ss, err := a.startSession(w, r, u.ID, u.AuthHash)
 	if errors.Is(err, errCredentialsChanged) {
 		fail(w, 401, "wrong e-mail or password")
@@ -231,6 +246,7 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "server error")
 		return
 	}
+	a.noticeSignIn(u, ss, r)
 	writeJSON(w, 200, a.sessionBundle(u, ss))
 }
 
@@ -253,11 +269,15 @@ func (a *App) me(w http.ResponseWriter, r *http.Request, u *user, s *session) {
 
 // ---- password change ----
 
+// The password change, the recovery key's rotation and deleting the account take, with two-step sign-in on, a second
+// step as well (stepUp): a code (authenticator or recovery) or a passkey's answer to POST /api/me/2fa/passkey.
 type changeReq struct {
-	CurrentAuth        string    `json:"current_auth"`
-	NewAuth            string    `json:"new_auth"`
-	NewKDF             kdfParams `json:"new_kdf"`
-	NewWrappedMasterPW string    `json:"new_wrapped_master_pw"`
+	CurrentAuth        string          `json:"current_auth"`
+	NewAuth            string          `json:"new_auth"`
+	NewKDF             kdfParams       `json:"new_kdf"`
+	NewWrappedMasterPW string          `json:"new_wrapped_master_pw"`
+	Code               string          `json:"code"`
+	Passkey            json.RawMessage `json:"passkey"`
 }
 
 func (a *App) changePassword(w http.ResponseWriter, r *http.Request, u *user, s *session) {
@@ -270,12 +290,14 @@ func (a *App) changePassword(w http.ResponseWriter, r *http.Request, u *user, s 
 		fail(w, 429, "too many attempts, try later")
 		return
 	}
-	if !verifySecret(u.AuthHash, req.CurrentAuth) {
-		fail(w, 403, "that password isn't right")
+	if !a.proofOK(w, r, u, at, req.CurrentAuth) {
 		return
 	}
 	if req.NewKDF.validate() != nil || checkLen(req.NewAuth, 32) != nil || checkLen(req.NewWrappedMasterPW, wrappedLen) != nil {
 		fail(w, 400, "invalid request")
+		return
+	}
+	if !a.stepUp(w, r, u, s, req.Code, req.Passkey) {
 		return
 	}
 	ah, err := hashSecret(req.NewAuth)
@@ -291,7 +313,7 @@ func (a *App) changePassword(w http.ResponseWriter, r *http.Request, u *user, s 
 	defer tx.Rollback()
 	// only if the password is still the one just checked: when two devices change it at the same moment, the second
 	// would otherwise overwrite the first and leave a password that neither person typed last
-	res, err := tx.Exec(`UPDATE users SET kdf=?, auth_hash=?, wrapped_master_pw=? WHERE id=? AND auth_hash=? AND status='active'`, req.NewKDF.json(), ah, req.NewWrappedMasterPW, u.ID, u.AuthHash)
+	res, err := tx.Exec(`UPDATE users SET kdf=?, auth_hash=?, wrapped_master_pw=?, totp_pending='' WHERE id=? AND auth_hash=? AND status='active'`, req.NewKDF.json(), ah, req.NewWrappedMasterPW, u.ID, u.AuthHash)
 	if err != nil {
 		fail(w, 500, "server error")
 		return
@@ -311,6 +333,10 @@ func (a *App) changePassword(w http.ResponseWriter, r *http.Request, u *user, s 
 	}
 	at.success()
 	a.revokeTickets(u.ID)
+	a.dropInvitesOf(u.ID, `created_session<>?`, s.Pub) // the other sessions just ended
+	// the pending sign-ins were issued for the old password. The account's code count stays: the session changing the
+	// password may be the one guessing codes, and must not get a fresh budget with every change it makes
+	a.pending.dropUser(u.ID, a.now())
 	a.live.recheck(u.ID) // the other devices' live-update streams end with their sessions
 	if nu, err := a.userByID(u.ID); err == nil {
 		a.setDevice(w, nu) // the old device cookie is bound to the old password hash
@@ -321,10 +347,13 @@ func (a *App) changePassword(w http.ResponseWriter, r *http.Request, u *user, s 
 // ---- deleting one's own account ----
 
 type deleteMeReq struct {
-	CurrentAuth string `json:"current_auth"`
+	CurrentAuth string          `json:"current_auth"`
+	Code        string          `json:"code"`
+	Passkey     json.RawMessage `json:"passkey"`
 }
 
-// deleteMe deletes the signed-in account permanently, with the same proof as a password change: its photos and videos,
+// deleteMe deletes the signed-in account permanently, with the same proof as a password change (with two-step sign-in
+// on, the second step too): its photos and videos,
 // albums, search index, people and every session (the other devices learn they were signed out on purpose and wipe
 // what they keep). The last active administrator can't: someone else must be made administrator first.
 func (a *App) deleteMe(w http.ResponseWriter, r *http.Request, u *user, s *session) {
@@ -337,8 +366,7 @@ func (a *App) deleteMe(w http.ResponseWriter, r *http.Request, u *user, s *sessi
 		fail(w, 429, "too many attempts, try later")
 		return
 	}
-	if !verifySecret(u.AuthHash, req.CurrentAuth) {
-		fail(w, 403, "that password isn't right")
+	if !a.proofOK(w, r, u, at, req.CurrentAuth) {
 		return
 	}
 	// with the admin changes: an admin deleting or demoting the other one at the same moment must not leave none
@@ -347,6 +375,9 @@ func (a *App) deleteMe(w http.ResponseWriter, r *http.Request, u *user, s *sessi
 	if cur, err := a.userByID(u.ID); err == nil && lastAdmin(a, cur) {
 		at.success()
 		fail(w, http.StatusConflict, "you're the only administrator; make someone else an administrator first")
+		return
+	}
+	if !a.stepUp(w, r, u, s, req.Code, req.Passkey) {
 		return
 	}
 	tx, err := a.db.BeginTx(r.Context(), nil)
@@ -406,9 +437,11 @@ func (a *App) deleteMe(w http.ResponseWriter, r *http.Request, u *user, s *sessi
 // ---- recovery key rotation ----
 
 type newRecKeyReq struct {
-	CurrentAuth           string `json:"current_auth"`
-	WrappedMasterRecovery string `json:"wrapped_master_recovery"`
-	RecoveryVerifier      string `json:"recovery_verifier"`
+	CurrentAuth           string          `json:"current_auth"`
+	WrappedMasterRecovery string          `json:"wrapped_master_recovery"`
+	RecoveryVerifier      string          `json:"recovery_verifier"`
+	Code                  string          `json:"code"`
+	Passkey               json.RawMessage `json:"passkey"`
 }
 
 // newRecoveryKey replaces the account's recovery key: the browser made a new key, wrapped the master key
@@ -423,12 +456,14 @@ func (a *App) newRecoveryKey(w http.ResponseWriter, r *http.Request, u *user, s 
 		fail(w, 429, "too many attempts, try later")
 		return
 	}
-	if !verifySecret(u.AuthHash, req.CurrentAuth) {
-		fail(w, 403, "that password isn't right")
+	if !a.proofOK(w, r, u, at, req.CurrentAuth) {
 		return
 	}
 	if checkLen(req.WrappedMasterRecovery, wrappedLen) != nil || checkLen(req.RecoveryVerifier, 32) != nil {
 		fail(w, 400, "invalid request")
+		return
+	}
+	if !a.stepUp(w, r, u, s, req.Code, req.Passkey) {
 		return
 	}
 	rh, err := hashSecret(req.RecoveryVerifier)
@@ -455,8 +490,7 @@ func (a *App) newRecoveryKey(w http.ResponseWriter, r *http.Request, u *user, s 
 
 func (a *App) usage(w http.ResponseWriter, r *http.Request, u *user, s *session) {
 	var quota, used int64
-	a.db.QueryRow(`SELECT quota_bytes FROM users WHERE id=?`, u.ID).Scan(&quota)
-	a.db.QueryRow(`SELECT `+usedBytesSQL("?"), u.ID, u.ID, u.ID).Scan(&used)
+	a.db.QueryRow(`SELECT quota_bytes, used_bytes FROM users WHERE id=?`, u.ID).Scan(&quota, &used) // usage.go
 	writeJSON(w, 200, map[string]any{"used_bytes": used, "quota_bytes": quota, "unlimited": quota == 0})
 }
 
@@ -497,6 +531,12 @@ func (a *App) recoverStart(w http.ResponseWriter, r *http.Request) {
 	if known {
 		// like login: a browser that signed in before is limited per account, not per source
 		slots = []slot{{a.loginDev, "recover|" + u.ID, true}}
+		release, ok := a.knownTurn(u.ID)
+		if !ok {
+			failBusy(w)
+			return
+		}
+		defer release()
 	}
 	at, ok := reserve(slots...)
 	if !ok {
@@ -567,7 +607,7 @@ func (a *App) recoverFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	res, err := tx.Exec(`UPDATE users SET kdf=?, auth_hash=?, wrapped_master_pw=?, wrapped_master_recovery=?, recovery_hash=? WHERE id=? AND recovery_hash=? AND status='active'`,
+	res, err := tx.Exec(`UPDATE users SET kdf=?, auth_hash=?, wrapped_master_pw=?, wrapped_master_recovery=?, recovery_hash=?, totp_pending='' WHERE id=? AND recovery_hash=? AND status='active'`,
 		req.NewKDF.json(), ah, req.NewWrappedMasterPW, req.NewWrappedMasterRec, rh, t.userID, t.recHash)
 	if err != nil {
 		fail(w, 500, "server error")
@@ -586,16 +626,32 @@ func (a *App) recoverFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.revokeTickets(t.userID)
+	a.dropInvitesOf(t.userID, `1`) // every session just ended
+	// the pending sign-ins were issued for the old password; the code count stays: the recovery key alone (with no
+	// code) must not let anyone wipe it again and again and so guess more codes than the limits allow
+	a.pending.dropUser(t.userID, a.now())
 	a.live.recheck(t.userID)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
 // ---- invites ----
 
+// inviteCreatorOK is the condition (on invites) that an invite's creator may still invite: the server console, or an
+// administrator who is still one and active. An invite of someone demoted, disabled or deleted since stops working.
+const inviteCreatorOK = `(invites.created_by='` + consoleActor + `' OR EXISTS (SELECT 1 FROM users c WHERE c.id=invites.created_by
+	AND c.role='admin' AND c.status='active'))`
+
+// dropInvitesOf deletes the open invites an account made from the sessions where selects (a fixed condition on
+// invites, values in args): sessions that were just signed out, by the person or by a password change or recovery,
+// may have been someone else's, and what they invited must not outlive them.
+func (a *App) dropInvitesOf(userID, where string, args ...any) {
+	a.db.Exec(`DELETE FROM invites WHERE used_at IS NULL AND created_by=? AND (`+where+`)`, append([]any{userID}, args...)...)
+}
+
 func (a *App) validInvite(token string) (id, email string, err error) {
 	var exp int64
 	var used sql.NullInt64
-	err = a.db.QueryRow(`SELECT id,email,expires_at,used_at FROM invites WHERE token_hash=?`, sha256hex(token)).Scan(&id, &email, &exp, &used)
+	err = a.db.QueryRow(`SELECT id,email,expires_at,used_at FROM invites WHERE token_hash=? AND `+inviteCreatorOK, sha256hex(token)).Scan(&id, &email, &exp, &used)
 	if err != nil || used.Valid || a.now().Unix() > exp {
 		return "", "", errors.New("invalid invite")
 	}
@@ -640,7 +696,7 @@ func (a *App) inviteAccept(w http.ResponseWriter, r *http.Request) {
 	var id, email string
 	var exp int64
 	var used, invQuota sql.NullInt64
-	if err := tx.QueryRow(`SELECT id,email,expires_at,used_at,quota_bytes FROM invites WHERE token_hash=?`, tokHash).Scan(&id, &email, &exp, &used, &invQuota); err != nil || used.Valid || a.now().Unix() > exp {
+	if err := tx.QueryRow(`SELECT id,email,expires_at,used_at,quota_bytes FROM invites WHERE token_hash=? AND `+inviteCreatorOK, tokHash).Scan(&id, &email, &exp, &used, &invQuota); err != nil || used.Valid || a.now().Unix() > exp {
 		a.loginIP.fail(ip)
 		fail(w, 404, "this invite link is invalid or expired")
 		return

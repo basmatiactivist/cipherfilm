@@ -72,8 +72,6 @@ struct AccountSettings: Codable, Equatable {
   var searchAsked = false
   /** index while running on battery too (off: only on power) */
   var indexOnBattery = true
-  /** the explicit-search choice last read from the people document, for indexing watched folders while locked */
-  var explicitSeen = false
   // continuous export
   var exportOn = false
   var exportPath: String?

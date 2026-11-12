@@ -58,7 +58,7 @@ Account (in the app) shows the app's and the server's version, sets fingerprint 
 the phone shows a notification, also with Cipherfilm closed. There is no push service: the app asks your server about
 every 15 minutes in the background, when Android lets it run (it keeps doing so after the app is swiped away from the
 recent apps and after a restart; not after **Force stop**, until the app is opened again). Each one comes once, and
-the lock screen only says "New sign-in to Cipherfilm". Allow notifications when the app asks (or under Account ›
+it never shows on the lock screen: the device and the time appear once the phone is unlocked. Allow notifications when the app asks (or under Account ›
 Devices); Account › Security notifications turns them off. Phones with strict battery rules can hold the check back
 for hours: on OPPO, OnePlus and realme (ColorOS) allow Cipherfilm **Auto launch** and, under **Battery**, **Allow
 background activity**; on Xiaomi set **Battery saver** to **No restrictions**.

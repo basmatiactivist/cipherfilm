@@ -135,8 +135,8 @@ export const deSecurity: Record<string, string> = {
     "Eine Benachrichtigung, wenn Ihr Konto anderswo angemeldet wird, auch wenn Cipherfilm geschlossen ist",
   "On, but Android doesn't allow Cipherfilm's notifications yet": "An, aber Android erlaubt die Benachrichtigungen von Cipherfilm noch nicht",
   "Allow notifications": "Benachrichtigungen erlauben",
-  "Allow notifications, and this phone tells you when your account is signed in on another device, even while Cipherfilm is closed. The lock screen only says \"New sign-in to Cipherfilm\".":
-    "Erlauben Sie Benachrichtigungen, dann meldet dieses Telefon, wenn Ihr Konto auf einem anderen Gerät angemeldet wird, auch wenn Cipherfilm geschlossen ist. Der Sperrbildschirm zeigt nur „Neue Anmeldung bei Cipherfilm“.",
+  "Allow notifications, and this phone tells you when your account is signed in on another device, even while Cipherfilm is closed. The lock screen never shows it: the device and the time appear only once the phone is unlocked.":
+    "Erlauben Sie Benachrichtigungen, dann meldet dieses Telefon, wenn Ihr Konto auf einem anderen Gerät angemeldet wird, auch wenn Cipherfilm geschlossen ist. Auf dem Sperrbildschirm erscheint sie nie: Gerät und Uhrzeit sehen Sie erst, wenn das Telefon entsperrt ist.",
   "New sign-in": "Neue Anmeldung",
   "Two-step sign-in turned off": "Anmeldung in zwei Schritten ausgeschaltet",
   "Unfinished sign-in": "Nicht abgeschlossene Anmeldung",

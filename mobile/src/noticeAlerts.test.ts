@@ -67,3 +67,15 @@ describe("which notices become notifications", () => {
     expect(alertId(2 ** 31 + 4)).toBeLessThan(2 ** 31);
   });
 });
+
+describe("the notification on the lock screen", () => {
+  it("is secret (not private), so the phone's show-all-content setting can't reveal device and time", async () => {
+    // @ts-ignore: runs in Node (vitest), where the app's types have no node:fs
+    const { readFileSync } = await import("node:fs");
+    const kt: string = readFileSync(new URL("../modules/cf-native/android/src/main/java/app/cipherfilm/cfnative/Notices.kt", import.meta.url), "utf8");
+    expect(kt).toContain("lockscreenVisibility = NotificationCompat.VISIBILITY_SECRET");
+    expect(kt).toContain(".setVisibility(NotificationCompat.VISIBILITY_SECRET)");
+    expect(kt).not.toContain("VISIBILITY_PRIVATE");
+    expect(kt).toContain(".setPublicVersion(public)");
+  });
+});

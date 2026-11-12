@@ -53,7 +53,7 @@ export function NoticeAlertsHint() {
   return (
     <View style={st.box}>
       <Text variant="bodyMedium" style={{ color: th.colors.onSurfaceVariant }}>
-        {t("Allow notifications, and this phone tells you when your account is signed in on another device, even while Cipherfilm is closed. The lock screen only says \"New sign-in to Cipherfilm\".")}
+        {t("Allow notifications, and this phone tells you when your account is signed in on another device, even while Cipherfilm is closed. The lock screen never shows it: the device and the time appear only once the phone is unlocked.")}
       </Text>
       <Button mode="text" compact style={{ alignSelf: "flex-start", marginTop: 4 }} onPress={ask}>{t("Allow")}</Button>
     </View>

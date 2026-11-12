@@ -53,7 +53,6 @@ struct MainView: View {
         Ink.paper.ignoresSafeArea()
         Detail(nav: nav, selection: selection)
       }
-      .overlay(alignment: .top) { NoticeBanner() }
       .toolbar { toolbar }
       .searchable(text: $nav.query, placement: .toolbar, prompt: model.search.ready ? "Search: beach, Anna, 2023, videos…" : "Search by name, date or camera")
     }
@@ -108,6 +107,7 @@ struct MainView: View {
         Button { UploadPicker.pick(model) } label: { Label("Upload", systemImage: "icloud.and.arrow.up").labelStyle(.titleAndIcon) }
           .help("Upload photos and videos, or drop them on the window")
       }
+      NoticeBell()
       Button { model.lock() } label: { Label("Lock", systemImage: "lock") }.help("Lock the library")
     }
   }

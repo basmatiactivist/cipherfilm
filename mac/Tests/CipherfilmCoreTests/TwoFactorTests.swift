@@ -90,6 +90,15 @@ import Testing
     #expect(used.map(\.id) == [5])
     #expect(used[0].text(time: "Nov 11") == "Your password was used to start a sign-in that wasn't finished (Nov 11). Not you? Change your password in Cipherfilm in the browser.")
     #expect(!used[0].reviewDevices && !used[0].opensSettings)
+    #expect(shown[1].action == "Review Devices" && shown[0].action == "Two-Step Sign-In" && used[0].action == nil)
+  }
+
+  @Test func inboxUnread() {
+    let list = [3, 7, 5].map { Notice(id: $0, kind: "sign_in", device: "", at: 0) }
+    #expect(Notice.unread(list, seen: 0) == 3)
+    #expect(Notice.unread(list, seen: 5) == 1)
+    #expect(Notice.unread(list, seen: 7) == 0)
+    #expect(Notice.unread([], seen: 0) == 0)
   }
 
   @Test func changesToTwoStepSignInWorded() {
@@ -176,7 +185,7 @@ import Testing
   }
 }
 
-// Notices as macOS notifications (NoticeAlerts): each at most once, none while the banner shows them.
+// Notices as macOS notifications (NoticeAlerts): each at most once, none while the window is in front.
 @Suite struct NoticeAlertsTests {
   let now = Date(timeIntervalSince1970: 1_800_000_000)
   func n(_ id: Int64, ago: TimeInterval = 60, kind: String = "sign_in") -> Notice {
@@ -190,7 +199,7 @@ import Testing
     #expect(a.take([n(4), n(3), n(2)], server: "s", now: now, visible: false).map(\.id) == [4])
   }
 
-  @Test func noneWhileTheBannerShowsThem() {
+  @Test func noneWhileTheWindowShowsThem() {
     var a = NoticeAlerts()
     #expect(a.take([n(5)], server: "s", now: now, visible: true).isEmpty)
     // and not later either, once the window is gone

@@ -26,10 +26,10 @@ enum Notifier {
 
 /**
  * Account notices (a new sign-in elsewhere, two-step sign-in turned off or changed, an unfinished sign-in) as macOS notifications,
- * when the window isn't in front: the banner shows them otherwise. Each at most once (NoticeAlerts, in Core). They
+ * when the window isn't in front: the toolbar's bell shows them otherwise. Each at most once (NoticeAlerts, in Core). They
  * come from the live updates while unlocked, and from a check every few minutes while Cipherfilm is locked and keeps
  * running in the menu bar. The title says only that something happened ("New sign-in to Cipherfilm"); the body is
- * the banner's text (the device's own label and the time), which macOS hides when it hides previews (on the lock
+ * the inbox's text (the device's own label and the time), which macOS hides when it hides previews (on the lock
  * screen by default). A click opens Settings › Security. Settings › Security turns them off. No push service: the app
  * itself asks its server.
  */
@@ -56,7 +56,7 @@ enum Notifier {
     c.delegate = click
   }
 
-  /** The window shows the banner: the app is in front with a window. */
+  /** The window shows the bell's badge: the app is in front with a window. */
   static var windowInFront: Bool { NSApp.isActive && NSApp.keyWindow?.isVisible == true }
 
   /** The notices just loaded: the new ones go out as notifications unless the window shows them (or this is off). */
@@ -83,7 +83,7 @@ enum Notifier {
     }
   }
 
-  /** Dismissed (here or on another device) or shown in the banner: its notification goes. */
+  /** Dismissed (here or on another device) or shown in the inbox: its notification goes. */
   static func remove(_ ids: [Int64]) {
     guard !ids.isEmpty, Bundle.main.bundleIdentifier != nil else { return }
     UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ids.map { "notice-\($0)" })

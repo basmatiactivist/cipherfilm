@@ -93,8 +93,13 @@ What needs what:
 | Search indexing | the master key (it decrypts previews) | waits for unlock; files from watched folders are indexed from the file at upload |
 | Security notifications | the session (cookie); notices aren't encrypted | checked every 5 minutes (live updates while unlocked) |
 
-A new sign-in to your account elsewhere (and the other security notices) shows as a macOS notification while the
-window isn't in front, each once; the banner shows it otherwise. The title says only what happened ("New sign-in to
+Security notices (a new sign-in to your account elsewhere, two-step sign-in turned off or changed, recovery codes made,
+the password used for a sign-in that wasn't finished) collect behind the bell in the toolbar, next to Lock. Its badge
+marks notices newer than the newest the list has shown on this Mac (remembered per account); opening the list marks
+them all read. Each entry says what happened, on which device and when, with a button to what to check (Review
+Devices, Two-Step Sign-In); each can be removed, or all at once with Remove All, which removes them on every device.
+
+While the window isn't in front, a new notice also shows as a macOS notification, each once. The title says only what happened ("New sign-in to
 Cipherfilm"); the text names the device and the time, and macOS hides it where it hides previews. A click opens
 Settings › Security, which also turns them off. There is no push service: nothing arrives while the app isn't running.
 

@@ -178,19 +178,44 @@ final class AppModel {
   // ---- notices (a new sign-in elsewhere, two-step sign-in turned off by an admin or changed on another device) ----
 
   var notices: [Notice] = []
-  /** the Settings tab to show (the banner's "Review devices" opens Security) */
+  /** the newest notice id the inbox has shown, for this account (the bell's unread badge) */
+  var noticesSeen: Int64 = 0
+  var unreadNotices: Int { Notice.unread(notices, seen: noticesSeen) }
+  /** the Settings tab to show (the inbox's "Review Devices" opens Security) */
   var settingsTab = "general"
+
+  /** Per server and account: ids are the server's. */
+  private var noticesSeenKey: String? {
+    guard let api, let id = me?.user.id else { return nil }
+    return "noticesSeen.\(api.base.absoluteString).\(id)"
+  }
 
   func loadNotices() async {
     guard let api, phase == .unlocked else { return }
     if let l = try? await Notice.load(api: api), phase == .unlocked {
       // dismissed on another device: its notification goes too
       NoticeNotifier.remove(notices.map(\.id).filter { id in !l.contains { $0.id == id } })
+      if let k = noticesSeenKey { noticesSeen = (UserDefaults.standard.object(forKey: k) as? NSNumber)?.int64Value ?? 0 }
       notices = l
-      let front = NoticeNotifier.windowInFront
-      NoticeNotifier.consider(l, server: api.base.absoluteString, visible: front)
-      if front { NoticeNotifier.remove(l.map(\.id)) } // the banner shows them now
+      // in front, the bell's badge shows the new ones; a notification only when the window is elsewhere
+      NoticeNotifier.consider(l, server: api.base.absoluteString, visible: NoticeNotifier.windowInFront)
     }
+  }
+
+  /** The inbox is open: everything in it is read, and its notifications go from Notification Center. */
+  func markNoticesRead() {
+    NoticeNotifier.remove(notices.map(\.id))
+    guard let top = notices.map(\.id).max(), top > noticesSeen else { return }
+    noticesSeen = top
+    if let k = noticesSeenKey { UserDefaults.standard.set(NSNumber(value: top), forKey: k) }
+  }
+
+  func dismissAllNotices() {
+    let all = notices
+    NoticeNotifier.remove(all.map(\.id))
+    notices = []
+    guard let api else { return }
+    Task { for n in all { try? await Notice.dismiss(api: api, id: n.id) } }
   }
 
   /** While locked (and running in the menu bar): the notices every few minutes, for the notifications only (nothing is
@@ -327,6 +352,9 @@ final class AppModel {
   private func forget(account userId: String) {
     guard ServerId.valid(userId) else { return }
     TouchID.disable(userId) // its keychain item lives outside the account's folder
+    for k in UserDefaults.standard.dictionaryRepresentation().keys where k.hasPrefix("noticesSeen.") && k.hasSuffix(".\(userId)") {
+      UserDefaults.standard.removeObject(forKey: k)
+    }
     try? FileManager.default.removeItem(at: Paths.account(userId))
     if let dir = Vault.cacheDir(of: userId) { try? FileManager.default.removeItem(at: dir) }
   }
@@ -390,7 +418,7 @@ final class AppModel {
     images.clear()
     PlaceBook.forget()
     Outbox.clear()
-    items = []; byId = [:]; albums = []; trash = []; notices = []
+    items = []; byId = [:]; albums = []; trash = []; notices = []; noticesSeen = 0
     if ended { watcher.stop(forget: true); uploads = []; uploadsOwner = nil; uploadsPaused = false; Inbox.clear() }
   }
 

@@ -1,5 +1,5 @@
-// Settings › Security: two-step sign-in (server/twofactor.go) and the account's signed-in devices; and the banner that
-// shows a notice once (a new sign-in elsewhere, two-step sign-in turned off by an admin).
+// Settings › Security: two-step sign-in (server/twofactor.go) and the account's signed-in devices; and the toolbar's
+// bell with the account's notices (a new sign-in elsewhere, two-step sign-in turned off or changed).
 import AppKit
 import CipherfilmCore
 import CoreImage
@@ -263,9 +263,9 @@ struct TwoFactorSetupSheet: View {
         HStack { Spacer(); Button("I Saved Them") { dismiss() }.buttonStyle(PrimaryButton()).keyboardShortcut(.defaultAction) }
       } else if let setup {
         Text("Add Cipherfilm to your authenticator app").font(Typo.dialog)
-        Text("Open it in the Passwords app or another authenticator on this Mac, or scan it with an authenticator app on your phone (such as 2FAS, Aegis, Google Authenticator or 1Password), or type the key in.")
+        Text("Open it in your password manager or authenticator app on this Mac, or scan the code with your password manager or authenticator app on your phone, or type the key in.")
           .font(Typo.body).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
-        Button("Open in Passwords or Authenticator App") {
+        Button("Open in Password Manager or Authenticator App") {
           // otpauth:// is opened by the app registered for it (macOS Passwords on recent macOS, or another authenticator)
           if let u = setup.totpURL, NSWorkspace.shared.open(u) { opened = "Opened. Add the account there, then enter the code it shows." }
           else { opened = "No app on this Mac opens it. Scan the code with your phone, or copy the key." }
@@ -389,7 +389,7 @@ struct ProofSheet: View {
     case .off: return "Your password alone will sign in again. The authenticator app, your passkeys and your recovery codes are removed."
     case .codes: return "Your old recovery codes stop working."
     case .removeApp: return "A new sign-in then asks for a passkey, or a recovery code."
-    case .addKey: return "Your browser opens on your server's address and makes the passkey there: in your password manager, iCloud Keychain or on a security key. Your password is still needed at every new sign-in."
+    case .addKey: return "Your browser opens on your server's address and makes the passkey there: in your password manager or on a security key. Your password is still needed at every new sign-in."
     case .removeKey: return onlyStep ? "It's your only second step: two-step sign-in turns off." : "It can't be used to sign in any more."
     }
   }
@@ -544,31 +544,92 @@ struct DevicesSection: View {
 
 // ---- notices ----
 
-/** The newest notice, once, over the library: a new sign-in elsewhere, two-step sign-in turned off by an admin or
- *  changed on another device, or the password used for a sign-in that wasn't finished. */
-struct NoticeBanner: View {
+/** The toolbar's bell: the account's notices (a new sign-in elsewhere, two-step sign-in turned off by an admin or
+ *  changed on another device, the password used for a sign-in that wasn't finished) in a popover. The badge counts the
+ *  ones newer than the newest the popover has shown (per account); opening it marks them all read. */
+struct NoticeBell: View {
   @Environment(AppModel.self) private var model
-  @Environment(\.openSettings) private var openSettings
+  @State private var open = false
 
   var body: some View {
-    if let n = model.notices.first {
-      HStack(alignment: .top, spacing: 10) {
-        Image(systemName: n.reviewDevices ? "person.badge.shield.checkmark" : "exclamationmark.shield").foregroundStyle(Ink.tealInk)
-        Text(n.text(time: n.date.formatted(date: .abbreviated, time: .shortened))).font(Typo.label).foregroundStyle(Ink.ink)
-          .frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
-        if n.opensSettings {
-          Button(n.reviewDevices ? "Review Devices" : "Open Settings") {
+    let unread = model.unreadNotices
+    Button { open.toggle() } label: {
+      Label {
+        Text("Notifications")
+      } icon: {
+        Image(systemName: unread > 0 ? "bell.badge" : "bell").symbolRenderingMode(unread > 0 ? .multicolor : .monochrome)
+      }
+    }
+    .help(unread == 0 ? "Notifications" : unread == 1 ? "Notifications: 1 new" : "Notifications: \(unread) new")
+    .accessibilityLabel(unread == 0 ? "Notifications" : unread == 1 ? "Notifications, 1 unread" : "Notifications, \(unread) unread")
+    .popover(isPresented: $open, arrowEdge: .bottom) { NoticeInbox(open: $open) }
+  }
+}
+
+/** Every notice, newest first: what happened, on which device and when, what to look at; each can be removed. */
+struct NoticeInbox: View {
+  @Environment(AppModel.self) private var model
+  @Environment(\.openSettings) private var openSettings
+  @Binding var open: Bool
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      HStack {
+        Text("Notifications").font(.headline).accessibilityAddTraits(.isHeader)
+        Spacer()
+        if !model.notices.isEmpty {
+          Button("Remove All") { model.dismissAllNotices() }.buttonStyle(.link)
+        }
+      }
+      .padding(.horizontal, 14).padding(.vertical, 10)
+      Divider()
+      if model.notices.isEmpty {
+        ContentUnavailableView("No Notifications", systemImage: "bell",
+          description: Text("New sign-ins and changes to two-step sign-in show up here."))
+          .frame(maxWidth: .infinity).padding(.vertical, 24)
+      } else {
+        ScrollView {
+          LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(model.notices) { n in
+              row(n)
+              if n.id != model.notices.last?.id { Divider().padding(.leading, 46) }
+            }
+          }
+        }
+        .frame(maxHeight: 420)
+        .fixedSize(horizontal: false, vertical: true)
+      }
+    }
+    .frame(width: 380)
+    .onAppear { model.markNoticesRead() }
+    // a notice that arrives while it is open is shown, so it is read too
+    .onChange(of: model.notices) { model.markNoticesRead() }
+  }
+
+  private func row(_ n: Notice) -> some View {
+    HStack(alignment: .top, spacing: 10) {
+      Image(systemName: n.reviewDevices ? "person.badge.shield.checkmark" : "exclamationmark.shield")
+        .font(.title3).foregroundStyle(Ink.tealInk).frame(width: 22).accessibilityHidden(true)
+      VStack(alignment: .leading, spacing: 4) {
+        Text(NoticeAlerts.title(n)).font(.body.weight(.semibold))
+        Text(n.text(time: n.date.formatted(date: .abbreviated, time: .shortened)))
+          .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        if let a = n.action {
+          Button(a) {
+            open = false
             model.settingsTab = "security"
             NSApp.activate()
             openSettings()
-          }.buttonStyle(SecondaryButton())
+          }
+          .buttonStyle(.link).padding(.top, 2)
         }
-        Button { model.dismiss(n) } label: { Image(systemName: "xmark") }.buttonStyle(.borderless).help("Dismiss").accessibilityLabel("Dismiss")
       }
-      .padding(Space.s3)
-      .background(RoundedRectangle(cornerRadius: Radius.control).fill(Ink.tealTint))
-      .overlay(RoundedRectangle(cornerRadius: Radius.control).strokeBorder(Ink.teal, lineWidth: 1))
-      .padding(.horizontal, 16).padding(.top, 10)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      Button { model.dismiss(n) } label: { Image(systemName: "xmark").font(.caption.weight(.semibold)) }
+        .buttonStyle(.borderless).foregroundStyle(.secondary)
+        .help("Remove").accessibilityLabel("Remove \(NoticeAlerts.title(n))")
     }
+    .padding(.horizontal, 14).padding(.vertical, 10)
+    .accessibilityElement(children: .contain)
   }
 }

@@ -158,6 +158,14 @@ public enum Admin {
     return Int64((n * 1e9).rounded())
   }
 
+  /** A limit as the editor shows it, in GB: decimals kept (21.5, not 21), so saving it unchanged keeps it. */
+  public static func gbText(_ n: Int64) -> String {
+    var t = String(format: "%.3f", Double(n) / 1e9)
+    while t.hasSuffix("0") { t.removeLast() }
+    if t.hasSuffix(".") { t.removeLast() }
+    return t
+  }
+
   public static func size(_ n: Int64) -> String {
     if n >= 1_000_000_000 { return String(format: "%.1f GB", Double(n) / 1e9) }
     if n >= 1_000_000 { return String(format: "%.0f MB", Double(n) / 1e6) }
@@ -187,14 +195,15 @@ public enum Admin {
   }
 
   public static func uptime(_ s: Int64) -> String {
-    s >= 86400 ? "\(s / 86400) days" : s >= 3600 ? "\(s / 3600) hours" : "\(s / 60) minutes"
+    let (n, unit) = s >= 86400 ? (s / 86400, "day") : s >= 3600 ? (s / 3600, "hour") : (s / 60, "minute")
+    return n == 1 ? "1 \(unit)" : "\(n) \(unit)s"
   }
 
   /** The off-site backup as the operator's backup tool last reported it (web/src/backup.ts); problem is the warning. */
   public static func backup(_ s: Status, now: Date = Date()) -> (text: String, problem: String?) {
     let ok = s.backup_ok_at ?? 0, failed = s.backup_failed_at ?? 0
     let when = { (t: Int64) in Date(timeIntervalSince1970: TimeInterval(t)).formatted(date: .abbreviated, time: .shortened) }
-    if ok == 0 && failed == 0 { return ("Nothing reported. Your backup tool can report its result here with /app backup-report (docs/SELF-HOSTING.md).", nil) }
+    if ok == 0 && failed == 0 { return ("Nothing reported. Your backup tool can report its result here with cipherfilm backup-report (docs/SELF-HOSTING.md).", nil) }
     if failed > ok {
       let step = s.backup_failed_in == "snapshot" ? "the database snapshot couldn't be written" : "the backup tool couldn't save to the backup target"
       let p = "The last off-site backup failed on \(when(failed)): \(step). " + (ok > 0 ? "Last successful one: \(when(ok))." : "None has succeeded yet.")

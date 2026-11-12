@@ -293,10 +293,15 @@ public struct Notice: Decodable, Sendable, Equatable, Identifiable {
   public var date: Date { Date(timeIntervalSince1970: TimeInterval(at)) }
   /** a sign-in notice leads to the device list */
   public var reviewDevices: Bool { kind == "sign_in" }
-  /** the banner has a button to Settings (the devices, or two-step sign-in); the password is changed in the browser */
+  /** the inbox has a button to Settings (the devices, or two-step sign-in); the password is changed in the browser */
   public var opensSettings: Bool { kind != "password_used" }
+  /** What that button says: what the notice asks to look at. nil: nothing to open in the app. */
+  public var action: String? { reviewDevices ? "Review Devices" : opensSettings ? "Two-Step Sign-In" : nil }
 
-  /** What the banner says; time is the moment as the app shows it. */
+  /** The notices the inbox hasn't shown yet: newer than the newest it showed (seen, an id; ids only grow). */
+  public static func unread(_ list: [Notice], seen: Int64) -> Int { list.filter { $0.id > seen }.count }
+
+  /** What the inbox and the notification say; time is the moment as the app shows it. */
   public func text(time: String) -> String {
     let on = device.isEmpty ? "an unknown device" : device
     switch kind {
@@ -328,10 +333,10 @@ public struct Notice: Decodable, Sendable, Equatable, Identifiable {
 }
 
 /**
- * Which notices this Mac also shows as a macOS notification, when its window isn't in front (the banner shows them
- * otherwise): each at most once. Every notice the app has seen is remembered (the newest `keep` ids, per server: ids
- * are the server's), whether it went out as a notification or was in the banner. Old ones (from before `recent`) are
- * only remembered: a Mac that was off for a week doesn't get a pile, the banner still shows them.
+ * Which notices this Mac also shows as a macOS notification, when its window isn't in front (the inbox's bell shows
+ * them otherwise): each at most once. Every notice the app has seen is remembered (the newest `keep` ids, per server: ids
+ * are the server's), whether it went out as a notification or not. Old ones (from before `recent`) are
+ * only remembered: a Mac that was off for a week doesn't get a pile, the inbox still lists them.
  */
 public struct NoticeAlerts: Codable, Equatable, Sendable {
   public private(set) var server: String
@@ -341,7 +346,7 @@ public struct NoticeAlerts: Codable, Equatable, Sendable {
 
   public init(server: String = "", ids: [Int64] = []) { self.server = server; self.ids = ids }
 
-  /** The ones to post now, oldest first; all of list is remembered. visible: the window shows the banner. */
+  /** The ones to post now, oldest first; all of list is remembered. visible: the window is in front (its bell shows them). */
   public mutating func take(_ list: [Notice], server: String, now: Date, visible: Bool) -> [Notice] {
     if self.server != server { self.server = server; ids = [] }
     let known = Set(ids)

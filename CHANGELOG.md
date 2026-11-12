@@ -97,6 +97,8 @@ version into the GitHub release notes, so a release cannot be published without 
   notices go after 90 days, invites stop working when the session or administrator that made them loses access, at
   most 50 signed-in devices per account, and per-tailnet-user limits behind Tailscale Serve (`TRUST_TAILSCALE_HEADERS`).
 ### Changed
+- Web: adding a passkey opens the browser's dialog right after the name and password, without a second button
+  (it comes back only when the browser wants a tap of its own or the dialog was cancelled).
 - Web and Mac: the map opens on the region with the most photos (at region level, never street level), with those
   photos in the panel beside it, instead of on the whole world. The tile server sees that region.
 - Search uses one open model for everyone, in every app and build: LAION's CLIP ViT-B/32 (MIT), the model explicit

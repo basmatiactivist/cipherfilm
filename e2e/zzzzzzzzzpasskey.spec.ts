@@ -81,8 +81,9 @@ test.describe.serial("passkeys", () => {
     await page.getByRole("button", { name: "Use a passkey…" }).click();
     await page.getByLabel("Name").fill("Test key");
     await page.getByLabel("Your password").fill(HEIDI_PW);
+    // the browser's dialog opens right away (the virtual authenticator answers it), no second button
     await page.getByRole("button", { name: "Continue" }).click();
-    await page.getByRole("button", { name: "Make the passkey" }).click();
+    await expect(page.getByRole("button", { name: "Make the passkey" })).toHaveCount(0);
     // the first second step: the recovery codes, shown once
     const list = page.getByRole("list", { name: "Recovery codes" });
     await expect(list.locator("li")).toHaveCount(10, { timeout: 30_000 });

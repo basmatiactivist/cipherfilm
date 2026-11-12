@@ -472,21 +472,33 @@ function ProofForm(p: { intro: string; submit: string; danger?: boolean; second:
 function AddPasskey(p: { second: boolean; passkey: boolean; onDone: (codes: string[] | null) => void; onCancel: () => void }) {
   const [name, setName] = useState(pk.suggestName(navigator.userAgent));
   const [options, setOptions] = useState<Record<string, any> | null>(null);
+  const [first, setFirst] = useState("");
   const { busy, error, run } = useAction();
+  // right after the password the browser's dialog opens; only a browser that wants a tap of its own for it (or a
+  // dialog that was cancelled) gets the button below
+  const begin = async (pr: pk.Proof) => {
+    const o = await pk.beginAdd(pr);
+    try {
+      p.onDone(await pk.finishAdd(o, name));
+    } catch (e) {
+      setFirst(e instanceof Error ? e.message : String(e));
+      setOptions(o);
+    }
+  };
   if (!options) {
     return (
       <>
         <p>A passkey lives in your password manager, your phone or computer, or on a security key. When you sign in on a new device, you confirm it instead of typing a code. Your password is still needed.</p>
         <Field label="Name" id="pk-name" value={name} onInput={setName} hint="To tell your passkeys apart, like the password manager or key it's in." />
-        <ProofForm intro="" submit="Continue" second={p.second} passkey={p.passkey} onSubmit={async (pr) => setOptions(await pk.beginAdd(pr))} onCancel={p.onCancel} />
+        <ProofForm intro="" submit="Continue" second={p.second} passkey={p.passkey} onSubmit={begin} onCancel={p.onCancel} />
       </>
     );
   }
   // the browser's dialog right on this tap: some browsers allow it only then
   return (
     <>
-      <p>Now your browser or password manager makes the passkey.</p>
-      <ErrorLine text={error} />
+      <p>The passkey wasn't made yet. Try again: your browser or password manager makes it.</p>
+      <ErrorLine text={error || first} />
       <div class="row">
         <button class="btn" disabled={busy} onClick={() => run(async () => p.onDone(await pk.finishAdd(options, name)))}>{busy ? "Waiting…" : "Make the passkey"}</button>
         <button class="btn secondary" onClick={p.onCancel}>Cancel</button>

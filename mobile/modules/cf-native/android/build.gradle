@@ -45,7 +45,7 @@ dependencies {
   constraints {
     implementation("com.google.code.gson:gson:2.15.0") { because "Gson < 2.8.9 (expo-modules-core): deserialization DoS" }
     implementation("commons-io:commons-io:2.22.0") { because "commons-io < 2.7 (expo-file-system): path traversal in FilenameUtils" }
-    implementation("com.google.guava:guava:33.7.2-android") { because "Guava <= 33.7.1 (Media3, Glide): deserialization" }
+    implementation("com.google.guava:guava:33.8.0-android") { because "Guava <= 33.7.1 (Media3, Glide): deserialization" }
   }
 }
 

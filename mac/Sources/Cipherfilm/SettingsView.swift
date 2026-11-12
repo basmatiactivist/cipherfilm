@@ -125,7 +125,8 @@ struct GeneralSettings: View {
   }
 }
 
-/** Deletes the account and everything in it from the server, permanently, after a warning and the password. */
+/** Deletes the account and everything in it from the server, permanently, after a warning and the password (and, while
+ *  two-step sign-in is on, the second step: the same choices as for turning it off). */
 struct DeleteAccountSheet: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dismiss) private var dismiss
@@ -133,6 +134,12 @@ struct DeleteAccountSheet: View {
   @State private var sure = false
   @State private var busy = false
   @State private var error: String?
+  /** two-step sign-in is on: as the account said at sign-in, or as the server said when asked for the deletion */
+  @State private var on = false
+  @State private var hasApp = true
+  @State private var hasPasskey = false
+  @State private var code = ""
+  @State private var way: CodeStepView.Way = .code
 
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
@@ -141,24 +148,52 @@ struct DeleteAccountSheet: View {
         .font(Typo.body).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
       Text("Exported copies on this Mac stay where they are.").font(Typo.caption).foregroundStyle(Ink.faint)
       SecureField("Your password", text: $password).textContentType(.password)
+      if on { SecondStepFields(code: $code, way: $way, hasApp: hasApp, hasPasskey: hasPasskey) }
       Toggle("I understand my photos and videos are deleted permanently", isOn: $sure).toggleStyle(.checkbox)
       if let error { Text(error).font(Typo.caption).foregroundStyle(Ink.danger) }
       HStack {
         Spacer()
         Button("Cancel") { dismiss() }.buttonStyle(SecondaryButton()).keyboardShortcut(.cancelAction).disabled(busy)
-        Button {
-          busy = true; error = nil
-          Task {
-            do { try await model.deleteAccount(password: password); dismiss() } catch {
-              self.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            }
-            busy = false
-          }
-        } label: { BusyLabel(busy, "Delete Account", "Deleting…") }.buttonStyle(PrimaryButton()).disabled(busy || !sure || password.isEmpty)
+        Button(action: go) { BusyLabel(busy, "Delete Account", "Deleting…") }.buttonStyle(PrimaryButton())
+          .disabled(busy || !sure || password.isEmpty || (on && !SecondStepFields.ready(code, way)))
       }
     }
     .padding(24).frame(width: 460)
     .background(Ink.card)
+    .task { if model.me?.two_factor == true { await askSecond() } }
+  }
+
+  /** Shows the second step, with the choices the account has (the authenticator app, a passkey for this server); not
+   *  when the server says two-step sign-in is off by now, unless it just asked for the step. */
+  private func askSecond(asked: Bool = false) async {
+    if let api = model.api {
+      let s = try? await TwoFactor.status(api: api)
+      if s?.enabled == false && !asked { return }
+      hasApp = s?.hasApp ?? true
+      hasPasskey = ((try? await Passkeys.list(api: api)) ?? []).contains { $0.here }
+    }
+    if !on { way = SecondStepFields.start(hasApp: hasApp, hasPasskey: hasPasskey) }
+    on = true
+  }
+
+  private func go() {
+    guard let api = model.api, !busy, sure, !password.isEmpty, !on || SecondStepFields.ready(code, way) else { return }
+    busy = true; error = nil
+    let pw = password
+    Task {
+      do {
+        let s2 = try await secondStep(api, on: on, way: way, code: code)
+        try await model.deleteAccount(password: pw, second: s2)
+        dismiss()
+      } catch {
+        // two-step sign-in was turned on since this Mac last looked: ask for the step now
+        let wasOn = on
+        if TwoFactor.needsSecondStep(error) { await askSecond(asked: true) }
+        self.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        if wasOn { code = "" }
+      }
+      busy = false
+    }
   }
 }
 

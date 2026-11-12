@@ -544,8 +544,8 @@ struct DevicesSection: View {
 
 // ---- notices ----
 
-/** The newest notice, once, over the library: a new sign-in elsewhere, two-step sign-in turned off by an admin, or the
- *  password used for a sign-in that wasn't finished. */
+/** The newest notice, once, over the library: a new sign-in elsewhere, two-step sign-in turned off by an admin or
+ *  changed on another device, or the password used for a sign-in that wasn't finished. */
 struct NoticeBanner: View {
   @Environment(AppModel.self) private var model
   @Environment(\.openSettings) private var openSettings

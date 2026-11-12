@@ -139,8 +139,15 @@ public enum TwoFactor {
     return try JSONDecoder().decode(Codes.self, from: try await friendly { try await api.json("POST", "/api/me/2fa/recovery-codes", body: try second.body(proof)) }).recovery_codes ?? []
   }
 
+  static let secondStepNeeded = "Two-step sign-in is on for your account: this also needs a code from your authenticator app, a recovery code or a passkey."
+
+  /** The server asked for a second step this change was sent without (two-step sign-in was turned on elsewhere). */
+  public static func needsSecondStep(_ e: Error) -> Bool { (e as? APIError)?.code == "second_step_required" }
+
   static func friendly(_ f: () async throws -> Data) async throws -> Data {
-    do { return try await f() } catch let e as APIError where e.code == "wrong_code" {
+    do { return try await f() } catch let e as APIError where e.code == "second_step_required" {
+      throw APIError(status: e.status, message: secondStepNeeded, code: e.code)
+    } catch let e as APIError where e.code == "wrong_code" {
       throw APIError(status: e.status, message: wrongCode, code: e.code)
     } catch let e as APIError where e.code == "wrong_passkey" {
       throw APIError(status: e.status, message: Passkeys.wrongPasskey, code: e.code)
@@ -265,7 +272,7 @@ public struct Device: Decodable, Sendable, Equatable, Identifiable {
 }
 
 /** Something the account's devices show once (a new sign-in, two-step sign-in turned off by an admin, the password used
- *  for a sign-in that wasn't finished). Dismissing it
+ *  for a sign-in that wasn't finished, a change to two-step sign-in made on another of its devices). Dismissing it
  *  on any device dismisses it everywhere. */
 public struct Notice: Decodable, Sendable, Equatable, Identifiable {
   public let id: Int64
@@ -275,7 +282,8 @@ public struct Notice: Decodable, Sendable, Equatable, Identifiable {
 
   public init(id: Int64, kind: String, device: String, at: Int64) { self.id = id; self.kind = kind; self.device = device; self.at = at }
 
-  public static let kinds: Set<String> = ["sign_in", "2fa_reset", "password_used"]
+  public static let kinds: Set<String> = ["sign_in", "2fa_reset", "password_used", "totp_added", "totp_removed",
+                                           "passkey_added", "passkey_removed", "recovery_codes", "2fa_off"]
   public var date: Date { Date(timeIntervalSince1970: TimeInterval(at)) }
   /** a sign-in notice leads to the device list */
   public var reviewDevices: Bool { kind == "sign_in" }
@@ -284,9 +292,16 @@ public struct Notice: Decodable, Sendable, Equatable, Identifiable {
 
   /** What the banner says; time is the moment as the app shows it. */
   public func text(time: String) -> String {
+    let on = device.isEmpty ? "an unknown device" : device
     switch kind {
-    case "sign_in": return "New sign-in: \(device.isEmpty ? "an unknown device" : device), \(time). Not you? Review devices."
+    case "sign_in": return "New sign-in: \(on), \(time). Not you? Review devices."
     case "password_used": return "Your password was used to start a sign-in that wasn't finished (\(time)). Not you? Change your password in Cipherfilm in the browser."
+    case "totp_added": return "An authenticator app was added to two-step sign-in on \(on), \(time). Not you?"
+    case "totp_removed": return "The authenticator app was removed from two-step sign-in on \(on), \(time). Not you?"
+    case "passkey_added": return "A passkey was added to two-step sign-in on \(on), \(time). Not you?"
+    case "passkey_removed": return "A passkey was removed from two-step sign-in on \(on), \(time). Not you?"
+    case "recovery_codes": return "New recovery codes were made on \(on), \(time); the old ones no longer work. Not you?"
+    case "2fa_off": return "Two-step sign-in was turned off on \(on), \(time). Not you?"
     default: return "An administrator turned off two-step sign-in for your account (\(time)). Turn it on again in Settings."
     }
   }
@@ -334,7 +349,9 @@ public struct NoticeAlerts: Codable, Equatable, Sendable {
   public static func title(_ n: Notice) -> String {
     switch n.kind {
     case "sign_in": return "New sign-in to Cipherfilm"
-    case "2fa_reset": return "Two-step sign-in turned off"
+    case "2fa_reset", "2fa_off": return "Two-step sign-in turned off"
+    case "totp_added", "totp_removed", "passkey_added", "passkey_removed": return "Two-step sign-in changed"
+    case "recovery_codes": return "New recovery codes made"
     default: return "Unfinished sign-in to Cipherfilm"
     }
   }

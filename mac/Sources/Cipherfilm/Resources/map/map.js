@@ -1,7 +1,7 @@
 // The Mac app's map (docs/MAP.md), the web app's map (web/src/map/ui.tsx) in a web view of its own: photo locations
 // come from the app (MapPage.swift), which decrypted them; they stay in this page. The base map's server (the styles
-// the Cipherfilm server names) only sees which tiles are loaded: the map opens on the whole world and never moves to
-// the photos by itself. No cookies (a data store of its own, kept in memory) and no referrer go with those requests.
+// the Cipherfilm server names) only sees which tiles are loaded: the map opens on the area with the most photos at
+// region level (homeBounds), closer only where the person zooms in. No cookies (a data store of its own, kept in memory) and no referrer go with those requests.
 //   body.map: the map tab, clustered round thumbnails; body.mini: a photo's spot in its details, with a pin.
 import { Map as MapLibre, Marker, NavigationControl, setWorkerUrl } from "./maplibre-gl.mjs";
 
@@ -19,8 +19,30 @@ const SOURCE = "cf-photos";
 const MAX_ZOOM = 16; // zoomed in this far, a cluster's click shows its photos instead of zooming further
 const MAP_MAX = 19; // photos at one spot stay one cluster up to here
 const MAX_MARKERS = 120; // thumbnails drawn at once
-// the whole world, the same for everyone: never where the photos are
+// the whole world: where the map opens while no photo has a place
 const WORLD_BOUNDS = [[-165, -50], [175, 70]];
+const HOME_MAX_ZOOM = 8;
+
+// Where the map opens, the same as the web app's (web/src/map/home.ts): photos in cells of 2° by 2°, the fullest cell
+// and its eight neighbours (about 6° across), never closer than region level.
+function homeBounds(pts) {
+  if (!pts.length) return null;
+  const C = 2, counts = new Map();
+  let best = "", most = 0;
+  for (const p of pts) {
+    const k = `${Math.floor(p.lat / C)},${Math.floor(p.lon / C)}`;
+    const n = (counts.get(k) ?? 0) + 1;
+    counts.set(k, n);
+    if (n > most) { most = n; best = k; }
+  }
+  const [bl, bo] = best.split(",").map(Number);
+  let w = 180, s = 90, e = -180, n = -90;
+  for (const p of pts) {
+    if (Math.abs(Math.floor(p.lat / C) - bl) > 1 || Math.abs(Math.floor(p.lon / C) - bo) > 1) continue;
+    w = Math.min(w, p.lon); e = Math.max(e, p.lon); s = Math.min(s, p.lat); n = Math.max(n, p.lat);
+  }
+  return [[w, s], [e, n]];
+}
 
 const conf = await post({ t: "config" });
 let dark = conf.dark;
@@ -46,7 +68,8 @@ const m = new MapLibre(mini
 if (!mini) {
   m.touchZoomRotate.disableRotation();
   m.keyboard.disableRotation();
-  m.fitBounds(WORLD_BOUNDS, { padding: 8, animate: false });
+  const home = homeBounds(conf.points ?? []);
+  m.fitBounds(home ?? WORLD_BOUNDS, home ? { padding: 60, maxZoom: HOME_MAX_ZOOM, animate: false } : { padding: 8, animate: false });
   m.addControl(new NavigationControl({ showCompass: false }), "top-right");
 }
 
@@ -92,7 +115,7 @@ const geojson = () => ({
 
 // while the panel is open, it gets the photos in view after every zoom or move (at the module's top level: the map's
 // events and the markers' clicks call these)
-let following = false, areaTimer;
+let following = false, opened = false, areaTimer;
 function sendArea() { if (following && window.cf?.inView) post({ t: "area", ids: window.cf.inView() }); }
 function areaSoon() { clearTimeout(areaTimer); areaTimer = setTimeout(sendArea, 150); }
 
@@ -180,6 +203,8 @@ if (!mini) {
     }
     post({ t: "styleLoaded" });
     later();
+    // opened on the photos' area: the panel beside the map shows them and follows the map
+    if (!opened && homeBounds(points)) { opened = true; following = true; areaSoon(); }
   });
   m.on("sourcedata", (e) => { if (e.sourceId === SOURCE) later(); });
   m.on("moveend", () => { later(); areaSoon(); });

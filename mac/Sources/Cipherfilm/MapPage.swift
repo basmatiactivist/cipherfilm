@@ -2,8 +2,8 @@
 // MapLibre GL JS runs in a web view of its own, served from the app bundle (Contents/Resources/map, copied there by
 // scripts/map-assets.sh) under cfmap://app/, never from the network. Coordinates and thumbnails are decrypted on this
 // Mac and handed only to that page; the base map's server (the styles the Cipherfilm server names, OpenFreeMap by
-// default) sees which tiles are loaded and nothing else: the map opens on the whole world and never moves to the
-// photos by itself, its data store lives in memory (no cookies), and no referrer is sent.
+// default) sees which tiles are loaded and nothing else: the map opens on the area with the most photos at region
+// level (map.js homeBounds), closer only where the person zooms in, its data store lives in memory (no cookies), and no referrer is sent.
 import AppKit
 import CipherfilmCore
 import SwiftUI
@@ -342,7 +342,7 @@ struct MapConsent: View {
         VStack(alignment: .leading, spacing: 14) {
           Image(systemName: "map").font(.system(size: 30)).foregroundStyle(Ink.teal)
           Text("Show your photos on a map?").font(Typo.dialog).foregroundStyle(Ink.ink)
-          Text("The map images come \(from). That service sees this Mac's IP address and which areas you look at. When you choose Show Map in a photo's details, a small map of its area is loaded too, so the service can tell roughly where that photo was taken.")
+          Text("The map images come \(from). That service sees this Mac's IP address and which areas you look at. When you choose Show Map in a photo's details, a small map of its area is loaded too, so the service can tell roughly where that photo was taken. The map opens on the region with most of your photos, so the service sees that region too.")
             .font(Typo.body).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
           Text("Your photos, and the list of where they were taken, stay encrypted and are drawn on this Mac. You can turn the map off again in Settings › General › Map.")
             .font(Typo.body).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)

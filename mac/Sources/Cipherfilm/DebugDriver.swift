@@ -595,10 +595,10 @@ enum DebugDriver {
     let drawn = await wait("map markers", timeout: 20) { (nav.map?.markers ?? 0) > 0 }
     check(drawn, "the map draws cluster markers (\(nav.map?.markers ?? 0))")
     await pause(3) // tiles and thumbnails
-    snapshot("map-01-world")
+    snapshot("map-01-home")
     if let c = nav.map {
       let ids = await c.inView()
-      check(ids.count == 30, "“Photos in This Area” on the whole world lists every located photo (\(ids.count))")
+      check(!ids.isEmpty && ids.count < 30, "the map opens on the area with the most photos, not the whole world (\(ids.count) of 30)")
       c.onPhotos?(located.filter { near($0, 48.86, 2.35) }.map(\.id))
       await pause(2.5)
       snapshot("map-02-panel")

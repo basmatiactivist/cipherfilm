@@ -1,7 +1,7 @@
 // The map tab (docs/MAP.md): photos as clustered thumbnails on a base map. Coordinates and thumbnails are decrypted
 // on this device and drawn here; the base map's server (OpenFreeMap by default, the server's MAP_STYLE) only sees which
-// map tiles are loaded. So the map opens on the whole world and never jumps to where the photos are by itself: only
-// what the person zooms into is asked for. No cookies or referrer go with those requests (the server's
+// map tiles are loaded. The map opens on the area with the most photos at region level (map/home.ts), so the tile
+// server learns that region; closer views are asked for only where the person zooms in. No cookies or referrer go with those requests (the server's
 // Referrer-Policy; MapLibre's requests are "same-origin", so this server's cookies never go to another host).
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Map as MapLibre, Marker, NavigationControl, setWorkerUrl, type GeoJSONSource, type LngLatLike, type MapGeoJSONFeature } from "maplibre-gl";
@@ -13,6 +13,7 @@ import { dropImage, thumbUrl, wantImage } from "../cache";
 import { Timeline } from "../grid";
 import type { Item } from "../items";
 import { areaTitle, located, type Located } from "./locations";
+import { HOME_MAX_ZOOM, homeBounds } from "./home";
 import { mapProviderLong, PRIVACY_URL, setMapOn, useMapOn } from "./consent";
 
 setWorkerUrl(workerUrl);
@@ -24,7 +25,7 @@ const SOURCE = "cf-photos";
 const MAX_ZOOM = 16; // zoomed in this far, a cluster's click shows its photos instead of zooming further
 const MAP_MAX = 19; // photos at one spot stay one cluster up to here (the source clusters to MAP_MAX)
 const MAX_MARKERS = 120; // thumbnails drawn at once; beyond that the map shows fewer, larger clusters
-// the whole world, the same for everyone: never where the photos are (docs/MAP.md)
+// the whole world: where the map opens while no photo has a place
 const WORLD_BOUNDS: [[number, number], [number, number]] = [[-165, -50], [175, 70]];
 const WORLD: LngLatLike = [10, 15];
 
@@ -63,7 +64,7 @@ function MapConsent(p: { onLater: () => void }) {
     <section class="panel mapconsent" aria-labelledby="mapconsent-h">
       <span class="accicon"><Icon name="map" size={22} /></span>
       <h2 id="mapconsent-h">Show your photos on a map?</h2>
-      <p>The map images come from {who}. That service sees this device's IP address and which areas you look at. When you open a photo's details, a small map of its area is loaded too, so the service can tell roughly where that photo was taken.</p>
+      <p>The map images come from {who}. That service sees this device's IP address and which areas you look at. When you open a photo's details, a small map of its area is loaded too, so the service can tell roughly where that photo was taken. The map opens on the region with most of your photos, so the service sees that region too.</p>
       <p>Your photos, and the list of where they were taken, stay encrypted and are drawn in this browser.</p>
       <p class="small"><a href={PRIVACY_URL} target="_blank" rel="noopener noreferrer">Privacy policy</a> · You can turn the map off again under Account › Map.</p>
       <div class="row">
@@ -119,7 +120,10 @@ function MapView(p: { items: Item[]; onOpen: (list: Item[], index: number) => vo
       attributionControl: { compact: true }, dragRotate: false, pitchWithRotate: false, touchPitch: false,
     });
     m.touchZoomRotate.disableRotation();
-    m.fitBounds(WORLD_BOUNDS, { padding: 8, animate: false });
+    // the area with the most photos, with the photos in it beside the map
+    const home = homeBounds(dataRef.current);
+    m.fitBounds(home ?? WORLD_BOUNDS, home ? { padding: 60, maxZoom: HOME_MAX_ZOOM, animate: false } : { padding: 8, animate: false });
+    if (home) m.once("load", openPanel);
     m.addControl(new NavigationControl({ showCompass: false }), "top-right");
     map.current = m;
 

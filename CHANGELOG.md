@@ -97,6 +97,8 @@ version into the GitHub release notes, so a release cannot be published without 
   notices go after 90 days, invites stop working when the session or administrator that made them loses access, at
   most 50 signed-in devices per account, and per-tailnet-user limits behind Tailscale Serve (`TRUST_TAILSCALE_HEADERS`).
 ### Changed
+- Web and Mac: the map opens on the region with the most photos (at region level, never street level), with those
+  photos in the panel beside it, instead of on the whole world. The tile server sees that region.
 - Search uses one open model for everyone, in every app and build: LAION's CLIP ViT-B/32 (MIT), the model explicit
   search already used. MobileCLIP S2, the standard model until now, is gone: its license only allows research use.
   Accounts that used explicit search keep their index; for all others the indexing device (also a phone from Google

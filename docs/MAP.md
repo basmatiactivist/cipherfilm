@@ -41,8 +41,10 @@ when OpenFreeMap doesn't answer. A device asks it for the map images (tiles) of 
 sees the device's IP address and which areas and zoom levels are looked at, never a photo, its coordinates, its
 thumbnail or anything else from the library. To keep that small:
 
-- The map opens on the whole world and never moves to where the photos are by itself; only what the person zooms or
-  moves to is loaded.
+- The map opens on the area that holds the most photos (2° cells, the fullest one and its neighbours), never closer
+  than zoom 8, with those photos in the panel beside it. So the tile server learns that region (like "Switzerland"),
+  not a street; anything closer is loaded only where the person zooms or moves to. With no located photo, it opens on
+  the whole world.
 - A photo's small map in its details loads only when the details are opened (on the Mac, whose details column stays
   open from photo to photo, only after "Show Map" for that photo), at district level (zoom 11), not street level. Looking at a photo's details tells the tile server roughly where that one photo was taken.
 - No cookies and no referrer go to the tile server (the web app's `Referrer-Policy: no-referrer`; MapLibre's requests

@@ -1,0 +1,8 @@
+• Anmeldung in zwei Schritten: Code aus einer Authenticator-App oder Passkey
+• Mitteilungen: Glocke für neue Anmeldungen und Sicherheitsänderungen
+• Geräte: sehen, wo Sie angemeldet sind, und Geräte abmelden
+• An diesem Tag, doppelte und ähnliche Fotos
+• Bearbeiten: drehen, zuschneiden, Datum und Ort korrigieren
+• Verwaltung in der App; die Karte öffnet sich in der Region Ihrer Fotos
+• Viele Korrekturen
+Benötigt Ihren eigenen Cipherfilm-Server: https://cipherfilm.app/de

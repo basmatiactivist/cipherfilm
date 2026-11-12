@@ -7,6 +7,8 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-11-12
+
 ### Note
 - Going back to an older server version is not supported once anyone has added a passkey: older servers don't know
   passkeys, so an account with only passkeys would sign in with the password alone there (docs/RELEASING.md).
@@ -97,6 +99,10 @@ version into the GitHub release notes, so a release cannot be published without 
   notices go after 90 days, invites stop working when the session or administrator that made them loses access, at
   most 50 signed-in devices per account, and per-tailnet-user limits behind Tailscale Serve (`TRUST_TAILSCALE_HEADERS`).
 ### Changed
+- Apps: no other companies' names in what people read (map service, model download site, authenticator apps, phone
+  makers, issue tracker); the privacy policy names the services. License credits stay.
+- Server: on a demo server (DEMO_ACCOUNTS), other administrators can't delete, disable, promote, re-limit or reset
+  two-step sign-in of the public demo account, so a reviewer's account may be an administrator.
 - Android: notifications behind a bell next to Account, with a badge for unread ones and a list to remove them, instead of
   the banner over the photos. An administrator's reset notice goes away by itself once two-step sign-in is on again.
 - Android: passkeys work with servers only on a private network (Tailscale, a home LAN): the app uses the server's

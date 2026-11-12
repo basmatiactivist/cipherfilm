@@ -1,0 +1,8 @@
+• Two-step sign-in: a code from an authenticator app or a passkey
+• Notifications: a bell for new sign-ins and security changes
+• Devices: see where you're signed in and sign out a device
+• On this day, duplicates and similar photos
+• Edit: turn, crop, fix date and place
+• Admin area in the app; map opens on your photos' region
+• Many fixes
+Needs your own Cipherfilm server: https://cipherfilm.app

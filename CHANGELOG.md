@@ -53,6 +53,13 @@ version into the GitHub release notes, so a release cannot be published without 
 - Mac: videos with the iPhone's location key in a meta box inside udta (as ffmpeg writes it) uploaded without
   their place; the Mac app now reads it there too, like the web app and the upload tool.
 
+- With two-step sign-in on, changing the password, making a new recovery key and deleting the account also ask for
+  a code, a recovery code or a passkey (older app versions show a message that they need updating for this).
+- Your other devices now show a notice when an authenticator app or passkey is added or removed, new recovery codes
+  are made or two-step sign-in is turned off.
+- Server hardening for sign-in limits, notices and invites: unfinished-sign-in notices can't be postponed, old
+  notices go after 90 days, invites stop working when the session or administrator that made them loses access, at
+  most 50 signed-in devices per account, and per-tailnet-user limits behind Tailscale Serve (`TRUST_TAILSCALE_HEADERS`).
 ### Changed
 - Search uses one open model for everyone, in every app and build: LAION's CLIP ViT-B/32 (MIT), the model explicit
   search already used. MobileCLIP S2, the standard model until now, is gone: its license only allows research use.

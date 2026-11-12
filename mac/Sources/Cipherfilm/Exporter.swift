@@ -62,6 +62,18 @@ final class Exporter {
     phase = .off; current = nil; message = nil
   }
 
+  /** Lock, sign-out, session end: stops, and lets go of the library it held (the vault, the decrypted items with their
+   *  item keys, the albums), so nothing decrypted stays here once the master key is gone. The next unlock hands them
+   *  over again (libraryChanged). */
+  func forget() {
+    stop()
+    vault = nil; items = []; albums = []; settings = AccountSettings()
+    again = false
+  }
+
+  /** Whether it holds anything of a library (for the lock's test). */
+  var holdsLibrary: Bool { vault != nil || !items.isEmpty || !albums.isEmpty }
+
   private func file(_ userId: String) -> AccountFile<Manifest> { AccountFile(userId: userId, name: "export.json") }
 
   /** Whether a folder can hold this account's export: empty, or an export of this same account. */

@@ -82,6 +82,8 @@ final class SearchEngine {
     run?.cancel(); run = nil
     if clear {
       index.clear(); tags = [:]; runVault = nil; people = PeopleDoc(); peopleVersion = 0; peopleLoaded = false; groupsAt = -1; groups = []
+      // the decrypted items it was handed (with their item keys) and what was queued from them
+      items = []; pending = []; inFlight = []
       version += 1
     }
     phase = .off; done = 0; total = 0; waiting = 0; message = nil; skipped = []

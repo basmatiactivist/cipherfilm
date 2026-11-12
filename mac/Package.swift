@@ -31,5 +31,11 @@ let package = Package(
       name: "CipherfilmCoreTests",
       dependencies: ["CipherfilmCore"]
     ),
+    // the app's own logic that holds decrypted state (what a lock must let go of)
+    .testTarget(
+      name: "CipherfilmAppTests",
+      dependencies: ["Cipherfilm", "CipherfilmCore"],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
   ]
 )

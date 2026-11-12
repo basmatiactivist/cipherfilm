@@ -10,6 +10,7 @@ import { api, ApiError, remote, setCsrf, setServer, whenRevoked, whenSessionEnds
 import { t } from "./i18n";
 import { codeProblem, methods, pendingToken } from "./twoStep";
 import { getPasskey } from "./passkeys";
+import { httpsMap } from "@places/mapHosts";
 
 export interface Me {
   user: { id: string; email: string; role: "admin" | "user"; nsfw?: boolean };
@@ -41,7 +42,12 @@ interface State {
 
 let state: State = { phase: "starting", server: "", me: null, masterKey: null, biometric: false };
 const subs = new Set<() => void>();
-const set = (patch: Partial<State>) => { state = { ...state, ...patch }; subs.forEach((f) => f()); };
+const set = (patch: Partial<State>) => {
+  // only https map styles, from the hosts the question before the map names (mapHosts.ts)
+  if (patch.me) patch = { ...patch, me: { ...patch.me, map: httpsMap(patch.me.map) } };
+  state = { ...state, ...patch };
+  subs.forEach((f) => f());
+};
 
 /** Everything derived from the master key (item keys, decrypted names and images) registers here and is wiped at
  *  every lock, sign-out, session end or server change, not in one screen. "ended" is everything but a plain lock. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanCode, codeReady, codesFile, groupSecret, qrFor } from "./twofactor";
+import { cleanCode, codeReady, codesFile, groupSecret, qrFor, totpUri } from "./twofactor";
 
 describe("two-step sign-in helpers", () => {
   it("takes codes as people type them", () => {
@@ -24,5 +24,13 @@ describe("two-step sign-in helpers", () => {
     const f = codesFile("a@x.org", ["aaaa-bbbb-cccc-dddd", "eeee-ffff-gggg-hhhh"]);
     expect(f).toContain("a@x.org");
     expect(f).toContain("aaaa-bbbb-cccc-dddd\neeee-ffff-gggg-hhhh");
+  });
+});
+
+describe("totpUri", () => {
+  it("accepts only an otpauth://totp/ address", () => {
+    expect(totpUri("otpauth://totp/Cipherfilm:me%40x?secret=ABC&issuer=Cipherfilm")).toBe(true);
+    expect(totpUri("OTPAUTH://TOTP/x")).toBe(true);
+    for (const u of ["https://evil.example/", "otpauth://hotp/x", "intent://x#Intent;end", "file:///etc/passwd", "javascript:alert(1)", " otpauth://totp/x", "", null, 5]) expect(totpUri(u)).toBe(false);
   });
 });

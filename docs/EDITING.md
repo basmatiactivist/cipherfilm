@@ -56,6 +56,12 @@ the person removed or set is left alone by the apps that add missing locations a
   is in the details ("Download original", `Shift+D`). ZIP downloads of several items contain the originals.
 - **Android:** Share and Save give the edited photo, also for a selection; the details have "Share original" and "Save
   original".
+- **A photo whose date or place changed** (not turned or cropped) leaves web and Android the same way, with the date and
+  place as last set: a JPEG keeps its own pixels (not drawn again, same name) with its metadata replaced: every Exif,
+  XMP, IPTC and comment block goes, one Exif block with the date, the place (none if removed) and its orientation is
+  written, and nothing after the picture's end is kept (a motion photo's video). Another format (HEIC, PNG) is drawn
+  anew as a JPEG, as an edited copy. "Download original", "Share original" and "Save original" give the file as
+  uploaded. Videos keep their place in the file (it is not rewritten).
 - **Mac:** Save Original, sharing and the export folder keep the originals as uploaded; the edit is not applied to
   exported files. `tools/decrypt` exports originals too (filed under the date as last set).
 

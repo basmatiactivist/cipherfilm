@@ -33,6 +33,10 @@ export function codeReady(s: string, recovery: boolean): boolean {
 /** The secret in groups of four, as people type it into an authenticator app. */
 export const groupSecret = (s: string): string => s.replace(/(.{4})(?=.)/g, "$1 ");
 
+/** Whether the server's address is an authenticator app's otpauth://totp/ address: only that is opened as a link (any
+ *  other scheme, a web page or an app's own link, from a server that isn't honest, is not). */
+export const totpUri = (uri: unknown): uri is string => typeof uri === "string" && uri.slice(0, 15).toLowerCase() === "otpauth://totp/";
+
 /** The QR code of the otpauth:// address, drawn here (never by a QR service): an SVG path and its size. */
 export function qrFor(uri: string): { d: string; size: number } {
   const q = encodeQR(uri);

@@ -6,6 +6,7 @@ import { api, getBytes } from "../api";
 import { b64, getSodium } from "../crypto/sodium";
 import { decryptSegment, SEG_PLAIN } from "../crypto/file";
 import { encryptMeta } from "../crypto/item";
+import { nextVersion } from "../crypto/metaVersion";
 import { mem } from "../state";
 import type { Item } from "../items";
 import { coords } from "./locations";
@@ -78,7 +79,7 @@ async function run(items: Item[]): Promise<number> {
       const read = segmentReader(it, async (i) => decryptSegment(s, it.itemKey!, it.id, i, it.segment_count, it.size, await getBytes(`/api/items/${it.id}/segments/${i}`)));
       const g = await videoLocation(it.size, read);
       if (g) {
-        await api("PUT", `/api/items/${it.id}/meta`, { meta_enc: b64(s, encryptMeta(s, { ...it.meta!, gps: g }, it.itemKey!, it.id)) });
+        await api("PUT", `/api/items/${it.id}/meta`, { meta_enc: b64(s, encryptMeta(s, nextVersion({ ...it.meta!, gps: g }), it.itemKey!, it.id)) });
         added++;
       }
       done.add(it.id);

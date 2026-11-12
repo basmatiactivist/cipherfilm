@@ -12,8 +12,11 @@ import androidx.core.app.NotificationManagerCompat
 /**
  * Account notices (a new sign-in elsewhere, two-step sign-in turned off, an unfinished sign-in) as Android
  * notifications, for when the app isn't open: src/noticeCheck.ts decides which and words them; this only shows them.
- * The lock screen shows only the public version ("New sign-in to Cipherfilm"), never the device or the time. A tap
- * opens the app with cipherfilm://notice, which leads to Account › Devices (after unlocking).
+ * Secret on the lock screen (VISIBILITY_SECRET, the notification and its channel): a private notification would show
+ * its full text there when the phone's setting shows all notification content, so the device and the time appear
+ * only once the phone is unlocked, whatever that setting is. The public version ("New sign-in to Cipherfilm") is
+ * what Android may show where it redacts. A tap opens the app with cipherfilm://notice, which leads to Account ›
+ * Devices (after unlocking).
  */
 internal object Notices {
   private const val CHANNEL = "security"
@@ -28,7 +31,7 @@ internal object Notices {
     if (nm.getNotificationChannel(CHANNEL)?.let { it.name == name && it.description == about } == true) return
     nm.createNotificationChannel(NotificationChannel(CHANNEL, name, NotificationManager.IMPORTANCE_HIGH).apply {
       description = about
-      lockscreenVisibility = NotificationCompat.VISIBILITY_PRIVATE
+      lockscreenVisibility = NotificationCompat.VISIBILITY_SECRET
     })
   }
 
@@ -55,7 +58,7 @@ internal object Notices {
       .setStyle(NotificationCompat.BigTextStyle().bigText(text))
       .setCategory(NotificationCompat.CATEGORY_STATUS)
       .setPriority(NotificationCompat.PRIORITY_HIGH)
-      .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+      .setVisibility(NotificationCompat.VISIBILITY_SECRET) // never on the lock screen, whatever the phone's setting
       .setPublicVersion(public)
       .setContentIntent(tap)
       .setAutoCancel(true)

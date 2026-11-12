@@ -17,7 +17,7 @@ import { Field, Problem, useAppTheme } from "../ui";
 import { Icon } from "../icons";
 import { busyIcon } from "../Loader";
 import { useAction } from "../useAction";
-import { cleanCode, codeReady, groupSecret } from "../twoStep";
+import { cleanCode, codeReady, groupSecret, totpUri } from "../twoStep";
 import { text } from "../tokens";
 import { t, tn } from "../i18n";
 import { NoticeAlertsHint } from "../NoticeAlertsSetting";
@@ -218,6 +218,7 @@ function SetupView({ setup, code, setCode, busy, onEnable }: { setup: Setup; cod
   const addToApp = async () => {
     setNote(undefined);
     try {
+      if (!totpUri(setup.uri)) throw new Error("not an otpauth://totp/ address");
       await Linking.openURL(setup.uri);
     } catch {
       setNote(t("No app on this phone takes it. Install an authenticator app, or copy the key into one."));

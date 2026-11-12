@@ -381,7 +381,7 @@ final class AppModel {
     refreshTimer?.invalidate(); refreshTimer = nil
     liveTask?.cancel(); liveTask = nil; liveFlush?.cancel(); liveFlush = nil; _ = liveBatch.take(); liveV = nil
     search.stop(clear: true)
-    exporter.stop()
+    exporter.forget() // its copy of the vault, the decrypted items and their item keys go too
     Outbox.cancel()
     // after a lock the queue stays (saved in the account's folder) and goes on after the next unlock; once the session
     // is gone it is not this Mac's to finish (it never goes on in another account)

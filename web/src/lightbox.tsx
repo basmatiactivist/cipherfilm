@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { Item, fetchOriginal } from "./items";
 import { lazy } from "./lazy";
 import { downloadEdited, downloadOriginal } from "./downloads";
-import { normEdit, pictureKey } from "./edit/edit";
+import { leavesAs, normEdit, pictureKey } from "./edit/edit";
 import { canEdit } from "./edit/apply";
 import { BLOB_LIMIT, forgetStream, prepareStream, streamingAvailable } from "./player";
 import { playMime } from "./sw-range";
@@ -62,8 +62,10 @@ export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number)
   const [info, setInfo] = useState(false);
   const [editing, setEditing] = useState(false);
   const editable = !!p.onEdited && canEdit(it);
-  const edited = !!normEdit(it.meta?.edit);
-  // an edited photo downloads as edited; the original is in the details (and Shift+D)
+  const turned = !!normEdit(it.meta?.edit);
+  // an edited photo downloads as edited, also one whose date or place changed (a removed place isn't handed out in the
+  // file); the original is in the details (and Shift+D)
+  const edited = !it.broken && leavesAs(it.kind, it.meta, it.stale) !== "original";
   const download = (original = false) => {
     if (busy) return;
     setBusy(true);
@@ -172,7 +174,7 @@ export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number)
             {m?.gps && <div><dt>Location</dt><dd><PlaceName item={it} />{m.gps.lat.toFixed(4)}, {m.gps.lon.toFixed(4)}</dd></div>}
             {m?.gps && Number.isFinite(m.gps.lat) && Number.isFinite(m.gps.lon) && <MiniMap lat={m.gps.lat} lon={m.gps.lon} onShowMap={p.onMap} />}
             {m?.duration ? <div><dt>Length</dt><dd>{Math.round(m.duration)} s</dd></div> : null}
-            {edited && <div><dt>Edited</dt><dd>Turned or cropped. The original is kept. <button class="link" disabled={busy} onClick={() => download(true)}>Download original</button></dd></div>}
+            {edited && <div><dt>Edited</dt><dd>{turned ? "Turned or cropped." : "Date or place changed."} The original is kept. <button class="link" disabled={busy} onClick={() => download(true)}>Download original</button></dd></div>}
             {p.people && p.onPerson && !it.broken && <PhotoPeople item={it} all={p.people.all} ready={p.people.ready} onPerson={p.onPerson} />}
           </dl>
           <p class="small">Decrypted in your browser. The server never sees these details.</p>

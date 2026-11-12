@@ -28,12 +28,13 @@ vi.mock("expo-file-system", () => {
     get exists() { return st.files.has(this.uri); }
     get parentDirectory() { return new Directory(this.uri.slice(0, this.uri.lastIndexOf("/")), ""); }
     async text() { return st.files.get(this.uri)!; }
+    textSync() { return st.files.get(this.uri)!; }
     async write(v: string) { st.files.set(this.uri, v); }
     get name() { return this.uri.slice(this.uri.lastIndexOf("/") + 1); }
     get modificationTime() { return 0; }
     delete() { st.files.delete(this.uri); }
   }
-  return { Directory, File, Paths: { cache: "/cache" } };
+  return { Directory, File, Paths: { cache: "/cache", document: "/doc" } };
 });
 vi.mock("../modules/cf-native/src/CfNativeModule", () => ({
   default: { thumbsSetup: () => {}, thumbKeys: (ids: string[]) => { st.keyed.push(...ids); }, thumbsPrefetch: () => {}, thumbsForget: (ids: string[]) => { st.forgot.push(...ids); } },
@@ -111,6 +112,33 @@ describe("the library on the phone", () => {
     st.answers["/api/items?since=e.2"] = { items: [rec(A, 1, { meta_enc: meta({ edit: { rot: 90, v: "n1" }, capture_ts: 5 }) })], removed: [], cursor: "e.3", more: false };
     await lib.loadLibrary();
     expect(st.forgot).toEqual([A]);
+  });
+
+  it("never goes back to older metadata the server kept: the newer stays, or after a lock the item is stale", async () => {
+    let lib = await import("./library");
+    const meta = (extra: object) => JSON.stringify({ name: "a.jpg", mime: "image/jpeg", size: 10, lastModified: 0, capture_ts: 1, ...extra });
+    const placeRemoved = meta({ orig: { gps: { lat: 46.5, lon: 7.5 } }, mv: 1 });
+    const uploaded = meta({ gps: { lat: 46.5, lon: 7.5 } });
+    st.answers["/api/items"] = { items: [rec(A, 1, { meta_enc: placeRemoved })], next: "", cursor: "e.1" };
+    expect((await lib.loadLibrary())[0].meta!.gps).toBeUndefined();
+    expect(JSON.parse(st.files.get(`/doc/cf-mv/alice.json`)!)).toEqual([[A, 1]]); // ids and numbers only
+    // the server replays the upload's metadata: the newer one stays
+    st.answers["/api/items?since=e.1"] = { items: [rec(A, 1, { meta_enc: uploaded })], removed: [], cursor: "e.2", more: false };
+    const kept = (await lib.loadLibrary())[0];
+    expect(kept.meta!.gps).toBeUndefined();
+    expect(kept.stale).toBeFalsy();
+    // after a restart only the version is known: shown as sent, marked stale, and never shared as the original
+    vi.resetModules();
+    st.files.delete(LIST);
+    lib = await import("./library");
+    st.answers["/api/items"] = { items: [rec(A, 1, { meta_enc: uploaded })], next: "", cursor: "e.3" };
+    const stale = (await lib.loadLibrary())[0];
+    expect(stale.stale).toBe(true);
+    const { leavesAs } = await import("@edit/edit");
+    expect(leavesAs(stale.kind, stale.meta, stale.stale)).toBe("retag");
+    // a newer version is taken as usual
+    st.answers["/api/items?since=e.3"] = { items: [rec(A, 1, { meta_enc: meta({ mv: 2 }) })], removed: [], cursor: "e.4", more: false };
+    expect((await lib.loadLibrary())[0].stale).toBeFalsy();
   });
 
   it("an item's kind comes from its encrypted metadata, never from the server's plain field", async () => {

@@ -8,6 +8,20 @@ export const DEFAULT_MAP = {
   dark: ["https://tiles.openfreemap.org/styles/dark", "https://tiles.versatiles.org/assets/styles/colorful-dark/style.json"],
 };
 
+/** A style the map may load: an https URL with a plain host name (and port), nothing else. An honest server sends only
+ *  those (server/mapconf.go); one that isn't could send inline style JSON or an http:// URL, which MapLibre would load
+ *  from hosts the question before the map never named. */
+export const httpsStyle = (u: unknown): u is string =>
+  typeof u === "string" && /^https:\/\/[a-z0-9.-]+(:\d{1,5})?(\/[^\s"'<>\\]*)?$/i.test(u);
+
+/** The map setting from /api/me with only such styles (as the Mac app decodes it); none left on a side: no map. */
+export function httpsMap(conf: unknown): { light: string[]; dark: string[] } | undefined {
+  const c = conf as { light?: unknown; dark?: unknown } | null | undefined;
+  const keep = (l: unknown) => (Array.isArray(l) ? l.filter(httpsStyle) : []);
+  const light = keep(c?.light), dark = keep(c?.dark);
+  return light.length && dark.length ? { light, dark } : undefined;
+}
+
 /** Every host the map may load from, light and dark styles and their fallbacks, in order and once each. */
 export function mapHosts(conf: MapConf): string[] {
   const out: string[] = [];

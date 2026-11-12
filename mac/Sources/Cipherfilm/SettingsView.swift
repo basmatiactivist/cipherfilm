@@ -68,7 +68,7 @@ struct GeneralSettings: View {
       }
       Divider()
       // the map's images come from a third party: off until turned on, per account on this Mac (MapPage.swift)
-      Section_(title: "Map", subtitle: "Your photos on a map. Map images from \(MapConsent.provider(model.me?.map)).") {
+      Section_(title: "Map", subtitle: "Your photos on a map. Map images from \(MapConsent.providerLong(model.me?.map)); a photo's small map in its details loads after Show Map.") {
         Toggle("Map", isOn: Binding(get: { model.mapOn }, set: { model.mapOn = $0 }))
           .disabled(model.me == nil || model.me?.hasMap != true)
         if model.me != nil && model.me?.hasMap != true { Text("This server doesn't offer a map.").font(Typo.caption).foregroundStyle(.secondary) }
@@ -177,9 +177,14 @@ struct SearchSettings: View {
 
   /** Runs `then` at once when it downloads nothing new; otherwise after the person agreed to the download. */
   private func withConsent(_ clip: ClipModel, faces: Bool, reader: Bool? = nil, then: @escaping () -> Void) {
-    guard let a = model.search.consentAsk(clip, faces: faces, reader: reader) else { then(); return }
-    // (from an alert's button: the sheet opens once the alert is gone)
-    DispatchQueue.main.async { consent = PendingConsent(ask: a, then: then) }
+    let store = model.search.models
+    Task { @MainActor in
+      // the files here count once their hash is checked (ModelStore.unagreed), off the main thread
+      await Task.detached { store.checkHere() }.value
+      guard let a = model.search.consentAsk(clip, faces: faces, reader: reader) else { then(); return }
+      // (from an alert's button: the sheet opens once the alert is gone)
+      consent = PendingConsent(ask: a, then: then)
+    }
   }
 
   var body: some View {

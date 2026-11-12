@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanCode, codeProblem, codeReady, firstWay, groupSecret, methods, passkeyTrouble, pendingToken } from "./twoStep";
+import { cleanCode, codeProblem, codeReady, firstWay, groupSecret, methods, passkeyTrouble, pendingToken, totpUri, passkeyFor, serverHost } from "./twoStep";
 
 // The answers of server/twofactor.go, as api.ts turns them into errors (status, code, the JSON body).
 const err = (status: number, code: string, body: unknown = null) => Object.assign(new Error("x"), { status, code, body });
@@ -52,5 +52,32 @@ describe("two-step sign-in", () => {
     expect(passkeyTrouble(n("ERR_PASSKEY", "RP ID cannot be validated."))).toBe("server");
     expect(passkeyTrouble(err(409, "passkeys_unavailable"))).toBe("server");
     expect(passkeyTrouble(n("ERR_PASSKEY", "something else"))).toBe("other");
+  });
+});
+
+describe("totpUri", () => {
+  it("opens only an otpauth://totp/ address", () => {
+    expect(totpUri("otpauth://totp/Cipherfilm:me%40x?secret=ABC&issuer=Cipherfilm")).toBe(true);
+    for (const u of ["https://evil.example/", "otpauth://hotp/x", "intent://x#Intent;scheme=x;end", "cipherfilm://notice", "content://x", "", undefined]) expect(totpUri(u)).toBe(false);
+  });
+});
+
+describe("passkeyFor", () => {
+  const S = "https://photos.example.org:8443/";
+  it("takes the server's own host or a parent domain of it", () => {
+    expect(serverHost(S)).toBe("photos.example.org");
+    expect(passkeyFor({ rpId: "photos.example.org" }, false, S)).toBe(true);
+    expect(passkeyFor({ rpId: "Example.org" }, false, S)).toBe(true);
+    expect(passkeyFor({ rp: { id: "photos.example.org", name: "Cipherfilm" } }, true, S)).toBe(true);
+  });
+  it("refuses another site, a bare top-level domain, a look-alike or a missing id", () => {
+    expect(passkeyFor({ rpId: "bank.example" }, false, S)).toBe(false);
+    expect(passkeyFor({ rpId: "org" }, false, S)).toBe(false);
+    expect(passkeyFor({ rpId: "ample.org" }, false, S)).toBe(false);
+    expect(passkeyFor({ rpId: "photos.example.org.evil.example" }, false, S)).toBe(false);
+    expect(passkeyFor({}, false, S)).toBe(false);
+    expect(passkeyFor({ rpId: "photos.example.org" }, true, S)).toBe(false); // a new passkey names it in rp.id
+    expect(passkeyFor({ rp: { id: "bank.example" } }, true, S)).toBe(false);
+    expect(passkeyFor({ rpId: "photos.example.org" }, false, "")).toBe(false);
   });
 });

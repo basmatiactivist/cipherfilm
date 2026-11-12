@@ -1,8 +1,8 @@
 // Passkeys as the second step of a sign-in (server/passkeys.go), through Android's Credential Manager (Passkeys.kt).
 // Never instead of the password, which derives the keys: only instead of the code from the authenticator app.
 import N from "../modules/cf-native/src/CfNativeModule";
-import { api } from "./api";
-import { passkeyTrouble } from "./twoStep";
+import { api, server } from "./api";
+import { passkeyFor, passkeyTrouble } from "./twoStep";
 import { t } from "./i18n";
 
 type J = Record<string, unknown>;
@@ -23,11 +23,18 @@ export function passkeyError(e: unknown): Error {
   }
 }
 
+/** Refuses a request for another site's passkey (twoStep.ts, passkeyFor). */
+function ownServer(options: J, create: boolean) {
+  if (!passkeyFor(options, create, server())) throw new Error(t("This server asked for a passkey of another site. Use a code instead."));
+}
+
 export async function getPasskey(options: J): Promise<J> {
+  ownServer(options, false);
   try { return JSON.parse(await N.passkeyGet(JSON.stringify(options))) as J; } catch (e) { throw passkeyError(e); }
 }
 
 async function createPasskey(options: J): Promise<J> {
+  ownServer(options, true);
   try { return JSON.parse(await N.passkeyCreate(JSON.stringify(options))) as J; } catch (e) { throw passkeyError(e); }
 }
 

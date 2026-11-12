@@ -15,7 +15,7 @@ import { setScreenshots, useScreenshots } from "../screenshots";
 import { setMemoriesOn, useMemoriesOn } from "../memories";
 import { CHOICES, away, expectAway, setAutoLock, useAutoLock } from "../autolock";
 import { privacyUrl } from "../store";
-import { mapProvider, setMapOn, useMapOn } from "../mapConsent";
+import { mapProvider, mapProviderLong, setMapOn, useMapOn } from "../mapConsent";
 import { reportUrl, summary, thisPhone } from "../report";
 import { isAdmin } from "../admin";
 import { NoticeAlertsSwitch } from "../NoticeAlertsSetting";
@@ -129,7 +129,7 @@ export default function Account() {
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="phone" color={th.colors.primary} /></View>} onPress={() => router.push("/free-space")} style={st.item} />
         <List.Item title={t("Duplicates and similar photos")} description={t("Find photos that are there twice or look nearly the same")}
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="similar" color={th.colors.primary} /></View>} onPress={() => router.push("/duplicates")} style={st.item} />
-        {me?.map ? <SwitchItem title={t("Map")} description={t("Your photos on a map. Map images from {who}.", { who: mapProvider() || t("the map server") })}
+        {me?.map ? <SwitchItem title={t("Map")} description={t("Your photos on a map. Map images from {who}.", { who: mapProviderLong() })}
           left={() => <View style={st.icon}><Icon name="map" color={th.colors.primary} /></View>}
           value={mapOn} onValueChange={(v) => setMapOn(v)} style={st.item} /> : null}
         <SwitchItem title={t("Memories")} description={t("Show photos from this day in earlier years above Photos. Found on this phone; the server learns nothing.")}

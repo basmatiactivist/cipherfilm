@@ -39,6 +39,7 @@ export const deEdit: Record<string, string> = {
   "Reverted: save to keep it": "Zurückgesetzt: Speichern, um es zu übernehmen",
   "The original stays as it was. The changes are encrypted on this phone like the rest of the photo's details.": "Das Original bleibt, wie es war. Die Änderungen werden auf diesem Handy verschlüsselt, wie die übrigen Angaben zum Foto.",
   "Turned or cropped. The original is kept.": "Gedreht oder zugeschnitten. Das Original bleibt erhalten.",
+  "Date or place changed. The original is kept.": "Datum oder Ort geändert. Das Original bleibt erhalten.",
   "Share original": "Original teilen",
   "Save original": "Original speichern",
   "This photo couldn't be opened for editing on this phone.": "Dieses Foto lässt sich auf diesem Handy nicht zum Bearbeiten öffnen.",

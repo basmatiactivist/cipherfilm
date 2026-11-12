@@ -81,6 +81,14 @@ ad for every chunk = "seg" || itemId || u32(i) || u32(segment_count) || u64(tota
   `content_hash` that no client ever wrote; `sha256` is that field.)
   Edits (docs/EDITING.md) add the optional `edit` (turn, crop, picture version) and `orig` (date and place before the
   person changed them); the thumbnail and preview made for an edit replace the old ones under the same subkeys and `ad`.
+  **Metadata version** `mv` (optional integer, `web/src/crypto/metaVersion.ts`): every change of the metadata (an edit,
+  a new date or place, a place added afterwards) writes it one higher than the metadata it changes; an upload writes
+  none (version 0). The `ad` binds the metadata to its item but not to a point in time, so a server could hand out an
+  older sealed copy it kept. The web and Android apps remember the highest version they have seen per item (item ids
+  and numbers only, at most 10,000 items, in the browser's storage or the app's private files, deleted at sign-out) and
+  never show a lower one: the newer metadata decrypted since the last lock stays; without it (after a lock or a
+  restart) the item is marked stale and is never downloaded, shared or saved as the original by default (a copy with
+  no place). Older clients and the Mac keep or ignore the field; the Mac and `cipherfilm-decrypt` don't check it.
 
 Failure policy: any AEAD failure aborts decryption for that object, nothing is rendered, and the UI shows a "could not be verified" placeholder.
 

@@ -18,7 +18,7 @@ import { api, server } from "../../api";
 import N, { ThumbView, VideoView } from "../../../modules/cf-native/src/CfNativeModule";
 import { AlbumPicker } from "../../Gallery";
 import { Icon, type IconName } from "../../icons";
-import { prepareShare, saveItems } from "../../outbox";
+import { leaving, prepareShare, saveItems } from "../../outbox";
 import { useAppTheme } from "../../ui";
 import { motion, stage } from "../../tokens";
 import { Loading, useReducedMotion } from "../../Loader";
@@ -393,11 +393,11 @@ function Info({ item, visible, onClose, onOriginal }: { item: Item; visible: boo
             <Text variant="bodyMedium" style={{ flex: 1 }} selectable>{v}</Text>
           </View>
         ))}
-        {normEdit(m?.edit) ? (
+        {leaving(item) !== "original" ? (
           <View style={st.row}>
             <Text variant="labelMedium" style={{ color: th.colors.onSurfaceVariant, width: 72 }}>{t("Edited")}</Text>
             <View style={{ flex: 1 }}>
-              <Text variant="bodyMedium">{t("Turned or cropped. The original is kept.")}</Text>
+              <Text variant="bodyMedium">{normEdit(m?.edit) ? t("Turned or cropped. The original is kept.") : t("Date or place changed. The original is kept.")}</Text>
               <View style={{ flexDirection: "row", flexWrap: "wrap", marginLeft: -12 }}>
                 <Button mode="text" compact onPress={() => onOriginal("share")}>{t("Share original")}</Button>
                 <Button mode="text" compact onPress={() => onOriginal("save")}>{t("Save original")}</Button>

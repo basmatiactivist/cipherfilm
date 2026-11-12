@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  dragCrop, drawPlan, isEdited, MIN_CROP, normEdit, normOrig, normRect, normTurn, pictureKey, placeChanged, ratioRect, reverted,
+  dragCrop, drawPlan, isEdited, leavesAs, MIN_CROP, normEdit, normOrig, normRect, normTurn, pictureKey, placeChanged, ratioRect, reverted,
   editedName, editedSize, rotateRect, sameEdit, sourceRect, turn, turnedSize, versionName, withDate, withPicture, withPlace, type EditableMeta, type Rect,
 } from "./edit";
 
@@ -186,5 +186,23 @@ describe("the edited copy's name", () => {
     expect(editedName("IMG_1.JPG")).toBe("IMG_1 (edited).jpg");
     expect(editedName("no extension")).toBe("no extension (edited).jpg");
     expect(editedName(".jpg")).toBe("photo (edited).jpg");
+  });
+});
+
+describe("leavesAs", () => {
+  const base = { capture_ts: 1, mime: "image/jpeg", name: "a.jpg" };
+  it("a photo whose place or date changed doesn't leave as the original", () => {
+    const placeRemoved = withPlace({ ...base, gps: { lat: 1, lon: 2 } }, null);
+    expect(leavesAs("image", placeRemoved)).toBe("retag");
+    expect(leavesAs("image", withPlace(base, { lat: 3, lon: 4 }))).toBe("retag");
+    expect(leavesAs("image", withDate(base, 5000))).toBe("retag");
+    expect(leavesAs("image", { ...withDate(base, 5000), mime: "image/heic", name: "a.heic" })).toBe("redraw");
+    expect(leavesAs("image", { ...withDate(base, 5000), mime: undefined, name: "A.JPEG" })).toBe("retag");
+  });
+  it("turned or cropped: edited; untouched and videos: the original", () => {
+    expect(leavesAs("image", { ...withPlace(base, null), edit: { rot: 90 } })).toBe("edited");
+    expect(leavesAs("image", base)).toBe("original");
+    expect(leavesAs("video", withPlace({ ...base, gps: { lat: 1, lon: 2 } }, null))).toBe("original");
+    expect(leavesAs("image", undefined)).toBe("original");
   });
 });

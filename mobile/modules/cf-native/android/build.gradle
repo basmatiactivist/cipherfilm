@@ -12,8 +12,9 @@ android {
     versionCode 1
     versionName "0.1.0"
     consumerProguardFiles "proguard-rules.pro"
-    // only test builds (not signed with the release key) may let the emulator take screenshots, for checking the UI
-    buildConfigField "boolean", "TEST_BUILD", System.getenv("CF_KEYSTORE") == null ? "true" : "false"
+    // only test builds may let the emulator take screenshots, for checking the UI: the Gradle property cfTestBuild,
+    // which only plugins/withTestCA.js sets (an explicit CF_TEST_CA build), never a release build's missing key
+    buildConfigField "boolean", "TEST_BUILD", (rootProject.findProperty("cfTestBuild") == "true" && System.getenv("CF_KEYSTORE") == null && System.getenv("CF_UNSIGNED") == null) ? "true" : "false"
   }
   buildFeatures { buildConfig true }
   lintOptions {

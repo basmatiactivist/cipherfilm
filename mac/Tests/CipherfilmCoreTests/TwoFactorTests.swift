@@ -4,6 +4,16 @@ import Testing
 @testable import CipherfilmCore
 
 @Suite struct TwoFactorTests {
+  @Test func onlyAnOtpauthTotpAddressIsOpened() throws {
+    func setup(_ uri: String) throws -> TwoFactor.Setup {
+      try JSONDecoder().decode(TwoFactor.Setup.self, from: JSONSerialization.data(withJSONObject: ["secret": "ABC", "uri": uri]))
+    }
+    #expect(try setup("otpauth://totp/Cipherfilm:me%40x.org?secret=ABC&issuer=Cipherfilm").totpURL != nil)
+    for u in ["https://evil.example/", "otpauth://hotp/x", "file:///Applications/Calculator.app", "x-apple.systempreferences:", "smb://host/share", ""] {
+      #expect(try setup(u).totpURL == nil)
+    }
+  }
+
   @Test func passwordAnswerBecomesACodeStep() {
     let kek = Data(repeating: 7, count: 32)
     let e = APIError(status: 401, message: "x", code: "two_factor_required", pending: "tok")

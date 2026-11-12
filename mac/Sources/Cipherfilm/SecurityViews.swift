@@ -267,7 +267,7 @@ struct TwoFactorSetupSheet: View {
           .font(Typo.body).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
         Button("Open in Passwords or Authenticator App") {
           // otpauth:// is opened by the app registered for it (macOS Passwords on recent macOS, or another authenticator)
-          if let u = URL(string: setup.uri), NSWorkspace.shared.open(u) { opened = "Opened. Add the account there, then enter the code it shows." }
+          if let u = setup.totpURL, NSWorkspace.shared.open(u) { opened = "Opened. Add the account there, then enter the code it shows." }
           else { opened = "No app on this Mac opens it. Scan the code with your phone, or copy the key." }
         }.buttonStyle(SecondaryButton())
         if let opened { Text(opened).font(Typo.caption).foregroundStyle(Ink.muted) }

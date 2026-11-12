@@ -75,6 +75,7 @@ describe("asking before the models are downloaded (Android)", () => {
   it("models downloaded before this question existed: no question, and the settings say when", async () => {
     const m = await load();
     for (const x of m.needed(false, "clip-b32")) { fs.files.set(at(x.name), { text: "", mtime: 1_700_000_000_000 }); fs.good.add(x.name); }
+    await m.checkModelsHere(); // the settings check the files' hashes first
     expect(m.unagreed(false, "clip-b32")).toEqual([]);
     await m.downloadModels(false, "clip-b32", () => {}); // all here with the right hash: nothing fetched, no question
     expect(fetched).toEqual([]);
@@ -122,7 +123,25 @@ describe("asking before the models are downloaded (Android)", () => {
     const laion = m.MODELS.filter((x) => x.clip);
     for (const x of laion) { fs.files.set(at(x.name.replace("clip-b32", "nsfw-laion-b32")), { text: "", mtime: 1_700_000_000_000 }); fs.good.add(x.name); }
     m = await load();
+    await m.checkModelsHere();
     expect(m.unagreed(false, "clip-b32").map((x) => x.name)).toEqual(["clip-b32-tokenizer.json"]);
     expect(m.modelsOnPhone()?.bytes).toBe(laion.reduce((n, x) => n + x.size, 0));
+  });
+
+  it("a file of the same name but another content (a changed model) is never taken as agreed", async () => {
+    let m = await load();
+    // files from before the question, one of them not the pinned one: nothing is adopted by its name
+    for (const x of m.needed(false, "clip-b32")) { fs.files.set(at(x.name), { text: "", mtime: 1_700_000_000_000 }); if (!x.name.includes("vision")) fs.good.add(x.name); }
+    expect(m.modelsOnPhone()).not.toBeNull(); // the settings render before any check
+    expect(fs.files.has(CONSENT)).toBe(false);
+    expect(m.unagreed(false, "clip-b32").map((x) => x.name).sort()).toEqual(["clip-b32-text.onnx", "clip-b32-tokenizer.json", "clip-b32-vision.onnx"]);
+    await m.checkModelsHere();
+    expect(fs.files.has(at("clip-b32-vision.onnx"))).toBe(false); // the wrong one went
+    m.modelsOnPhone();
+    expect(JSON.parse(fs.files.get(CONSENT)!.text).sha).not.toContain(m.needed(false, "clip-b32").find((x) => x.name.includes("vision"))!.sha256);
+    m = await load();
+    expect(m.unagreed(false, "clip-b32").map((x) => x.name)).toEqual(["clip-b32-vision.onnx"]);
+    await expect(m.downloadModels(false, "clip-b32", () => {})).rejects.toBeInstanceOf(m.NeedsConsent);
+    expect(fetched).toEqual([]);
   });
 });

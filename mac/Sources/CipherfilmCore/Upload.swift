@@ -212,7 +212,8 @@ public enum Media {
     guard let size = try? h.seekToEnd() else { return nil }
     var o: UInt64 = 0
     for _ in 0..<maxBoxes {
-      guard o + 8 <= size, (try? h.seek(toOffset: o)) != nil, let hd = try? h.read(upToCount: 16) else { return nil }
+      // compared by what is left (size - o), never o + len: a crafted 64-bit box size would overflow the sum and trap
+      guard o <= size, size - o >= 8, (try? h.seek(toOffset: o)) != nil, let hd = try? h.read(upToCount: 16) else { return nil }
       let b = [UInt8](hd)
       guard b.count >= 8 else { return nil }
       var len = UInt64(u32(b, 0)), head: UInt64 = 8
@@ -220,7 +221,7 @@ public enum Media {
         guard b.count >= 16 else { return nil }
         len = UInt64(u32(b, 8)) << 32 | UInt64(u32(b, 12)); head = 16
       } else if len == 0 { len = size - o }
-      guard len >= head, o + len <= size else { return nil }
+      guard len >= head, len <= size - o else { return nil }
       if fourCC(b, 4) == "moov" {
         guard len - head <= UInt64(maxMoov), (try? h.seek(toOffset: o + head)) != nil,
               let m = try? h.read(upToCount: Int(len - head)), m.count == Int(len - head) else { return nil }

@@ -47,6 +47,12 @@ vi.mock("./edit", () => ({
     disk.set(path, 10);
     return { uri: path, name: path.slice(path.lastIndexOf("/") + 1), delete: () => disk.delete(path) };
   },
+  // a photo whose date or place changed: its own JPEG with the metadata as set, under its own name
+  retaggedCopyTo: async (dir: { uri: string }, it: { meta: { name: string } }) => {
+    const path = `${dir.uri}/${it.meta.name} (retagged)`;
+    disk.set(path, 10);
+    return { uri: path, name: path.slice(path.lastIndexOf("/") + 1), delete: () => disk.delete(path) };
+  },
 }));
 
 const item = (id: string, segments = 2) => ({ id, size: 4 * segments, segment_count: segments, kind: "image", itemKey: new Uint8Array(32), meta: { name: `${id}.jpg`, mime: "image/jpeg" } }) as never;
@@ -98,6 +104,29 @@ describe("edited photos", () => {
     const ready = await prepareShare([edited("c")], () => {});
     await ready.send();
     expect(native.shared[0]).toMatch(/c \(edited\)\.jpg$/);
+  });
+});
+
+describe("photos whose place or date changed", () => {
+  const placeRemoved = (id: string, mime = "image/jpeg") =>
+    ({ ...(item(id) as object), meta: { name: `${id}.jpg`, mime, capture_ts: 1, orig: { gps: { lat: 46.5, lon: 7.5 } } } }) as never;
+  it("leave the app with the place and date as set, not as the original, unless the original is asked for", async () => {
+    const { saveItems, prepareShare, leaving } = await import("./outbox");
+    expect(leaving(placeRemoved("a"))).toBe("retag");
+    expect(leaving(placeRemoved("a", "image/heic"))).toBe("redraw");
+    expect(leaving(placeRemoved("a"), true)).toBe("original");
+    expect(leaving({ ...(placeRemoved("v") as object), kind: "video" } as never)).toBe("original");
+    // older metadata than seen before (library.ts stale): never the original by default
+    expect(leaving({ ...(item("s") as object), stale: true } as never)).toBe("retag");
+    await saveItems([placeRemoved("a")], () => {});
+    expect(native.saved).toEqual(["/cache/cf-out/save/a.jpg (retagged)"]);
+    native.saved = [];
+    await saveItems([placeRemoved("a")], () => {}, { original: true });
+    expect(native.saved).toEqual(["/cache/cf-out/save/a.jpg"]);
+    const ready = await prepareShare([placeRemoved("c"), placeRemoved("d", "image/heic")], () => {});
+    await ready.send();
+    expect(native.shared[0]).toMatch(/c\.jpg \(retagged\)$/);
+    expect(native.shared[1]).toMatch(/d \(edited\)\.jpg$/); // another format: drawn anew with the metadata as set
   });
 });
 

@@ -89,8 +89,8 @@ let checked = new Set<string>(); // verified this run: the hash is computed once
 // Hugging Face is a third party: it sees this phone's IP address. So nothing is fetched from there before the person
 // agreed, for the exact files (their SHA-256): explicit search's model, the face models or a new model in a later
 // release ask again. The answer is this phone's (any account), kept next to the models, so deleting them (turning
-// search off) withdraws it. Files already here, downloaded before this question existed, need no yes: they aren't
-// downloaded again.
+// search off) withdraws it. Files already here, downloaded before this question existed, need no yes once their hash
+// is checked: they aren't downloaded again.
 
 /** at: when the yes was given; null when the files were found already downloaded */
 interface Agreed { at: number | null; sha: string[] }
@@ -118,15 +118,28 @@ function writeAgreed(v: Agreed | null) {
   consentSubs.forEach((f) => f());
 }
 
-const onPhone = (m: Model) => checked.has(m.name) || new File(modelDir(), m.name).exists;
-
-/** What a download would fetch that the person hasn't agreed to: empty when nothing needs asking. (After haveModels,
- *  which removes a file with the wrong hash, a model update shows here as a missing file.) */
+/** What a download would fetch that the person hasn't agreed to: empty when nothing needs asking. A file on the phone
+ *  counts only once its SHA-256 was checked (haveModels, checkModelsHere): one of the same name but another content (a
+ *  model changed in a release) is asked for again, never taken as agreed by its name. */
 export const unagreed = (faces: boolean, clip: Clip, indexes = true) => {
   tidyOldFiles();
   const a = readAgreed();
-  return needed(faces, clip, indexes).filter((m) => !onPhone(m) && !a?.sha.includes(m.sha256));
+  return needed(faces, clip, indexes).filter((m) => !checked.has(m.name) && !a?.sha.includes(m.sha256));
 };
+
+/** Checks the hash of every model file on the phone not checked yet this run; one with the wrong hash goes (it would
+ *  be downloaded again, after the question). For the search settings, before they ask or show what is here. */
+export async function checkModelsHere(): Promise<void> {
+  tidyOldFiles();
+  let any = false;
+  for (const m of MODELS) {
+    if (checked.has(m.name) || !new File(modelDir(), m.name).exists) continue;
+    if (await N.checkModel(path(m), m.sha256).catch(() => false)) checked.add(m.name);
+    else { try { new File(modelDir(), m.name).delete(); } catch { /* next time */ } }
+    any = true;
+  }
+  if (any) consentSubs.forEach((f) => f());
+}
 
 /** The yes: what using these settings needs may be downloaded. */
 export function agreeModels(faces: boolean, clip: Clip, indexes = true) {
@@ -141,12 +154,15 @@ export function modelsOnPhone(): { at: number | null; bytes: number } | null {
   const here = MODELS.filter((m) => new File(modelDir(), m.name).exists);
   if (!here.length) return null;
   let a = readAgreed();
-  if (!a || here.some((m) => !a!.sha.includes(m.sha256))) {
-    const times = here.map((m) => { try { return new File(modelDir(), m.name).modificationTime ?? null; } catch { return null; } }).filter((x): x is number => !!x);
-    a = { at: a?.at ?? (times.length ? Math.min(...times) : null), sha: [...new Set([...(a?.sha ?? []), ...here.map((m) => m.sha256)])] };
+  const times = here.map((m) => { try { return new File(modelDir(), m.name).modificationTime ?? null; } catch { return null; } }).filter((x): x is number => !!x);
+  const since = a?.at ?? (times.length ? Math.min(...times) : null);
+  // only files whose SHA-256 was checked are taken as agreed: the yes is for the exact files, not their names
+  const verified = here.filter((m) => checked.has(m.name));
+  if (verified.some((m) => !a?.sha.includes(m.sha256))) {
+    a = { at: since, sha: [...new Set([...(a?.sha ?? []), ...verified.map((m) => m.sha256)])] };
     writeAgreed(a);
   }
-  return { at: a.at, bytes: here.reduce((n, m) => n + m.size, 0) };
+  return { at: a?.at ?? since, bytes: here.reduce((n, m) => n + m.size, 0) };
 }
 
 /** Thrown by downloadModels for a file the person hasn't agreed to download. */

@@ -82,6 +82,8 @@ final class SearchEngine {
     run?.cancel(); run = nil
     if clear {
       index.clear(); tags = [:]; runVault = nil; people = PeopleDoc(); peopleVersion = 0; peopleLoaded = false; groupsAt = -1; groups = []
+      // the decrypted items it was handed (with their item keys) and what was queued from them
+      items = []; pending = []; inFlight = []
       version += 1
     }
     phase = .off; done = 0; total = 0; waiting = 0; message = nil; skipped = []
@@ -484,7 +486,7 @@ final class SearchEngine {
    *  explicit content find nothing, and photos that look explicit are left out. */
   func textHits(_ q: String) async -> [Hit] {
     guard ready, let vision else { return [] }
-    if tokenizer == nil { tokenizer = try? Tokenizer(json: Data(contentsOf: models.dir.appendingPathComponent(Models.tokenizer.name))) }
+    if tokenizer == nil { tokenizer = try? Tokenizer(json: Models.verified(Models.tokenizer, in: models.dir)) } // the checked bytes
     guard let t = tokenizer else { return [] }
     let idx = index, filtered = filtered
     return await Task.detached(priority: .userInitiated) {

@@ -4,11 +4,12 @@
 import { api, ApiError, putBytes } from "../api";
 import { b64, getSodium } from "../crypto/sodium";
 import { encryptMeta, encryptPreview, encryptThumb } from "../crypto/item";
+import { nextVersion } from "../crypto/metaVersion";
 import { fetchOriginal, type Item } from "../items";
 import { decodeImage, PREVIEW_PX, THUMB_PX, type Decoded, type ItemMeta } from "../media";
 import { mem } from "../state";
 import { drawPlan, normEdit, sameEdit, versionName, withPicture, type Edit } from "./edit";
-import { withExif } from "./exif";
+import { retagJpeg, withExif } from "./exif";
 
 /** The largest photo that is edited in the browser (it is decoded whole). */
 export const EDIT_LIMIT = 200 * 1024 * 1024;
@@ -68,7 +69,8 @@ export async function storePictures(it: Item, d: Decoded, e: Edit | undefined): 
 export async function storeMeta(it: Item, meta: ItemMeta): Promise<void> {
   if (mem.me?.demo) throw new Error("This is the public demo: changes are turned off.");
   const s = await getSodium();
-  await api("PUT", `/api/items/${it.id}/meta`, { meta_enc: b64(s, encryptMeta(s, meta, it.itemKey!, it.id)) });
+  // a higher version than any before (crypto/metaVersion.ts): no device goes back to an older copy the server kept
+  await api("PUT", `/api/items/${it.id}/meta`, { meta_enc: b64(s, encryptMeta(s, nextVersion(meta), it.itemKey!, it.id)) });
 }
 
 /**
@@ -90,12 +92,28 @@ export async function saveEdit(it: Item, next: ItemMeta, decoded?: Decoded | nul
   await storeMeta(it, meta);
 }
 
+/** The place a copy carries: none for stale metadata (an older copy than seen before: its place may be one removed). */
+const placeOut = (it: Item) => (it.stale ? undefined : it.meta?.gps);
+
+/** A photo whose date or place changed (not turned or cropped): its own JPEG bytes with the metadata as last set
+ *  (exif.ts retagJpeg: a removed place is in no part of the file). One it can't read as a JPEG is drawn anew. */
+export async function retaggedCopy(it: Item, onProgress?: (done: number, total: number) => void): Promise<Blob> {
+  const bytes = new Uint8Array(await (await fetchOriginal(it, onProgress)).arrayBuffer());
+  try {
+    return new Blob([retagJpeg(bytes, { ts: it.meta?.capture_ts, gps: placeOut(it) }) as BlobPart], { type: "image/jpeg" });
+  } catch {
+    return editedCopy(it);
+  } finally {
+    bytes.fill(0);
+  }
+}
+
 /** The photo as edited, at full size, as a JPEG with the date and place (as last set) in its EXIF. */
 export async function editedCopy(it: Item, onProgress?: (done: number, total: number) => void): Promise<Blob> {
   const d = await decodeOriginal(it, onProgress);
   try {
     const jpeg = await canvasJpeg(drawEdited(d, normEdit(it.meta?.edit), 0), 0.92);
-    return new Blob([withExif(jpeg, { ts: it.meta?.capture_ts, gps: it.meta?.gps }) as BlobPart], { type: "image/jpeg" });
+    return new Blob([withExif(jpeg, { ts: it.meta?.capture_ts, gps: placeOut(it) }) as BlobPart], { type: "image/jpeg" });
   } finally {
     d.close();
   }

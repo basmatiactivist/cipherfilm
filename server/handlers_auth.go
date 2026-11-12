@@ -269,11 +269,15 @@ func (a *App) me(w http.ResponseWriter, r *http.Request, u *user, s *session) {
 
 // ---- password change ----
 
+// The password change, the recovery key's rotation and deleting the account take, with two-step sign-in on, a second
+// step as well (stepUp): a code (authenticator or recovery) or a passkey's answer to POST /api/me/2fa/passkey.
 type changeReq struct {
-	CurrentAuth        string    `json:"current_auth"`
-	NewAuth            string    `json:"new_auth"`
-	NewKDF             kdfParams `json:"new_kdf"`
-	NewWrappedMasterPW string    `json:"new_wrapped_master_pw"`
+	CurrentAuth        string          `json:"current_auth"`
+	NewAuth            string          `json:"new_auth"`
+	NewKDF             kdfParams       `json:"new_kdf"`
+	NewWrappedMasterPW string          `json:"new_wrapped_master_pw"`
+	Code               string          `json:"code"`
+	Passkey            json.RawMessage `json:"passkey"`
 }
 
 func (a *App) changePassword(w http.ResponseWriter, r *http.Request, u *user, s *session) {
@@ -292,6 +296,9 @@ func (a *App) changePassword(w http.ResponseWriter, r *http.Request, u *user, s 
 	}
 	if req.NewKDF.validate() != nil || checkLen(req.NewAuth, 32) != nil || checkLen(req.NewWrappedMasterPW, wrappedLen) != nil {
 		fail(w, 400, "invalid request")
+		return
+	}
+	if !a.stepUp(w, r, u, s, req.Code, req.Passkey) {
 		return
 	}
 	ah, err := hashSecret(req.NewAuth)
@@ -341,10 +348,13 @@ func (a *App) changePassword(w http.ResponseWriter, r *http.Request, u *user, s 
 // ---- deleting one's own account ----
 
 type deleteMeReq struct {
-	CurrentAuth string `json:"current_auth"`
+	CurrentAuth string          `json:"current_auth"`
+	Code        string          `json:"code"`
+	Passkey     json.RawMessage `json:"passkey"`
 }
 
-// deleteMe deletes the signed-in account permanently, with the same proof as a password change: its photos and videos,
+// deleteMe deletes the signed-in account permanently, with the same proof as a password change (with two-step sign-in
+// on, the second step too): its photos and videos,
 // albums, search index, people and every session (the other devices learn they were signed out on purpose and wipe
 // what they keep). The last active administrator can't: someone else must be made administrator first.
 func (a *App) deleteMe(w http.ResponseWriter, r *http.Request, u *user, s *session) {
@@ -367,6 +377,9 @@ func (a *App) deleteMe(w http.ResponseWriter, r *http.Request, u *user, s *sessi
 	if cur, err := a.userByID(u.ID); err == nil && lastAdmin(a, cur) {
 		at.success()
 		fail(w, http.StatusConflict, "you're the only administrator; make someone else an administrator first")
+		return
+	}
+	if !a.stepUp(w, r, u, s, req.Code, req.Passkey) {
 		return
 	}
 	tx, err := a.db.BeginTx(r.Context(), nil)
@@ -426,9 +439,11 @@ func (a *App) deleteMe(w http.ResponseWriter, r *http.Request, u *user, s *sessi
 // ---- recovery key rotation ----
 
 type newRecKeyReq struct {
-	CurrentAuth           string `json:"current_auth"`
-	WrappedMasterRecovery string `json:"wrapped_master_recovery"`
-	RecoveryVerifier      string `json:"recovery_verifier"`
+	CurrentAuth           string          `json:"current_auth"`
+	WrappedMasterRecovery string          `json:"wrapped_master_recovery"`
+	RecoveryVerifier      string          `json:"recovery_verifier"`
+	Code                  string          `json:"code"`
+	Passkey               json.RawMessage `json:"passkey"`
 }
 
 // newRecoveryKey replaces the account's recovery key: the browser made a new key, wrapped the master key
@@ -449,6 +464,9 @@ func (a *App) newRecoveryKey(w http.ResponseWriter, r *http.Request, u *user, s 
 	}
 	if checkLen(req.WrappedMasterRecovery, wrappedLen) != nil || checkLen(req.RecoveryVerifier, 32) != nil {
 		fail(w, 400, "invalid request")
+		return
+	}
+	if !a.stepUp(w, r, u, s, req.Code, req.Passkey) {
 		return
 	}
 	rh, err := hashSecret(req.RecoveryVerifier)

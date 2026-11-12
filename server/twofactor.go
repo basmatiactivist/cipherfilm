@@ -259,9 +259,17 @@ func (a *App) useCode(u *user, code string) bool {
 	return rowsAffected(res, err) == 1
 }
 
-// codeSlots are the buckets every second-step code is counted in, wherever it is entered.
+// codeSlots are the buckets a second-step code at sign-in is counted in, from whichever source.
 func (a *App) codeSlots(userID string) []slot {
 	return []slot{{a.totpAcct, "2fa|" + userID, true}, {a.totpDay, "2fa|" + userID, true}}
+}
+
+// stepSlots are the buckets of the second step a signed-in session is asked for (to change the password or two-step
+// sign-in, rotate the recovery key, delete the account), as large as the sign-in's but apart: someone who has only the
+// password and fills the sign-in buckets with wrong codes must not keep the real person, on a device that is signed
+// in, from changing the password. A password change never resets them (only a right code does).
+func (a *App) stepSlots(userID string) []slot {
+	return []slot{{a.totpAcct, "stepup|" + userID, true}, {a.totpDay, "stepup|" + userID, true}}
 }
 
 // ---- pending sign-ins ----
@@ -571,7 +579,7 @@ func hasPasskey(raw json.RawMessage) bool { return len(raw) > 0 && string(raw) !
 // secondFactor checks the second step sent with a change to two-step sign-in: a code (used up) or a passkey's answer
 // to this session's challenge. Counted like a code at sign-in.
 func (a *App) secondFactor(w http.ResponseWriter, r *http.Request, u *user, s *session, req proofReq) bool {
-	at, ok := reserve(a.codeSlots(u.ID)...)
+	at, ok := reserve(a.stepSlots(u.ID)...)
 	if !ok {
 		fail(w, 429, "too many attempts, try later")
 		return false
@@ -586,7 +594,30 @@ func (a *App) secondFactor(w http.ResponseWriter, r *http.Request, u *user, s *s
 		return false
 	}
 	at.success()
+	// a right code: whoever filled the sign-in buckets with wrong ones gets no further than the code step, and the
+	// real person, who just proved the second step, may sign in on a new device again
+	for _, sl := range a.codeSlots(u.ID) {
+		sl.l.clear(sl.key)
+	}
 	return true
+}
+
+// stepUpRequired answers an app that sent no second step for a change that needs one: older versions don't ask for
+// it, and show this message.
+const stepUpRequired = "second_step_required"
+
+// stepUp checks the second step for changing the password, rotating the recovery key or deleting the account, when
+// two-step sign-in is on: the same as turning it off needs, so a session and the password alone can't do it.
+func (a *App) stepUp(w http.ResponseWriter, r *http.Request, u *user, s *session, code string, passkey json.RawMessage) bool {
+	if !u.twoFactor() {
+		return true
+	}
+	if strings.TrimSpace(code) == "" && !hasPasskey(passkey) {
+		writeJSON(w, 403, map[string]string{"code": stepUpRequired,
+			"error": "this account uses two-step sign-in: confirm with a code from your authenticator app, a recovery code or a passkey (update the app if it doesn't ask for one)"})
+		return false
+	}
+	return a.secondFactor(w, r, u, s, proofReq{Code: code, Passkey: passkey})
 }
 
 // checkPassword verifies the password proof sent with a change to two-step sign-in, counted like a password change.
@@ -672,7 +703,7 @@ func (a *App) twoFactorEnable(w http.ResponseWriter, r *http.Request, u *user, s
 		fail(w, http.StatusConflict, "start the setup again")
 		return
 	}
-	at, ok := reserve(a.codeSlots(u.ID)...)
+	at, ok := reserve(a.stepSlots(u.ID)...)
 	if !ok {
 		fail(w, 429, "too many attempts, try later")
 		return

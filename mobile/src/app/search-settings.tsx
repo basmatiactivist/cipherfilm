@@ -13,7 +13,7 @@ import { loadPeople, setExplicit } from "../search/people";
 import { explicitSearchOffered } from "../store";
 import { expectAway } from "../autolock";
 import { backgroundUse, ownBatteryRules, useOnReturn } from "../deviceState";
-import { agreeModels, CLIP, deleteModels, downloadSize, modelsOnPhone, onConsentChange, unagreed } from "../search/models";
+import { agreeModels, checkModelsHere, CLIP, deleteModels, downloadSize, modelsOnPhone, onConsentChange, unagreed } from "../search/models";
 import { ModelConsentDialog, type ConsentAsk } from "../modelConsent";
 import { loadSettings, onSettingsChange, pinAccount, saveSettings, type SearchSettings } from "../search/settings";
 import { Problem, SwitchItem, useAppTheme } from "../ui";
@@ -56,6 +56,7 @@ export default function SearchSettingsScreen() {
     loadSettings().then(setS);
     const a = onSettingsChange(() => loadSettings().then(setS));
     const b = onConsentChange(() => setConsentTick((n) => n + 1));
+    checkModelsHere().catch(() => {}); // the files here count once their hash is checked (models.ts)
     return () => { a(); b(); };
   }, []);
 

@@ -114,6 +114,8 @@ public final class ModelStore: @unchecked Sendable {
   public let dir: URL
   private let lock = NSLock()
   private var checked = Set<String>()
+  /** How a file's SHA-256 is computed (tests stand in for the real model files). */
+  var hash: @Sendable (URL) -> String? = { Models.sha256(of: $0) }
 
   public init(dir: URL) { self.dir = dir; tidyOldFiles() }
 
@@ -149,15 +151,24 @@ public final class ModelStore: @unchecked Sendable {
     try? enc.encode(c).write(to: consentURL, options: .atomic)
   }
 
-  private func onDisk(_ m: ModelFile) -> Bool {
-    lock.withLock { checked.contains(m.name) } || FileManager.default.fileExists(atPath: dir.appendingPathComponent(m.name).path)
-  }
+  private func isChecked(_ m: ModelFile) -> Bool { lock.withLock { checked.contains(m.name) } }
 
-  /** What a download would fetch that the person hasn't agreed to; empty when nothing needs asking. (After `have`,
-   *  which removes a file with the wrong hash, a model update shows here as a missing file.) */
+  /** What a download would fetch that the person hasn't agreed to; empty when nothing needs asking. A file here counts
+   *  only once its SHA-256 was checked (`have`, `checkHere`): one of the same name but another content (a model changed
+   *  in a release) is asked for again, never taken as agreed by its name. */
   public func unagreed(faces: Bool, clip: ClipModel = .clip, reader: Bool = false) -> [ModelFile] {
     let sha = Set(consent()?.sha ?? [])
-    return Models.needed(faces: faces, clip: clip, reader: reader).filter { !onDisk($0) && !sha.contains($0.sha256) }
+    return Models.needed(faces: faces, clip: clip, reader: reader).filter { !isChecked($0) && !sha.contains($0.sha256) }
+  }
+
+  /** Checks the hash of every model file here not checked yet this run; one with the wrong hash goes (downloaded again,
+   *  after the question). Reads the files: not on the main thread. */
+  public func checkHere() {
+    for m in Models.every where !isChecked(m) {
+      let f = dir.appendingPathComponent(m.name)
+      guard FileManager.default.fileExists(atPath: f.path) else { continue }
+      if hash(f) == m.sha256 { lock.withLock { _ = checked.insert(m.name) } } else { try? FileManager.default.removeItem(at: f) }
+    }
   }
 
   /** The yes: what these settings need may be downloaded. */
@@ -174,13 +185,15 @@ public final class ModelStore: @unchecked Sendable {
     let here = Models.every.filter { fm.fileExists(atPath: dir.appendingPathComponent($0.name).path) }
     guard !here.isEmpty else { return nil }
     var c = consent()
-    if c == nil || here.contains(where: { !c!.sha.contains($0.sha256) }) {
-      let times = here.compactMap { (try? fm.attributesOfItem(atPath: dir.appendingPathComponent($0.name).path)[.modificationDate]) as? Date }
+    let times = here.compactMap { (try? fm.attributesOfItem(atPath: dir.appendingPathComponent($0.name).path)[.modificationDate]) as? Date }
+    // only files whose SHA-256 was checked are taken as agreed: the yes is for the exact files, not their names
+    let verified = here.filter(isChecked)
+    if verified.contains(where: { !(c?.sha.contains($0.sha256) ?? false) }) {
       let old = c?.sha ?? []
-      c = ModelConsent(at: c?.at ?? times.min(), sha: old + here.map(\.sha256).filter { !old.contains($0) })
+      c = ModelConsent(at: c?.at ?? times.min(), sha: old + verified.map(\.sha256).filter { !old.contains($0) })
       save(c)
     }
-    return (c?.at, here.reduce(0) { $0 + $1.size })
+    return (c?.at ?? times.min(), here.reduce(0) { $0 + $1.size })
   }
 
   public func missingBytes(faces: Bool, clip: ClipModel = .clip, reader: Bool = false) -> Int64 {
@@ -192,7 +205,7 @@ public final class ModelStore: @unchecked Sendable {
       if lock.withLock({ checked.contains(m.name) }) { continue }
       let f = dir.appendingPathComponent(m.name)
       guard FileManager.default.fileExists(atPath: f.path) else { return false }
-      guard Models.sha256(of: f) == m.sha256 else { try? FileManager.default.removeItem(at: f); return false }
+      guard hash(f) == m.sha256 else { try? FileManager.default.removeItem(at: f); return false }
       lock.withLock { _ = checked.insert(m.name) }
     }
     return true
@@ -214,7 +227,7 @@ public final class ModelStore: @unchecked Sendable {
     let ask = Models.needed(faces: faces, clip: clip, reader: reader).filter { m in
       if lock.withLock({ checked.contains(m.name) }) || sha.contains(m.sha256) { return false }
       let f = dir.appendingPathComponent(m.name)
-      return !(FileManager.default.fileExists(atPath: f.path) && Models.sha256(of: f) == m.sha256)
+      return !(FileManager.default.fileExists(atPath: f.path) && hash(f) == m.sha256)
     }
     if !ask.isEmpty { throw NeedsConsent(bytes: ask.reduce(0) { $0 + $1.size }) }
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

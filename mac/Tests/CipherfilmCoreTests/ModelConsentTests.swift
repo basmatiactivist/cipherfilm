@@ -51,6 +51,10 @@ import Testing
       try Data("x".utf8).write(to: f)
       try FileManager.default.setAttributes([.modificationDate: when], ofItemAtPath: f.path)
     }
+    s.hash = { _ in nil } // not checked yet: asked, nothing adopted by name
+    #expect(s.unagreed(faces: false, reader: true).count == 2)
+    s.hash = { u in Models.every.first { $0.name == u.lastPathComponent }?.sha256 } // the right files
+    s.checkHere()
     #expect(s.unagreed(faces: false, reader: true).isEmpty)
     let d = try #require(s.downloaded())
     #expect(d.at == when)
@@ -96,7 +100,24 @@ import Testing
     let here = Set(try FileManager.default.contentsOfDirectory(atPath: s.dir.path))
     #expect(here == ["consent.json", "clip-b32-vision.onnx", "clip-b32-text.onnx"])
     #expect(try String(contentsOf: s.dir.appendingPathComponent("clip-b32-text.onnx"), encoding: .utf8) == "nsfw-laion-b32-text.onnx") // moved, not fetched
+    again.hash = { u in Models.every.first { $0.name == u.lastPathComponent }?.sha256 } // as if they were the real files
+    again.checkHere()
     #expect(again.unagreed(faces: false).map(\.name) == ["clip-b32-tokenizer.json"])
+  }
+
+  /** A file of a model's name but another content (a model changed in a release) is never taken as agreed. */
+  @Test func aChangedModelOfTheSameNameAsksAgain() throws {
+    let s = store(); defer { s.delete() }
+    try FileManager.default.createDirectory(at: s.dir, withIntermediateDirectories: true)
+    for m in Models.needed(faces: false, reader: true) { try Data("old".utf8).write(to: s.dir.appendingPathComponent(m.name)) }
+    s.hash = { _ in String(repeating: "0", count: 64) }
+    #expect(s.downloaded() != nil) // Settings show what is here before any check
+    #expect(s.consent() == nil)     // but nothing is adopted by name
+    #expect(s.unagreed(faces: false, reader: true).count == 2)
+    s.checkHere()
+    #expect(s.downloaded() == nil) // the wrong files went
+    #expect(s.consent() == nil)
+    #expect(s.unagreed(faces: false, reader: true).count == 2)
   }
 }
 

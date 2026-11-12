@@ -27,7 +27,7 @@ their total size, from this list, for the files that device needs), from whom (H
 CDN `*.hf.co`), what Hugging Face learns (below), that it happens once per device and that every file is checked
 (SHA-256), with the buttons "Download and turn on" and "Not now". The yes is kept on the device (any account) for the
 exact files, by SHA-256: other files (the face models, a model changed in a release, as MobileCLIP's replacement
-below) ask again. Without it nothing is fetched: the one download function of each app refuses (`mobile/src/search/models.ts`
+below) ask again. Files already on the device count only once their hash was checked, never by their name alone. Without it nothing is fetched: the one download function of each app refuses (`mobile/src/search/models.ts`
 `fetchAll`, `mac/.../Search.swift` `ModelStore.download`, `web/src/search/content.ts` and its worker), search waits
 ("Waiting for your OK"), and there is no prefetch, HEAD request or background download (the background indexers
 never download). Withdrawing: turning search off deletes the models on Android and in the browser, and offers it on

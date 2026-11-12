@@ -27,6 +27,7 @@ const (
 	// again every 14 days and after a day without use.
 	sessionAbs  = 365 * 24 * time.Hour
 	sessionIdle = 30 * 24 * time.Hour
+	sessionsMax = 50 // live sessions per account; a new sign-in beyond it ends the one idle longest
 	inviteTTL   = 7 * 24 * time.Hour
 	ticketTTL   = 10 * time.Minute
 )
@@ -431,6 +432,12 @@ func (a *App) startSession(w http.ResponseWriter, r *http.Request, userID, authH
 	}
 	if rowsAffected(res, nil) != 1 {
 		return nil, errCredentialsChanged
+	}
+	// at most sessionsMax per account (each is a row, and a device-list entry, for up to a year): the one idle longest
+	// goes, never this new one. That device is asked to sign in again; nothing is wiped.
+	if res, err := a.db.Exec(`DELETE FROM sessions WHERE user_id=? AND id_hash NOT IN (SELECT id_hash FROM sessions WHERE user_id=?
+		ORDER BY last_seen DESC, created_at DESC LIMIT ?)`, userID, userID, sessionsMax); rowsAffected(res, err) > 0 {
+		a.live.recheck(userID)
 	}
 	// the browser's previous session, if it had one, is replaced by this one: end it rather than leave it valid
 	if c, err := r.Cookie(cookieName); err == nil {

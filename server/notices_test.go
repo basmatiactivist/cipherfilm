@@ -33,3 +33,42 @@ func TestOldNoticesAreDroppedWithoutANewOne(t *testing.T) {
 		t.Fatalf("%d left after the janitor", n)
 	}
 }
+
+// Someone who has the password but no code repeats the password step every 4 minutes for 5 hours: the notice about
+// it is shown pendingTTL after the first step, not postponed by the later ones, and there is at most one an hour.
+func TestRepeatedPasswordStepsDontHideTheNotice(t *testing.T) {
+	e := newEnv(t)
+	clk := e.pinClock()
+	admin, ab := e.setupAdmin("admin@x.org")
+	e.enable2FA(admin, ab)
+	clk.tick(30 * time.Second)
+	u, _ := e.app.userByEmail("admin@x.org")
+	shown := func() (n int) {
+		e.app.db.Exec(`UPDATE sessions SET last_seen=?, expires_at=?`, clk.at.Unix(), clk.at.Add(sessionIdle).Unix())
+		for _, k := range shownKinds(t, admin) {
+			if k == noticePasswordUsed {
+				n++
+			}
+		}
+		return
+	}
+	start := clk.at
+	firstShown := time.Duration(-1)
+	for clk.at.Sub(start) < 5*time.Hour {
+		e.passwordStep(e.client(), "admin@x.org", ab)
+		for i := 0; i < 4; i++ {
+			clk.tick(time.Minute)
+			if firstShown < 0 && shown() > 0 {
+				firstShown = clk.at.Sub(start)
+			}
+		}
+	}
+	if firstShown < 0 || firstShown > pendingTTL+time.Minute {
+		t.Fatalf("first shown after %v, want at most %v", firstShown, pendingTTL+time.Minute)
+	}
+	var n int
+	e.app.db.QueryRow(`SELECT COUNT(*) FROM notices WHERE user_id=? AND kind=?`, u.ID, noticePasswordUsed).Scan(&n)
+	if n < 4 || n > 6 {
+		t.Fatalf("%d notices in 5 hours, want one an hour", n)
+	}
+}

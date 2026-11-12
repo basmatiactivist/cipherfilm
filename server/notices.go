@@ -72,23 +72,20 @@ func (a *App) pruneNotices() {
 }
 
 // passwordUsedNotice is called when the password step of an account with two-step sign-in succeeded. The notice is
-// stored at once but shown only once the pending sign-in can no longer finish (pendingTTL after it was last used);
-// a right code deletes it again (dropPasswordUsed). Within passwordUsedEvery of one, the same notice is used again
-// (moved to now while it isn't shown yet). It returns the notice's id for the pending sign-in.
+// stored at once and shown pendingTTL later, once that pending sign-in can no longer finish; a right code deletes it
+// again (dropPasswordUsed). Within passwordUsedEvery of one, the same notice is used again, unchanged: it is shown
+// pendingTTL after the first unfinished password step, however often the step is repeated meanwhile (moving it on
+// with every step let someone with the password keep it hidden for ever). It returns the notice's id for the pending
+// sign-in.
 func (a *App) passwordUsedNotice(u *user) int64 {
 	now := a.now()
-	var id, at int64
-	err := a.db.QueryRow(`SELECT id, at FROM notices WHERE user_id=? AND kind=? AND at>=? ORDER BY id DESC LIMIT 1`,
-		u.ID, noticePasswordUsed, now.Add(-passwordUsedEvery).Unix()).Scan(&id, &at)
-	switch {
-	case err == nil && at > now.Add(-pendingTTL).Unix():
-		a.db.Exec(`UPDATE notices SET at=? WHERE id=?`, now.Unix(), id)
-	case err == nil:
-		return id // shown already
-	default:
-		if id = a.addNotice(u.ID, noticePasswordUsed, "", ""); id == 0 {
-			return 0
-		}
+	var id int64
+	if a.db.QueryRow(`SELECT id FROM notices WHERE user_id=? AND kind=? AND at>=? ORDER BY id DESC LIMIT 1`,
+		u.ID, noticePasswordUsed, now.Add(-passwordUsedEvery).Unix()).Scan(&id) == nil {
+		return id
+	}
+	if id = a.addNotice(u.ID, noticePasswordUsed, "", ""); id == 0 {
+		return 0
 	}
 	// the devices hear of it when it is shown; after a restart meanwhile, at their next start
 	time.AfterFunc(pendingTTL+2*time.Second, func() {

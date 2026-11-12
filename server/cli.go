@@ -393,6 +393,7 @@ func cliSignOut(a *App, out io.Writer, args []string) error {
 		return err
 	}
 	n, _ := res.RowsAffected()
+	a.dropInvitesOf(u.ID, `1`)
 	a.audit(consoleActor, "signed out every device", u.Email, map[bool]string{true: "and wiped", false: ""}[hasFlag(args, "--wipe")])
 	fmt.Fprintf(out, "signed out %d devices of %s\n", n, u.Email)
 	return nil

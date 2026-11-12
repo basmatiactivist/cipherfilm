@@ -327,6 +327,7 @@ func (a *App) changePassword(w http.ResponseWriter, r *http.Request, u *user, s 
 	}
 	at.success()
 	a.revokeTickets(u.ID)
+	a.dropInvitesOf(u.ID, `created_session<>?`, s.Pub) // the other sessions just ended
 	// the pending sign-ins were issued for the old password. The account's code count stays: the session changing the
 	// password may be the one guessing codes, and must not get a fresh budget with every change it makes
 	a.pending.dropUser(u.ID, a.now())
@@ -611,6 +612,7 @@ func (a *App) recoverFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.revokeTickets(t.userID)
+	a.dropInvitesOf(t.userID, `1`) // every session just ended
 	// the pending sign-ins were issued for the old password; the code count stays: the recovery key alone (with no
 	// code) must not let anyone wipe it again and again and so guess more codes than the limits allow
 	a.pending.dropUser(t.userID, a.now())
@@ -620,10 +622,22 @@ func (a *App) recoverFinish(w http.ResponseWriter, r *http.Request) {
 
 // ---- invites ----
 
+// inviteCreatorOK is the condition (on invites) that an invite's creator may still invite: the server console, or an
+// administrator who is still one and active. An invite of someone demoted, disabled or deleted since stops working.
+const inviteCreatorOK = `(invites.created_by='` + consoleActor + `' OR EXISTS (SELECT 1 FROM users c WHERE c.id=invites.created_by
+	AND c.role='admin' AND c.status='active'))`
+
+// dropInvitesOf deletes the open invites an account made from the sessions where selects (a fixed condition on
+// invites, values in args): sessions that were just signed out, by the person or by a password change or recovery,
+// may have been someone else's, and what they invited must not outlive them.
+func (a *App) dropInvitesOf(userID, where string, args ...any) {
+	a.db.Exec(`DELETE FROM invites WHERE used_at IS NULL AND created_by=? AND (`+where+`)`, append([]any{userID}, args...)...)
+}
+
 func (a *App) validInvite(token string) (id, email string, err error) {
 	var exp int64
 	var used sql.NullInt64
-	err = a.db.QueryRow(`SELECT id,email,expires_at,used_at FROM invites WHERE token_hash=?`, sha256hex(token)).Scan(&id, &email, &exp, &used)
+	err = a.db.QueryRow(`SELECT id,email,expires_at,used_at FROM invites WHERE token_hash=? AND `+inviteCreatorOK, sha256hex(token)).Scan(&id, &email, &exp, &used)
 	if err != nil || used.Valid || a.now().Unix() > exp {
 		return "", "", errors.New("invalid invite")
 	}
@@ -668,7 +682,7 @@ func (a *App) inviteAccept(w http.ResponseWriter, r *http.Request) {
 	var id, email string
 	var exp int64
 	var used, invQuota sql.NullInt64
-	if err := tx.QueryRow(`SELECT id,email,expires_at,used_at,quota_bytes FROM invites WHERE token_hash=?`, tokHash).Scan(&id, &email, &exp, &used, &invQuota); err != nil || used.Valid || a.now().Unix() > exp {
+	if err := tx.QueryRow(`SELECT id,email,expires_at,used_at,quota_bytes FROM invites WHERE token_hash=? AND `+inviteCreatorOK, tokHash).Scan(&id, &email, &exp, &used, &invQuota); err != nil || used.Valid || a.now().Unix() > exp {
 		a.loginIP.fail(ip)
 		fail(w, 404, "this invite link is invalid or expired")
 		return

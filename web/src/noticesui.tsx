@@ -62,7 +62,7 @@ export function NoticesButton(p: {
         {unread > 0 && <span class="bellbadge" aria-hidden="true">{unread > 9 ? "9+" : unread}</span>}
       </button>
       {/* says so when one arrives, without moving the focus */}
-      <span class="sr" role="status">{unread > 0 && !open ? `${unread} unread ${unread === 1 ? "notification" : "notifications"}` : ""}</span>
+      <span class="sr" aria-live="polite" aria-atomic="true">{unread > 0 && !open ? `${unread} unread ${unread === 1 ? "notification" : "notifications"}` : ""}</span>
       {open && (
         <div class="menu noticepanel" id="notices-panel" role="dialog" aria-labelledby="notices-h">
           <div class="noticehead">

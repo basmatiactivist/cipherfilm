@@ -5,10 +5,11 @@
 // does (web/src/screens.tsx PasskeyHandoff), and the answer comes back to this app's own address
 // (cipherfilm://passkey#…, cipherfilm-test:// for a test build), which +native-intent.ts hands here.
 // The options travel in the address's fragment, which the browser never sends to the server.
-import * as SecureStore from "expo-secure-store";
 import { t } from "./i18n";
 
 type J = Record<string, unknown>;
+// Expo's native modules only when used: +native-intent.ts (and its unit tests in plain Node) load this module
+const store = () => require("expo-secure-store") as typeof import("expo-secure-store");
 
 const scheme = (): string => {
   try {
@@ -36,7 +37,7 @@ export async function viaBrowser(server: string): Promise<boolean> {
   const host = hostOf(server);
   if (!host) return false;
   if (PRIVATE_HOST.test(host) || failed.has(host)) return true;
-  const v = await SecureStore.getItemAsync(failedKey(host)).catch(() => null);
+  const v = await (async () => store().getItemAsync(failedKey(host)))().catch(() => null);
   if (v) failed.add(host);
   return !!v;
 }
@@ -46,7 +47,7 @@ export function rememberBrowser(server: string) {
   const host = hostOf(server);
   if (!host) return;
   failed.add(host);
-  SecureStore.setItemAsync(failedKey(host), "1").catch(() => {});
+  (async () => store().setItemAsync(failedKey(host), "1"))().catch(() => {});
 }
 
 const b64u = (s: string) => {

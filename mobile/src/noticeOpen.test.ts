@@ -21,4 +21,9 @@ describe("a tap on a notice's notification", () => {
     expect(redirectSystemPath({ path: "cipherfilm://expo-sharing?x=1", initial: true })).toBe("/share");
     expect(takeNoticeOpen()).toBe(false);
   });
+
+  it("hands the passkey page's answer to the waiting sign-in, without opening a screen", () => {
+    expect(redirectSystemPath({ path: "cipherfilm://passkey#e30", initial: false })).toBe("");
+    expect(redirectSystemPath({ path: "cipherfilm://passkey#error=cancelled", initial: false })).toBe("");
+  });
 });

@@ -2,7 +2,7 @@
 // Nothing changes until Save; the original always stays as it was, and "Revert to original" brings everything back.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PanResponder, ScrollView, StyleSheet, useColorScheme, useWindowDimensions, View } from "react-native";
-import { router, useLocalSearchParams, useNavigation } from "expo-router";
+import { router, useLocalSearchParams, useNavigation, usePreventRemove } from "expo-router";
 import { Image } from "expo-image";
 import { Button, IconButton, List, Portal, ProgressBar, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -157,22 +157,20 @@ export default function EditScreen() {
   const changed = !!next && JSON.stringify(next) !== JSON.stringify(meta);
 
   // leaving with changes not saved (Cancel, Android's back): asked first; saving leaves without asking
-  const navigation = useNavigation();
-  const leaving = useRef(false);
+  const [saved, setSaved] = useState(false);
   const [discard, setDiscard] = useState<null | (() => void)>(null);
-  useEffect(() => (navigation.addListener as unknown as (n: string, f: (e: { preventDefault: () => void; data: { action: unknown } }) => void) => () => void)("beforeRemove", (e) => {
-    if (leaving.current || !changed) return;
-    e.preventDefault();
-    setDiscard(() => () => { leaving.current = true; navigation.dispatch(e.data.action as never); });
-  }), [navigation, changed]);
+  const navigation = useNavigation();
+  usePreventRemove(changed && !saved, ({ data }) => setDiscard(() => () => navigation.dispatch(data.action)));
 
   // the place search's suggestions come below its field: while typing there, the page shows them above the keyboard
   const kb = useKeyboardHeight();
-  const scroller = useRef<{ scrollToEnd: (o?: { animated?: boolean }) => void } | null>(null);
+  const scroller = useRef<{ scrollTo: (o: { y: number; animated?: boolean }) => void } | null>(null);
+  const formY = useRef(0), placeY = useRef(0);
   const [placeFocused, setPlaceFocused] = useState(false);
+  // the "Place" heading at the top of the screen: the field and its suggestions below it, above the keyboard
   useEffect(() => {
-    if (placeFocused && kb) { const id = setTimeout(() => scroller.current?.scrollToEnd({ animated: true }), 50); return () => clearTimeout(id); }
-  }, [placeFocused, kb, found.length]);
+    if (placeFocused && kb) { const id = setTimeout(() => scroller.current?.scrollTo({ y: Math.max(0, formY.current + placeY.current - 8), animated: true }), 50); return () => clearTimeout(id); }
+  }, [placeFocused, kb]);
 
   const save = async () => {
     if (!it || !next) return;
@@ -181,8 +179,8 @@ export default function EditScreen() {
     try {
       await saveEdit(it, next, (label, progress) => setBusy({ label, progress }), opened);
       await refreshLibrary({ quiet: true }).catch(() => {});
-      leaving.current = true;
-      router.back();
+      setSaved(true);
+      setTimeout(() => router.back(), 0); // once the screen knows it may go
     } catch (e) {
       setErr(e instanceof Error ? e.message : t("Couldn't save the changes."));
     } finally {
@@ -243,7 +241,7 @@ export default function EditScreen() {
             </ScrollView>
           </View>
         ) : null}
-        <View style={st.form}>
+        <View style={st.form} onLayout={(e) => { formY.current = e.nativeEvent.layout.y; }}>
           {loadErr ? <Text variant="bodySmall" style={{ color: th.colors.onSurfaceVariant, marginBottom: 12 }}>{loadErr}</Text> : null}
           {it.kind === "video" ? <Text variant="bodySmall" style={{ color: th.colors.onSurfaceVariant, marginBottom: 12 }}>{t("For videos you can change the date and the place.")}</Text> : null}
           <Text variant="titleSmall" style={st.head}>{t("Taken")}</Text>
@@ -259,7 +257,7 @@ export default function EditScreen() {
           </View>
           {touched.date && typedDate === null ? <Text variant="bodySmall" style={{ color: th.colors.error, marginTop: -4, marginBottom: 8 }}>{t("Type the date as year-month-day and the time as hours:minutes.")}</Text> : null}
 
-          <Text variant="titleSmall" style={st.head}>{t("Place")}</Text>
+          <Text variant="titleSmall" style={st.head} onLayout={(e) => { placeY.current = e.nativeEvent.layout.y; }}>{t("Place")}</Text>
           <Text variant="bodyLarge" style={{ marginBottom: 8 }}>{gps ? (placeName || `${gps.lat.toFixed(4)}, ${gps.lon.toFixed(4)}`) : t("No place")}</Text>
           <Field label={t("Search for a town or city")} value={query} onChangeText={setQuery} autoCapitalize="words"
             onFocus={() => setPlaceFocused(true)} onBlur={() => setPlaceFocused(false)} />

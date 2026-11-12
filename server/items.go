@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -208,22 +210,55 @@ func (a *App) quotaLeft(userID string) (left int64, unlimited bool) {
 // reserveBytes holds `want` bytes of the user's quota while an upload body is being written, so concurrent
 // uploads cannot all pass the quota check before any of them is counted. Call release when the upload is done
 // (after stored_bytes has been updated, or on failure).
+//
+// The check sums the account's storage in the database, so it runs under a lock of that account only (one of
+// quotaStripes): a large account's sum doesn't hold up everyone else's uploads. resMu guards just the map.
 func (a *App) reserveBytes(userID string, want int64) (release func(), ok bool) {
-	a.resMu.Lock()
-	defer a.resMu.Unlock()
 	if want <= 0 {
 		return func() {}, true
 	}
+	acct := quotaLock(userID)
+	acct.Lock()
+	defer acct.Unlock()
 	left, unlimited := a.quotaLeft(userID)
+	a.resMu.Lock()
+	defer a.resMu.Unlock()
 	if !unlimited && left-a.reserved[userID] < want {
 		return nil, false
 	}
 	a.reserved[userID] += want
 	return func() {
+		// under the account's lock too, so a check never sees the bytes neither stored nor reserved
+		acct.Lock()
 		a.resMu.Lock()
 		a.reserved[userID] -= want
+		if a.reserved[userID] == 0 {
+			delete(a.reserved, userID)
+		}
 		a.resMu.Unlock()
+		acct.Unlock()
 	}, true
+}
+
+// roomLeft is what the account could still reserve now (a bound only: reserveBytes decides).
+func (a *App) roomLeft(userID string) int64 {
+	left, unlimited := a.quotaLeft(userID)
+	if unlimited {
+		return 1 << 62
+	}
+	a.resMu.Lock()
+	defer a.resMu.Unlock()
+	return max(0, left-a.reserved[userID])
+}
+
+// quotaStripes: per-account locks for the quota check. Accounts share a stripe only by hash; that costs nothing but
+// a little waiting.
+var quotaStripes [64]sync.Mutex
+
+func quotaLock(userID string) *sync.Mutex {
+	h := fnv.New32a()
+	h.Write([]byte(userID))
+	return &quotaStripes[h.Sum32()%uint32(len(quotaStripes))]
 }
 
 // cleanupIfGone removes blobs of an item whose row no longer exists (a write that raced with a delete).
@@ -416,6 +451,21 @@ func (a *App) putAux(name string, max int64, col string) func(http.ResponseWrite
 	}
 }
 
+// auxBytes is the size the item's thumbnail or preview counts with now. An item finished before the column existed
+// has 0 there, but its file is on disk and in stored_bytes.
+func (a *App) auxBytes(itemID, userID, name, bytesCol string) (int64, error) {
+	var counted int64
+	if err := a.db.QueryRow(`SELECT `+bytesCol+` FROM items WHERE id=? AND user_id=?`, itemID, userID).Scan(&counted); err != nil {
+		return 0, err
+	}
+	if counted == 0 {
+		if fi, err := os.Stat(filepath.Join(a.itemDir(itemID), name)); err == nil && fi.Mode().IsRegular() {
+			return fi.Size(), nil
+		}
+	}
+	return counted, nil
+}
+
 // replaceAux replaces the thumbnail or preview of a finished item: an app made new ones after the person turned or
 // cropped the photo (docs/EDITING.md). The encrypted original is never touched. Only the owner's own items that are
 // not in the trash; the same size checks as at upload, and the difference counts toward the storage limit (with the
@@ -431,15 +481,47 @@ func (a *App) replaceAux(name string, max int64, col string) func(http.ResponseW
 			fail(w, 409, "this upload isn't finished")
 			return
 		}
-		// the body is read first (at most max, removed again whatever happens) and only the growth is reserved, so
-		// someone at their limit can still replace a picture with one that takes no more room
+		// Room is reserved before a byte reaches the disk: the most the new picture can add over the one it replaces.
+		// Someone near their limit can still replace a picture with one that fits in the old one's disk blocks plus
+		// what room is left; that body is held in memory, and written only after its growth has been reserved below.
+		pre, err := a.auxBytes(it.ID, u.ID, name, bytesCol)
+		if err != nil {
+			fail(w, 404, "not found")
+			return
+		}
+		reservedAmt := max + blockSlack(max) - pre - blockSlack(pre)
+		release, ok := a.reserveBytes(u.ID, reservedAmt)
 		bodyDeadline(w, uploadReadTime)
 		r.Body = http.MaxBytesReader(w, r.Body, max+1)
-		tmp, got, err := writeStaged(a.itemDir(it.ID), r.Body, func(n int64) bool { return n >= 1+24+16 && n <= max })
-		if err != nil { // nothing was written; the earlier one stays
-			a.cleanupIfGone(it.ID)
-			fail(w, 400, "invalid upload")
-			return
+		valid := func(n int64) bool { return n >= 1+24+16 && n <= max }
+		var tmp string
+		var got int64
+		if ok {
+			defer release()
+			tmp, got, err = writeStaged(a.itemDir(it.ID), r.Body, valid)
+			if err != nil { // nothing was written; the earlier one stays
+				a.cleanupIfGone(it.ID)
+				fail(w, 400, "invalid upload")
+				return
+			}
+		} else {
+			reservedAmt = 0
+			fits := min(max, pre+blockSlack(pre)+a.roomLeft(u.ID))
+			body, rerr := io.ReadAll(io.LimitReader(r.Body, fits+1))
+			if rerr == nil && int64(len(body)) > fits {
+				fail(w, 413, "this would go over your storage limit")
+				return
+			}
+			if rerr != nil || !valid(int64(len(body))) {
+				fail(w, 400, "invalid upload")
+				return
+			}
+			got = int64(len(body))
+			if tmp, _, err = writeStaged(a.itemDir(it.ID), bytes.NewReader(body), valid); err != nil {
+				a.cleanupIfGone(it.ID)
+				fail(w, 500, "server error")
+				return
+			}
 		}
 		defer os.Remove(tmp) // a no-op once it has been renamed
 		a.auxMu.Lock()
@@ -458,12 +540,14 @@ func (a *App) replaceAux(name string, max int64, col string) func(http.ResponseW
 			}
 		}
 		grow := got + blockSlack(got) - old - blockSlack(old)
-		release, ok := a.reserveBytes(u.ID, grow) // nothing to reserve when it doesn't grow
-		if !ok {
-			fail(w, 413, "this would go over your storage limit")
-			return
+		if grow > reservedAmt { // the old picture changed meanwhile: reserve the rest
+			more, ok := a.reserveBytes(u.ID, grow-reservedAmt)
+			if !ok {
+				fail(w, 413, "this would go over your storage limit")
+				return
+			}
+			defer more()
 		}
-		defer release()
 		// aux_ver moves on, so the item is in the change list even when has_thumb/has_preview were 1 already (since.go)
 		res, err := a.db.Exec(`UPDATE items SET `+col+`=1, aux_ver=aux_ver+1, stored_bytes=MAX(0, stored_bytes+?), `+bytesCol+`=? WHERE id=? AND user_id=? AND state='ready' AND trashed_at IS NULL AND `+bytesCol+`=?`,
 			grow, got, it.ID, u.ID, counted)

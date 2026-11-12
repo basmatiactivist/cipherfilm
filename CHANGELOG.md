@@ -52,6 +52,8 @@ version into the GitHub release notes, so a release cannot be published without 
   you come back to the app, without restarting it; the open screens stay.
 - Mac: videos with the iPhone's location key in a meta box inside udta (as ffmpeg writes it) uploaded without
   their place; the Mac app now reads it there too, like the web app and the upload tool.
+- Server: replacing a thumbnail or preview reserves its room before anything is written to disk, and the storage
+  check of one account no longer holds up uploads of the others.
 
 ### Changed
 - Search uses one open model for everyone, in every app and build: LAION's CLIP ViT-B/32 (MIT), the model explicit

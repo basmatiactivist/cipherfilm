@@ -24,7 +24,12 @@ read-only root file system, with memory and process limits.
 
 - **app**: non-root (uid 65532), read-only, no capabilities, no host port (the overlay removes the base file's
   `127.0.0.1:8080`); it listens on `127.0.0.1:8080` inside Tailscale's network namespace, so only Tailscale Serve and
-  Caddy reach it, not even other tailnet devices directly.
+  Caddy reach it, not even other tailnet devices directly. Since every request then comes from `127.0.0.1`, the
+  sign-in limits per source would be one bucket for everyone (one person's wrong passwords could block everyone's
+  sign-in on a new device); with `TRUST_TAILSCALE_HEADERS=1` (set by this overlay) they are kept per tailnet user,
+  by the `Tailscale-User-Login` header Tailscale Serve adds (Serve removes the header from what a client sends).
+  Tagged devices get no such header and still share one bucket. The domain overlay turns it off again: there Serve
+  passes the connection to Caddy unread and adds no header, and Caddy would forward one a client made up.
 - **tailscale**: kernel networking (much faster than the userspace mode over long routes), which needs `/dev/net/tun`
   and `NET_ADMIN` + `NET_RAW` inside its own namespace. The one published host port is WireGuard's UDP `41641`, so
   devices connect directly instead of via relays. Funnel (public sharing) is off for every port.

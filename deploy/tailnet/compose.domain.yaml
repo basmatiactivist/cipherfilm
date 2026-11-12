@@ -11,6 +11,10 @@ services:
       TS_PERMIT_CERT_UID: "10001"   # Caddy's user may fetch certificates over the socket, and nothing else
     volumes:
       - tsrun:/var/run/tailscale
+  app:
+    environment:
+      # Serve hands :443 to Caddy as plain TCP and adds no identity header; Caddy would pass on one a client made up
+      TRUST_TAILSCALE_HEADERS: "0"
   caddy-perms:   # once per start: the certificate volume belongs to Caddy's user (it ran as root before)
     image: alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
     command: chown -R 10001:10001 /data

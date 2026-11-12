@@ -36,6 +36,7 @@ type App struct {
 	dataDir    string
 	secret     []byte // HMAC key for fake KDF params; persisted in data dir
 	trustProxy bool
+	tsHeaders  bool              // TRUST_TAILSCALE_HEADERS: key per-source limits by Tailscale Serve's user header
 	proxies    []netip.Prefix    // TRUSTED_PROXIES: the peers whose X-Forwarded-For counts; empty: loopback and private
 	hosts      map[string]bool   // PUBLIC_HOSTS; empty: any
 	mapConf    *mapConfig        // MAP_STYLE; nil: no map (mapconf.go)
@@ -132,6 +133,7 @@ func newApp(dataDir string) (*App, error) {
 	a := &App{
 		db: db, dataDir: dataDir, secret: secret, dummyHash: dummy,
 		trustProxy: os.Getenv("TRUST_PROXY") == "1",
+		tsHeaders:  os.Getenv("TRUST_TAILSCALE_HEADERS") == "1",
 		proxies:    proxies,
 		hosts:      publicHosts(os.Getenv("PUBLIC_HOSTS")),
 		demo:       demo,
@@ -250,7 +252,30 @@ func (a *App) clientIP(r *http.Request) string {
 	if err != nil {
 		return r.RemoteAddr
 	}
+	if id := a.tailscaleUser(r, h); id != "" {
+		return id
+	}
 	return h
+}
+
+// tailscaleUser is the source key for a request that Tailscale Serve forwarded on behalf of a tailnet user: behind
+// Serve every client is 127.0.0.1, so per-source limits would be one bucket for the whole server. Serve sets
+// Tailscale-User-Login to the user it identified and removes the header from what the client sent; it sets none for
+// tagged devices (they keep sharing 127.0.0.1). Only with TRUST_TAILSCALE_HEADERS=1, TRUST_PROXY off and a loopback
+// peer: anything else that can reach the app on loopback (a proxy that passes client headers through, such as Caddy
+// in the domain overlay) could otherwise choose its own key. "" when it does not apply.
+func (a *App) tailscaleUser(r *http.Request, peer string) string {
+	if !a.tsHeaders || a.trustProxy {
+		return ""
+	}
+	if addr, err := netip.ParseAddr(peer); err != nil || !addr.Unmap().IsLoopback() {
+		return ""
+	}
+	v := r.Header.Values("Tailscale-User-Login")
+	if len(v) != 1 || v[0] == "" || len(v[0]) > 256 || clean(v[0]) != v[0] {
+		return ""
+	}
+	return "tailscale:" + strings.ToLower(v[0])
 }
 
 // limiterIP is the key used for rate limiting: IPv6 addresses are grouped by /64, since one subscriber

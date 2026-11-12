@@ -823,3 +823,71 @@ func TestKnownBrowserQueueIsBoundedPerAccount(t *testing.T) {
 		}
 	}
 }
+
+// Behind Tailscale Serve (TRUST_PROXY=0, the peer is loopback) per-source limits are keyed by the tailnet user Serve
+// names, but only with TRUST_TAILSCALE_HEADERS=1: otherwise, or from any other peer, the header is ignored.
+func TestTailscaleUserHeaderOnlyWhenTrusted(t *testing.T) {
+	r := httptest.NewRequest("POST", "/", nil)
+	r.Header.Set("Tailscale-User-Login", "alice@example.com")
+	r.RemoteAddr = "127.0.0.1:5000"
+	if got := (&App{}).clientIP(r); got != "127.0.0.1" {
+		t.Fatalf("option off: %s", got)
+	}
+	a := &App{tsHeaders: true}
+	if got := a.clientIP(r); got != "tailscale:alice@example.com" {
+		t.Fatalf("option on, loopback peer: %s", got)
+	}
+	r.RemoteAddr = "[::1]:5000"
+	if got := a.clientIP(r); got != "tailscale:alice@example.com" {
+		t.Fatalf("option on, IPv6 loopback peer: %s", got)
+	}
+	for _, peer := range []string{"100.64.0.7:5000", "172.18.0.5:5000", "198.51.100.7:5000"} {
+		r.RemoteAddr = peer
+		if got := a.clientIP(r); strings.HasPrefix(got, "tailscale:") {
+			t.Fatalf("header believed from %s", peer)
+		}
+	}
+	// with TRUST_PROXY the proxy's X-Forwarded-For counts, never this header
+	r.RemoteAddr = "127.0.0.1:5000"
+	if got := (&App{tsHeaders: true, trustProxy: true}).clientIP(r); got != "127.0.0.1" {
+		t.Fatalf("with TRUST_PROXY: %s", got)
+	}
+	// two values, or one that isn't printable, are no user
+	r.Header.Add("Tailscale-User-Login", "bob@example.com")
+	if got := a.clientIP(r); got != "127.0.0.1" {
+		t.Fatalf("two values: %s", got)
+	}
+	r.Header.Set("Tailscale-User-Login", "x\x00y")
+	if got := a.clientIP(r); got != "127.0.0.1" {
+		t.Fatalf("control character: %s", got)
+	}
+
+	// end to end: one tailnet user's failures don't block another's sign-in; without the option they do
+	for _, on := range []bool{true, false} {
+		e := newEnv(t)
+		e.app.tsHeaders = on
+		_, ab := e.setupAdmin("admin@x.org")
+		as := func(login string, auth any) int {
+			bb, _ := json.Marshal(map[string]any{"email": "admin@x.org", "auth": auth})
+			req, _ := http.NewRequest("POST", e.srv.URL+"/api/auth/login", bytes.NewReader(bb))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Tailscale-User-Login", login)
+			resp, err := e.client().c.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp.Body.Close()
+			return resp.StatusCode
+		}
+		for i := 0; i < 30; i++ {
+			as("mallory@example.com", rb(32))
+		}
+		code := as("alice@example.com", ab["auth"])
+		if on && code != 200 {
+			t.Fatalf("another tailnet user blocked: %d", code)
+		}
+		if !on && code != 429 {
+			t.Fatalf("header believed without the option: %d", code)
+		}
+	}
+}

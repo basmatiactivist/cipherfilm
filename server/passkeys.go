@@ -504,7 +504,7 @@ func (a *App) passkeyRegisterBegin(w http.ResponseWriter, r *http.Request, u *us
 		return
 	}
 	var req proofReq
-	if !readJSON(w, r, &req) || !a.checkPassword(w, u, "passkey-add", req.CurrentAuth) {
+	if !readJSON(w, r, &req) || !a.checkPassword(w, r, u, "passkey-add", req.CurrentAuth) {
 		return
 	}
 	if u.twoFactor() && !a.secondFactor(w, r, u, s, req) {
@@ -693,7 +693,7 @@ func (a *App) passkeyDelete(w http.ResponseWriter, r *http.Request, u *user, s *
 		return
 	}
 	var req proofReq
-	if !readJSON(w, r, &req) || !a.checkPassword(w, u, "passkey-remove", req.CurrentAuth) {
+	if !readJSON(w, r, &req) || !a.checkPassword(w, r, u, "passkey-remove", req.CurrentAuth) {
 		return
 	}
 	var n int

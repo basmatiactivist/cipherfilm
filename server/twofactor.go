@@ -621,17 +621,48 @@ func (a *App) stepUp(w http.ResponseWriter, r *http.Request, u *user, s *session
 }
 
 // checkPassword verifies the password proof sent with a change to two-step sign-in, counted like a password change.
-func (a *App) checkPassword(w http.ResponseWriter, u *user, what, proof string) bool {
+func (a *App) checkPassword(w http.ResponseWriter, r *http.Request, u *user, what, proof string) bool {
 	at, ok := reserve(slot{a.loginAcct, what + "|" + u.ID, true})
 	if !ok {
 		fail(w, 429, "too many attempts, try later")
 		return false
 	}
-	if !verifySecret(u.AuthHash, proof) {
-		fail(w, 403, "that password isn't right")
+	if !a.proofOK(w, r, u, at, proof) {
 		return false
 	}
 	at.success()
+	return true
+}
+
+// proofOK checks the password proof of a signed-in session (to change the password or two-step sign-in, rotate the
+// recovery key, delete the account) and answers the request when it fails. The endpoints' own buckets reset on a
+// right proof, so these checks are bounded besides: proofsPerAccount per proofWindow per account, right or wrong,
+// and at most knownInFlight of the account's credential checks at once. They wait for an Argon2 slot in the known
+// lane, never in the queue that turns unknown browsers away, and leave it when the client has gone. On busy, at (the
+// endpoint's bucket) is refunded.
+func (a *App) proofOK(w http.ResponseWriter, r *http.Request, u *user, at *attempt, proof string) bool {
+	if !a.proofs.take(u.ID) {
+		at.refund()
+		fail(w, 429, "too many attempts, try later")
+		return false
+	}
+	release, ok := a.knownTurn(u.ID)
+	if !ok {
+		at.refund()
+		failBusy(w)
+		return false
+	}
+	defer release()
+	good, busy := verifySecretCtx(r.Context(), false, u.AuthHash, proof)
+	if busy != nil {
+		at.refund()
+		failBusy(w)
+		return false
+	}
+	if !good {
+		fail(w, 403, "that password isn't right")
+		return false
+	}
 	return true
 }
 
@@ -642,7 +673,7 @@ func (a *App) twoFactorSetup(w http.ResponseWriter, r *http.Request, u *user, s 
 		return
 	}
 	var req proofReq
-	if !readJSON(w, r, &req) || !a.checkPassword(w, u, "2fa-setup", req.CurrentAuth) {
+	if !readJSON(w, r, &req) || !a.checkPassword(w, r, u, "2fa-setup", req.CurrentAuth) {
 		return
 	}
 	if u.TOTPSecret != "" {
@@ -758,7 +789,7 @@ func (a *App) twoFactorEnable(w http.ResponseWriter, r *http.Request, u *user, s
 // current code (or a recovery code, which is used up, or a passkey).
 func (a *App) proofAndCode(w http.ResponseWriter, r *http.Request, u *user, s *session, what string) bool {
 	var req proofReq
-	if !readJSON(w, r, &req) || !a.checkPassword(w, u, what, req.CurrentAuth) {
+	if !readJSON(w, r, &req) || !a.checkPassword(w, r, u, what, req.CurrentAuth) {
 		return false
 	}
 	if !u.twoFactor() {

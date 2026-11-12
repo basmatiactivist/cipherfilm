@@ -891,3 +891,81 @@ func TestTailscaleUserHeaderOnlyWhenTrusted(t *testing.T) {
 		}
 	}
 }
+
+// A signed-in session sending right password proofs (here: turning two-step sign-in off while it is off, which checks
+// the password and then answers 409) gets at most proofsPerAccount of them per window, at most knownInFlight at once,
+// and none of them waits in the queue that turns unknown browsers away.
+func TestSignedInPasswordProofsAreBounded(t *testing.T) {
+	e := newEnv(t)
+	admin, ab := e.setupAdmin("admin@x.org")
+	proof := map[string]any{"current_auth": ab["auth"]}
+	for i := 0; i < cap(argonSlots); i++ {
+		argonSlots <- struct{}{}
+	}
+	held := true
+	free := func() {
+		if held {
+			held = false
+			for i := 0; i < cap(argonSlots); i++ {
+				<-argonSlots
+			}
+		}
+	}
+	t.Cleanup(free)
+	const n = 10
+	codes := make(chan int, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			bb, _ := json.Marshal(proof)
+			req, _ := http.NewRequest("POST", e.srv.URL+"/api/me/2fa/disable", bytes.NewReader(bb))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-CSRF-Token", admin.csrf)
+			resp, err := admin.c.Do(req)
+			if err != nil {
+				codes <- 0
+				return
+			}
+			resp.Body.Close()
+			codes <- resp.StatusCode
+		}()
+	}
+	busy := 0
+	for end := time.Now().Add(5 * time.Second); busy < n-knownInFlight && time.Now().Before(end); {
+		select {
+		case c := <-codes:
+			if c != 503 {
+				t.Fatalf("answered while every slot was taken: %d", c)
+			}
+			busy++
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	if busy != n-knownInFlight || argonWaiting.Load() != 0 {
+		t.Fatalf("%d turned away, %d in the unknown browsers' queue; want %d and 0", busy, argonWaiting.Load(), n-knownInFlight)
+	}
+	free()
+	wg.Wait()
+	close(codes)
+	for c := range codes {
+		if c != 409 {
+			t.Fatalf("a waiting proof: %d", c)
+		}
+	}
+	// per window, right or wrong: the endpoint's own bucket resets on a right proof, this one doesn't
+	u, _ := e.app.userByEmail("admin@x.org")
+	e.app.proofs.clear(u.ID)
+	for i := 0; i < proofsPerAccount; i++ {
+		if code, _ := admin.do("POST", "/api/me/2fa/disable", proof, true); code != 409 {
+			t.Fatalf("proof %d: %d", i, code)
+		}
+	}
+	if code, _ := admin.do("POST", "/api/me/2fa/disable", proof, true); code != 429 {
+		t.Fatalf("over the limit: %d", code)
+	}
+	if code, _ := admin.do("POST", "/api/auth/recovery-key", with(proof, "wrapped_master_recovery", rb(wrappedLen), "recovery_verifier", rb(32)), true); code != 429 {
+		t.Fatalf("another proof endpoint over the limit: %d", code)
+	}
+}

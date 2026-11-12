@@ -290,8 +290,7 @@ func (a *App) changePassword(w http.ResponseWriter, r *http.Request, u *user, s 
 		fail(w, 429, "too many attempts, try later")
 		return
 	}
-	if !verifySecret(u.AuthHash, req.CurrentAuth) {
-		fail(w, 403, "that password isn't right")
+	if !a.proofOK(w, r, u, at, req.CurrentAuth) {
 		return
 	}
 	if req.NewKDF.validate() != nil || checkLen(req.NewAuth, 32) != nil || checkLen(req.NewWrappedMasterPW, wrappedLen) != nil {
@@ -367,8 +366,7 @@ func (a *App) deleteMe(w http.ResponseWriter, r *http.Request, u *user, s *sessi
 		fail(w, 429, "too many attempts, try later")
 		return
 	}
-	if !verifySecret(u.AuthHash, req.CurrentAuth) {
-		fail(w, 403, "that password isn't right")
+	if !a.proofOK(w, r, u, at, req.CurrentAuth) {
 		return
 	}
 	// with the admin changes: an admin deleting or demoting the other one at the same moment must not leave none
@@ -458,8 +456,7 @@ func (a *App) newRecoveryKey(w http.ResponseWriter, r *http.Request, u *user, s 
 		fail(w, 429, "too many attempts, try later")
 		return
 	}
-	if !verifySecret(u.AuthHash, req.CurrentAuth) {
-		fail(w, 403, "that password isn't right")
+	if !a.proofOK(w, r, u, at, req.CurrentAuth) {
 		return
 	}
 	if checkLen(req.WrappedMasterRecovery, wrappedLen) != nil || checkLen(req.RecoveryVerifier, 32) != nil {

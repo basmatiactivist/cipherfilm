@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 )
 
 const deviceCookie = "__Host-dev"
@@ -50,6 +51,12 @@ func (a *App) setDevice(w http.ResponseWriter, u *user) {
 // The known lane is not turned away when the server is busy, so without this one account (anyone who has its
 // password and signed in once) could queue checks without end and keep every other sign-in waiting.
 const knownInFlight = 2
+
+// Password proofs of signed-in sessions (proofOK), per account, right or wrong: plenty for a person, few for a flood.
+const (
+	proofsPerAccount = 30
+	proofWindow      = 15 * time.Minute
+)
 
 type inFlight struct {
 	mu sync.Mutex

@@ -1046,7 +1046,9 @@ func TestPasswordChangeKeepsTheCodeCount(t *testing.T) {
 	e.enable2FA(admin, ab)
 	auth := ab["auth"]
 	checked := 0
+	u, _ := e.app.userByEmail("admin@x.org")
 	for round := 0; round < 6; round++ {
+		e.app.proofs.clear(u.ID) // the password proofs have their own limit (TestSignedInPasswordProofsAreBounded)
 		for i := 0; i < totpAcctMax; i++ {
 			code, _ := admin.do("POST", "/api/me/2fa/disable", map[string]any{"current_auth": auth, "code": "000000"}, true)
 			switch code {

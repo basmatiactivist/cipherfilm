@@ -361,7 +361,7 @@ function TwoFactorPanel({ open }: { open?: boolean }) {
           <form onSubmit={(e) => { e.preventDefault(); run(async () => { const c = await tf.enable(code); setCode(""); setSecret(null); showCodes(c); }); }}>
             <p>Scan this code with your authenticator app, or add it with the button on a phone, or type the key into it. Then enter the 6-digit code the app shows.</p>
             {/* on a phone the app is on the same device: the otpauth: address opens it (or a password manager) directly */}
-            <a class="btn touch-only" href={secret.uri}>Open in authenticator app</a>
+            {tf.totpUri(secret.uri) && <a class="btn touch-only" href={secret.uri}>Open in authenticator app</a>}
             {/* drawn here from the key: the key never goes to a QR service */}
             <svg class="qr" viewBox={`0 0 ${qr.size} ${qr.size}`} role="img" aria-label="QR code for your authenticator app" shape-rendering="crispEdges">
               <rect width={qr.size} height={qr.size} fill="#fff" />

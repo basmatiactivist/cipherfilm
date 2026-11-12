@@ -86,6 +86,12 @@ public enum TwoFactor {
     public let secret: String
     /** otpauth://totp/…: what the QR code holds */
     public let uri: String
+    /** The address to open in an authenticator app: only an otpauth://totp/ one (a server that isn't honest could send
+     *  any other scheme or a web page, which NSWorkspace would open with the app registered for it). */
+    public var totpURL: URL? {
+      guard uri.prefix(15).lowercased() == "otpauth://totp/", let u = URL(string: uri), u.scheme?.lowercased() == "otpauth" else { return nil }
+      return u
+    }
   }
 
   struct Codes: Decodable { let recovery_codes: [String]? }

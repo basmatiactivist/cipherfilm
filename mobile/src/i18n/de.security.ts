@@ -92,6 +92,7 @@ export const deSecurity: Record<string, string> = {
   "No passkey was used. Try again, or use a code instead.": "Es wurde kein Passkey verwendet. Versuchen Sie es noch einmal oder verwenden Sie einen Code.",
   "This phone has no passkey for this server. Use a code instead.": "Dieses Handy hat keinen Passkey für diesen Server. Verwenden Sie einen Code.",
   "Passkeys need Android 14 or newer. Use a code instead.": "Passkeys brauchen Android 14 oder neuer. Verwenden Sie einen Code.",
+  "This server asked for a passkey of another site. Use a code instead.": "Dieser Server wollte einen Passkey einer anderen Website. Verwenden Sie stattdessen einen Code.",
   "Android couldn't check this server for passkeys: it must be reachable from the internet by its https name. Use a code instead.":
     "Android konnte diesen Server für Passkeys nicht prüfen: Er muss unter seinem https-Namen aus dem Internet erreichbar sein. Verwenden Sie einen Code.",
   "That passkey wasn't accepted. Try again, or use a code.": "Dieser Passkey wurde nicht angenommen. Versuchen Sie es noch einmal oder verwenden Sie einen Code.",

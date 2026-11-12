@@ -60,3 +60,24 @@ export function passkeyTrouble(e: unknown): "cancelled" | "none" | "unsupported"
   if ((f as Failed | null)?.code === "passkeys_unavailable") return "server";
   return "other";
 }
+
+/** Whether the server's address is an authenticator app's otpauth://totp/ address: only that is handed to Android to
+ *  open (any other scheme, a web page or another app's link, from a server that isn't honest, is not). */
+export const totpUri = (uri: unknown): uri is string => typeof uri === "string" && uri.slice(0, 15).toLowerCase() === "otpauth://totp/";
+
+/** The host of the server the app was set up with ("https://photos.example.org:8443/" is "photos.example.org"). */
+export function serverHost(origin: string): string {
+  const m = /^https?:\/\/(\[[^\]]+\]|[^/:?#]+)/i.exec(origin.trim());
+  return m ? m[1].toLowerCase() : "";
+}
+
+/** Whether a passkey request's relying party (the rpId of a sign-in, rp.id of a new passkey) belongs to the server the
+ *  app was set up with: its host, or a parent domain of it (not a bare top-level one). A server that isn't honest
+ *  could otherwise ask Android for a passkey of another site and pass the answer on. */
+export function passkeyFor(options: Record<string, unknown>, create: boolean, origin: string): boolean {
+  const rp = create ? (options.rp as { id?: unknown } | undefined)?.id : options.rpId;
+  const host = serverHost(origin);
+  if (typeof rp !== "string" || !host) return false;
+  const id = rp.toLowerCase();
+  return id === host || (id.includes(".") && host.endsWith("." + id));
+}

@@ -1,0 +1,4 @@
+# macOS APIs the Mac app still uses although Apple marks them deprecated (canary.yml fails on any other one).
+# One symbol per line, as the compiler names it. Remove a line once the app no longer uses it.
+SecTrustedApplicationCreateFromPath
+SecAccessCreate

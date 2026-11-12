@@ -497,8 +497,11 @@ func (a *App) login2fa(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 401, map[string]string{"error": pendingGone, "code": "two_factor_expired"})
 		return
 	}
+	// per (source, account), like the password's account bucket: a source shared by many people (every client of a
+	// tailnet server is 127.0.0.1) is not one bucket that one account's own sign-ins could fill for everyone else.
+	// A pending token needs the account's right password, and the account's buckets bound the codes across sources.
 	ip := limiterIP(a.clientIP(r))
-	at, ok := reserve(append([]slot{{a.loginIP, "2fa|" + ip, false}}, a.codeSlots(p.userID)...)...)
+	at, ok := reserve(append([]slot{{a.loginIP, "2fa|" + ip + "|" + p.userID, true}}, a.codeSlots(p.userID)...)...)
 	if !ok {
 		a.pending.done(h, false, false, a.now())
 		fail(w, 429, "too many attempts, try later")

@@ -361,16 +361,16 @@ func TestTwoFactorCodesAreRateLimited(t *testing.T) {
 	if r := c.post("/api/auth/login/2fa", map[string]any{"pending": p, "code": "000000"}); r.code != 429 {
 		t.Fatalf("over the daily limit: %d", r.code)
 	}
-	// and per source
+	// and per source and account
 	e.app.totpDay.clear("2fa|" + u.ID)
 	for i := 0; i < 30; i++ {
-		e.app.loginIP.take("2fa|127.0.0.1")
+		e.app.loginIP.take("2fa|127.0.0.1|" + u.ID)
 	}
 	if r := c.post("/api/auth/login/2fa", map[string]any{"pending": p, "code": "000000"}); r.code != 429 {
 		t.Fatalf("over the source's limit: %d", r.code)
 	}
 	// the code checks behind Account count in the same account buckets
-	e.app.loginIP.clear("2fa|127.0.0.1")
+	e.app.loginIP.clear("2fa|127.0.0.1|" + u.ID)
 	for i := 0; i < totpAcctMax; i++ {
 		e.app.totpAcct.take("2fa|" + u.ID)
 	}
@@ -1050,5 +1050,34 @@ func TestPasswordChangeKeepsTheCodeCount(t *testing.T) {
 	}
 	if checked != totpAcctMax {
 		t.Fatalf("%d of 30 guesses checked, want %d", checked, totpAcctMax)
+	}
+}
+
+// One account's own sign-ins, alternating wrong codes with a right one from a shared source (every client of a
+// tailnet server is 127.0.0.1), don't use up the second step for another account signing in from there.
+func TestOwnSignInsDontBlockOthersSecondStep(t *testing.T) {
+	e := newEnv(t)
+	clk := e.pinClock()
+	admin, ab := e.setupAdmin("admin@x.org")
+	bob, bb := e.acceptInvite(e.invite(admin, "bob@x.org"))
+	secret, _ := e.enable2FA(admin, ab)
+	bobSecret, _ := e.enable2FA(bob, bb)
+	for cycle := 0; cycle < 10; cycle++ {
+		clk.tick(30 * time.Second)
+		c := e.client()
+		p := e.passwordStep(c, "admin@x.org", ab)
+		for i := 0; i < totpAcctMax-1; i++ {
+			if r := c.post("/api/auth/login/2fa", map[string]any{"pending": p, "code": "000000"}); r.code != 401 {
+				t.Fatalf("cycle %d wrong code %d: %d", cycle, i, r.code)
+			}
+		}
+		if r := c.post("/api/auth/login/2fa", map[string]any{"pending": p, "code": codeAt(t, secret, clk.at)}); r.code != 200 {
+			t.Fatalf("cycle %d right code: %d %v", cycle, r.code, r.body)
+		}
+	}
+	c := e.client()
+	p := e.passwordStep(c, "bob@x.org", bb)
+	if r := c.post("/api/auth/login/2fa", map[string]any{"pending": p, "code": codeAt(t, bobSecret, clk.at)}); r.code != 200 {
+		t.Fatalf("someone else's right code from the same source: %d %v", r.code, r.body)
 	}
 }

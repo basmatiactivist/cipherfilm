@@ -11,7 +11,7 @@ import { dragCrop, isEdited, normEdit, normOrig, ratioRect, reverted, turn, turn
 import { previewUri, type ItemMeta } from "../../library";
 import { libraryItems, refreshLibrary } from "../../libraryStore";
 import { canEdit, canEditPicture, closeOriginal, dateParts, openOriginal, parseDateTime, saveEdit, upright, type Opened, type Upright } from "../../edit";
-import { label, loadPlaces, type Place } from "../../places";
+import { loadPlaces, localLabel, localPlace, type Place } from "../../places";
 import { Field, Problem, useAppTheme, Dialog, useKeyboardHeight } from "../../ui";
 import { stage } from "../../tokens";
 import { t } from "../../i18n";
@@ -122,13 +122,13 @@ export default function EditScreen() {
   useEffect(() => {
     let alive = true;
     setPlaceName("");
-    if (gps) loadPlaces().then((p) => alive && setPlaceName(label(p.nearest(gps.lat, gps.lon))), () => {});
+    if (gps) loadPlaces().then((p) => alive && setPlaceName(localLabel(p, p.nearest(gps.lat, gps.lon))), () => {});
     return () => { alive = false; };
   }, [gps?.lat, gps?.lon]);
   useEffect(() => {
     let alive = true;
     if (query.trim().length < 2) { setFound([]); return; }
-    const tm = setTimeout(() => loadPlaces().then((p) => alive && setFound(p.find(query, 8)), () => {}), 150);
+    const tm = setTimeout(() => loadPlaces().then((p) => alive && setFound(p.find(query, 8).map((f) => localPlace(p, f))), () => {}), 150);
     return () => { alive = false; clearTimeout(tm); };
   }, [query]);
   const place = (g: Gps | null) => { setGps(g); setTouched((x) => ({ ...x, place: true })); setQuery(""); setFound([]); };
@@ -160,7 +160,10 @@ export default function EditScreen() {
   const [saved, setSaved] = useState(false);
   const [discard, setDiscard] = useState<null | (() => void)>(null);
   const navigation = useNavigation();
-  usePreventRemove(changed && !saved, ({ data }) => setDiscard(() => () => navigation.dispatch(data.action)));
+  // Discard: the guard goes first, the screen leaves once that has rendered (else the guard would stop it again)
+  const [leaveWith, setLeaveWith] = useState<null | { action: unknown }>(null);
+  usePreventRemove(changed && !saved && !leaveWith, ({ data }) => setDiscard(() => () => setLeaveWith({ action: data.action })));
+  useEffect(() => { if (leaveWith) navigation.dispatch(leaveWith.action as never); }, [leaveWith]);
 
   // the place search's suggestions come below its field: while typing there, the page shows them above the keyboard
   const kb = useKeyboardHeight();

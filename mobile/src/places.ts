@@ -35,6 +35,15 @@ function local(p: Places, r: Hit): Hit {
   return { ...r, country: name, place: r.place ? { ...r.place, country: name } : r.place };
 }
 
+/** A place hit's name in the app's language ("Luzern, Schweiz"): for the editor's current place. */
+export const localLabel = (p: Places, r: Hit): string => label(local(p, r));
+
+/** A place from the search with its country in the app's language. */
+export function localPlace(p: Places, pl: Place): Place {
+  const name = pl.countryCode ? countryNames(p)[pl.countryCode] : undefined;
+  return name ? { ...pl, country: name } : pl;
+}
+
 let loading: Promise<Places> | null = null;
 
 export function loadPlaces(): Promise<Places> {

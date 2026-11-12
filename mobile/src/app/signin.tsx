@@ -65,7 +65,7 @@ export default function SignIn() {
       <Screen form>
         <Column>
           <Title>{t("Two-step sign-in")}</Title>
-          <Lead>{how === "passkey" ? t("Confirm with your passkey. Android asks for it, from your password manager or a security key.")
+          <Lead>{how === "passkey" ? t("Confirm with your passkey from your password manager or a security key. For a server on a private network, your browser opens for it.")
             : recovery ? t("Enter one of your recovery codes. Each one works once.") : t("Enter the 6-digit code from your authenticator app.")}</Lead>
           <Problem>{error}</Problem>
           {how === "passkey" ? (

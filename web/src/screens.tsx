@@ -498,10 +498,10 @@ function AddPasskey(p: { second: boolean; passkey: boolean; onDone: (codes: stri
   // the browser's dialog right on this tap: some browsers allow it only then
   return (
     <>
-      <p>The passkey wasn't made yet. Try again: your browser or password manager makes it.</p>
+      <p>The passkey wasn't created yet. Try again: your browser or password manager creates it.</p>
       <ErrorLine text={error || first} />
       <div class="row">
-        <button class="btn" disabled={busy} onClick={() => run(async () => p.onDone(await pk.finishAdd(options, name)))}>{busy ? "Waiting…" : "Make the passkey"}</button>
+        <button class="btn" disabled={busy} onClick={() => run(async () => p.onDone(await pk.finishAdd(options, name)))}>{busy ? "Waiting…" : "Create the passkey"}</button>
         <button class="btn secondary" onClick={p.onCancel}>Cancel</button>
       </div>
     </>
@@ -1007,30 +1007,49 @@ export function PasskeyHandoff() {
   const { busy, error, run } = useAction();
   const rp = h ? (h.op === "get" ? h.options.rpId : h.options.rp?.id) : "";
   if (!h || (rp && rp !== location.hostname)) {
-    return <Card title="Passkey"><p>The Cipherfilm app on your Mac or phone opens this page when it needs a passkey. There's nothing to do here.</p></Card>;
+    return <Card title="Passkey"><p>{L.nothing}</p></Card>;
   }
-  const where = h.app === "mac" ? "on your Mac" : "on your phone";
+  const where = h.app === "mac" ? L.onMac : L.onPhone;
   // the jump to the app can be blocked after the passkey prompt (Chrome on Android): a link to tap always works
   const back = (answer: Record<string, any> | null, why = "") => { const url = pk.handoffReturn(answer, why, h.app); setRet(url); location.href = url; };
   if (ret) {
     return (
-      <Card title="Back to the app" sealed>
-        <p class="lead">{ret.includes("#error=") ? "Cancelled." : "Done."} Go back to the Cipherfilm app {where} to continue.</p>
-        <div class="row"><a class="btn" href={ret}>Back to the app</a></div>
+      <Card title={L.backTitle} sealed>
+        <p class="lead">{ret.includes("#error=") ? L.cancelled : L.done} {L.goBack(where)}</p>
+        <div class="row"><a class="btn" href={ret}>{L.backTitle}</a></div>
       </Card>
     );
   }
   return (
-    <Card title={h.op === "get" ? "Confirm your sign-in" : "Make a passkey"} sealed>
-      <p class="lead">The Cipherfilm app {where} asked for this. Continue only if you just started it there.</p>
+    <Card title={h.op === "get" ? L.confirmTitle : L.createTitle} sealed>
+      <p class="lead">{L.asked(where)}</p>
       <p class="small">{location.host}</p>
       <ErrorLine text={error} />
       <div class="row">
         <button class="btn" disabled={busy} onClick={() => run(async () => back(h.op === "get" ? await pk.getPasskey(h.options) : await pk.createPasskey(h.options)))}>
-          {busy ? "Waiting…" : h.op === "get" ? "Use your passkey" : "Make the passkey"}
+          {busy ? L.waiting : h.op === "get" ? L.use : L.create}
         </button>
-        <button class="btn secondary" onClick={() => back(null, "cancelled")}>Cancel</button>
+        <button class="btn secondary" onClick={() => back(null, "cancelled")}>{L.cancel}</button>
       </div>
     </Card>
   );
 }
+
+/** The /passkey page's words: German for a German browser (the apps that open it speak German then), else English. */
+const PASSKEY_PAGE = {
+  en: {
+    nothing: "The Cipherfilm app on your Mac or phone opens this page when it needs a passkey. There's nothing to do here.",
+    onMac: "on your Mac", onPhone: "on your phone", backTitle: "Back to the app", cancelled: "Cancelled.", done: "Done.",
+    goBack: (w: string) => `Go back to the Cipherfilm app ${w} to continue.`, confirmTitle: "Confirm your sign-in", createTitle: "Create a passkey",
+    asked: (w: string) => `The Cipherfilm app ${w} asked for this. Continue only if you just started it there.`,
+    waiting: "Waiting…", use: "Use your passkey", create: "Create the passkey", cancel: "Cancel",
+  },
+  de: {
+    nothing: "Die Cipherfilm-App auf Ihrem Mac oder Handy öffnet diese Seite, wenn sie einen Passkey braucht. Hier gibt es nichts zu tun.",
+    onMac: "auf Ihrem Mac", onPhone: "auf Ihrem Handy", backTitle: "Zurück zur App", cancelled: "Abgebrochen.", done: "Fertig.",
+    goBack: (w: string) => `Gehen Sie zurück zur Cipherfilm-App ${w}, um weiterzumachen.`, confirmTitle: "Anmeldung bestätigen", createTitle: "Passkey erstellen",
+    asked: (w: string) => `Die Cipherfilm-App ${w} hat das angefordert. Fahren Sie nur fort, wenn Sie es dort gerade gestartet haben.`,
+    waiting: "Warten …", use: "Passkey verwenden", create: "Passkey erstellen", cancel: "Abbrechen",
+  },
+};
+const L = (typeof navigator !== "undefined" && /^de\b/i.test(navigator.language ?? "")) ? PASSKEY_PAGE.de : PASSKEY_PAGE.en;

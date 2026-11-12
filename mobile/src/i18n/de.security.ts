@@ -51,8 +51,8 @@ export const deSecurity: Record<string, string> = {
   "Start the setup again.": "Beginnen Sie die Einrichtung noch einmal.",
   // passkeys and the authenticator app added in one tap
   "Use a passkey": "Passkey verwenden",
-  "Confirm with your passkey. Android asks for it, from your password manager or a security key.":
-    "Bestätigen Sie mit Ihrem Passkey. Android fragt danach, aus Ihrem Passwort-Manager oder von einem Sicherheitsschlüssel.",
+  "Confirm with your passkey from your password manager or a security key. For a server on a private network, your browser opens for it.":
+    "Bestätigen Sie mit Ihrem Passkey aus dem Passwort-Manager oder von einem Sicherheitsschlüssel. Bei einem Server in einem privaten Netz öffnet sich dafür Ihr Browser.",
   "Use your passkey": "Passkey verwenden",
   "Passkey on this phone": "Passkey auf diesem Handy",
   "a code from your authenticator app": "einem Code aus Ihrer Authenticator-App",
@@ -73,12 +73,14 @@ export const deSecurity: Record<string, string> = {
   "Passkeys": "Passkeys",
   "Last used {date}": "Zuletzt verwendet am {date}",
   "Not used yet": "Noch nicht verwendet",
-  "From your password manager or a security key": "Aus Ihrem Passwort-Manager oder von einem Sicherheitsschlüssel",
   "Passkeys need Android 14 or newer.": "Passkeys brauchen Android 14 oder neuer.",
   "Recovery codes": "Wiederherstellungscodes",
-  "Turn on with an authenticator app": "Mit einer Authenticator-App einschalten",
-  "Any authenticator app or password manager": "Jede Authenticator-App oder jeder Passwort-Manager",
-  "Turn on with a passkey": "Mit einem Passkey einschalten",
+  "Choose how new sign-ins are confirmed": "Wählen Sie, womit neue Anmeldungen bestätigt werden",
+  "Code from an authenticator app": "Code aus einer Authenticator-App",
+  "A 6-digit code from any authenticator app or password manager": "Ein 6-stelliger Code aus einer Authenticator-App oder einem Passwort-Manager",
+  "Passkey": "Passkey",
+  "From your password manager or a security key": "Aus Ihrem Passwort-Manager oder von einem Sicherheitsschlüssel",
+  "Confirm with your fingerprint, a password manager or a security key": "Bestätigen mit Fingerabdruck, Passwort-Manager oder Sicherheitsschlüssel",
   "A new sign-in then asks for a passkey (or a recovery code).": "Eine neue Anmeldung fragt dann nach einem Passkey (oder einem Wiederherstellungscode).",
   "It's your only second step: two-step sign-in turns off.": "Es ist Ihr einziger zweiter Schritt: Die Anmeldung in zwei Schritten wird ausgeschaltet.",
   "No app on this phone takes it. Install an authenticator app, or copy the key into one.":

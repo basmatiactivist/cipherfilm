@@ -164,10 +164,11 @@ export default function TwoStep() {
               </>
             ) : (
               <>
-                <List.Item title={t("Turn on with an authenticator app")} description={t("Any authenticator app or password manager")} left={() => <View style={st.icon}><Icon name="lock" color={th.colors.primary} /></View>}
+                <List.Subheader>{t("Choose how new sign-ins are confirmed")}</List.Subheader>
+                <List.Item title={t("Code from an authenticator app")} description={t("A 6-digit code from any authenticator app or password manager")} descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="lock" color={th.colors.primary} /></View>}
                   onPress={() => setAsk("setup")} style={st.item} />
                 {canPasskey ? (
-                  <List.Item title={t("Turn on with a passkey")} description={t("From your password manager or a security key")} left={() => <View style={st.icon}><Icon name="key" color={th.colors.primary} /></View>}
+                  <List.Item title={t("Passkey")} description={t("Confirm with your fingerprint, a password manager or a security key")} descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="key" color={th.colors.primary} /></View>}
                     onPress={() => { setName(t("Passkey on this phone")); setAsk("addkey"); }} style={st.item} />
                 ) : null}
               </>

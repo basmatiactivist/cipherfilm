@@ -113,8 +113,8 @@ struct TwoFactorSection: View {
         } else {
           Text("Off. Your password alone signs in.").font(Typo.caption).foregroundStyle(.secondary)
           HStack {
-            Button("Turn On With an Authenticator App…") { setup = true }
-            Button("Turn On With a Passkey…") { action = .addKey }
+            Button("Use an Authenticator App…") { setup = true }
+            Button("Use a Passkey…") { action = .addKey }
           }
         }
       } else if error == nil {
@@ -389,7 +389,7 @@ struct ProofSheet: View {
     case .off: return "Your password alone will sign in again. The authenticator app, your passkeys and your recovery codes are removed."
     case .codes: return "Your old recovery codes stop working."
     case .removeApp: return "A new sign-in then asks for a passkey, or a recovery code."
-    case .addKey: return "Your browser opens on your server's address and makes the passkey there: in your password manager or on a security key. Your password is still needed at every new sign-in."
+    case .addKey: return "Your browser opens on your server's address and creates the passkey there: in your password manager or on a security key. Your password is still needed at every new sign-in."
     case .removeKey: return onlyStep ? "It's your only second step: two-step sign-in turns off." : "It can't be used to sign in any more."
     }
   }

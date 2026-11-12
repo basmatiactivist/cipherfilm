@@ -72,7 +72,7 @@ test.describe.serial("search by what is in a photo", () => {
     page.on("request", (r) => { if (/^https:\/\/([\w-]+\.)*(huggingface\.co|hf\.co)\//.test(r.url())) hf.push(r.url()); });
     await search.fill("dog");
     await expect(page.getByRole("heading", { name: "Download the search model?" })).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByText("huggingface.co and its CDN")).toBeVisible();
+    await expect(page.getByText("the public site where these open models are published", { exact: false })).toBeVisible();
     await page.waitForTimeout(1000);
     expect(hf).toEqual([]);
     await page.getByRole("button", { name: "Download and turn on" }).click();

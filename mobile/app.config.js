@@ -1,5 +1,6 @@
 // app.json plus what a release build sets: the version from the tag (CF_VERSION), the signing plugin, and which store
 // the build is for (CF_STORE=play for Google Play; anything else is the APK on GitHub releases, for Obtainium).
+const isTestBuild = require("./plugins/testBuild");
 const BATTERY = "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS";
 
 module.exports = ({ config }) => {
@@ -22,8 +23,9 @@ module.exports = ({ config }) => {
     };
   }
   config.plugins = [...(config.plugins ?? []), "./plugins/withReleaseSigning", "./plugins/withConfigChanges", "./plugins/withGradleSources", "./plugins/withStoragePermission", "./plugins/withLocales"];
-  // a test build for the emulator may trust the local test instance (mobile/dev); a signed release never does
-  if (process.env.CF_TEST_CA && !process.env.CF_KEYSTORE) {
+  // a test build for the emulator may trust the local test instance (mobile/dev) and allow e2e screenshots; a release
+  // (signed here, or built unsigned by the release workflow) never does
+  if (isTestBuild(process.env)) {
     config.plugins.push(["./plugins/withTestCA", { ca: process.env.CF_TEST_CA }]);
     // on a real phone (adb reverse tcp:8443 tcp:8443, server https://localhost:8443): its own id and name, so it sits
     // next to an installed release instead of clashing with its signature

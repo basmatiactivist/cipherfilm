@@ -148,7 +148,8 @@ func runAfterRestore(dataDir string) error {
 // carryAccounts takes over from the replaced database what happened to the accounts since the backup: a changed
 // password or recovery key (it wraps the same master key), two-step sign-in turned on or off, passkeys added or
 // removed and new recovery codes,
-// a changed role, a disabled account, and accounts deleted since stay disabled. A restore brings photos back, not
+// a changed role, storage limit (and the default one for new people) or explicit search, a disabled account, and
+// accounts deleted since stay disabled. A restore brings photos back, not
 // access that was taken away (nor a second step that was added). The replaced activity log is kept too, invites that
 // were withdrawn or used since stay so, and the accounts' notices are the replaced database's (the newer ones; the
 // sign-in notices among them are not shown to the sessions after the restore, which all start later, an
@@ -182,8 +183,30 @@ func carryAccounts(tx *sql.Tx) error {
 			return err
 		}
 	}
-	// two-step sign-in, only from a replaced database that knew it (an older one: as the backup has it)
+	// storage limits and explicit search, as the administrator set them since (a restore must not lift a limit that was
+	// lowered or give back explicit search that was turned off); likewise only from a replaced database that knew them
 	var cols, tables int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('users','prev') WHERE name IN ('quota_bytes','nsfw')`).Scan(&cols); err != nil {
+		return err
+	}
+	if cols == 2 {
+		if _, err := tx.Exec(`UPDATE main.users SET quota_bytes=p.quota_bytes, nsfw=p.nsfw FROM prev.users p WHERE p.id=users.id`); err != nil {
+			return err
+		}
+	}
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM prev.sqlite_master WHERE type='table' AND name='settings'`).Scan(&tables); err != nil {
+		return err
+	}
+	if tables == 1 {
+		if _, err := tx.Exec(`DELETE FROM main.settings WHERE key=?1 AND NOT EXISTS (SELECT 1 FROM prev.settings WHERE key=?1)`, settingDefaultQuota); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`INSERT INTO main.settings(key,value) SELECT key,value FROM prev.settings WHERE key=?
+			ON CONFLICT(key) DO UPDATE SET value=excluded.value`, settingDefaultQuota); err != nil {
+			return err
+		}
+	}
+	// two-step sign-in, only from a replaced database that knew it (an older one: as the backup has it)
 	if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('users','prev') WHERE name IN ('totp_secret','totp_pending','totp_last')`).Scan(&cols); err != nil {
 		return err
 	}

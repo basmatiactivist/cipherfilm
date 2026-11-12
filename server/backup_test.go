@@ -465,3 +465,40 @@ func TestRestoreKeepsLaterTwoFactorChanges(t *testing.T) {
 		t.Fatalf("bob's notice after the restore: %d", n)
 	}
 }
+
+// A storage limit lowered, explicit search turned off or on, or the default limit for new people changed after the
+// backup stays so after a restore onto the same server: a restore brings photos back, not limits that were set since.
+func TestRestoreKeepsLaterLimitsAndExplicitSearch(t *testing.T) {
+	e := newEnv(t)
+	admin, _ := e.setupAdmin("admin@x.org")
+	e.acceptInvite(e.invite(admin, "bob@x.org"))
+	e.acceptInvite(e.invite(admin, "carol@x.org"))
+	e.app.db.Exec(`UPDATE users SET quota_bytes=5000000, nsfw=1 WHERE email='bob@x.org'`)
+	if err := runBackup(e.app.dataDir); err != nil {
+		t.Fatal(err)
+	}
+	e.app.db.Exec(`UPDATE users SET quota_bytes=1000, nsfw=0 WHERE email='bob@x.org'`)
+	e.app.db.Exec(`UPDATE users SET nsfw=1 WHERE email='carol@x.org'`)
+	e.app.db.Exec(`INSERT INTO settings(key,value) VALUES (?, '12345') ON CONFLICT(key) DO UPDATE SET value=excluded.value`, settingDefaultQuota)
+	type state struct {
+		quota int64
+		nsfw  int
+	}
+	read := func(a *App, email string) (s state) {
+		a.db.QueryRow(`SELECT quota_bytes, nsfw FROM users WHERE email=?`, email).Scan(&s.quota, &s.nsfw)
+		return
+	}
+	before := map[string]state{}
+	for _, m := range []string{"admin@x.org", "bob@x.org", "carol@x.org"} {
+		before[m] = read(e.app, m)
+	}
+	app2 := restoredApp(t, e)
+	for m, want := range before {
+		if got := read(app2, m); got != want {
+			t.Fatalf("%s after the restore: %+v, want %+v", m, got, want)
+		}
+	}
+	if got := app2.defaultQuota(); got != 12345 {
+		t.Fatalf("default limit after the restore: %d", got)
+	}
+}

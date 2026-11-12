@@ -54,6 +54,8 @@ version into the GitHub release notes, so a release cannot be published without 
   their place; the Mac app now reads it there too, like the web app and the upload tool.
 - Server: replacing a thumbnail or preview reserves its room before anything is written to disk, and the storage
   check of one account no longer holds up uploads of the others.
+- Server: a restore over the same server's data keeps storage limits (and the default one for new people) and
+  explicit search as an administrator set them after the backup, like roles and disabled accounts.
 
 ### Changed
 - Search uses one open model for everyone, in every app and build: LAION's CLIP ViT-B/32 (MIT), the model explicit

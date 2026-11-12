@@ -213,3 +213,35 @@ Settings that live on GitHub, not in the repository, set once the repository is 
 - **Security:** secret scanning with push protection, Dependabot alerts, private vulnerability reporting.
 - The container package's visibility (above).
 
+**Check the release gates before each release.** The "is the commit on master" steps in `release.yml` and
+`android.yml` run from the tagged commit's own copy of the workflow: a tag on a commit with an edited workflow would
+skip them. What really keeps the signing keys to the owner's releases are the two settings below, so verify them
+(Settings in the browser, or with `gh` as shown) rather than trust the workflow files:
+
+1. **Tag ruleset** (Settings › Rules › Rulesets): target *Tags*, enforcement *Active*, target pattern `v*` (it shows
+   as `refs/tags/v*`), rules *Restrict creations*, *Restrict updates* and *Restrict deletions* all on; the bypass list
+   holds only *Repository admin* (the owner), no apps, teams or deploy keys.
+
+   ```bash
+   gh api repos/OWNER/REPO/rulesets --jq '.[] | select(.target=="tag") | {name, enforcement, id}'
+   gh api repos/OWNER/REPO/rulesets/ID --jq '{enforcement, include: .conditions.ref_name.include, rules: [.rules[].type], bypass: .bypass_actors}'
+   ```
+
+   Expect `active`, `["refs/tags/v*"]`, the rules `creation`, `update`, `deletion`, and one bypass actor of type
+   `RepositoryRole` (admin).
+2. **Environment `release`** (Settings › Environments › release): *Required reviewers* with the owner (every job that
+   gets the signing keys waits for the owner's approval in the Actions run, so a tag alone never signs anything);
+   *Allow administrators to bypass configured protection rules* off; *Deployment branches and tags* "Selected
+   branches and tags" with only the tag rule `v*` and no branch rule.
+
+   ```bash
+   gh api repos/OWNER/REPO/environments/release --jq '{rules: [.protection_rules[] | {type, reviewers: [.reviewers[]?.reviewer.login]}], admins_bypass: .can_admins_bypass, policy: .deployment_branch_policy}'
+   gh api repos/OWNER/REPO/environments/release/deployment-branch-policies --jq '[.branch_policies[] | {name, type}]'
+   ```
+
+   Expect a `required_reviewers` rule naming the owner, `admins_bypass: false`, `custom_branch_policies: true`, and the
+   single policy `{"name":"v*","type":"tag"}`.
+
+When approving a run, check that its tag is on `master` (`git merge-base --is-ancestor vX.Y.Z origin/master`) and
+that the run's workflow files are the ones on `master`.
+

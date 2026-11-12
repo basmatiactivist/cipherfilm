@@ -54,6 +54,8 @@ export interface Item {
   has_preview: boolean;
   meta?: ItemMeta;
   itemKey?: Uint8Array;
+  /** the wrapped item key as the server handed it out (base64): whether this phone made it (ownUploads.ts) */
+  wrapped?: string;
   /** Decryption or verification failed: never shown, the screen says so. */
   broken?: boolean;
   /** The server gave an older version of the metadata than this phone saw before (@crypto/metaVersion) and the newer
@@ -89,7 +91,7 @@ function highWater(owner: string): HighWater {
 }
 
 function decrypt(s: Sodium, master: Uint8Array, pair: () => KeyPair, x: any, hw?: HighWater): Item {
-  const it: Item = { id: x.id, kind: x.kind, size: x.size, segment_count: x.segment_count, created_at: x.created_at, has_thumb: x.has_thumb, has_preview: x.has_preview, trashed_at: x.trashed_at, purge_at: x.purge_at, favorite: !!x.favorite };
+  const it: Item = { id: x.id, kind: x.kind, size: x.size, segment_count: x.segment_count, created_at: x.created_at, has_thumb: x.has_thumb, has_preview: x.has_preview, trashed_at: x.trashed_at, purge_at: x.purge_at, favorite: !!x.favorite, wrapped: x.wrapped_item_key };
   const k = known.get(x.id);
   if (k && k.master === master && k.w === x.wrapped_item_key && k.m === x.meta_enc && k.key && k.meta && k.meta.size === x.size) {
     it.itemKey = k.key; it.meta = k.meta; it.kind = kindOf(k.meta);
@@ -104,7 +106,7 @@ function decrypt(s: Sodium, master: Uint8Array, pair: () => KeyPair, x: any, hw?
       // an older version of the metadata than seen before: the server handed out a copy it kept (a removed place
       // back, an edit undone). The newer one decrypted since the last lock stays; without it the item is stale.
       console.warn(`Cipherfilm: the server sent older metadata for item ${x.id} (version ${metaVersion(it.meta)}, seen ${hw.highest(x.id)}); keeping the newer one.`);
-      if (k?.meta && k.key && k.master === master && metaVersion(k.meta) > metaVersion(it.meta)) { it.meta = k.meta; it.itemKey = k.key; it.kind = kindOf(k.meta); }
+      if (k?.meta && k.key && k.master === master && metaVersion(k.meta) > metaVersion(it.meta)) { it.meta = k.meta; it.itemKey = k.key; it.wrapped = k.w; it.kind = kindOf(k.meta); }
       else it.stale = true;
       return it;
     }

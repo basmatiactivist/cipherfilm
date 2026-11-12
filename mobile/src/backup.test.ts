@@ -304,6 +304,8 @@ describe("automatic backup", () => {
     await backup.runBackup("app");
     expect(srv.log.filter((l) => l.startsWith("finalize"))).toEqual(["finalize 01 as alice", "finalize 02 as alice"]); // files 2 and 3
     expect((await backup.loadConfig())!.folders.cam.after).toBe(3);
+    // what it uploaded is noted as this phone's own, with the sealed key it sent (ownUploads.ts)
+    expect(Object.keys(JSON.parse(files.get("/doc/own-uploads/alice.json")!).wraps)).toEqual(["1", "2"].map((n) => n.padStart(32, "0")));
   });
 
   it("says which file the last run stopped on until a run gets past it", async () => {

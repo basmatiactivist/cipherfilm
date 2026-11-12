@@ -3,6 +3,8 @@
 // the "where photos were taken" permission, or videos, whose location the app didn't read before — get it from the
 // original still on the phone. Only while the map is on and Android lets the app read originals; the location goes
 // into the item's encrypted details like at upload, and the other devices get it with the next change list.
+// Only into items this phone uploaded itself, with the item key it made (ownUploads.ts): a name and size in an item's
+// details prove nothing, and an item someone else added under a key of their own must never get a location from here.
 import { Directory, File, Paths } from "expo-file-system";
 import { b64, getSodium } from "@crypto/sodium";
 import { encryptMeta } from "@crypto/item";
@@ -12,6 +14,7 @@ import N, { type PhoneMedia } from "../modules/cf-native/src/CfNativeModule";
 import { api } from "./api";
 import { onWipe, session } from "./session";
 import { fingerprint } from "./prints";
+import { provablyOwn } from "./ownUploads";
 import { videoLocationOf } from "./videoGps";
 import { coords } from "./places";
 import { libraryItems, refreshLibrary } from "./libraryStore";
@@ -63,9 +66,10 @@ export async function matchOnPhone(items: Item[], media: PhoneMedia[]): Promise<
   return out;
 }
 
-/** Items that could still get a location: finished, decrypted, a photo or video, none yet, not looked at before. */
-export function lacking(items: Item[], done: Set<string>): Item[] {
-  return items.filter((it) => !it.broken && !it.trashed_at && it.meta && it.itemKey && (it.kind === "image" || it.kind === "video")
+/** Items that could still get a location: this phone's own uploads (own), finished, decrypted, a photo or video, none
+ *  yet, not looked at before. */
+export function lacking(items: Item[], done: Set<string>, own: Set<string>): Item[] {
+  return items.filter((it) => own.has(it.id) && !it.broken && !it.trashed_at && it.meta && it.itemKey && (it.kind === "image" || it.kind === "video")
     && !coords(it) && !done.has(it.id) && !placeChanged(it.meta)); // not where the person set or removed the place
 }
 
@@ -88,7 +92,8 @@ async function run(): Promise<number> {
   if (!N.mediaLocationAllowed() || access === "none") return 0;
   const userId = me.user.id;
   const done = await loadDone(userId);
-  const todo = lacking(libraryItems(), done);
+  const items = libraryItems();
+  const todo = lacking(items, done, await provablyOwn(userId, items.filter((it) => !done.has(it.id) && !coords(it))));
   if (!todo.length) return 0;
   const found = await matchOnPhone(todo, await N.phoneMedia());
   // with the whole library readable, what isn't on this phone came from elsewhere: not looked for again (with only

@@ -6,7 +6,11 @@ vi.mock("./api", () => ({
   api: async (method: string, path: string, body?: unknown) => { srv.calls.push(`${method} ${path}`); srv.bodies.set(`${method} ${path}`, body); return method === "POST" && path === "/api/items" ? { id: srv.id } : {}; },
   putBytes: async (path: string) => { srv.calls.push(`PUT ${path}`); },
 }));
-vi.mock("./session", () => ({ session: () => ({}) }));
+const sess = vi.hoisted(() => ({ now: {} as Record<string, unknown> }));
+vi.mock("./session", () => ({ session: () => sess.now }));
+// what this phone notes as its own uploads (ownUploads.ts)
+const own = vi.hoisted(() => [] as [string, string, string][]);
+vi.mock("./ownUploads", () => ({ noteOwnUpload: async (u: string, id: string, w: string) => { own.push([u, id, w]); } }));
 const notes = vi.hoisted(() => ({ only: true, shown: [] as [string, string, number, boolean][] }));
 // the native SHA-256 state stands in as everything fed so far; reading the file gives bytes 0, 1, 2, ... at each offset
 const hashing = vi.hoisted(() => ({ on: true, fed: [] as number[] }));
@@ -22,7 +26,7 @@ vi.mock("../modules/cf-native/src/CfNativeModule", async () => {
   } };
 });
 
-const { uploadFile, shareSummary, showUploads, uploadsSummary } = await import("./upload");
+const { uploadFile, uploadShared, shareSummary, showUploads, uploadsSummary } = await import("./upload");
 const { getSodium, unb64 } = await import("@crypto/sodium");
 const { decryptMeta } = await import("@crypto/item");
 const { Sha256 } = await import("@crypto/sha256");
@@ -47,6 +51,20 @@ describe("uploadFile", () => {
     expect(await uploadFile(file, await getSodium(), wrap, () => {}, () => {})).toBe(srv.id);
     expect(wrap).toHaveBeenCalledWith(expect.any(Uint8Array), srv.id);
     expect(srv.calls).toEqual(["POST /api/items", `PUT /api/items/${srv.id}/segments/0`, `POST /api/items/${srv.id}/finalize`]);
+  });
+});
+
+describe("uploadShared", () => {
+  it("notes the item as this phone's own, with the wrapped key it sent", async () => {
+    const s = await getSodium();
+    srv.calls = []; own.length = 0; srv.id = "2d".repeat(16);
+    sess.now = { me: { user: { id: "u1" } }, masterKey: new Uint8Array(32) };
+    try {
+      expect(await uploadShared(file, () => {}, { cancelled: false })).toBe(srv.id);
+    } finally { sess.now = {}; }
+    const sent = srv.bodies.get(`POST /api/items/${srv.id}/finalize`).wrapped_item_key;
+    expect(own).toEqual([["u1", srv.id, sent]]);
+    expect(unb64(s, sent).length).toBeGreaterThan(32);
   });
 });
 

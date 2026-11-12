@@ -19,6 +19,7 @@ import { keepRunning, letGo } from "./keepAlive";
 import { RunProgress, fmtSpeed, type LiveProgress } from "./backupProgress";
 import { isPlayBuild } from "./store";
 import { fingerprint } from "./prints";
+import { noteOwnUpload } from "./ownUploads";
 import { indexUploaded, rememberUploaded, runBackgroundIndex } from "./search/background";
 import { forgetSettings, loadSettings } from "./search/settings";
 import { onSessionChange, onSignOut, savedServer } from "./session";
@@ -413,10 +414,12 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
         for (let attempt = 0; ; attempt++) {
           try {
             if (attempt) await stillMine(); // after each wait
-            id = await uploadFile(file, s, (itemKey, id) => sealItemKey(s, itemKey, pk, id), () => {
+            let wrapped = "";
+            id = await uploadFile(file, s, (itemKey, id) => { const w = sealItemKey(s, itemKey, pk, id); wrapped = b64(s, w); return w; }, () => {
               if (abandon) throw new Error(OTHER_ACCOUNT);
               if (Date.now() > deadline + 90_000 || (held && N.keepRunningLost()) || !current()) throw new Error("out of time"); // finish next time
             }, (d, all) => { progress.sent(key, all ? d / all : 0, d - sent); sent = d; show(); }, to);
+            await noteOwnUpload(c.userId, id, wrapped); // this phone's own upload (ownUploads.ts)
             break;
           } catch (e) {
             if (attempt >= 2 || !(e instanceof ApiError) || !(e.status === 0 || e.status >= 500) || outOfTime()) throw e;

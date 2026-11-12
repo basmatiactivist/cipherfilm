@@ -50,7 +50,7 @@ internal object Passkeys {
     } catch (e: CreateCredentialCancellationException) {
       throw PasskeyFailed("ERR_PASSKEY_CANCELLED", "cancelled")
     } catch (e: CreateCredentialException) {
-      throw PasskeyFailed("ERR_PASSKEY", e.errorMessage?.toString() ?: e.type)
+      throw PasskeyFailed("ERR_PASSKEY", "${e.errorMessage?.toString() ?: ""} [${e.type}]".trim())
     }
   }
 
@@ -66,7 +66,7 @@ internal object Passkeys {
     } catch (e: NoCredentialException) {
       throw PasskeyFailed("ERR_PASSKEY_NONE", "No passkey for this server on this phone")
     } catch (e: GetCredentialException) {
-      throw PasskeyFailed("ERR_PASSKEY", e.errorMessage?.toString() ?: e.type)
+      throw PasskeyFailed("ERR_PASSKEY", "${e.errorMessage?.toString() ?: ""} [${e.type}]".trim())
     }
   }
 }

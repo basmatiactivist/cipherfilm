@@ -1,6 +1,6 @@
 // Screens that show the library: none stays open, on top or further down the navigation stack, once it is locked or
 // signed out (app/_layout.tsx).
-export const PRIVATE = new Set(["library", "albums", "album", "photo", "edit", "account", "trash", "backup", "search", "people", "person", "favorites", "free-space", "search-settings", "map", "two-step", "devices", "duplicates", "admin"]);
+export const PRIVATE = new Set(["library", "albums", "album", "photo", "edit", "account", "trash", "backup", "search", "people", "person", "favorites", "free-space", "search-settings", "map", "two-step", "devices", "duplicates", "admin", "notices"]);
 
 interface NavState { routes?: { name: string; state?: NavState }[] }
 

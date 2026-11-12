@@ -32,6 +32,7 @@ module.exports = ({ config }) => {
     if (process.env.CF_TEST_PACKAGE) {
       config.android = { ...config.android, package: "app.cipherfilm.test" };
       config.name = "Cipherfilm Test";
+      config.scheme = "cipherfilm-test"; // the passkey page's answer comes back to this one, not the installed release
     }
   }
   return config;

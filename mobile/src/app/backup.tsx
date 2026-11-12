@@ -197,14 +197,14 @@ export default function Backup() {
         <Check ok={background === "unrestricted" || (background === "allowed" && !xiaomi)} warn={background !== "restricted"} icon="lock" title={t("Run in the background")}
           text={background === "unrestricted" ? t("Allowed, without battery limits")
             : background === "restricted" ? t("Android stops the backup when the app is closed. In the app settings, open Battery and allow background usage.")
-            : xiaomi ? t("On Xiaomi: app settings › Battery saver › No restrictions. This box stays unticked, because Android can't see that setting.")
+            : xiaomi ? t("On this phone: app settings › Battery saver › No restrictions. This box stays unticked, because Android can't see that setting.")
             : t("Allowed. Android may wait a little with a backup while the phone is idle.")}
           action={background === "restricted" || (background === "allowed" && xiaomi) ? [t("Open"), appSettings] : undefined} />
         <Check ok={device.notifications} icon="upload" title={t("Notifications")}
           text={device.notifications ? t("Shows backup progress") : t("Shows progress and tells you when to sign in again")}
           action={device.notifications ? undefined : [t("Allow"), askNotifications]} />
         <Text variant="bodySmall" style={[st.hint, { color: theme.colors.onSurfaceVariant }]}>
-          {t("Samsung, Xiaomi, Huawei, OPPO, OnePlus and some others have their own battery rules: in the app settings, open Battery and choose \"Unrestricted\" or \"Allow background activity\".")}
+          {t("Some phone makers have their own battery rules: in the app settings, open Battery and choose \"Unrestricted\" or \"Allow background activity\".")}
         </Text>
         <Button mode="text" style={{ alignSelf: "flex-start", marginLeft: 8 }} onPress={appSettings}>{t("Open app settings")}</Button>
         {device.powerSave ? <Text variant="bodySmall" style={[st.hint, { color: theme.colors.error }]}>{t("Battery saver is on. Android delays the backup until it's off.")}</Text> : null}

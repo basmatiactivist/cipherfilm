@@ -1,8 +1,9 @@
 // Notices: what the server asks every other device of the account to show once (server/notices.go): a new sign-in,
 // an administrator turning two-step sign-in off, the password used for a sign-in that wasn't finished (no right
 // code followed), or a change to two-step sign-in made on another device (an authenticator app or a passkey added or
-// removed, new recovery codes, turned off). This part has no React Native: it checks what arrived, keeps only
-// kinds it knows, and words them. The store (noticesStore.ts) fetches and dismisses.
+// removed, new recovery codes, turned off). They are listed behind the bell next to Account (app/notices.tsx), which
+// shows how many are unread. This part has no React Native: it checks what arrived, keeps only kinds it knows, and
+// words them. The store (noticesStore.ts) fetches, dismisses and remembers what was read.
 import { locale, t } from "./i18n";
 
 /** Changes to two-step sign-in made on one of the account's devices (`device` made them). */
@@ -31,9 +32,20 @@ export function visibleNotices(answer: unknown, dismissed: ReadonlySet<number>):
 export const noticeTime = (at: number): string =>
   new Date(at * 1000).toLocaleString(locale(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
+/** A device's label as the server keeps it ("Chrome on macOS", "Pixel 8 (Android app)", "Upload tool"), in the
+ *  phone's language. Anything else stays as it is. */
+export function deviceLabel(d: string): string {
+  const app = /^(.*) \((Android app|Mac app)\)$/.exec(d);
+  if (app) return `${app[1]} (${t(app[2])})`;
+  const on = /^(Chrome|Firefox|Safari|Edge) on (Android|iPhone|iPad|macOS|Windows|Linux)$/.exec(d);
+  if (on) return t("{browser} on {os}", { browser: on[1], os: on[2] });
+  if (d === "Upload tool" || d === "Android app" || d === "Mac app") return t(d);
+  return d;
+}
+
 export function noticeText(n: Notice): string {
   const time = noticeTime(n.at);
-  const device = n.device || t("an unknown device");
+  const device = n.device ? deviceLabel(n.device) : t("an unknown device");
   switch (n.kind) {
     case "totp_added": return t("An authenticator app was added to two-step sign-in on {device}, {time}. Not you?", { device, time });
     case "totp_removed": return t("The authenticator app was removed from two-step sign-in on {device}, {time}. Not you?", { device, time });
@@ -58,40 +70,10 @@ export function lastActive(sec: number, now = Date.now() / 1000): string {
   return new Date(sec * 1000).toLocaleDateString(locale(), { day: "numeric", month: "short", year: "numeric" });
 }
 
-/** What the library's one banner shows (NoticeBanner.tsx): never a stack. One notice: its own sentence and action.
- *  Several sign-ins: one line counting them, with the newest. Several of mixed kinds: the most urgent one (two-step
- *  sign-in turned off, then a second step removed, then one added or new recovery codes, then a password used, then
- *  a sign-in) and how many more there are. "Dismiss all" takes all. */
-export interface NoticeSummary {
-  text: string;
-  /** where its button leads; null: no button (the password is changed in the browser) */
-  open: "devices" | "two-step" | null;
-  ids: number[];
-  /** more than one: the dismiss button says "Dismiss all" */
-  many: boolean;
-}
+/** Where a notice's button leads in the notifications list (app/notices.tsx); null: no button (the password is
+ *  changed in the browser). */
+export const noticeOpens = (k: NoticeKind): "devices" | "two-step" | null =>
+  (k === "sign_in" ? "devices" : k === "2fa_reset" || isTwoStepChange(k) ? "two-step" : null);
 
-const URGENCY: Record<NoticeKind, number> = {
-  "2fa_reset": 0, "2fa_off": 0, totp_removed: 1, passkey_removed: 1, totp_added: 2, passkey_added: 2, recovery_codes: 2, password_used: 3, sign_in: 4,
-};
-const opens = (k: NoticeKind): NoticeSummary["open"] => (k === "sign_in" ? "devices" : k === "2fa_reset" || isTwoStepChange(k) ? "two-step" : null);
-
-/** list: as visibleNotices gives it, newest first. null when there is nothing to show. */
-export function noticeSummary(list: readonly Notice[]): NoticeSummary | null {
-  if (!list.length) return null;
-  const ids = list.map((n) => n.id);
-  if (list.length === 1) return { text: noticeText(list[0]), open: opens(list[0].kind), ids, many: false };
-  if (list.every((n) => n.kind === "sign_in")) {
-    const n = list[0];
-    return {
-      text: t("{n} new sign-ins (latest: {device}, {time}). Not you? Review devices.", { n: list.length, device: n.device || t("an unknown device"), time: noticeTime(n.at) }),
-      open: "devices", ids, many: true,
-    };
-  }
-  const top = [...list].sort((a, b) => URGENCY[a.kind] - URGENCY[b.kind] || b.at - a.at || b.id - a.id)[0];
-  const rest = list.length - 1;
-  const more = rest === 1 ? t("1 more notice.") : t("{n} more notices.", { n: rest });
-  // a mixed list with sign-ins and no button of its own (a password used): the devices are what to look at
-  const open = opens(top.kind) ?? (list.some((n) => n.kind === "sign_in") ? "devices" : null);
-  return { text: `${noticeText(top)} ${more}`, open, ids, many: true };
-}
+/** How many of the notices are newer than the last one the person saw in the list (the bell's badge). */
+export const unreadCount = (list: readonly Notice[], lastRead: number): number => list.filter((n) => n.id > lastRead).length;

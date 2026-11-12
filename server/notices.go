@@ -129,9 +129,14 @@ func (a *App) noticeSignIn(u *user, s *session, r *http.Request) {
 
 // factorNotice tells the account's other devices that two-step sign-in was changed from session s (named as in the
 // device list). Not on s itself, and not on devices that sign in afterwards: it is news to those signed in already.
+// Two-step sign-in back on (an authenticator app or a passkey added) also takes down an administrator's reset notice:
+// what it asked for is done.
 func (a *App) factorNotice(u *user, s *session, r *http.Request, kind string) {
 	if a.isDemo(u) {
 		return
+	}
+	if kind == noticeTOTPAdded || kind == noticePasskeyAdded {
+		a.db.Exec(`UPDATE notices SET dismissed=1 WHERE user_id=? AND kind=? AND dismissed=0`, u.ID, noticeTwoFactorReset)
 	}
 	a.notify(u.ID, kind, deviceName(r), s.Pub)
 }

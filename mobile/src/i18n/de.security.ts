@@ -21,11 +21,11 @@ export const deSecurity: Record<string, string> = {
   // Account › Two-step sign-in
   "Not available in the public demo.": "In der öffentlichen Demo nicht verfügbar.",
   "On. A new sign-in asks for a code from your authenticator app after the password. Unlocking this phone doesn't.":
-    "Ein. Eine neue Anmeldung fragt nach dem Passwort auch nach einem Code aus Ihrer Authenticator-App. Das Entsperren dieses Handys nicht.",
+    "Ein. Bei einer neuen Anmeldung fragt Cipherfilm nach dem Passwort zusätzlich nach einem Code aus Ihrer Authenticator-App. Zum Entsperren dieses Handys braucht es das nicht.",
   "{n} recovery code left": "{n} Wiederherstellungscode übrig",
   "{n} recovery codes left": "{n} Wiederherstellungscodes übrig",
   "Off. Turn it on, and a new sign-in also needs a code from an authenticator app on your phone, so a stolen password alone isn't enough.":
-    "Aus. Schalten Sie sie ein, braucht eine neue Anmeldung zusätzlich einen Code aus einer Authenticator-App auf Ihrem Handy. Ein gestohlenes Passwort allein reicht dann nicht.",
+    "Aus. Wenn Sie sie einschalten, braucht eine neue Anmeldung zusätzlich einen Code aus einer Authenticator-App auf Ihrem Handy. Ein gestohlenes Passwort allein reicht dann nicht.",
   "New recovery codes": "Neue Wiederherstellungscodes",
   "The old ones stop working": "Die alten funktionieren dann nicht mehr",
   "Turn off two-step sign-in": "Anmeldung in zwei Schritten ausschalten",
@@ -62,9 +62,9 @@ export const deSecurity: Record<string, string> = {
   "Remove the authenticator app?": "Authenticator-App entfernen?",
   "Remove {name}?": "{name} entfernen?",
   "On. A new sign-in asks for {methods} after the password. Unlocking this phone doesn't.":
-    "Ein. Eine neue Anmeldung fragt nach dem Passwort auch nach {methods}. Das Entsperren dieses Handys nicht.",
+    "Ein. Bei einer neuen Anmeldung fragt Cipherfilm nach dem Passwort zusätzlich nach {methods}. Zum Entsperren dieses Handys braucht es das nicht.",
   "Off. Turn it on, and a new sign-in also needs a code from an authenticator app or a passkey, so a stolen password alone isn't enough. Your password still unlocks your photos.":
-    "Aus. Schalten Sie sie ein, braucht eine neue Anmeldung zusätzlich einen Code aus einer Authenticator-App oder einen Passkey. Ein gestohlenes Passwort allein reicht dann nicht. Ihre Fotos entsperrt weiterhin Ihr Passwort.",
+    "Aus. Wenn Sie sie einschalten, braucht eine neue Anmeldung zusätzlich einen Code aus einer Authenticator-App oder einen Passkey. Ein gestohlenes Passwort allein reicht dann nicht. Ihre Fotos entsperren Sie weiterhin mit Ihrem Passwort.",
   "Authenticator app": "Authenticator-App",
   "On. Tap to remove it; the passkeys stay.": "Ein. Tippen, um sie zu entfernen; die Passkeys bleiben.",
   "On": "Ein",
@@ -77,7 +77,7 @@ export const deSecurity: Record<string, string> = {
   "Passkeys need Android 14 or newer.": "Passkeys brauchen Android 14 oder neuer.",
   "Recovery codes": "Wiederherstellungscodes",
   "Turn on with an authenticator app": "Mit einer Authenticator-App einschalten",
-  "Aegis, 2FAS, Bitwarden, Google Authenticator…": "Aegis, 2FAS, Bitwarden, Google Authenticator …",
+  "Any authenticator app or password manager": "Jede Authenticator-App oder jeder Passwort-Manager",
   "Turn on with a passkey": "Mit einem Passkey einschalten",
   "A new sign-in then asks for a passkey (or a recovery code).": "Eine neue Anmeldung fragt dann nach einem Passkey (oder einem Wiederherstellungscode).",
   "It's your only second step: two-step sign-in turns off.": "Es ist Ihr einziger zweiter Schritt: Die Anmeldung in zwei Schritten wird ausgeschaltet.",
@@ -140,6 +140,19 @@ export const deSecurity: Record<string, string> = {
   "Two-step sign-in was turned off on {device}, {time}. Not you?":
     "Die Anmeldung in zwei Schritten wurde ausgeschaltet: {device}, {time}. Nicht Sie?",
   "Review devices": "Geräte prüfen",
+  "Notifications": "Mitteilungen",
+  "Notifications, {n} unread": "Mitteilungen, {n} ungelesen",
+  "Remove all": "Alle entfernen",
+  "No notifications": "Keine Mitteilungen",
+  "New sign-ins and changes to two-step sign-in show up here.": "Neue Anmeldungen und Änderungen an der Anmeldung in zwei Schritten erscheinen hier.",
+  "Unread": "Ungelesen",
+  "Passkeys need the server's https address. Use a code instead.": "Passkeys brauchen die https-Adresse des Servers. Verwenden Sie stattdessen einen Code.",
+  "The passkey didn't work ({reason}). Try again, or use a code instead.": "Der Passkey hat nicht funktioniert ({reason}). Versuchen Sie es noch einmal oder verwenden Sie einen Code.",
+  "The passkey didn't work. Try again, or use a code instead.": "Der Passkey hat nicht funktioniert. Versuchen Sie es noch einmal oder verwenden Sie einen Code.",
+  "{browser} on {os}": "{browser} auf {os}",
+  "Android app": "Android-App",
+  "Mac app": "Mac-App",
+  "Upload tool": "Upload-Programm",
   "Dismiss": "Ausblenden",
   // several notices in one banner (notices.ts noticeSummary)
   "{n} new sign-ins (latest: {device}, {time}). Not you? Review devices.": "{n} neue Anmeldungen (zuletzt: {device}, {time}). Nicht Sie? Prüfen Sie Ihre Geräte.",
@@ -147,7 +160,7 @@ export const deSecurity: Record<string, string> = {
   "{n} more notices.": "Und {n} weitere Hinweise.",
   "Dismiss all": "Alle ausblenden",
   // notices as notifications (noticeCheck.ts, NoticeAlertsSetting.tsx)
-  "Security notifications": "Sicherheitsbenachrichtigungen",
+  "Security notifications": "Sicherheitsmeldungen",
   "Off: you see new sign-ins only when you open Cipherfilm": "Aus: Neue Anmeldungen sehen Sie nur, wenn Sie Cipherfilm öffnen",
   "A notification when your account is signed in somewhere else, also while Cipherfilm is closed":
     "Eine Benachrichtigung, wenn Ihr Konto anderswo angemeldet wird, auch wenn Cipherfilm geschlossen ist",

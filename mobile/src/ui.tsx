@@ -1,12 +1,33 @@
 // Small building blocks on top of Material 3 (react-native-paper), in the web app's world.
-import type { ReactNode } from "react";
-import { KeyboardAvoidingView, ScrollView, StyleSheet, View, type ViewStyle } from "react-native";
-import { HelperText, List, Switch, Text, TextInput, useTheme } from "react-native-paper";
+import { useEffect, useState, type ComponentProps, type ReactNode } from "react";
+import { Keyboard, KeyboardAvoidingView, ScrollView, StyleSheet, View, type ViewStyle } from "react-native";
+import { Dialog as PaperDialog, HelperText, List, Switch, Text, TextInput, useTheme } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { AppTheme } from "./theme";
 import { radius } from "./tokens";
 
 export const useAppTheme = () => useTheme<AppTheme>();
+
+/** The keyboard's height while it is up, else 0. */
+export function useKeyboardHeight(): number {
+  const [h, setH] = useState(0);
+  useEffect(() => {
+    const a = Keyboard.addListener("keyboardDidShow", (e) => setH(e.endCoordinates.height));
+    const b = Keyboard.addListener("keyboardDidHide", () => setH(0));
+    return () => { a.remove(); b.remove(); };
+  }, []);
+  return h;
+}
+
+/** Paper's Dialog, lifted above the keyboard: with Android's edge-to-edge the window no longer shrinks for it, so a
+ *  dialog with a field would keep its buttons under the keyboard. Same parts as Paper's (Dialog.Title, …). */
+function LiftedDialog(p: ComponentProps<typeof PaperDialog>) {
+  const kb = useKeyboardHeight();
+  return <PaperDialog {...p} style={[p.style, kb ? { marginBottom: kb } : null]} />;
+}
+export const Dialog = Object.assign(LiftedDialog, {
+  Title: PaperDialog.Title, Content: PaperDialog.Content, Actions: PaperDialog.Actions, ScrollArea: PaperDialog.ScrollArea, Icon: PaperDialog.Icon,
+});
 
 /** A full screen on paper, inside the system bars. `form` scrolls and keeps fields above the keyboard. */
 export function Screen({ children, center, form, style }: { children: ReactNode; center?: boolean; form?: boolean; style?: ViewStyle }) {
@@ -56,7 +77,7 @@ export function SwitchItem({ title, description, value, onValueChange, disabled,
   style?: React.ComponentProps<typeof List.Item>["style"];
 }) {
   return (
-    <List.Item title={title} description={description} titleNumberOfLines={2} descriptionNumberOfLines={3} left={left} disabled={disabled} style={style}
+    <List.Item title={title} description={description} titleNumberOfLines={3} descriptionNumberOfLines={6} left={left} disabled={disabled} style={style}
       onPress={disabled ? undefined : () => onValueChange(!value)} accessibilityRole="switch" accessibilityState={{ checked: value, disabled }}
       right={() => (
         <View importantForAccessibility="no-hide-descendants" style={{ justifyContent: "center" }}>

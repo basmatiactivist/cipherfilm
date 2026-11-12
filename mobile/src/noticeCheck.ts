@@ -5,8 +5,8 @@
 // one, so it doesn't keep the session alive or show the phone as active (server/app.go). The server never lists a
 // notice about this phone's own sign-in (server/notices.go shownTo), so the phone never tells itself about itself.
 //
-// While the app is on screen the banner shows them (NoticeBanner) and nothing is posted; what the banner showed is
-// marked seen here, so it doesn't come as a notification later. On by default, Account turns it off; this phone's
+// While the app is on screen the bell next to Account counts them (NoticesButton) and nothing is posted; what the app
+// loaded is marked seen here, so it doesn't come as a notification later. On by default, Account turns it off; this phone's
 // setting, kept in the app's private files. Which ones and their words: noticeAlerts.ts; showing them: Notices.kt.
 import { useSyncExternalStore } from "react";
 import { AppState } from "react-native";
@@ -50,7 +50,7 @@ async function saveSeen(s: Seen) {
 }
 
 /**
- * The app loaded the notices and shows them as banners: they are seen (no notification later), and a notification
+ * The app loaded the notices and lists them behind the bell: they are seen (no notification later), and a notification
  * still up for one of them goes. Returns true the first time after signing in (the caller then schedules the
  * background task, which runs from now on for the notices too).
  */
@@ -71,7 +71,7 @@ export function dismissedInApp(id: number) {
 
 /**
  * The background task's check: asks the server and shows what is new. Nothing when switched off, before the app has
- * loaded the notices after signing in, while the app is on screen (the banner), or when the server can't be reached
+ * loaded the notices after signing in, while the app is on screen (the bell counts them), or when the server can't be reached
  * or the session has ended (it tries again at the next run).
  */
 export async function checkNotices(): Promise<number> {
@@ -86,7 +86,7 @@ export async function checkNotices(): Promise<number> {
   }
   const list = visibleNotices(answer, new Set());
   const seen = await loadSeen();
-  // the person opened the app meanwhile: the banner shows them
+  // the person opened the app meanwhile: the bell counts them
   const p = plan(list, seen, server, Date.now() / 1000, AppState.currentState === "active");
   const done = [...p.quiet];
   for (const n of p.show) {

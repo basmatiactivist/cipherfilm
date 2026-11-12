@@ -18,7 +18,7 @@ import { refreshLibrary, useLibrary } from "../libraryStore";
 import { setPicked } from "../pending";
 import { demoNote, useSession } from "../session";
 import { useAppTheme } from "../ui";
-import { NoticeBanner } from "../NoticeBanner";
+import { NoticesButton } from "../NoticesButton";
 import { text } from "../tokens";
 import { t } from "../i18n";
 
@@ -77,10 +77,10 @@ export default function Library() {
           <View>
             <Appbar.Header style={{ backgroundColor: th.colors.background }}>
               <Appbar.Content title={t("Photos")} titleStyle={text.page} />
+              <NoticesButton />
               <Appbar.Action icon="user" accessibilityLabel={t("Account")} onPress={() => router.push("/account")} />
             </Appbar.Header>
             {demo ? <Text variant="labelLarge" style={[st.demo, { backgroundColor: th.colors.primaryContainer, color: th.colors.onPrimaryContainer }]}>{demoNote()}</Text> : null}
-            <NoticeBanner />
           </View>
         }
         top={memories.length ? <MemoriesRow memories={memories} /> : undefined}

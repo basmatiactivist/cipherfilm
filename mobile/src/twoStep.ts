@@ -58,7 +58,7 @@ export function passkeyTrouble(e: unknown): "cancelled" | "none" | "unsupported"
   if (f?.code === "ERR_PASSKEY_CANCELLED") return "cancelled";
   if (f?.code === "ERR_PASSKEY_NONE") return "none";
   if (f?.code === "ERR_PASSKEY_UNSUPPORTED") return "unsupported";
-  if (f?.code === "ERR_PASSKEY" && /rp ?id|relying party|domain|asset ?links|digital asset|cannot be validated|not associated/i.test(f.message ?? "")) return "server";
+  if (f?.code === "ERR_PASSKEY" && /rp ?id|relying party|domain|asset ?links|digital asset|cannot be validated|not associated|security_?error|not supported for this app|für diese app nicht unterstützt/i.test(f.message ?? "")) return "server";
   if ((f as Failed | null)?.code === "passkeys_unavailable") return "server";
   return "other";
 }

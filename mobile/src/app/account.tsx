@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { AppState, Linking, ScrollView, StyleSheet, View } from "react-native";
 import { router } from "expo-router";
-import { Appbar, Button, Dialog, Divider, List, Portal, ProgressBar, RadioButton, Text } from "react-native-paper";
+import { Appbar, Button, Divider, List, Portal, ProgressBar, RadioButton, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import N from "../../modules/cf-native/src/CfNativeModule";
 import { api } from "../api";
@@ -9,7 +9,7 @@ import { demoNote, biometricPossible, deleteAccount, disableBiometric, enableBio
 import { forgetLibrary } from "../libraryStore";
 import { clearImages } from "../library";
 import { Icon } from "../icons";
-import { Field, Problem, SwitchItem, useAppTheme } from "../ui";
+import { Field, Problem, SwitchItem, useAppTheme, Dialog } from "../ui";
 import { setShake, useShake } from "../shake";
 import { setScreenshots, useScreenshots } from "../screenshots";
 import { setMemoriesOn, useMemoriesOn } from "../memories";
@@ -135,7 +135,7 @@ export default function Account() {
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="key" color={th.colors.primary} /></View>} onPress={() => router.push("/two-step")} style={st.item} />}
         {me?.demo ? null : <NoticeAlertsSwitch style={st.item} iconStyle={st.icon} />}
         {isAdmin(me) ? <List.Item title={t("Administration")} description={t("People, invites, storage limits and the server")}
-          descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="shield" color={th.colors.primary} /></View>} onPress={() => router.push("/admin")} style={st.item} /> : null}
+          descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="users" color={th.colors.primary} /></View>} onPress={() => router.push("/admin")} style={st.item} /> : null}
         <List.Item title={t("Free up space")} description={t("Remove photos from this phone that are already in Cipherfilm")}
           descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="phone" color={th.colors.primary} /></View>} onPress={() => router.push("/free-space")} style={st.item} />
         <List.Item title={t("Duplicates and similar photos")} description={t("Find photos that are there twice or look nearly the same")}

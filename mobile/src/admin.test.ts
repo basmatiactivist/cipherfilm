@@ -111,7 +111,9 @@ describe("administration", () => {
     expect(a.lastSeen(now - 86400, now)).toBe("active yesterday");
     expect(a.lastSeen(now - 5 * 86400, now)).toBe("active 5 days ago");
     expect(a.summaryLine([user(), user({ used_bytes: 0.5e9, item_count: 1 })])).toBe("2 people · 3.0 GB stored · 4 items");
-    expect(a.uptime(90)).toBe("1 minutes");
+    expect(a.uptime(90)).toBe("1 minute");
+    expect(a.uptime(3600)).toBe("1 hour");
+    expect(a.uptime(30)).toBe("less than a minute");
     expect(a.uptime(7200)).toBe("2 hours");
     expect(a.uptime(3 * 86400)).toBe("3 days");
   });

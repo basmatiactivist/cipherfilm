@@ -4,9 +4,9 @@
 import { useCallback, useState } from "react";
 import { ScrollView, Share, StyleSheet, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
-import { Appbar, Button, Dialog, Divider, List, Portal, Text } from "react-native-paper";
+import { Appbar, Button, Divider, List, Portal, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Field, Problem, useAppTheme } from "../../ui";
+import { Field, Problem, useAppTheme, Dialog } from "../../ui";
 import { Icon } from "../../icons";
 import { busyIcon } from "../../Loader";
 import { useAction } from "../../useAction";

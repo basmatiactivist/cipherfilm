@@ -250,7 +250,7 @@ struct SearchSettings: View {
       // only for a person an admin allowed it (docs/SEARCH.md, "Explicit content")
       if model.me?.user.nsfw == true && model.settings.search {
         let on = model.search.people.explicit == true
-        Section_(title: "Explicit search", subtitle: "Off, search leaves out photos and words it takes for explicit content. On, it finds everything. Applies to all your devices (not the Android app from Google Play, which always leaves them out).") {
+        Section_(title: "Explicit search", subtitle: "Off, search leaves out photos and words it takes for explicit content. On, it finds everything. Applies to all your devices (not the Android app from the app store, which always leaves them out).") {
           Toggle("Explicit search", isOn: Binding(get: { on }, set: { want in
             explicitBusy = true
             Task {

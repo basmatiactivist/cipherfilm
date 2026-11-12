@@ -693,7 +693,7 @@ function SearchPanel() {
               }} />
             Explicit search
           </label>
-          <p class="hint">Off, search leaves out photos and words it takes for explicit content. On, it finds everything. <strong>This applies to all your devices</strong> (not the Android app from Google Play, which always leaves them out).</p>
+          <p class="hint">Off, search leaves out photos and words it takes for explicit content. On, it finds everything. <strong>This applies to all your devices</strong> (not the Android app from the app store, which always leaves them out).</p>
           <ErrorLine text={error} />
         </>
       )}
@@ -889,7 +889,7 @@ export function Admin({ section }: { section: "users" | "defaults" | "server" | 
               <div class="pactions">
                 {/* off for everyone by default; the person still turns it on in their app. Admins may allow it for themselves. */}
                 {confirm !== u.id && (
-                  <button class="btn secondary small" aria-pressed={u.nsfw} title="Lets the person turn off the filter that leaves explicit photos out of search (not in the Android app from Google Play). Off for everyone by default."
+                  <button class="btn secondary small" aria-pressed={u.nsfw} title="Lets the person turn off the filter that leaves explicit photos out of search (not in the Android app from the app store). Off for everyone by default."
                     onClick={() => act(() => api("PATCH", `/api/admin/users/${u.id}`, { nsfw: !u.nsfw }))}>
                     <Icon name="search" size={18} />{u.nsfw ? "Turn off explicit search" : "Allow explicit search"}<span class="sr"> for {u.email}</span>
                   </button>

@@ -180,6 +180,11 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
+	// the per-account storage counter and its triggers (usage.go): after migrate, which may rebuild item_index
+	if err := migrateUsage(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return db, nil
 }
 

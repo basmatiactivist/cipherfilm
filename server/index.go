@@ -28,7 +28,7 @@ const (
 var modelNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 
 // The per-account documents the apps use. Anything else is refused, so an account cannot pile up rows under names of
-// its own; both stores also count toward the storage limit (usedBytesSQL).
+// its own; both stores also count toward the storage limit (usedBytesSQL, usage.go).
 var blobNames = map[string]bool{"people": true}
 
 // The index has one model family for everyone: LAION's OpenCLIP ViT-B/32 (docs/SEARCH.md, docs/MODELS.md). Entries of

@@ -48,7 +48,7 @@ struct GeneralSettings: View {
   /** The map's credit when the server offers one: OpenStreetMap and OpenFreeMap for the default, else the map's own. */
   private var mapCredit: String {
     guard let m = model.me?.map else { return "" }
-    return m.isDefault ? "Map: © OpenStreetMap contributors, OpenFreeMap · MapLibre GL JS (BSD-3-Clause)\n" : "Map: MapLibre GL JS (BSD-3-Clause); its data is credited on the map\n"
+    return m.isDefault ? "Map: © OpenStreetMap contributors, © OpenMapTiles · MapLibre GL JS (BSD-3-Clause)\n" : "Map: MapLibre GL JS (BSD-3-Clause); its data is credited on the map\n"
   }
 
   @State private var signOut = false
@@ -78,14 +78,14 @@ struct GeneralSettings: View {
         Toggle("Show “On this day”", isOn: $memoriesOn)
       }
       Divider()
-      Section_(title: "Unlock with Touch ID", subtitle: "Your library's key is kept locked in this Mac's Secure Enclave. Changing your fingerprints turns it off. Your password always works.") {
-        Toggle("Unlock with Touch ID", isOn: Binding(get: { model.touchID }, set: { on in
+      Section_(title: "Unlock with Your Fingerprint", subtitle: "Your library's key is kept locked in this Mac's security chip. Changing your fingerprints turns it off. Your password always works.") {
+        Toggle("Unlock with your fingerprint", isOn: Binding(get: { model.touchID }, set: { on in
           touchError = nil
           if on { Task { do { try await model.enableTouchID() } catch { touchError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription } } }
           else { model.disableTouchID() }
         }))
         .disabled(!TouchID.available || (model.phase != .unlocked && !model.touchID))
-        if !TouchID.available { Text("No Touch ID or no fingerprint set up on this Mac.").font(Typo.caption).foregroundStyle(.secondary) }
+        if !TouchID.available { Text("This Mac has no fingerprint sensor, or no fingerprint is set up.").font(Typo.caption).foregroundStyle(.secondary) }
         else if model.phase != .unlocked && !model.touchID { NeedsUnlock() }
         if let touchError { Text(touchError).font(Typo.caption).foregroundStyle(Ink.danger) }
       }
@@ -109,7 +109,7 @@ struct GeneralSettings: View {
         }
       }
       Divider()
-      Section_(title: "Problems", subtitle: "Opens the issue form on GitHub. You see what it fills in first.") {
+      Section_(title: "Problems", subtitle: "Opens the issue form in the browser. You see what it fills in first.") {
         Button("Report a Problem…") { ReportProblem.ask(model) }
       }
       Divider()
@@ -226,7 +226,7 @@ struct SearchSettings: View {
     @Bindable var model = model
     let unlocked = model.phase == .unlocked
     VStack(alignment: .leading, spacing: 20) {
-      Section_(title: "Search and people", subtitle: "Runs on this Mac with open models (LAION's CLIP ViT-B/32, YuNet, SFace)\(size(.clip).map { ", \($0)" } ?? ", already on this Mac"). Results are encrypted and stored on your server, shared with your other devices.") {
+      Section_(title: "Search and people", subtitle: "Runs on this Mac with open models\(size(.clip).map { ", \($0)" } ?? ", already on this Mac"). Results are encrypted and stored on your server, shared with your other devices.") {
         Toggle("Search and people", isOn: Binding(get: { model.settings.search }, set: { on in
           if on { withConsent(.clip, faces: model.settings.faces) { model.turnOnSearch() } }
           // off: the models stay unless the person deletes them (asked when there are any)
@@ -236,10 +236,10 @@ struct SearchSettings: View {
           .disabled(!unlocked)
         // where the models come from, said before anything is downloaded (docs/MODELS.md)
         if let d = model.search.models.downloaded() {
-          Text(d.at.map { "Models downloaded from Hugging Face on \($0.formatted(date: .abbreviated, time: .omitted)), \(ModelConsentSheet.mb(d.bytes))." } ?? "Models downloaded from Hugging Face, \(ModelConsentSheet.mb(d.bytes)).")
+          Text(d.at.map { "Models downloaded on \($0.formatted(date: .abbreviated, time: .omitted)), \(ModelConsentSheet.mb(d.bytes))." } ?? "Models downloaded, \(ModelConsentSheet.mb(d.bytes)).")
             .font(Typo.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
-        Text("Downloaded once from Hugging Face, after you agree. Hugging Face sees this Mac's IP address, nothing of your photos. Hugging Face is a trademark of Hugging Face, Inc. Cipherfilm is not affiliated with or endorsed by Hugging Face.")
+        Text("Downloaded once from the site where the models are published, after you agree. That site sees this Mac's IP address, nothing of your photos.")
           .font(Typo.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         Toggle("Group faces into people", isOn: Binding(get: { model.settings.faces }, set: { on in
           if on && model.settings.search { withConsent(model.search.clip, faces: true) { model.settings.faces = true } } else { model.settings.faces = on }

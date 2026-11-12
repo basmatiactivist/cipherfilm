@@ -329,12 +329,12 @@ struct MapConsent: View {
   /** As the question says it: with the CDN and the fallback host for the default. */
   static func providerLong(_ styles: Me.MapStyles?) -> String {
     let p = provider(styles)
-    return p == "OpenFreeMap" ? "OpenFreeMap (through Cloudflare; VersaTiles if OpenFreeMap doesn't answer)" : p
+    return p == "OpenFreeMap" ? "an external map service" : p
   }
 
   var body: some View {
     let p = Self.provider(styles)
-    let from = p == "OpenFreeMap" ? "from OpenFreeMap (through Cloudflare; VersaTiles if OpenFreeMap doesn't answer)" : "from the map server set on your Cipherfilm server (\(p))"
+    let from = p == "OpenFreeMap" ? "from an external map service (which one: see the privacy policy)" : "from the map server set on your Cipherfilm server (\(p))"
     // the page's title, then the question in a card that scrolls in a small window (the structure of the other pages)
     VStack(alignment: .leading, spacing: 0) {
       PageTitle(title: "Map")

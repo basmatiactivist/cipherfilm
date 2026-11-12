@@ -37,7 +37,7 @@ export function ModelConsentDialog(p: { ask: ConsentAsk | null; wifiOnly: boolea
               {t("Search runs on this phone with open models. The app downloads them once for this phone: {what}, {size} in all.", { what: modelWords(a), size: mb(askBytes(a)) })}
             </Text>
             <Text variant="bodyMedium" style={{ marginTop: 12 }}>
-              {t("They come from Hugging Face (huggingface.co and its CDN, *.hf.co), where these models are published. Hugging Face sees this phone's IP address and that it downloaded these public files. It gets no photos, faces, search words or account data.")}
+              {t("They come from the public site where these models are published (which one: see the privacy policy). That site sees this phone's IP address and that it downloaded these public files. It gets no photos, faces, search words or account data.")}
             </Text>
             <Text variant="bodyMedium" style={{ marginTop: 12 }}>
               {t("Each file is checked (SHA-256) before it is used.")}{" "}

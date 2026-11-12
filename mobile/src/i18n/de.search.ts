@@ -28,11 +28,9 @@ export const deSearch: Record<string, string> = {
   "Ready · {n} photo or video": "Bereit · {n} Foto oder Video",
   "Ready · {n} photos and videos": "Bereit · {n} Fotos und Videos",
   "Download now ({size})": "Jetzt herunterladen ({size})",
-  "Runs on this phone. Downloads {size} once from Hugging Face.": "Läuft auf diesem Handy. Lädt einmalig {size} von Hugging Face herunter.",
+  "Runs on this phone. Downloads {size} once.": "Läuft auf diesem Handy. Lädt einmalig {size} herunter.",
   "The models are already on this phone.": "Die Modelle sind bereits auf diesem Handy.",
-  "Downloaded once from Hugging Face. Hugging Face sees this phone's IP address, nothing of your photos.":
-    "Einmaliger Download von Hugging Face. Hugging Face sieht die IP-Adresse dieses Handys, nichts von Ihren Fotos.",
-  "Hugging Face sees this phone's IP address, nothing of your photos.": "Hugging Face sieht die IP-Adresse dieses Handys, nichts von Ihren Fotos.",
+  "Downloaded once from the site where the models are published. That site sees this phone's IP address, nothing of your photos.": "Einmaliger Download von der Seite, auf der die Modelle veröffentlicht sind. Diese Seite sieht die IP-Adresse dieses Handys, nichts von Ihren Fotos.",
   "This phone indexes your photos": "Dieses Handy indexiert Ihre Fotos",
   "Indexed by {device}": "Indexiert von {device}",
   "Indexed by another device": "Indexiert von einem anderen Gerät",
@@ -55,8 +53,7 @@ export const deSearch: Record<string, string> = {
   "Android stops indexing when the app is closed. In the app settings, open Battery and allow background usage.":
     "Android stoppt die Indexierung, wenn die App geschlossen ist. Öffnen Sie in den App-Einstellungen „Akku“ und erlauben Sie die Hintergrundnutzung.",
   "On this phone: app settings › Battery saver › No restrictions.": "Auf diesem Handy: App-Einstellungen › Energiesparmodus › Keine Einschränkungen.",
-  "Runs on this phone with open models (LAION's CLIP ViT-B/32 for content, YuNet and SFace for faces). Results are encrypted before they are stored and shared with your other devices. The server never learns what your photos show or who is in them. Photos only on the server are indexed while the app is open and unlocked.":
-    "Läuft auf diesem Handy mit offenen Modellen (CLIP ViT-B/32 von LAION für Inhalte, YuNet und SFace für Gesichter). Die Ergebnisse werden verschlüsselt, bevor sie gespeichert und mit Ihren anderen Geräten geteilt werden. Der Server erfährt nie, was Ihre Fotos zeigen oder wer darauf ist. Fotos, die nur auf dem Server liegen, werden indexiert, während die App geöffnet und entsperrt ist.",
+  "Runs on this phone with open models. Results are encrypted before they are stored and shared with your other devices. The server never learns what your photos show or who is in them. Photos only on the server are indexed while the app is open and unlocked.": "Läuft auf diesem Handy mit offenen Modellen. Die Ergebnisse werden verschlüsselt, bevor sie gespeichert und mit Ihren anderen Geräten geteilt werden. Der Server erfährt nie, was Ihre Fotos zeigen oder wer darauf ist. Fotos, die nur auf dem Server liegen, werden indexiert, während die App geöffnet und entsperrt ist.",
   "Turn off search?": "Suche ausschalten?",
   "The models are deleted from this phone; turning search on again asks before downloading them. You can also delete the search data on all your devices, including the names of people.":
     "Die Modelle werden von diesem Handy gelöscht; wenn Sie die Suche wieder einschalten, werden Sie vor dem Herunterladen erneut gefragt. Sie können auch die Suchdaten auf allen Ihren Geräten löschen, einschließlich der Namen von Personen.",
@@ -147,8 +144,7 @@ export const deSearch: Record<string, string> = {
   "Download the search models?": "Suchmodelle herunterladen?",
   "Search runs on this phone with open models. The app downloads them once for this phone: {what}, {size} in all.":
     "Die Suche läuft auf diesem Handy mit offenen Modellen. Die App lädt sie einmal für dieses Handy herunter: {what}, insgesamt {size}.",
-  "They come from Hugging Face (huggingface.co and its CDN, *.hf.co), where these models are published. Hugging Face sees this phone's IP address and that it downloaded these public files. It gets no photos, faces, search words or account data.":
-    "Sie kommen von Hugging Face (huggingface.co und dessen CDN, *.hf.co), wo diese Modelle veröffentlicht sind. Hugging Face sieht die IP-Adresse dieses Handys und dass es diese öffentlichen Dateien heruntergeladen hat. Es erhält keine Fotos, Gesichter, Suchbegriffe oder Kontodaten.",
+  "They come from the public site where these models are published (which one: see the privacy policy). That site sees this phone's IP address and that it downloaded these public files. It gets no photos, faces, search words or account data.": "Sie kommen von der öffentlichen Seite, auf der diese Modelle veröffentlicht sind (welche: siehe Datenschutzerklärung). Diese Seite sieht die IP-Adresse dieses Handys und dass es diese öffentlichen Dateien heruntergeladen hat. Sie erhält keine Fotos, Gesichter, Suchbegriffe oder Kontodaten.",
   "Each file is checked (SHA-256) before it is used.": "Jede Datei wird vor der Verwendung geprüft (SHA-256).",
   "The download waits for Wi-Fi.": "Der Download wartet auf WLAN.",
   "You're not on Wi-Fi: this uses mobile data.": "Sie sind nicht im WLAN: Das verbraucht mobile Daten.",
@@ -159,12 +155,9 @@ export const deSearch: Record<string, string> = {
   "Search needs your OK to download the models.": "Die Suche braucht Ihr OK, um die Modelle herunterzuladen.",
   "Waiting for your OK to download the models ({size})": "Wartet auf Ihr OK, um die Modelle herunterzuladen ({size})",
   "Download…": "Herunterladen…",
-  "Hugging Face sees this phone's IP address, nothing of your photos. You're asked before anything is downloaded.":
-    "Hugging Face sieht die IP-Adresse dieses Handys, nichts von Ihren Fotos. Sie werden gefragt, bevor etwas heruntergeladen wird.",
-  "Models downloaded from Hugging Face on {date}, {size}.": "Modelle von Hugging Face heruntergeladen am {date}, {size}.",
-  "Models downloaded from Hugging Face, {size}.": "Modelle von Hugging Face heruntergeladen, {size}.",
+  "The site the models come from sees this phone's IP address, nothing of your photos. You're asked before anything is downloaded.": "Die Seite, von der die Modelle kommen, sieht die IP-Adresse dieses Handys, nichts von Ihren Fotos. Sie werden gefragt, bevor etwas heruntergeladen wird.",
+  "Models downloaded on {date}, {size}.": "Modelle heruntergeladen am {date}, {size}.",
+  "Models downloaded, {size}.": "Modelle heruntergeladen, {size}.",
   "Search waits for your OK to download the models ({size}). Tap to see what is downloaded.":
     "Die Suche wartet auf Ihr OK, um die Modelle herunterzuladen ({size}). Tippen Sie, um zu sehen, was heruntergeladen wird.",
-  "Hugging Face is a trademark of Hugging Face, Inc. Cipherfilm is not affiliated with or endorsed by Hugging Face.":
-    "Hugging Face ist eine Marke der Hugging Face, Inc. Cipherfilm steht in keiner Verbindung zu Hugging Face und wird nicht von ihr unterstützt.",
 };

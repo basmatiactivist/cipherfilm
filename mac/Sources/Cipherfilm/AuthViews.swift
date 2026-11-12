@@ -220,7 +220,7 @@ struct UnlockView: View {
         .buttonStyle(PrimaryButton()).disabled(busy || password.isEmpty)
         .keyboardShortcut(.defaultAction)
       if model.touchID {
-        Button(action: touch) { Label("Unlock with Touch ID", systemImage: "touchid").frame(maxWidth: .infinity) }
+        Button(action: touch) { Label("Unlock with Your Fingerprint", systemImage: "touchid").frame(maxWidth: .infinity) }
           .buttonStyle(SecondaryButton()).disabled(busy)
       }
       if model.watcher.running || model.settings.watchOn {
@@ -292,7 +292,7 @@ struct AgentQuestion: View {
         Toggle(isOn: $search) {
           VStack(alignment: .leading, spacing: 2) {
             Text("Search what and who is in your photos").font(Typo.label)
-            Text(model.search.downloadSize(.clip, faces: model.settings.faces).map { "Runs on this Mac. Needs \($0) of models from Hugging Face; you're asked before anything is downloaded. Hugging Face is a trademark of Hugging Face, Inc. Cipherfilm is not affiliated with or endorsed by Hugging Face." } ?? "Runs on this Mac. The models are already here.").font(Typo.caption).foregroundStyle(Ink.muted)
+            Text(model.search.downloadSize(.clip, faces: model.settings.faces).map { "Runs on this Mac. Needs \($0) of models; you're asked before anything is downloaded." } ?? "Runs on this Mac. The models are already here.").font(Typo.caption).foregroundStyle(Ink.muted)
           }
         }.toggleStyle(.checkbox)
       }

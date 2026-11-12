@@ -155,21 +155,21 @@ export default function SearchSettingsScreen() {
           ) : null}
           {!s.enabled ? (
             <Text variant="bodySmall" style={{ marginTop: 8, color: th.colors.onSurfaceVariant }}>
-              {size ? t("Runs on this phone. Downloads {size} once from Hugging Face.", { size: mb(size) }) : t("The models are already on this phone.")}
+              {size ? t("Runs on this phone. Downloads {size} once.", { size: mb(size) }) : t("The models are already on this phone.")}
             </Text>
           ) : null}
           {/* where the models come from, said before anything is downloaded (docs/MODELS.md) */}
           {(!s.enabled && size) || p.phase === "waitWifi" ? (
             <Text variant="bodySmall" style={{ marginTop: 8, color: th.colors.onSurfaceVariant }}>
-              {p.phase === "waitWifi" ? t("Downloaded once from Hugging Face. Hugging Face sees this phone's IP address, nothing of your photos.") : t("Hugging Face sees this phone's IP address, nothing of your photos. You're asked before anything is downloaded.")}
+              {p.phase === "waitWifi" ? t("Downloaded once from the site where the models are published. That site sees this phone's IP address, nothing of your photos.") : t("The site the models come from sees this phone's IP address, nothing of your photos. You're asked before anything is downloaded.")}
             </Text>
           ) : null}
           {/* the models already here: where from, when, how big (docs/MODELS.md) */}
           {onPhone ? (
             <Text variant="bodySmall" style={{ marginTop: 8, color: th.colors.onSurfaceVariant }}>
               {onPhone.at
-                ? t("Models downloaded from Hugging Face on {date}, {size}.", { date: new Date(onPhone.at).toLocaleDateString(locale(), { day: "numeric", month: "short", year: "numeric" }), size: mb(onPhone.bytes) })
-                : t("Models downloaded from Hugging Face, {size}.", { size: mb(onPhone.bytes) })}
+                ? t("Models downloaded on {date}, {size}.", { date: new Date(onPhone.at).toLocaleDateString(locale(), { day: "numeric", month: "short", year: "numeric" }), size: mb(onPhone.bytes) })
+                : t("Models downloaded, {size}.", { size: mb(onPhone.bytes) })}
             </Text>
           ) : null}
         </View>
@@ -211,10 +211,7 @@ export default function SearchSettingsScreen() {
 
         <Divider style={{ marginTop: 8 }} />
         <Text variant="bodySmall" style={[st.hint, { color: th.colors.onSurfaceVariant, marginTop: 12 }]}>
-          {t("Runs on this phone with open models (LAION's CLIP ViT-B/32 for content, YuNet and SFace for faces). Results are encrypted before they are stored and shared with your other devices. The server never learns what your photos show or who is in them. Photos only on the server are indexed while the app is open and unlocked.")}
-        </Text>
-        <Text variant="bodySmall" style={[st.hint, { color: th.colors.onSurfaceVariant, marginTop: 8 }]}>
-          {t("Hugging Face is a trademark of Hugging Face, Inc. Cipherfilm is not affiliated with or endorsed by Hugging Face.")}
+          {t("Runs on this phone with open models. Results are encrypted before they are stored and shared with your other devices. The server never learns what your photos show or who is in them. Photos only on the server are indexed while the app is open and unlocked.")}
         </Text>
       </ScrollView>
       <ModelConsentDialog ask={ask} wifiOnly={s.wifiOnly}

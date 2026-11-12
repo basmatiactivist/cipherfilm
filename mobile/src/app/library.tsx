@@ -62,7 +62,7 @@ export default function Library() {
           <Dialog.Title>{t("Search your photos?")}</Dialog.Title>
           <Dialog.Content>
             <Text variant="bodyMedium">
-              {t("Find photos by what's in them (\"beach\", \"birthday cake\") and by the people in them. Runs on this phone; the server never sees what your photos show. The models download once from Hugging Face; you see the size first. Change this any time in Account.")}
+              {t("Find photos by what's in them (\"beach\", \"birthday cake\") and by the people in them. Runs on this phone; the server never sees what your photos show. The models download once from where they are published; you see the size first. Change this any time in Account.")}
             </Text>
           </Dialog.Content>
           <Dialog.Actions>

@@ -34,7 +34,7 @@ const hidden = new Set<string>();
 const hex = (b: ArrayBuffer) => Array.from(new Uint8Array(b), (x) => x.toString(16).padStart(2, "0")).join("");
 const sha = async (b: ArrayBuffer) => hex(await crypto.subtle.digest("SHA-256", b));
 
-const failed = "Couldn't download the search model from Hugging Face. Try again.";
+const failed = "Couldn't download the search model. Try again.";
 const wrong = "The downloaded search model isn't the expected file.";
 const notAgreed = "The search model isn't downloaded yet.";
 

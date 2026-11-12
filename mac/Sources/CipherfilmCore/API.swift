@@ -208,7 +208,7 @@ public final class API: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
              .clientCertificateRejected, .secureConnectionFailed, .cancelled:
           throw APIError(status: -2, message: "The server's certificate isn't trusted by this Mac, so Cipherfilm didn't connect.")
         case .cannotFindHost, .dnsLookupFailed:
-          throw APIError(status: 0, message: "That server name can't be found. Check the address (and that Tailscale or your VPN is connected, if you use one).")
+          throw APIError(status: 0, message: "That server name can't be found. Check the address (and that your VPN is connected, if you use one).")
         default: throw APIError(status: 0, message: Self.network(u))
         }
       }
@@ -223,7 +223,7 @@ public final class API: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     case .timedOut: return "The server is slow to answer (the connection is slow or busy)."
     case .networkConnectionLost: return "The connection to the server dropped."
     case .notConnectedToInternet: return "This Mac is offline."
-    case .cannotConnectToHost: return "The server isn't answering. Check that it is running (and that Tailscale or your VPN is connected, if you use one)."
+    case .cannotConnectToHost: return "The server isn't answering. Check that it is running (and that your VPN is connected, if you use one)."
     case .dataNotAllowed, .internationalRoamingOff: return "This Mac isn't allowed to use the network right now."
     default: return APIError.offline
     }
@@ -338,7 +338,7 @@ public final class API: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
   public static func download(_ source: URL, to file: URL, expected: Int64? = nil, event: @escaping @Sendable (DownloadEvent) -> Void) async throws {
     struct Refused: Error { let error: APIError }
     guard source.scheme?.lowercased() == "https" else { throw APIError(status: -1, message: "Search models are only downloaded over https.") }
-    let tooLong = Refused(error: APIError(status: -1, message: "The search models couldn't be downloaded (Hugging Face sent more than expected)."))
+    let tooLong = Refused(error: APIError(status: -1, message: "The search models couldn't be downloaded (the download site sent more than expected)."))
     var fruitless = 0
     while true {
       try Task.checkCancellation()
@@ -354,7 +354,7 @@ public final class API: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
         guard let h = resp as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         if h.statusCode == 416 { try? FileManager.default.removeItem(at: file); throw URLError(.networkConnectionLost) } // the file changed: from the start
         guard h.statusCode == 200 || h.statusCode == 206 else {
-          let e = APIError(status: h.statusCode, message: "The search models couldn't be downloaded (Hugging Face answered \(h.statusCode)).")
+          let e = APIError(status: h.statusCode, message: "The search models couldn't be downloaded (the download site answered \(h.statusCode)).")
           if Self.retryable.contains(h.statusCode) { throw e }
           throw Refused(error: e)
         }
@@ -401,9 +401,9 @@ public final class API: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
 
   private static func modelNetwork(_ u: URLError) -> String {
     switch u.code {
-    case .timedOut: return "Hugging Face is slow to answer (the connection is slow or busy)."
-    case .networkConnectionLost: return "The connection to Hugging Face dropped."
-    case .cannotFindHost, .cannotConnectToHost: return "Hugging Face can't be reached."
+    case .timedOut: return "The model download site is slow to answer (the connection is slow or busy)."
+    case .networkConnectionLost: return "The connection to the model download site dropped."
+    case .cannotFindHost, .cannotConnectToHost: return "The model download site can't be reached."
     default: return network(u)
     }
   }

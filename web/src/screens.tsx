@@ -179,7 +179,7 @@ export function Account({ open }: { open?: string }) {
       {/* the sources ask to be named: GeoNames (CC BY 4.0) for the place names, always used; OpenStreetMap (ODbL) for the map */}
       <p class="hint small">
         Place names: GeoNames (geonames.org), CC BY 4.0.
-        {mem.me!.map ? (mapProvider() === "OpenFreeMap" ? " Map data © OpenStreetMap contributors, tiles OpenFreeMap / OpenMapTiles, drawn with MapLibre GL JS (BSD-3-Clause)." : " Map drawn with MapLibre GL JS (BSD-3-Clause); its data is credited on the map.") : ""}
+        {mem.me!.map ? (mapProvider() === "OpenFreeMap" ? " Map data © OpenStreetMap contributors, © OpenMapTiles, drawn with MapLibre GL JS (BSD-3-Clause)." : " Map drawn with MapLibre GL JS (BSD-3-Clause); its data is credited on the map.") : ""}
       </p>
     </div>
   );
@@ -670,7 +670,7 @@ function SearchPanel() {
       {adopted && (got || (indexChecked() && n + other > 0)) && (
         got ? (
           <>
-            <p class="hint">{got.at ? `Search model downloaded from Hugging Face on ${new Date(got.at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}, ${mb(got.bytes)}.` : `Search model downloaded from Hugging Face, ${mb(got.bytes)}.`} Hugging Face saw this device's IP address, nothing of your photos.</p>
+            <p class="hint">{got.at ? `Search model downloaded on ${new Date(got.at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}, ${mb(got.bytes)}.` : `Search model downloaded, ${mb(got.bytes)}.`} The site it came from saw this device's IP address, nothing of your photos.</p>
             {loading ? <Loading inline label={loading} /> : agreed ? (
               <button class="btn secondary" disabled={model.busy} onClick={off}>Turn off and delete the model</button>
             ) : <button class="btn" disabled={model.busy} onClick={() => setAsk(true)}>Download the model…</button>}
@@ -681,7 +681,6 @@ function SearchPanel() {
       )}
       {ask && <ModelConsent family={family} busy={model.busy} onYes={yes} onLater={() => setAsk(false)} />}
       <ErrorLine text={model.error} />
-      {indexChecked() && n + other > 0 && <p class="hint">Hugging Face is a trademark of Hugging Face, Inc. Cipherfilm is not affiliated with or endorsed by Hugging Face.</p>}
       {allowed && explicit !== null && (
         <>
           <label class="check">

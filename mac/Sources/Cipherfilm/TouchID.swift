@@ -24,7 +24,7 @@ enum TouchID {
   private static var service: String { "\(Bundle.main.bundleIdentifier ?? "app.cipherfilm.mac").touchid" }
 
   private static func save(_ st: Stored, _ userId: String) throws {
-    try Keychain.set(try JSONEncoder().encode(st), service: service, account: userId, label: "Cipherfilm Touch ID")
+    try Keychain.set(try JSONEncoder().encode(st), service: service, account: userId, label: "Cipherfilm fingerprint unlock")
   }
 
   /** The stored key: from the keychain, or from an older version's file (then moved into the keychain). */
@@ -49,11 +49,11 @@ enum TouchID {
   /** Turns it on: asks for Touch ID once (so a person can't turn it on without a finger that works). */
   static func enable(master: Data, userId: String) async throws {
     let ctx = LAContext()
-    ctx.localizedReason = "turn on Touch ID for Cipherfilm"
-    try await ctx.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: "turn on unlocking with Touch ID")
+    ctx.localizedReason = "turn on fingerprint unlocking for Cipherfilm"
+    try await ctx.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: "turn on unlocking with your fingerprint")
     var err: Unmanaged<CFError>?
     guard let access = SecAccessControlCreateWithFlags(nil, kSecAttrAccessibleWhenUnlockedThisDeviceOnly, [.privateKeyUsage, .biometryCurrentSet], &err) else {
-      throw APIError(status: -1, message: "Touch ID isn't available on this Mac.")
+      throw APIError(status: -1, message: "Fingerprint unlocking isn't available on this Mac.")
     }
     let se = try SecureEnclave.P256.KeyAgreement.PrivateKey(accessControl: access, authenticationContext: ctx)
     let eph = P256.KeyAgreement.PrivateKey()
@@ -85,7 +85,7 @@ enum TouchID {
       return master
     } catch {
       disable(userId) // fingerprints changed, or the key doesn't fit the account any more
-      throw APIError(status: -1, message: "Fingerprints changed, so Touch ID was turned off. Unlock with your password and turn it on again in Settings.")
+      throw APIError(status: -1, message: "Fingerprints changed, so fingerprint unlocking was turned off. Unlock with your password and turn it on again in Settings.")
     }
   }
 }

@@ -39,7 +39,7 @@ export function mapProvider(): string {
 /** Who serves the map images, as the question before the map says it: with the CDN and the fallback for the default. */
 export function mapProviderLong(): string {
   const p = mapProvider();
-  return p === "OpenFreeMap" ? "OpenFreeMap (through Cloudflare; VersaTiles if OpenFreeMap doesn't answer)" : p || "the map server";
+  return p === "OpenFreeMap" ? "an external map service" : p || "the map server";
 }
 
 export const PRIVACY_URL = "https://cipherfilm.app/privacy#map";

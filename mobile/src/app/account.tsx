@@ -180,9 +180,9 @@ export default function Account() {
         <List.Item title={t("Privacy policy")} description={privacyUrl().replace("https://", "")}
           onPress={() => { expectAway(); Linking.openURL(privacyUrl()); }} style={st.item} />
         {/* the sources ask to be named: GeoNames for the place names (always used), OpenStreetMap for the map */}
-        <List.Item title={t("Credits")} description={[t("Place names: GeoNames, CC BY 4.0."), me?.map ? (mapProvider() === "OpenFreeMap" ? t("Map data © OpenStreetMap contributors, OpenFreeMap.") : t("Map data: see the credits on the map.")) : ""].filter(Boolean).join(" ")}
+        <List.Item title={t("Credits")} description={[t("Place names: GeoNames, CC BY 4.0."), me?.map ? (mapProvider() === "OpenFreeMap" ? t("Map data © OpenStreetMap contributors, © OpenMapTiles.") : t("Map data: see the credits on the map.")) : ""].filter(Boolean).join(" ")}
           descriptionNumberOfLines={4} style={st.item} />
-        <List.Item title={t("Report a problem")} description={t("Opens a form on GitHub")}
+        <List.Item title={t("Report a problem")} description={t("Opens the issue form in the browser")}
           onPress={() => setReport(true)} style={st.item} />
       </ScrollView>
       <Portal>
@@ -197,9 +197,9 @@ export default function Account() {
         </Dialog>
         {/* asks first and shows exactly what the link fills in; the browser opens it, the app sends nothing */}
         <Dialog visible={report} onDismiss={() => setReport(false)}>
-          <Dialog.Title>{t("Report a problem on GitHub")}</Dialog.Title>
+          <Dialog.Title>{t("Report a problem")}</Dialog.Title>
           <Dialog.Content>
-            <Text variant="bodyMedium">{t("You'll continue on github.com (a free GitHub account is needed to post). We'll fill in this phone's details:")}</Text>
+            <Text variant="bodyMedium">{t("You'll continue in the browser, on the project's issue tracker (posting needs a free account there). We'll fill in this phone's details:")}</Text>
             <Text variant="bodyMedium" style={{ marginVertical: 12, fontWeight: "600" }}>{phone ? summary(phone) : ""}</Text>
             <Text variant="bodySmall" style={{ color: th.colors.onSurfaceVariant }}>{t("Nothing else is sent: no server address, e-mail, photos or names.")}</Text>
           </Dialog.Content>

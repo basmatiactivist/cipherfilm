@@ -138,11 +138,36 @@ func runAfterRestore(dataDir string) error {
 	if _, err := tx.Exec(`INSERT INTO settings(key,value) VALUES ('sync_epoch', lower(hex(randomblob(8)))) ON CONFLICT(key) DO UPDATE SET value=excluded.value`); err != nil {
 		return err
 	}
+	if err := bumpNoticeIDs(tx, time.Now()); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
 	fmt.Printf("ended %d sessions; kept %d later sign-outs; %d items in the trash keep it for another 30 days\n", sessions, revoked, trashed)
 	return nil
+}
+
+// bumpNoticeIDs moves the notices' id counter past every id this server can have handed out before the restore. The
+// counter went back with the database: without this, new notices would get ids the devices have already seen (and
+// remembered as shown), so a new sign-in after a restore onto a fresh machine would not be announced. The new base is
+// the time in milliseconds: later than any earlier restore's base plus the notices since (far fewer than one per
+// millisecond), and still an exact number in every app (below 2^53).
+func bumpNoticeIDs(tx *sql.Tx, now time.Time) error {
+	var seq, top int64
+	if err := tx.QueryRow(`SELECT COALESCE((SELECT MAX(seq) FROM sqlite_sequence WHERE name='notices'),0),
+		COALESCE((SELECT MAX(id) FROM notices),0)`).Scan(&seq, &top); err != nil {
+		return err
+	}
+	base := max(seq, top, now.UnixMilli())
+	res, err := tx.Exec(`UPDATE sqlite_sequence SET seq=? WHERE name='notices'`, base)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		_, err = tx.Exec(`INSERT INTO sqlite_sequence(name,seq) VALUES ('notices',?)`, base)
+	}
+	return err
 }
 
 // carryAccounts takes over from the replaced database what happened to the accounts since the backup: a changed

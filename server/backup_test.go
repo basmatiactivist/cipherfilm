@@ -502,3 +502,63 @@ func TestRestoreKeepsLaterLimitsAndExplicitSearch(t *testing.T) {
 		t.Fatalf("default limit after the restore: %d", got)
 	}
 }
+
+// After a restore onto a fresh machine (no replaced data), new notices must not get ids the devices have already seen
+// before the restore: they remember shown ids and would stay silent about a new sign-in. Nor after a second restore.
+func TestNoticeIDsAfterARestoreAreNew(t *testing.T) {
+	e := newEnv(t)
+	e.setupAdmin("admin@x.org")
+	u, _ := e.app.userByEmail("admin@x.org")
+	if err := runBackup(e.app.dataDir); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 5; i++ { // seen by the devices, lost with the restore
+		e.app.notify(u.ID, noticeTwoFactorReset, "", "")
+	}
+	fresh := func(from string) *App {
+		dir := t.TempDir()
+		os.MkdirAll(filepath.Join(dir, "blobs"), 0o700)
+		for _, f := range []string{"app.db", "secret"} {
+			if err := copyFile(filepath.Join(from, "backup", f), filepath.Join(dir, f)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := runAfterRestore(dir); err != nil {
+			t.Fatal(err)
+		}
+		a, err := newApp(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { a.db.Close() })
+		return a
+	}
+	top := func(a *App) (n int64) {
+		a.db.QueryRow(`SELECT COALESCE(MAX(id),0) FROM notices`).Scan(&n)
+		return
+	}
+	seen := top(e.app)
+	app2 := fresh(e.app.dataDir)
+	app2.notify(u.ID, noticeTwoFactorReset, "", "")
+	if got := top(app2); got <= seen {
+		t.Fatalf("new notice after the restore has id %d; the devices saw up to %d", got, seen)
+	}
+	if got := top(app2); got >= 1<<53 {
+		t.Fatalf("notice id %d is not exact in JavaScript", got)
+	}
+	// the restored server goes on, is backed up and restored again: still past everything it handed out
+	for i := 0; i < 3; i++ {
+		app2.notify(u.ID, noticeTwoFactorReset, "", "")
+	}
+	if err := runBackup(app2.dataDir); err != nil {
+		t.Fatal(err)
+	}
+	app2.notify(u.ID, noticeTwoFactorReset, "", "")
+	seen = top(app2)
+	time.Sleep(2 * time.Millisecond)
+	app3 := fresh(app2.dataDir)
+	app3.notify(u.ID, noticeTwoFactorReset, "", "")
+	if got := top(app3); got <= seen {
+		t.Fatalf("after a second restore: id %d, the devices saw up to %d", got, seen)
+	}
+}

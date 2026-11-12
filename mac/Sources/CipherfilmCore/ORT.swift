@@ -35,7 +35,9 @@ final class OrtModel: @unchecked Sendable {
   let outputNames: [String]
   private let lock = NSLock()
 
-  init(path: URL, threads: Int32) throws {
+  /** A model from its bytes (Models.verified: checked against the pinned SHA-256), never from a path ONNX Runtime
+   *  would open itself after the check. */
+  init(bytes: Data, threads: Int32) throws {
     let a = ORT.api.pointee
     var opts: OpaquePointer?
     try ORT.check(a.CreateSessionOptions(&opts))
@@ -43,7 +45,7 @@ final class OrtModel: @unchecked Sendable {
     try ORT.check(a.SetIntraOpNumThreads(opts, threads))
     try ORT.check(a.SetSessionGraphOptimizationLevel(opts, ORT_ENABLE_ALL))
     var s: OpaquePointer?
-    try ORT.check(path.path.withCString { a.CreateSession(ORT.env, $0, opts, &s) })
+    try ORT.check(bytes.withUnsafeBytes { b in a.CreateSessionFromArray(ORT.env, b.baseAddress, b.count, opts, &s) })
     session = s!
     var alloc: UnsafeMutablePointer<OrtAllocator>?
     try ORT.check(a.GetAllocatorWithDefaultOptions(&alloc))

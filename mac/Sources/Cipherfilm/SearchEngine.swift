@@ -486,7 +486,7 @@ final class SearchEngine {
    *  explicit content find nothing, and photos that look explicit are left out. */
   func textHits(_ q: String) async -> [Hit] {
     guard ready, let vision else { return [] }
-    if tokenizer == nil { tokenizer = try? Tokenizer(json: Data(contentsOf: models.dir.appendingPathComponent(Models.tokenizer.name))) }
+    if tokenizer == nil { tokenizer = try? Tokenizer(json: Models.verified(Models.tokenizer, in: models.dir)) } // the checked bytes
     guard let t = tokenizer else { return [] }
     let idx = index, filtered = filtered
     return await Task.detached(priority: .userInitiated) {

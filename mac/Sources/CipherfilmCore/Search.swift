@@ -85,6 +85,16 @@ public enum Models {
     ("mobileclip-s2-vision.onnx", nil), ("mobileclip-s2-text.onnx", nil), ("mobileclip-s2-tokenizer.json", nil),
   ]
 
+  /** A model file's bytes, read once and checked against its pinned SHA-256: what is loaded is exactly what was
+   *  checked (nothing can swap the file between a check by its path and the load). */
+  public static func verified(_ m: ModelFile, in dir: URL) throws -> Data {
+    let d = try Data(contentsOf: dir.appendingPathComponent(m.name)) // read into memory, not mapped: later writes to the file don't reach it
+    guard SHA256.hash(data: d).map({ String(format: "%02x", $0) }).joined() == m.sha256 else {
+      throw CryptoError.failed("A search model didn't match its checksum and was not used.")
+    }
+    return d
+  }
+
   public static func sha256(of url: URL) -> String? {
     guard let fh = try? FileHandle(forReadingFrom: url) else { return nil }
     defer { try? fh.close() }

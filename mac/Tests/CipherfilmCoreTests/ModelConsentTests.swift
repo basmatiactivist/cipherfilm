@@ -1,6 +1,7 @@
 // Nothing is downloaded from Hugging Face before the person agreed (docs/MODELS.md): the gate in ModelStore.download,
 // which every download goes through; the yes is kept on this Mac, covers exactly the files agreed to, and goes with
 // the models when search is turned off. None of these tests touch the network.
+import CryptoKit
 import Foundation
 import Testing
 @testable import CipherfilmCore
@@ -118,6 +119,32 @@ import Testing
     #expect(s.downloaded() == nil) // the wrong files went
     #expect(s.consent() == nil)
     #expect(s.unagreed(faces: false, reader: true).count == 2)
+  }
+}
+
+/** A model is loaded from the bytes that were checked, not from its path again (Models.verified, Vision, the tokenizer). */
+@Suite struct VerifiedModelBytesTests {
+  @Test func onlyTheCheckedBytesAreHandedOn() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cf-verified-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let good = Data("the pinned model".utf8)
+    let sha = SHA256.hash(data: good).map { String(format: "%02x", $0) }.joined()
+    let m = ModelFile(name: "m.onnx", url: "https://huggingface.co/x/resolve/0/m.onnx", sha256: sha, size: Int64(good.count), faces: false)
+    try good.write(to: dir.appendingPathComponent("m.onnx"))
+    #expect(try Models.verified(m, in: dir) == good)
+    try Data("swapped after the first check".utf8).write(to: dir.appendingPathComponent("m.onnx"))
+    #expect(throws: CryptoError.self) { try Models.verified(m, in: dir) }
+    try FileManager.default.removeItem(at: dir.appendingPathComponent("m.onnx"))
+    #expect(throws: (any Error).self) { try Models.verified(m, in: dir) }
+  }
+
+  @Test func visionRefusesAModelThatDoesNotMatch() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cf-verified-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    try Data("not the text model".utf8).write(to: dir.appendingPathComponent(ClipModel.clip.text.name))
+    #expect(throws: CryptoError.self) { try Vision(dir: dir, faces: false, textOnly: true) }
   }
 }
 

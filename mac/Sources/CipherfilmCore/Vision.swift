@@ -188,15 +188,17 @@ public final class Vision: @unchecked Sendable {
   private let rec: OrtModel?
   public var hasFaces: Bool { det != nil }
 
-  /** Opens the models in a folder (checked against their SHA-256 before). textOnly: only the text model, on a device
-   *  that reads the index another one computes; it can search but not look at photos. */
+  /** Opens the models in a folder, each from bytes read once and checked against its pinned SHA-256 right there
+   *  (Models.verified). textOnly: only the text model, on a device that reads the index another one computes; it can
+   *  search but not look at photos. */
   public init(dir: URL, faces: Bool, clip: ClipModel = .clip, threads: Int32 = 2, textOnly: Bool = false) throws {
     model = clip
-    image = textOnly ? nil : try OrtModel(path: dir.appendingPathComponent(clip.vision.name), threads: threads)
-    text = try OrtModel(path: dir.appendingPathComponent(clip.text.name), threads: threads)
+    func load(_ m: ModelFile) throws -> OrtModel { try OrtModel(bytes: Models.verified(m, in: dir), threads: threads) }
+    image = textOnly ? nil : try load(clip.vision)
+    text = try load(clip.text)
     if faces && !textOnly {
-      det = try OrtModel(path: dir.appendingPathComponent("yunet-2023mar.onnx"), threads: threads)
-      rec = try OrtModel(path: dir.appendingPathComponent("sface-2021dec.onnx"), threads: threads)
+      det = try load(Models.faceFiles[0])
+      rec = try load(Models.faceFiles[1])
     } else {
       det = nil; rec = nil
     }

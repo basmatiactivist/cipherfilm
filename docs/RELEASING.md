@@ -158,6 +158,22 @@ Insights › Dependency graph › Dependabot: a rejected file stops every update
 - **Helper images** in the `Makefile` and `scripts/` (`alpine`, `golang`, `node`) are invisible to Dependabot.
   Check them by hand before each release; Go and Node must match the `Dockerfile`.
 
+## Weekly canary
+
+`.github/workflows/canary.yml` runs every Monday (and by hand under Actions › Canary › Run workflow). It checks out
+the latest release's tag, not master, and tests it against the newest releases of what it runs on:
+
+- the newest stable Go (server, decrypt tool) and Node (web app, the Android app's TypeScript);
+- the end-to-end tests with the newest Playwright, in Chromium, Firefox and WebKit;
+- the Android app built for the newest stable Android version and started on its emulator, and the same APK started
+  on the current Android beta's emulator (the next Android; that leg passes with a note while no beta is out);
+- Google Play's rule that the target API is at most one version behind the newest;
+- the Mac app built and tested on the newest stable macOS runner with the newest stable Xcode, and any macOS API the
+  app uses that Apple newly deprecated (known ones are listed in `.github/canary/mac-deprecations.txt`).
+
+A failing part opens an issue "Canary: <part>" labelled `canary`; later runs comment on it while it fails and close it
+once it passes. Releases don't wait for it: CI and the release workflow keep their pinned versions.
+
 ## First publish
 
 Done for `ghcr.io/basmatiactivist/cipherfilm`, which is public. For a fork: GitHub creates the first image private; open

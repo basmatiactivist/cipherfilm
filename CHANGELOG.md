@@ -40,6 +40,8 @@ version into the GitHub release notes, so a release cannot be published without 
   for its OK to download the models after an update).
 
 ### Fixed
+- Android: the location added afterwards from the phone's originals goes only into photos and videos this phone
+  uploaded itself, never into items someone else added to the account under a key of their own.
 - Android: locking or signing out closes every screen of the library, also the edit screen and screens further back
   (such as the map), not only the one on top.
 - Android: release builds always block screenshots unless you allow them; only test builds made for the local test

@@ -7,6 +7,7 @@ type Sodium = Awaited<ReturnType<typeof getSodium>>;
 import N from "../modules/cf-native/src/CfNativeModule";
 import { api, putBytes, type Remote } from "./api";
 import { session } from "./session";
+import { noteOwnUpload } from "./ownUploads";
 import { keepRunning, letGo, onlyHolder } from "./keepAlive";
 import type { ItemMeta } from "./library";
 import { locale, t, tn } from "./i18n";
@@ -88,7 +89,10 @@ export async function uploadShared(f: Shared, onProgress: (done: number, total: 
   // goes on when the person leaves the app (TransferService)
   keepRunning("upload", t("Uploading to Cipherfilm"), f.name);
   try {
-    return await uploadFile(f, s, (itemKey, id) => wrapItemKey(s, itemKey, masterKey, id), mine, onProgress);
+    let sent = "";
+    const id = await uploadFile(f, s, (itemKey, id) => { const w = wrapItemKey(s, itemKey, masterKey, id); sent = b64(s, w); return w; }, mine, onProgress);
+    await noteOwnUpload(owner, id, sent); // this phone's own upload (ownUploads.ts)
+    return id;
   } finally {
     running--;
     letGo("upload");

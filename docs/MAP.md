@@ -16,7 +16,10 @@ apps. A photo's details show the place's name and a small map of its spot. Searc
   asks for it where the backup is set up and before picking (Android grants it without a dialog), and reads the
   original then. The uploaded file is always the original as the phone gives it, byte for byte.
 - **Added afterwards.** What arrived without its location gets it while the map is on: the Android app looks up the
-  photos and videos it uploaded on the phone (same name and size) and reads their originals; the web app reads videos'
+  photos and videos it uploaded on the phone (same name and size) and reads their originals. It does this only for items
+  this phone uploaded itself, by the backup or the Upload button, from this version on: it keeps their ids with a hash
+  of the wrapped item key it sent, and the item must still carry that very key, so an item added by someone else (the
+  server, or a stolen session, can add items under a key of its own) never gets a location from the phone; the web app reads videos'
   header boxes from the encrypted originals (photos already got theirs at upload). Either writes the location into the
   item's encrypted metadata (`PUT /api/items/{id}/meta`), and the other devices get it with their next change list.
   A device remembers what it looked at, so this happens once.

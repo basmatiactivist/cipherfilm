@@ -60,6 +60,8 @@ prod-config: ## validate the production compose files
 	  echo "== compose.yaml:$$o"; COMPOSE_FILE="compose.yaml:$$o" PUBLIC_HOSTS=photos.example.com TS_AUTHKEY=x \
 	  KOPIA_SERVER_PASSWORD=x DOMAIN=photos.example.com TS_DOMAIN=photos.example.ts.net CF_API_TOKEN=x \
 	  docker compose config -q || exit 1; done; \
+	echo "== deploy/mac-local/compose.yaml"; docker compose -f deploy/mac-local/compose.yaml config -q || exit 1; \
+	scripts/check-compose-env.sh || exit 1; \
 	echo "all valid"
 multiarch: ## prove the image builds for amd64 and arm64 (not loaded, just built)
 	docker buildx build --platform linux/amd64,linux/arm64 -o type=oci,dest=/tmp/cipherfilm-multiarch.tar . && echo "multi-arch build OK: /tmp/cipherfilm-multiarch.tar"

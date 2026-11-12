@@ -60,6 +60,8 @@ version into the GitHub release notes, so a release cannot be published without 
   the phones and the Mac announce them again instead of taking them for ones already shown.
 - Server: a restore whose last step failed is marked in the data: the server doesn't start and a second restore or
   demo reset doesn't run until it is finished, so the replaced data in `.previous/` is never dropped.
+- Server: `ANDROID_APP_CERTS`, `ANDROID_APP_PACKAGES` and `MAP_STYLE` set in `.env` now reach the app (compose.yaml
+  didn't pass them on); `make prod-config` checks that every server setting does.
 
 ### Changed
 - Search uses one open model for everyone, in every app and build: LAION's CLIP ViT-B/32 (MIT), the model explicit

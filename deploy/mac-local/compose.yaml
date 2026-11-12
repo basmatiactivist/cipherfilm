@@ -18,5 +18,8 @@ services:
       LISTEN_ADDR: ":8080"
       TRUST_PROXY: "0"
       PUBLIC_HOSTS: fotocrypt.orb.local   # requests for any other name (DNS rebinding) are refused
+      MAP_STYLE: "${MAP_STYLE:-}"                        # from .env next to this file; empty: the default
+      ANDROID_APP_CERTS: "${ANDROID_APP_CERTS:-}"        # passkeys of the Android app; empty: the official app
+      ANDROID_APP_PACKAGES: "${ANDROID_APP_PACKAGES:-}"
     labels:
       dev.orbstack.domains: fotocrypt.orb.local

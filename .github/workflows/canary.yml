@@ -272,20 +272,12 @@ jobs:
           echo "label=macos-${n:-26}" | tee -a "$GITHUB_OUTPUT"
 
   mac:
-    # the Mac app built and its tests with the newest macOS runner and the newest stable Xcode on it
-    needs: [release, mac-runner]
-    uses: ./.github/workflows/mac.yml
-    with:
-      version: "0.0.0"
-      runner: ${{ needs.mac-runner.outputs.label }}
-      ref: ${{ needs.release.outputs.tag }}
-
-  mac-deprecations:
-    # a macOS API the app uses that Apple newly marks deprecated: one day it goes. Known ones are listed in
+    # the Mac app's core tests and the app built and started, with the newest stable macOS runner and Xcode; and any
+    # macOS API it uses that Apple newly marks deprecated (one day it goes). Known ones are listed in
     # .github/canary/mac-deprecations.txt (a symbol per line); a new one fails until it is replaced or listed there.
     needs: [release, mac-runner]
     runs-on: ${{ needs.mac-runner.outputs.label }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     defaults:
       run: { working-directory: mac }
     steps:
@@ -295,7 +287,7 @@ jobs:
         with: { persist-credentials: false, path: canary-src, sparse-checkout: .github/canary }
       - name: Newest Xcode on the runner
         run: |
-          X=$(ls -d /Applications/Xcode_*.app | grep -v -i beta | sort -V | tail -1)
+          X=$(find /Applications -maxdepth 1 -name 'Xcode_*.app' | grep -v -i beta | sort -V | tail -1)
           sudo xcode-select -s "$X"
           xcodebuild -version; sw_vers
       - name: ONNX Runtime (pinned release, checked against its SHA-256)
@@ -303,18 +295,39 @@ jobs:
       - name: MapLibre (web/package-lock.json)
         working-directory: web
         run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: build and compare deprecations
+      - name: build, compare deprecations, core tests
         run: |
           swift build 2>&1 | tee "$RUNNER_TEMP/build.log"
           grep -oE "'[A-Za-z_][A-Za-z0-9_.:()]*' (was|is) deprecated" "$RUNNER_TEMP/build.log" | cut -d"'" -f2 | sort -u > "$RUNNER_TEMP/now.txt" || true
           grep -vE '^\s*(#|$)' ../canary-src/.github/canary/mac-deprecations.txt | sort -u > "$RUNNER_TEMP/known.txt"
-          new=$(comm -23 "$RUNNER_TEMP/now.txt" "$RUNNER_TEMP/known.txt")
           echo "deprecated APIs in use:"; cat "$RUNNER_TEMP/now.txt"
+          new=$(comm -23 "$RUNNER_TEMP/now.txt" "$RUNNER_TEMP/known.txt")
           if [ -n "$new" ]; then echo "newly deprecated:"; echo "$new"; exit 1; fi
+          swift test
+      - name: Xcode project (XcodeGen, pinned release checked against its SHA-256)
+        env:
+          XCODEGEN: "2.46.0"
+          XCODEGEN_SHA256: "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/xcodegen.zip" "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN/xcodegen.zip"
+          echo "$XCODEGEN_SHA256  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP/xcodegen-dist"
+          X=$(find "$RUNNER_TEMP/xcodegen-dist" -type f -name xcodegen -perm -u+x | head -1)
+          test -n "$X"
+          "$X" generate
+      - name: Build and start the app
+        run: |
+          xcodebuild -project Cipherfilm.xcodeproj -scheme CipherfilmApp -configuration Release \
+            -destination 'platform=macOS,arch=arm64' -derivedDataPath build/dd \
+            CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO build
+          APP="build/dd/Build/Products/Release/Cipherfilm.app"
+          ("$APP/Contents/MacOS/Cipherfilm" > launch.log 2>&1 &); sleep 8
+          pgrep -f "$APP/Contents/MacOS/Cipherfilm" >/dev/null || { cat launch.log; echo "the app did not start"; exit 1; }
+          pkill -f "$APP/Contents/MacOS/Cipherfilm" || true
 
   report:
     # one issue per failing part, kept up to date; closed once the part passes again
-    needs: [release, go, node, browsers, android-build, android-run, play-target, mac, mac-deprecations]
+    needs: [release, go, node, browsers, android-build, android-run, play-target, mac]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     permissions:
@@ -332,8 +345,7 @@ jobs:
             Android build (newest version) ${{ needs.android-build.result }}
             Android on the emulator (newest version and beta) ${{ needs.android-run.result }}
             Google Play target API ${{ needs.play-target.result }}
-            Mac app (newest macOS and Xcode) ${{ needs.mac.result }}
-            Mac deprecated APIs ${{ needs.mac-deprecations.result }}
+            Mac app (newest macOS and Xcode, deprecated APIs) ${{ needs.mac.result }}
         run: |
           gh label create canary --color FBCA04 --description "the weekly check against the newest platform releases" 2>/dev/null || true
           printf '%s\n' "$RESULTS" | while read -r line; do

@@ -16,6 +16,7 @@ import { open, LABEL } from "./crypto/wrap";
 import { announce, sameSession } from "./tabs";
 import { forgetBrowserAlerts } from "./noticeAlerts";
 import { getPasskey } from "./passkeys";
+import { type SecondStep, stepFields } from "./twofactor";
 
 /** Give the browser a frame to paint a busy state before Argon2 blocks the thread. */
 export const paint = (): Promise<void> => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
@@ -88,7 +89,7 @@ export async function needsSetup(): Promise<boolean> {
  *  saved the words: if commit's response is lost, nobody is left with a key that works but was never seen. A new
  *  account's key is stored with the account itself (storedKey: commit does nothing); closing the tab before saving it
  *  leaves a key never seen, which a new one under Account replaces. */
-export interface PendingKey { words: string[]; email: string; commit: () => Promise<void> }
+export interface PendingKey { words: string[]; email: string; commit: (second?: SecondStep) => Promise<void> }
 
 /** Runs send; if it fails, the request may still have gone through with only the response lost. verify checks that
  *  (by signing in with the new password), so a retry never fails on "already done" and a stored key is never lost. */
@@ -101,8 +102,8 @@ async function sendChecked(send: () => Promise<void>, verify?: () => Promise<voi
   }
 }
 
-function pendingKey(words: string[], email: string, send: () => Promise<void>, verify?: () => Promise<void>): PendingKey {
-  return { words, email, commit: () => sendChecked(send, verify) };
+function pendingKey(words: string[], email: string, send: (second?: SecondStep) => Promise<void>, verify?: () => Promise<void>): PendingKey {
+  return { words, email, commit: (second) => sendChecked(() => send(second), verify) };
 }
 
 /** A key already stored: only the words are left to show. */
@@ -352,15 +353,23 @@ export async function checkSession(): Promise<void> {
   if (!sameSession(mem.me, me.user.id, me.session_id)) { replaced(); throw new Error("Signed in elsewhere."); }
 }
 
-export async function changePassword(current: string, next: string): Promise<void> {
+/** Changes the password. second: the second step while two-step sign-in is on (sent only when given). */
+export async function changePassword(current: string, next: string, second?: SecondStep): Promise<void> {
   const s = await getSodium();
   const me = mem.me!;
   if (!mem.masterKey) throw new Error("Unlock your library first.");
   assertSaneKdf(me.kdf);
-  const { auth } = await loginProof(s, current, me.kdf);
+  const { auth, kek } = await loginProof(s, current, me.kdf);
+  try {
+    s.memzero(unlockMasterKey(s, me.user.email, kek, me.wrapped_master_pw)); // a typo shows here, before a code is used up
+  } catch {
+    throw new Error("That password isn't right.");
+  } finally {
+    s.memzero(kek);
+  }
   const ch = await rewrapForPassword(s, me.user.email, mem.masterKey, next);
   try {
-    await api("POST", "/api/auth/password", { current_auth: auth, ...ch });
+    await api("POST", "/api/auth/password", { current_auth: auth, ...ch, ...stepFields(second) });
   } catch (e) {
     // the change may have gone through with only the response lost: pick up what the server now has, so the next
     // attempt (or an unlock) uses the current password settings instead of the old ones
@@ -372,7 +381,7 @@ export async function changePassword(current: string, next: string): Promise<voi
 
 /** Deletes the account permanently, after checking the password here first (a typo shows before anything is sent), then
  *  forgets everything this browser keeps. The server refuses for the only administrator. */
-export async function deleteAccount(password: string): Promise<void> {
+export async function deleteAccount(password: string, second?: SecondStep): Promise<void> {
   const s = await getSodium();
   const me = mem.me!;
   assertSaneKdf(me.kdf);
@@ -381,8 +390,10 @@ export async function deleteAccount(password: string): Promise<void> {
     s.memzero(unlockMasterKey(s, me.user.email, kek, me.wrapped_master_pw));
   } catch {
     throw new Error("That password isn't right.");
+  } finally {
+    s.memzero(kek);
   }
-  await api("DELETE", "/api/me", { current_auth: auth });
+  await api("DELETE", "/api/me", { current_auth: auth, ...stepFields(second) });
   announce({ t: "signed-out", user: me.user.id }); // every session of the account
   forgetLocal();
 }
@@ -418,8 +429,8 @@ export async function recoverFinish(h: RecoveryHandle, newPassword: string): Pro
     async () => { await recoverStart(h.email, fin.recoveryWords.join(" ")); });
 }
 
-/** Makes a new recovery key; the old one stops working once commit() stores the new one. Needs the current password
- *  and an unlocked library. Sending the same key again is harmless, so a retry needs no check. */
+/** Makes a new recovery key; the old one stops working once commit() stores the new one. Needs the current password,
+ *  an unlocked library and, while two-step sign-in is on, the second step given to commit(). Sending the same key again is harmless, so a retry needs no check. */
 export async function rotateRecoveryKey(currentPassword: string): Promise<PendingKey> {
   const s = await getSodium();
   const me = mem.me!;
@@ -427,13 +438,16 @@ export async function rotateRecoveryKey(currentPassword: string): Promise<Pendin
   assertSaneKdf(me.kdf);
   const { auth, kek } = await loginProof(s, currentPassword, me.kdf);
   try {
-    unlockMasterKey(s, me.user.email, kek, me.wrapped_master_pw); // a typo shows here, not after the words
+    s.memzero(unlockMasterKey(s, me.user.email, kek, me.wrapped_master_pw)); // a typo shows here, not after the words
   } catch {
     throw new Error("That password isn't right.");
+  } finally {
+    s.memzero(kek);
   }
   const kit = await newRecoveryKit(s, me.user.email, mem.masterKey);
-  return pendingKey(kit.words, me.user.email, async () => {
-    await api("POST", "/api/auth/recovery-key", { current_auth: auth, wrapped_master_recovery: kit.wrapped_master_recovery, recovery_verifier: kit.recovery_verifier });
+  // the second step (while two-step sign-in is on) comes with commit, after the words are saved: a code is used up
+  return pendingKey(kit.words, me.user.email, async (second) => {
+    await api("POST", "/api/auth/recovery-key", { current_auth: auth, wrapped_master_recovery: kit.wrapped_master_recovery, recovery_verifier: kit.recovery_verifier, ...stepFields(second) });
   });
 }
 

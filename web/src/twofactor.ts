@@ -1,7 +1,7 @@
 // Two-step sign-in (docs/THREAT_MODEL.md, "Two-step sign-in"): after the password, a new sign-in needs a code from an
 // authenticator app, a passkey (passkeys.ts) or one of ten recovery codes. Unlocking a browser that is already signed
 // in never needs one.
-import { api } from "./api";
+import { api, ApiError } from "./api";
 import { encodeQR, qrPath } from "./crypto/qr";
 import type { Proof } from "./passkeys";
 
@@ -19,6 +19,31 @@ export const disable = (proof: Proof) => api("POST", "/api/me/2fa/disable", proo
 /** Removes the authenticator app, keeping the passkeys. */
 export const removeApp = (proof: Proof) => api<{ two_factor: boolean }>("POST", "/api/me/2fa/totp/remove", proof);
 export const newCodes = async (proof: Proof) => (await api<{ recovery_codes: string[] }>("POST", "/api/me/2fa/recovery-codes", proof)).recovery_codes;
+
+// ---- the second step of a credential change ----
+
+/** What changing the password, making a new recovery key or deleting the account sends besides the password while
+ *  two-step sign-in is on: a code as typed (from the app, or a recovery code), or a passkey's answer. */
+export interface SecondStep { code?: string; passkey?: Record<string, any> }
+
+/** Only what was given: nothing at all for an account without two-step sign-in (an older server ignores it anyway). */
+export function stepFields(s?: SecondStep): SecondStep {
+  if (s?.passkey) return { passkey: s.passkey };
+  const c = s?.code?.trim();
+  return c ? { code: c } : {};
+}
+
+/** The server wants a second step the app didn't send (two-step sign-in was turned on elsewhere). */
+export const needsStep = (e: unknown): boolean => e instanceof ApiError && e.status === 403 && e.code === "second_step_required";
+
+/** The second step's refusals in plain words; anything else as it is. */
+export function stepError(e: unknown): unknown {
+  if (!(e instanceof ApiError) || e.status !== 403) return e;
+  if (e.code === "second_step_required") return new Error("Your account uses two-step sign-in. Enter a code from your authenticator app or a recovery code, or use a passkey.");
+  if (e.code === "wrong_code") return new Error("That code isn't right. Try the newest code from your app, or a recovery code.");
+  if (e.code === "wrong_passkey") return new Error("That passkey wasn't accepted. Try again, or use a code.");
+  return e;
+}
 
 /** Whether this is a phone or tablet: there the authenticator app is on the same device, so it is opened, not scanned. */
 export const touchDevice = (): boolean => typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;

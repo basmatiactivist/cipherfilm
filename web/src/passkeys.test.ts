@@ -37,11 +37,11 @@ describe("passkey options", () => {
   });
 });
 
-describe("the Mac app's hand-off", () => {
+describe("the apps' hand-off", () => {
   it("reads what the app sends in the fragment, and nothing else", () => {
     const h = { op: "get", options: { challenge: "AQID", rpId: "photos.test" } };
     const frag = "#" + toB64u(new TextEncoder().encode(JSON.stringify(h)));
-    expect(readHandoff(frag)).toEqual(h);
+    expect(readHandoff(frag)).toEqual({ ...h, app: "mac" }); // an older Mac app names no app
     expect(readHandoff("#" + toB64u(new TextEncoder().encode(JSON.stringify({ op: "steal", options: { challenge: "x" } }))))).toBeNull();
     expect(readHandoff("#not-base64-json")).toBeNull();
     expect(readHandoff("")).toBeNull();
@@ -52,5 +52,23 @@ describe("the Mac app's hand-off", () => {
     expect(back.startsWith("cipherfilm-mac://passkey#")).toBe(true);
     expect(JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(back.split("#")[1].replace(/-/g, "+").replace(/_/g, "/") + "=="), (c) => c.charCodeAt(0))))).toEqual({ id: "k" });
     expect(handoffReturn(null)).toBe("cipherfilm-mac://passkey#error=cancelled");
+  });
+
+  const frag = (x: unknown) => "#" + toB64u(new TextEncoder().encode(JSON.stringify(x)));
+  it("knows which app asked, and only the known ones", () => {
+    const base = { op: "create", options: { challenge: "AQID", rp: { id: "photos.test" } } };
+    for (const app of ["mac", "android", "android-test"] as const) expect(readHandoff(frag({ ...base, app }))).toEqual({ ...base, app });
+    for (const app of ["ios", "", "cipherfilm://evil", null, 1, {}, "__proto__", "toString"]) expect(readHandoff(frag({ ...base, app }))).toBeNull();
+  });
+
+  it("answers each app at its own fixed address", () => {
+    expect(handoffReturn(null, "cancelled", "mac")).toBe("cipherfilm-mac://passkey#error=cancelled");
+    expect(handoffReturn(null, "cancelled", "android")).toBe("cipherfilm://passkey#error=cancelled");
+    expect(handoffReturn(null, "no passkey", "android-test")).toBe("cipherfilm-test://passkey#error=no%20passkey");
+    expect(handoffReturn({ id: "k" }, "", "android")).toBe("cipherfilm://passkey#" + toB64u(new TextEncoder().encode(JSON.stringify({ id: "k" }))));
+    // a return address in the hand-off is never used
+    const h = readHandoff(frag({ op: "get", options: { challenge: "x" }, app: "android", return: "https://evil.test/" }))!;
+    expect(h).toEqual({ op: "get", options: { challenge: "x" }, app: "android" });
+    expect(handoffReturn(null, "", h.app)).toBe("cipherfilm://passkey#error=cancelled");
   });
 });

@@ -1,8 +1,8 @@
 // Notices (notices.ts) as the browser's own notifications, while this tab is open but hidden (another tab in front,
 // the window minimised). Off unless the person turns it on under Account › Devices, which is when the browser asks for
 // the permission; a browser that doesn't have notifications, or a refused permission, keeps it off. Each notice at
-// most once in this browser; while the tab is visible the banner shows them and nothing is posted. The title says
-// only that something happened ("New sign-in to Cipherfilm"); the body is the banner's sentence. A closed tab gets
+// most once in this browser; while the tab is visible the bell in the top bar shows them and nothing is posted. The title says
+// only that something happened ("New sign-in to Cipherfilm"); the body is the notice's sentence. A closed tab gets
 // nothing: there is no push service.
 import { useEffect, useState } from "preact/hooks";
 import { type Notice, noticeText } from "./notices";

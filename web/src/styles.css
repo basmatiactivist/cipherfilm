@@ -513,7 +513,7 @@ kbd { display: inline-block; padding: 1px 7px; font: inherit; font-size: var(--t
 .mapconsent h2 { margin: 0; }
 .mapconsent p { margin: 0; }
 
-/* two-step sign-in (screens.tsx TwoFactorPanel) and notices (library.tsx) */
+/* two-step sign-in (screens.tsx TwoFactorPanel) */
 .qr { display: block; width: 200px; height: 200px; margin: var(--space-3) 0; border: 1px solid var(--rule); border-radius: var(--radius-control); }
 /* two-step sign-in: the parts of the panel (app, passkeys, recovery codes) */
 .acc .subhead { font-size: var(--text-label); font-weight: 600; margin: var(--space-4) 0 var(--space-2); }
@@ -524,9 +524,28 @@ kbd { display: inline-block; padding: 1px 7px; font: inherit; font-size: var(--t
 .secret code, .codes code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: var(--text-label); letter-spacing: 0.04em; overflow-wrap: anywhere; }
 .words.codes { grid-template-rows: repeat(10, auto); }
 @media (min-width: 560px) { .words.codes { grid-template-rows: repeat(5, auto); } }
-.noticebar { display: flex; align-items: center; gap: var(--space-3); margin: 0 0 var(--space-4); padding: var(--space-2) var(--space-2) var(--space-2) 14px; border: 1px solid var(--rule-strong); border-radius: var(--radius-control); background: var(--card); color: var(--ink); font-size: var(--text-label); }
-.noticebar > span { flex: 1; min-width: 0; text-wrap: pretty; }
-.noticebar > svg { flex: none; color: var(--teal-ink); }
+/* notices under the bell in the top bar (noticesui.tsx): a count on the bell, a panel like the account menu */
+.bellwrap { position: relative; }
+.bellbtn { position: relative; border-radius: var(--radius-round); }
+.bellbtn[aria-expanded="true"] { background: var(--paper-deep); }
+.bellbadge { position: absolute; top: 5px; right: 3px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--radius-round); background: var(--danger); color: var(--on-danger); font-size: var(--text-micro); font-weight: 700; line-height: 18px; text-align: center; box-shadow: 0 0 0 2px var(--paper); }
+.noticepanel { width: 360px; max-height: min(70vh, 560px); overflow-y: auto; padding: var(--space-2) var(--space-2) var(--space-1); }
+.noticehead { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: 0 var(--space-2); border-bottom: 1px solid var(--rule); margin-bottom: var(--space-1); }
+.noticehead h2 { margin: 0; font-size: var(--text-heading); }
+.noticehead h2:focus { outline: none; }
+.noticehead h2:focus-visible { outline: var(--focus-ring) solid var(--teal); outline-offset: 2px; }
+.noticeempty { margin: var(--space-3) var(--space-2); color: var(--muted); }
+.noticelist { list-style: none; margin: 0; padding: 0; }
+.noticelist li { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-2) 0 var(--space-1) var(--space-2); border-radius: var(--radius-control); font-size: var(--text-label); }
+.noticelist li + li { border-top: 1px solid var(--rule); border-top-left-radius: 0; border-top-right-radius: 0; }
+.noticelist li > .icon { flex: none; margin-top: 2px; color: var(--teal-ink); }
+.noticelist li.fresh { background: var(--teal-tint); }
+.noticebody { flex: 1; min-width: 0; }
+.noticebody p { margin: 0; text-wrap: pretty; color: var(--ink); }
+.noticebody .link { min-height: 36px; padding: var(--space-1) 0; }
+@media (max-width: 600px) {
+  .noticepanel { position: fixed; top: calc(var(--topbar) + 4px); left: var(--space-2); right: var(--space-2); width: auto; }
+}
 /* the editor (edit/editor.tsx): the lightbox's stage and side panel, with a crop frame over the turned photo */
 .editor .edstage { padding: var(--space-4); touch-action: none; }
 .edpic { position: relative; line-height: 0; user-select: none; }

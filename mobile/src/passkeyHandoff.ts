@@ -5,6 +5,7 @@
 // does (web/src/screens.tsx PasskeyHandoff), and the answer comes back to this app's own address
 // (cipherfilm://passkey#…, cipherfilm-test:// for a test build), which +native-intent.ts hands here.
 // The options travel in the address's fragment, which the browser never sends to the server.
+import { getSodium } from "@crypto/sodium";
 import { t } from "./i18n";
 
 type J = Record<string, unknown>;
@@ -61,56 +62,85 @@ const unb64u = (s: string) => {
   return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
 };
 
-/** The /passkey page's address with what to do and the options in the fragment. */
-export function handoffUrl(server: string, op: "get" | "create", options: J): string {
+/** A random state for one request (libsodium's random bytes, as everywhere in the app): the page gives it back with
+ *  the answer, and only the request with it takes it. */
+export async function newState(): Promise<string> {
+  const s = await getSodium();
+  return s.to_hex(s.randombytes_buf(16)); // 32 hex characters
+}
+
+/** The /passkey page's address with what to do, the options and the request's state in the fragment. */
+export function handoffUrl(server: string, op: "get" | "create", options: J, state: string): string {
   const base = server.replace(/\/+$/, "");
   if (!/^https:\/\//i.test(base)) throw new Error(t("Passkeys need the server's https address. Use a code instead."));
-  return `${base}/passkey#${b64u(JSON.stringify({ op, options, app: appName() }))}`;
+  return `${base}/passkey#${b64u(JSON.stringify({ op, options, app: appName(), state }))}`;
 }
 
 /** Whether an address that opened the app is the /passkey page's answer. */
 export const isPasskeyReturn = (url: string): boolean => url.toLowerCase().startsWith(`${scheme()}://passkey`);
 
-/** The answer in such an address: the passkey's JSON, or null when it was cancelled or failed. */
-export function readReturn(url: string): J | null {
+/** The answer in such an address ("s=<state>&a=<answer>" or "s=<state>&error=…"): its state, and the passkey's JSON
+ *  or null when it was cancelled or failed. */
+export function readReturn(url: string): { state: string; answer: J | null } {
   const frag = url.split("#")[1] ?? "";
-  if (!frag || frag.startsWith("error=")) return null;
+  const m = /^s=([A-Za-z0-9_-]+)&(?:a=([A-Za-z0-9_-]+)|error=.*)$/.exec(frag);
+  if (!m) return { state: "", answer: null };
+  if (!m[2]) return { state: m[1], answer: null };
   try {
-    const v = JSON.parse(unb64u(frag));
-    return v && typeof v === "object" && !Array.isArray(v) ? (v as J) : null;
-  } catch { return null; }
+    const v = JSON.parse(unb64u(m[2]));
+    return { state: m[1], answer: v && typeof v === "object" && !Array.isArray(v) ? (v as J) : null };
+  } catch { return { state: m[1], answer: null }; }
 }
 
-let waiting: { done: (url: string | null) => void } | null = null;
+let waiting: { state: string; done: (url: string | null) => void } | null = null;
 
-/** +native-intent.ts: the page sent its answer back. */
-export function passkeyReturned(url: string) { waiting?.done(url); }
+/** +native-intent.ts: the page sent an answer back. Only the waiting request whose state it carries takes it; any
+ *  other address of this form (a stale answer, one another app or page made up) is ignored. */
+export function passkeyReturned(url: string) {
+  if (waiting && readReturn(url).state === waiting.state) waiting.done(url);
+}
 
 /** Opens the server's /passkey page in the browser and waits for its answer. Rejects when the person comes back
  *  without one (cancelled, or the browser didn't hand it back). */
-export function viaBrowserPasskey(server: string, op: "get" | "create", options: J): Promise<J> {
-  const url = handoffUrl(server, op, options);
-  waiting?.done(null);
+/** What the wait needs from the phone (React Native's; the unit tests pass their own). */
+export interface Platform {
+  openURL: (url: string) => Promise<unknown>;
+  onAppState: (f: (state: string) => void) => { remove: () => void };
+  away: () => void;
+}
+function phone(): Platform {
   // React Native only here, when it runs: the unit tests (plain Node) load this module through the sign-in
   const { AppState, Linking } = require("react-native") as typeof import("react-native");
+  return {
+    openURL: (u) => Linking.openURL(u),
+    onAppState: (f) => AppState.addEventListener("change", f),
+    away: () => (require("./autolock") as typeof import("./autolock")).expectAway(),
+  };
+}
+
+export async function viaBrowserPasskey(server: string, op: "get" | "create", options: J, p: Platform = phone()): Promise<J> {
+  const state = await newState();
+  const url = handoffUrl(server, op, options, state);
+  waiting?.done(null);
   return new Promise<J>((resolve, reject) => {
     let left = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const sub = AppState.addEventListener("change", (s) => {
+    const sub = p.onAppState((s) => {
       if (s !== "active") { left = true; return; }
       // back in the app: the answer comes with this, or shortly after; nothing means it was left without one
       if (left) { clearTimeout(timer); timer = setTimeout(() => finish(null), 2500); }
     });
     const finish = (u: string | null) => {
-      if (!waiting) return;
+      if (waiting !== me) return; // settled already, or a newer request is waiting now
       waiting = null;
       clearTimeout(timer);
       sub.remove();
-      const answer = u ? readReturn(u) : null;
+      const answer = u ? readReturn(u).answer : null;
       if (answer) resolve(answer); else reject(Object.assign(new Error(t("No passkey was used. Try again, or use a code instead.")), { code: "ERR_PASSKEY_CANCELLED" }));
     };
-    waiting = { done: finish };
-    (require("./autolock") as typeof import("./autolock")).expectAway(); // the browser for a moment: not a reason to lock
-    Linking.openURL(url).catch(() => finish(null));
+    const me = { state, done: finish };
+    waiting = me;
+    p.away(); // the browser for a moment: not a reason to lock
+    p.openURL(url).catch(() => finish(null));
   });
 }

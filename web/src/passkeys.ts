@@ -130,21 +130,39 @@ const RETURN: Record<HandoffApp, string> = {
   "android-test": "cipherfilm-test://passkey#",
 };
 
-/** What an app hands to /passkey in the address's fragment (never sent to the server): what to do, the options, and
- *  which app it is. */
-export interface Handoff { op: "get" | "create"; options: J; app: HandoffApp }
+/** What an app hands to /passkey in the address's fragment (never sent to the server): what to do, the options, which
+ *  app it is, and (the Android app) a random state its answer must carry back, so the app takes only the answer to its
+ *  own request. */
+export interface Handoff { op: "get" | "create"; options: J; app: HandoffApp; state?: string }
+
+const own = (o: unknown, k: string) => !!o && typeof o === "object" && Object.prototype.hasOwnProperty.call(o, k);
+/** Only the fields the server's options have (server/passkeys.go): a link made by someone else can't add a user name
+ *  of its choice, extensions or an attestation request to what the browser is asked. */
+function pickOptions(op: "get" | "create", o: J): J {
+  const take = (src: J, keys: string[]) => Object.fromEntries(keys.filter((k) => own(src, k)).map((k) => [k, src[k]]));
+  if (op === "get") return take(o, ["challenge", "rpId", "allowCredentials", "userVerification", "timeout"]);
+  const out = take(o, ["challenge", "pubKeyCredParams", "timeout", "excludeCredentials", "authenticatorSelection"]);
+  if (own(o, "rp")) out.rp = take(o.rp as J, ["id", "name"]);
+  if (own(o, "user")) out.user = take(o.user as J, ["id", "name", "displayName"]);
+  out.attestation = "none";
+  return out;
+}
 
 export function readHandoff(hash: string): Handoff | null {
   try {
     const h = JSON.parse(new TextDecoder().decode(fromB64u(hash.replace(/^#/, ""))));
     if (!((h?.op === "get" || h?.op === "create") && h.options && typeof h.options.challenge === "string")) return null;
     const app: unknown = h.app === undefined ? "mac" : h.app;
-    if (typeof app !== "string" || !Object.prototype.hasOwnProperty.call(RETURN, app)) return null;
-    return { op: h.op, options: h.options, app: app as HandoffApp };
+    if (typeof app !== "string" || !own(RETURN, app)) return null;
+    if (h.state !== undefined && !(typeof h.state === "string" && /^[A-Za-z0-9_-]{16,64}$/.test(h.state))) return null;
+    return { op: h.op, options: pickOptions(h.op, h.options), app: app as HandoffApp, ...(h.state ? { state: h.state } : {}) };
   } catch { /* not a hand-off */ }
   return null;
 }
 
-/** Where the answer goes back to the app: its own fixed address, which only the sign-in waiting for it receives. */
-export const handoffReturn = (answer: J | null, error = "", app: HandoffApp = "mac"): string =>
-  RETURN[app] + (answer ? toB64u(new TextEncoder().encode(JSON.stringify(answer))) : "error=" + encodeURIComponent(error || "cancelled"));
+/** Where the answer goes back to the app: its own fixed address. With a state (the Android app):
+ *  "s=<state>&a=<answer>" or "s=<state>&error=…"; without (the Mac app): the answer or "error=…" alone. */
+export function handoffReturn(answer: J | null, error = "", app: HandoffApp = "mac", state?: string): string {
+  const body = answer ? toB64u(new TextEncoder().encode(JSON.stringify(answer))) : "error=" + encodeURIComponent(error || "cancelled");
+  return RETURN[app] + (state ? `s=${state}&` + (answer ? `a=${body}` : body) : body);
+}

@@ -57,7 +57,7 @@ describe("the apps' hand-off", () => {
   const frag = (x: unknown) => "#" + toB64u(new TextEncoder().encode(JSON.stringify(x)));
   it("knows which app asked, and only the known ones", () => {
     const base = { op: "create", options: { challenge: "AQID", rp: { id: "photos.test" } } };
-    for (const app of ["mac", "android", "android-test"] as const) expect(readHandoff(frag({ ...base, app }))).toEqual({ ...base, app });
+    for (const app of ["mac", "android", "android-test"] as const) expect(readHandoff(frag({ ...base, app }))).toEqual({ ...base, options: { ...base.options, attestation: "none" }, app });
     for (const app of ["ios", "", "cipherfilm://evil", null, 1, {}, "__proto__", "toString"]) expect(readHandoff(frag({ ...base, app }))).toBeNull();
   });
 
@@ -70,5 +70,29 @@ describe("the apps' hand-off", () => {
     const h = readHandoff(frag({ op: "get", options: { challenge: "x" }, app: "android", return: "https://evil.test/" }))!;
     expect(h).toEqual({ op: "get", options: { challenge: "x" }, app: "android" });
     expect(handoffReturn(null, "", h.app)).toBe("cipherfilm://passkey#error=cancelled");
+  });
+});
+
+describe("the hand-off page and links made by someone else", () => {
+  const frag = (h: unknown) => "#" + toB64u(new TextEncoder().encode(JSON.stringify(h)));
+  it("asks the browser only for the fields the server sets", () => {
+    const h = readHandoff(frag({ op: "create", app: "android", options: {
+      challenge: "c", rp: { id: "photos.example.org", name: "Cipherfilm", icon: "x" }, user: { id: "u", name: "a@b", displayName: "A", extra: 1 },
+      pubKeyCredParams: [{ type: "public-key", alg: -7 }], attestation: "direct", extensions: { prf: {} }, hints: ["hybrid"],
+    } }))!;
+    expect(h.options).toEqual({ challenge: "c", rp: { id: "photos.example.org", name: "Cipherfilm" }, user: { id: "u", name: "a@b", displayName: "A" },
+      pubKeyCredParams: [{ type: "public-key", alg: -7 }], attestation: "none" });
+    const g = readHandoff(frag({ op: "get", options: { challenge: "c", rpId: "photos.example.org", extensions: { appid: "https://evil" }, mediation: "silent" } }))!;
+    expect(g.options).toEqual({ challenge: "c", rpId: "photos.example.org" });
+  });
+  it("gives the Android app's state back with the answer, and takes only a plain state", () => {
+    const st = "AbCdEfGhIjKlMnOpQr_-12";
+    const h = readHandoff(frag({ op: "get", app: "android", state: st, options: { challenge: "c" } }))!;
+    expect(h.state).toBe(st);
+    expect(handoffReturn(null, "cancelled", "android", st)).toBe(`cipherfilm://passkey#s=${st}&error=cancelled`);
+    expect(handoffReturn({ id: "k" }, "", "android", st)).toBe(`cipherfilm://passkey#s=${st}&a=` + toB64u(new TextEncoder().encode(JSON.stringify({ id: "k" }))));
+    for (const bad of ["short", "has space and is long enough", "a&b=cdefghijklmnopq", 7]) {
+      expect(readHandoff(frag({ op: "get", app: "android", state: bad, options: { challenge: "c" } }))).toBeNull();
+    }
   });
 });

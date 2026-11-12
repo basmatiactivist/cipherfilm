@@ -1011,7 +1011,7 @@ export function PasskeyHandoff() {
   }
   const where = h.app === "mac" ? L.onMac : L.onPhone;
   // the jump to the app can be blocked after the passkey prompt (Chrome on Android): a link to tap always works
-  const back = (answer: Record<string, any> | null, why = "") => { const url = pk.handoffReturn(answer, why, h.app); setRet(url); location.href = url; };
+  const back = (answer: Record<string, any> | null, why = "") => { const url = pk.handoffReturn(answer, why, h.app, h.state); setRet(url); location.href = url; };
   if (ret) {
     return (
       <Card title={L.backTitle} sealed>

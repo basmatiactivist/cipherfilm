@@ -22,23 +22,39 @@ describe("passkeys through the browser", () => {
   });
 
   it("puts what to do in the fragment, never in what the server is sent", () => {
-    const u = h.handoffUrl("https://photos.example.org/", "get", { challenge: "abc", rpId: "photos.example.org" });
+    const u = h.handoffUrl("https://photos.example.org/", "get", { challenge: "abc", rpId: "photos.example.org" }, "0123456789abcdef0123456789abcdef");
     expect(u.startsWith("https://photos.example.org/passkey#")).toBe(true);
     const frag = u.split("#")[1];
     const json = JSON.parse(atob(frag.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((frag.length + 3) % 4)));
-    expect(json).toEqual({ op: "get", options: { challenge: "abc", rpId: "photos.example.org" }, app: "android" });
-    expect(() => h.handoffUrl("http://photos.example.org", "get", {})).toThrow();
+    expect(json).toEqual({ op: "get", options: { challenge: "abc", rpId: "photos.example.org" }, app: "android", state: "0123456789abcdef0123456789abcdef" });
+    expect(() => h.handoffUrl("http://photos.example.org", "get", {}, "x")).toThrow();
   });
 
-  it("takes only its own return address, and reads the answer from it", () => {
+  it("takes only its own return address, and reads the state and the answer from it", () => {
     const ans = { id: "k", response: { clientDataJSON: "x" } };
     const b = btoa(JSON.stringify(ans)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-    expect(h.isPasskeyReturn(`cipherfilm://passkey#${b}`)).toBe(true);
+    expect(h.isPasskeyReturn(`cipherfilm://passkey#s=abc&a=${b}`)).toBe(true);
     expect(h.isPasskeyReturn(`cipherfilm-mac://passkey#${b}`)).toBe(false);
     expect(h.isPasskeyReturn("cipherfilm://expo-sharing")).toBe(false);
-    expect(h.readReturn(`cipherfilm://passkey#${b}`)).toEqual(ans);
-    expect(h.readReturn("cipherfilm://passkey#error=cancelled")).toBeNull();
-    expect(h.readReturn("cipherfilm://passkey#not-json")).toBeNull();
-    expect(h.readReturn(`cipherfilm://passkey#${btoa("[1]")}`)).toBeNull();
+    expect(h.readReturn(`cipherfilm://passkey#s=abc&a=${b}`)).toEqual({ state: "abc", answer: ans });
+    expect(h.readReturn("cipherfilm://passkey#s=abc&error=cancelled")).toEqual({ state: "abc", answer: null });
+    expect(h.readReturn(`cipherfilm://passkey#${b}`)).toEqual({ state: "", answer: null }); // no state: never taken
+    expect(h.readReturn("cipherfilm://passkey#s=abc&a=not-json")).toEqual({ state: "abc", answer: null });
+  });
+
+  it("gives an answer only to the request whose state it carries", async () => {
+    const m = h;
+    const opened: string[] = [];
+    const platform = { openURL: async (u: string) => { opened.push(u); }, onAppState: () => ({ remove() {} }), away() {} };
+    const ans = { id: "k" };
+    const b = btoa(JSON.stringify(ans)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    const p = m.viaBrowserPasskey("https://nas.local", "get", { challenge: "c" }, platform);
+    await new Promise((r) => setTimeout(r, 50));
+    const frag = opened[0].split("#")[1];
+    const state = JSON.parse(atob(frag.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((frag.length + 3) % 4))).state as string;
+    expect(state).toMatch(/^[0-9a-f]{32}$/);
+    m.passkeyReturned(`cipherfilm://passkey#s=someoneelse&a=${b}`); // ignored
+    m.passkeyReturned(`cipherfilm://passkey#s=${state}&a=${b}`);
+    await expect(p).resolves.toEqual(ans);
   });
 });

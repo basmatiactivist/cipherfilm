@@ -24,6 +24,8 @@ export interface ItemMeta {
   orig?: Orig;
   /** SHA-256 of the original file, 64 lowercase hex characters (newer uploads only; docs/CRYPTO.md) */
   sha256?: string;
+  /** the metadata's version, raised by every change of it (crypto/metaVersion.ts); none: 0 */
+  mv?: number;
 }
 
 export const isHeic = (f: Pick<File, "type" | "name">): boolean => /^image\/hei[cf]/.test(f.type) || /\.(heic|heif)$/i.test(f.name);

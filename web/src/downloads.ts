@@ -47,7 +47,7 @@ export async function downloadOriginal(it: Item): Promise<void> {
 export async function downloadEdited(it: Item): Promise<void> {
   const { editedCopy, retaggedCopy } = await import("./edit/apply");
   const { editedName, leavesAs } = await import("./edit/edit");
-  const retag = leavesAs(it.kind, it.meta) === "retag";
+  const retag = leavesAs(it.kind, it.meta, it.stale) === "retag";
   const url = URL.createObjectURL(await (retag ? retaggedCopy(it) : editedCopy(it)));
   clickDownload(url, safeName(retag ? it.meta?.name ?? "photo.jpg" : editedName(it.meta?.name ?? "photo")));
   setTimeout(() => URL.revokeObjectURL(url), 30_000);

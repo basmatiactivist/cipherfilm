@@ -40,6 +40,9 @@ version into the GitHub release notes, so a release cannot be published without 
   for its OK to download the models after an update).
 
 ### Fixed
+- Web and Android: every change of a photo's details (an edit, a new date or place) now carries a version, and the apps
+  never go back to an older copy of the details the server might hand out (such a photo is never downloaded, shared or
+  saved as the original by default). docs/THREAT_MODEL.md lists what this covers.
 - Web and Android: a photo whose place you removed or changed (or whose date you changed) downloads, shares and saves
   with the place and date as you set them, also when it wasn't turned or cropped; "Download original", "Share
   original" and "Save original" still give the file as uploaded.

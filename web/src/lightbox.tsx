@@ -65,7 +65,7 @@ export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number)
   const turned = !!normEdit(it.meta?.edit);
   // an edited photo downloads as edited, also one whose date or place changed (a removed place isn't handed out in the
   // file); the original is in the details (and Shift+D)
-  const edited = !it.broken && leavesAs(it.kind, it.meta) !== "original";
+  const edited = !it.broken && leavesAs(it.kind, it.meta, it.stale) !== "original";
   const download = (original = false) => {
     if (busy) return;
     setBusy(true);

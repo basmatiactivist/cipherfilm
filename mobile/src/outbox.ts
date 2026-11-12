@@ -82,7 +82,7 @@ const mimeOf = (it: Item) => it.meta?.mime || (it.kind === "video" ? "video/mp4"
  *  as the original. Photos over the edit limit leave as the original. */
 export function leaving(it: Item, original?: boolean): "edited" | "retag" | "redraw" | "original" {
   if (original || it.size > 200 * 1024 * 1024) return "original"; // edit.ts EDIT_LIMIT
-  return leavesAs(it.kind, it.meta);
+  return leavesAs(it.kind, it.meta, it.stale);
 }
 // (edit.ts, with the image manipulator, is loaded only when an edited photo leaves the app)
 const copyOf = async (dir: Directory, it: Item, used: Set<string>, onBytes: (n: number) => void, original?: boolean) => {

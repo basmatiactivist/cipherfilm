@@ -18,6 +18,7 @@ import { kindOf } from "./kind";
 import { ListSync, type Page } from "./sync";
 import { normEdit, normOrig, pictureKey, type Edit, type Orig } from "@edit/edit";
 import { SHA256_HEX } from "@crypto/sha256";
+import { HighWater, metaVersion } from "@crypto/metaVersion";
 
 export interface ItemMeta {
   name: string; mime: string; size: number; lastModified: number; capture_ts: number;
@@ -28,6 +29,8 @@ export interface ItemMeta {
   orig?: Orig;
   /** SHA-256 of the original file, 64 lowercase hex characters (newer uploads only; docs/CRYPTO.md) */
   sha256?: string;
+  /** the metadata's version, raised by every change of it (@crypto/metaVersion); none: 0 */
+  mv?: number;
 }
 
 /** What an edit says is checked like the rest: what doesn't make sense is dropped, not trusted. */
@@ -37,6 +40,7 @@ export function checkedMeta(m: ItemMeta): ItemMeta {
   if (orig) m.orig = orig; else delete m.orig;
   if (Number.isFinite(m.capture_ts)) m.capture_ts = Math.round(m.capture_ts);
   if (m.sha256 !== undefined && !(typeof m.sha256 === "string" && SHA256_HEX.test(m.sha256))) delete m.sha256;
+  if (m.mv !== undefined && metaVersion(m) !== m.mv) delete m.mv;
   return m;
 }
 
@@ -52,6 +56,9 @@ export interface Item {
   itemKey?: Uint8Array;
   /** Decryption or verification failed: never shown, the screen says so. */
   broken?: boolean;
+  /** The server gave an older version of the metadata than this phone saw before (@crypto/metaVersion) and the newer
+   *  one isn't known here any more: shown, but never shared or saved as the original by default (outbox.ts). */
+  stale?: boolean;
   /** in the trash: when it was moved there and when the server deletes it permanently (seconds) */
   trashed_at?: number;
   purge_at?: number;
@@ -62,7 +69,26 @@ export interface Item {
 // decrypts only what is new or changed instead of the whole library again; dropped at every lock and sign-out
 let known = new Map<string, { w: string; m: string; master: Uint8Array; key?: Uint8Array; meta?: ItemMeta }>();
 
-function decrypt(s: Sodium, master: Uint8Array, pair: () => KeyPair, x: any): Item {
+// the highest metadata version seen of each item (@crypto/metaVersion), per account, in the app's private files (item
+// ids and numbers only); kept across locks, deleted at sign-out
+const VERSIONS = () => new Directory(Paths.document, "cf-mv");
+let versions: { owner: string; hw: HighWater } | null = null;
+function highWater(owner: string): HighWater {
+  if (versions?.owner !== owner) {
+    const f = new File(VERSIONS(), `${owner}.json`);
+    let loaded: unknown = null;
+    try { if (f.exists) loaded = JSON.parse(f.textSync()); } catch { /* unreadable: started anew */ }
+    versions = {
+      owner,
+      hw: new HighWater((e) => {
+        try { VERSIONS().create({ intermediates: true, idempotent: true }); f.write(JSON.stringify(e)); } catch { /* this run only */ }
+      }, loaded),
+    };
+  }
+  return versions.hw;
+}
+
+function decrypt(s: Sodium, master: Uint8Array, pair: () => KeyPair, x: any, hw?: HighWater): Item {
   const it: Item = { id: x.id, kind: x.kind, size: x.size, segment_count: x.segment_count, created_at: x.created_at, has_thumb: x.has_thumb, has_preview: x.has_preview, trashed_at: x.trashed_at, purge_at: x.purge_at, favorite: !!x.favorite };
   const k = known.get(x.id);
   if (k && k.master === master && k.w === x.wrapped_item_key && k.m === x.meta_enc && k.key && k.meta && k.meta.size === x.size) {
@@ -74,6 +100,14 @@ function decrypt(s: Sodium, master: Uint8Array, pair: () => KeyPair, x: any): It
     it.meta = checkedMeta(decryptMeta<ItemMeta>(s, unb64(s, x.meta_enc), it.itemKey, x.id));
     if (it.meta.size !== it.size) throw new Error("size mismatch");
     it.kind = kindOf(it.meta);
+    if (hw && !hw.check(x.id, metaVersion(it.meta))) {
+      // an older version of the metadata than seen before: the server handed out a copy it kept (a removed place
+      // back, an edit undone). The newer one decrypted since the last lock stays; without it the item is stale.
+      console.warn(`Cipherfilm: the server sent older metadata for item ${x.id} (version ${metaVersion(it.meta)}, seen ${hw.highest(x.id)}); keeping the newer one.`);
+      if (k?.meta && k.key && k.master === master && metaVersion(k.meta) > metaVersion(it.meta)) { it.meta = k.meta; it.itemKey = k.key; it.kind = kindOf(k.meta); }
+      else it.stale = true;
+      return it;
+    }
     // turned or cropped on some device since: the pictures kept here are the old ones
     if (k?.meta && pictureKey(x.id, k.meta) !== pictureKey(x.id, it.meta)) forgetPictures(x.id);
     known.set(x.id, { w: x.wrapped_item_key, m: x.meta_enc, master, key: it.itemKey, meta: it.meta });
@@ -110,7 +144,9 @@ function decryptSome(raw: any[]): Item[] {
   // photos from the background backup carry keys sealed to the account's key pair; it is opened only if needed
   let kp: KeyPair | undefined;
   const pair = () => (kp ??= accountKeyPair(s, unb64(s, me.wrapped_privkey), master, normEmail(me.user.email)));
-  const out = raw.map((x) => decrypt(s, master, pair, x)).sort(newest);
+  const hw = highWater(me.user.id);
+  const out = raw.map((x) => decrypt(s, master, pair, x, hw)).sort(newest);
+  hw.flush();
   if (kp) s.memzero(kp.sk);
   giveThumbKeys(out);
   return out;
@@ -345,4 +381,5 @@ onWipe((how) => {
   N.forgetThumbs?.(); // thumbnail keys and bitmaps
   N.forgetVideos?.(); // video keys and decrypted segments
   if (how === "ended") try { const r = ROOT(); if (r.exists) r.delete(); } catch { /* best effort */ }
+  if (how === "ended") { versions = null; try { const v = VERSIONS(); if (v.exists) v.delete(); } catch { /* best effort */ } }
 });

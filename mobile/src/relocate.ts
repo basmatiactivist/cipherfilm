@@ -6,6 +6,7 @@
 import { Directory, File, Paths } from "expo-file-system";
 import { b64, getSodium } from "@crypto/sodium";
 import { encryptMeta } from "@crypto/item";
+import { nextVersion } from "@crypto/metaVersion";
 import { placeChanged } from "@edit/edit";
 import N, { type PhoneMedia } from "../modules/cf-native/src/CfNativeModule";
 import { api } from "./api";
@@ -103,7 +104,7 @@ async function run(): Promise<number> {
       const { lat, lon } = info;
       if (typeof lat === "number" && typeof lon === "number" && Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180 && !(lat === 0 && lon === 0)) {
         const meta: ItemMeta = { ...it.meta!, gps: { lat, lon } };
-        await api("PUT", `/api/items/${it.id}/meta`, { meta_enc: b64(s, encryptMeta(s, meta, it.itemKey!, it.id)) });
+        await api("PUT", `/api/items/${it.id}/meta`, { meta_enc: b64(s, encryptMeta(s, nextVersion(meta), it.itemKey!, it.id)) });
         added++;
       }
       done.add(it.id);

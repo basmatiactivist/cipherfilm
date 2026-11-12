@@ -116,6 +116,8 @@ describe("photos whose place or date changed", () => {
     expect(leaving(placeRemoved("a", "image/heic"))).toBe("redraw");
     expect(leaving(placeRemoved("a"), true)).toBe("original");
     expect(leaving({ ...(placeRemoved("v") as object), kind: "video" } as never)).toBe("original");
+    // older metadata than seen before (library.ts stale): never the original by default
+    expect(leaving({ ...(item("s") as object), stale: true } as never)).toBe("retag");
     await saveItems([placeRemoved("a")], () => {});
     expect(native.saved).toEqual(["/cache/cf-out/save/a.jpg (retagged)"]);
     native.saved = [];

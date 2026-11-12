@@ -8,6 +8,7 @@ import { mem } from "./state";
 import { ListSync, type Page } from "./sync";
 import { normEdit, normOrig } from "./edit/edit";
 import { Sha256, SHA256_HEX } from "./crypto/sha256";
+import { HighWater, metaVersion } from "./crypto/metaVersion";
 
 export interface Item {
   id: string;
@@ -21,6 +22,9 @@ export interface Item {
   itemKey?: Uint8Array;
   /** Decryption or verification failed: never shown, the UI says so. */
   broken?: boolean;
+  /** The server gave an older version of the metadata than this browser saw before (crypto/metaVersion.ts) and the
+   *  newer one isn't known here any more: shown, but never downloaded as the original by default. */
+  stale?: boolean;
   trashed_at?: number;
   purge_at?: number;
   favorite?: boolean;
@@ -34,6 +38,20 @@ const need = () => {
 // what was decrypted already, by id: a reload of the list (every few seconds during an upload) decrypts only items
 // that are new or whose key or metadata changed; dropped at every lock and sign-out (it holds item keys)
 let known = new Map<string, { wrapped: string; meta: string; master: Uint8Array; item: Item }>();
+
+// the highest metadata version seen of each item (crypto/metaVersion.ts), per account, kept in this browser's storage
+// (item ids and numbers only) until the session ends (clearUploadMemory)
+const MV = "cf-mv:";
+let versions: { owner: string; hw: HighWater } | null = null;
+function highWater(): HighWater {
+  const owner = mem.me!.user.id;
+  if (versions?.owner !== owner) {
+    let loaded: unknown = null;
+    try { loaded = JSON.parse(localStorage.getItem(MV + owner) ?? "null"); } catch { /* storage off: this session only */ }
+    versions = { owner, hw: new HighWater((e) => { try { localStorage.setItem(MV + owner, JSON.stringify(e)); } catch { /* storage off */ } }, loaded) };
+  }
+  return versions.hw;
+}
 export function forgetDecrypted() {
   for (const k of known.values()) k.item.itemKey?.fill(0);
   known = new Map();
@@ -53,6 +71,7 @@ function wellFormed(m: ItemMeta, createdAt: number): ItemMeta {
   if (edit) m.edit = edit; else delete m.edit;
   if (orig) m.orig = orig; else delete m.orig;
   if (m.sha256 !== undefined && !(typeof m.sha256 === "string" && SHA256_HEX.test(m.sha256))) delete m.sha256;
+  if (m.mv !== undefined && metaVersion(m) !== m.mv) delete m.mv;
   return m;
 }
 
@@ -61,6 +80,7 @@ function decryptRecords(s: Sodium, raw: any[]): Item[] {
   // items from the phone's background backup carry keys sealed to the account key pair, opened only if there are any
   let pair: KeyPair | undefined;
   const keyPair = () => (pair ??= accountKeyPair(s, unb64(s, mem.me!.wrapped_privkey), master, normEmail(mem.me!.user.email)));
+  const hw = highWater();
   const items = raw.map((x): Item => {
     const it: Item = { id: x.id, kind: x.kind, size: x.size, segment_count: x.segment_count, created_at: x.created_at, has_thumb: x.has_thumb, has_preview: x.has_preview, trashed_at: x.trashed_at, purge_at: x.purge_at, favorite: !!x.favorite };
     const k = known.get(x.id);
@@ -80,9 +100,18 @@ function decryptRecords(s: Sodium, raw: any[]): Item[] {
     } catch {
       it.broken = true;
     }
+    if (!it.broken && !hw.check(x.id, metaVersion(it.meta))) {
+      // an older version of the metadata than seen before: the server handed out a copy it kept (a removed place
+      // back, an edit undone). The newer one decrypted in this session stays; without it the item is marked stale.
+      console.warn(`Cipherfilm: the server sent older metadata for item ${x.id} (version ${metaVersion(it.meta)}, seen ${hw.highest(x.id)}); keeping the newer one.`);
+      if (k && k.master === master && !k.item.broken && metaVersion(k.item.meta) > metaVersion(it.meta)) return { ...it, kind: k.item.kind, itemKey: k.item.itemKey, meta: k.item.meta };
+      it.stale = true;
+      return it;
+    }
     if (!it.broken) known.set(x.id, { wrapped: x.wrapped_item_key, meta: x.meta_enc, master, item: it });
     return it;
   });
+  hw.flush();
   if (pair) s.memzero(pair.sk);
   return items.sort(byCapture);
 }
@@ -315,6 +344,7 @@ export function forgetUnfinished() {
  *  forget them when the session ends. */
 export function clearUploadMemory() {
   try {
-    for (const k of Object.keys(localStorage)) if (k.startsWith("cf-upload:") || k.startsWith("cf-relocated:")) localStorage.removeItem(k);
+    for (const k of Object.keys(localStorage)) if (k.startsWith("cf-upload:") || k.startsWith("cf-relocated:") || k.startsWith(MV)) localStorage.removeItem(k);
   } catch { /* storage unavailable */ }
+  versions = null;
 }

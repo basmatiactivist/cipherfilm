@@ -31,4 +31,11 @@ describe("retaggedCopyTo", () => {
     expect([...out.subarray(out.length - scan.length)]).toEqual(scan);
     expect([...original.bytes.keys()].some((i) => original.bytes[i] === 0x88 && original.bytes[i + 1] === 0x25)).toBe(true);
   });
+
+  it("a stale item (older metadata than seen before) leaves with no place at all", async () => {
+    const { retaggedCopyTo } = await import("./edit");
+    await retaggedCopyTo({} as never, { id: "x", kind: "image", stale: true, meta: { name: "a.jpg", capture_ts: 1000, gps: { lat: 46.5, lon: 7.5 } } } as never, new Set(), () => {});
+    const out = written.bytes!;
+    expect([...out.keys()].some((i) => out[i] === 0x88 && out[i + 1] === 0x25)).toBe(false);
+  });
 });

@@ -65,6 +65,12 @@ func (a *App) addNotice(userID, kind, device, pub string) int64 {
 	return id
 }
 
+// pruneNotices deletes every account's notices older than noticesAge. addNotice prunes only the account that gets a
+// new one, so an account that gets none would otherwise keep its old ones for ever; the janitor runs this hourly.
+func (a *App) pruneNotices() {
+	a.db.Exec(`DELETE FROM notices WHERE at < ?`, a.now().Add(-noticesAge).Unix())
+}
+
 // passwordUsedNotice is called when the password step of an account with two-step sign-in succeeded. The notice is
 // stored at once but shown only once the pending sign-in can no longer finish (pendingTTL after it was last used);
 // a right code deletes it again (dropPasswordUsed). Within passwordUsedEvery of one, the same notice is used again
@@ -114,7 +120,8 @@ func (a *App) noticeSignIn(u *user, s *session, r *http.Request) {
 func (a *App) shownTo(u *user, s *session) (string, []any) {
 	return `dismissed=0 AND session_pub<>? AND (kind<>'sign_in' OR (at>=? AND id > COALESCE((SELECT MAX(o.id) FROM notices o
 		WHERE o.user_id=? AND o.kind='sign_in' AND o.session_pub=? AND o.session_pub<>''), 0)))
-		AND (kind<>'password_used' OR at<=?)`, []any{s.Pub, s.Created, u.ID, s.Pub, a.now().Add(-pendingTTL).Unix()}
+		AND (kind<>'password_used' OR at<=?) AND at>=?`, []any{s.Pub, s.Created, u.ID, s.Pub, a.now().Add(-pendingTTL).Unix(),
+		a.now().Add(-noticesAge).Unix()} // none older than noticesAge, even before the janitor has pruned it
 }
 
 func (a *App) listNotices(w http.ResponseWriter, r *http.Request, u *user, s *session) {

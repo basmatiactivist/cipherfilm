@@ -776,7 +776,7 @@ func (a *App) abortItem(w http.ResponseWriter, r *http.Request, u *user, s *sess
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
-// janitor removes abandoned uploads.
+// janitor removes abandoned uploads and other leftovers past their time (expired trash, tombstones, old notices).
 func (a *App) janitor() {
 	a.sweepTemps(a.now())
 	for {
@@ -785,6 +785,7 @@ func (a *App) janitor() {
 		a.pruneTombstones()
 		a.pruneAlbumTombstones()
 		a.sweepOrphans()
+		a.pruneNotices()
 		time.Sleep(time.Hour)
 	}
 }

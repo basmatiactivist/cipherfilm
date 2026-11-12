@@ -46,7 +46,7 @@ function VideoPlayer({ item }: { item: Item }) {
   if (!src) return <Loading stage label={status} />;
   return (
     <video key={src} src={src} controls playsInline preload="metadata" poster={cachedThumb(item)} aria-label={item.meta?.name}
-      onError={() => setErr("This video can't be played here. This browser may not support its format (iPhone videos often use HEVC), or it couldn't be verified. Download the original instead.")} />
+      onError={() => setErr("This video can't be played here. This browser may not support its format (videos from phones often use HEVC), or it couldn't be verified. Download the original instead.")} />
   );
 }
 

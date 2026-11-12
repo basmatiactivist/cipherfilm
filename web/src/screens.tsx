@@ -8,6 +8,7 @@ import { setMemoriesOn, useMemoriesOn } from "./memories/setting";
 import { browserAlertsPossible, setBrowserAlerts, useBrowserAlerts } from "./noticeAlerts";
 import { Loader, Loading } from "./loader";
 import { BackupReport, backupState } from "./backup";
+import { gbBytes, gbText, uptimeText } from "./limits";
 import { explicitChosen, indexChecked, loadPeople, refreshIndex, setExplicit } from "./people/people";
 import { forgetContentModels, loadModel, oldCount, vectorCount } from "./search/content";
 import { adoptCached, agreeModels, downloaded, mb, modelsAgreed, useModelConsent } from "./search/consent";
@@ -322,7 +323,7 @@ function TwoFactorPanel({ open }: { open?: boolean }) {
     <Acc icon="key" title="Two-step sign-in" sub={on ? `On: ${methods} at every new sign-in` : "Off"} open={open || stay || mode !== "" || undefined}>
       {mode === "" && !on && (
         <>
-          <p>Ask for a second step when you sign in on a new device or browser: a 6-digit code from an authenticator app (such as Aegis, 2FAS or Google Authenticator), or a passkey in your password manager or on a security key. Unlocking a device that is already signed in doesn't ask for it. Your password still unlocks your photos.</p>
+          <p>Ask for a second step when you sign in on a new device or browser: a 6-digit code from an authenticator app or password manager, or a passkey in your password manager or on a security key. Unlocking a device that is already signed in doesn't ask for it. Your password still unlocks your photos.</p>
           <div class="row">
             <button class="btn secondary" onClick={() => setMode("setup")}>Use an authenticator app…</button>
             {canPasskey && <button class="btn secondary" onClick={() => setMode("addkey")}>Use a passkey…</button>}
@@ -721,14 +722,18 @@ interface AdminUser { id: string; email: string; role: string; status: string; c
 
 function Storage({ u, onSaved }: { u: AdminUser; onSaved: () => void }) {
   const [editing, setEditing] = useState(false);
-  const [gb, setGb] = useState(String(Math.round(u.quota_bytes / 1e9)));
+  const [gb, setGb] = useState(gbText(u.quota_bytes));
   const { busy, error, run } = useAction();
   const limit = u.quota_bytes === 0 ? "no limit" : fmtGB(u.quota_bytes);
-  if (!editing) return <span>{fmtGB(u.used_bytes)}{u.quota_bytes === 0 ? " used, no limit" : ` of ${limit}`} · {u.item_count} {u.item_count === 1 ? "item" : "items"} <button class="link small" onClick={() => setEditing(true)} aria-label={`Change storage limit for ${u.email}`}>Change</button></span>;
+  if (!editing) return <span>{fmtGB(u.used_bytes)}{u.quota_bytes === 0 ? " used, no limit" : ` of ${limit}`} · {u.item_count} {u.item_count === 1 ? "item" : "items"} <button class="link small" onClick={() => { setGb(gbText(u.quota_bytes)); setEditing(true); }} aria-label={`Change storage limit for ${u.email}`}>Change</button></span>;
   return (
-    <form class="inline quota" onSubmit={(e) => { e.preventDefault(); run(async () => { await api("PATCH", `/api/admin/users/${u.id}`, { quota_bytes: Math.round(Number(gb) * 1e9) }); setEditing(false); onSaved(); }); }}>
+    <form class="inline quota" onSubmit={(e) => { e.preventDefault(); run(async () => {
+      const bytes = gbBytes(gb, u.quota_bytes);
+      if (bytes === null) throw new Error("Enter a number of GB (0 means no limit).");
+      await api("PATCH", `/api/admin/users/${u.id}`, { quota_bytes: bytes }); setEditing(false); onSaved();
+    }); }}>
       <label for={`q-${u.id}`}>Limit in GB (0 = no limit)</label>
-      <input id={`q-${u.id}`} type="number" min="0" step="1" value={gb} onInput={(e) => setGb((e.target as HTMLInputElement).value)} />
+      <input id={`q-${u.id}`} type="text" inputMode="decimal" autocomplete="off" value={gb} onInput={(e) => setGb((e.target as HTMLInputElement).value)} />
       {error && <p class="error" role="alert">{error}</p>}
       <div class="row"><button class="btn small" type="submit" disabled={busy}>Save</button><button class="btn secondary small" type="button" onClick={() => setEditing(false)}>Cancel</button></div>
     </form>
@@ -834,14 +839,14 @@ export function Admin({ section }: { section: "users" | "defaults" | "server" | 
         <h2 id="inv-h"><Icon name="plus" />Invite someone</h2>
         <p>Cipherfilm doesn't send e-mail. Send the link yourself. It works once and expires after 7 days.</p>
         <form onSubmit={(e) => { e.preventDefault(); run(async () => {
-          const gb = inviteGb.trim() === "" ? undefined : Number(inviteGb);
-          if (gb !== undefined && (!Number.isFinite(gb) || gb < 0)) throw new Error("Enter the storage limit as a number of GB, or leave it empty.");
-          const r = await api<{ token: string; email: string; expires_at: number }>("POST", "/api/admin/invites", { email, ...(gb === undefined ? {} : { quota_bytes: Math.round(gb * 1e9) }) });
+          const quota = inviteGb.trim() === "" ? undefined : gbBytes(inviteGb);
+          if (quota === null) throw new Error("Enter the storage limit as a number of GB, or leave it empty.");
+          const r = await api<{ token: string; email: string; expires_at: number }>("POST", "/api/admin/invites", { email, ...(quota === undefined ? {} : { quota_bytes: quota }) });
           setLink({ url: `${location.origin}/invite/${r.token}`, email: r.email, exp: r.expires_at });
           setEmail(""); setInviteGb(""); changed();
         }); }}>
           <Field label="Their e-mail" id="invite-email" type="email" value={email} onInput={setEmail} autocomplete="off" />
-          <Field label="Storage limit in GB (optional)" id="invite-quota" value={inviteGb} onInput={setInviteGb} autocomplete="off" required={false}
+          <Field label="Storage limit in GB (optional)" id="invite-quota" value={inviteGb} onInput={setInviteGb} autocomplete="off" required={false} inputmode="decimal"
             hint={`Leave empty for the default (${defaultQuota ? fmtGB(defaultQuota) : "no limit"}). 0 means no limit.`} />
           <ErrorLine text={error} />
           <Submit busy={busy} label="Create invite link" busyLabel="Creating…" />
@@ -930,7 +935,7 @@ export function Admin({ section }: { section: "users" | "defaults" | "server" | 
               <dt>Cipherfilm data</dt><dd>{fmtGB(status.data_bytes)}</dd>
               <dt>Signed-in devices</dt><dd>{status.active_sessions}</dd>
               <dt>Version</dt><dd>{status.version ?? "unknown"}</dd>
-              <dt>Running for</dt><dd>{status.uptime_seconds >= 86400 ? `${Math.floor(status.uptime_seconds / 86400)} days` : status.uptime_seconds >= 3600 ? `${Math.floor(status.uptime_seconds / 3600)} hours` : `${Math.floor(status.uptime_seconds / 60)} minutes`}</dd>
+              <dt>Running for</dt><dd>{uptimeText(status.uptime_seconds)}</dd>
               <dt>Off-site backup</dt><dd class={backupState(status).problem ? "bad" : undefined}>{backupState(status).text}</dd>
               <dt>Database snapshot</dt><dd>{status.last_backup_at ? new Date(status.last_backup_at * 1000).toLocaleString() : "None yet. Written by scripts/backup.sh or the nightly backup."}</dd>
             </dl>
@@ -975,15 +980,15 @@ function DefaultLimit({ current, onSaved }: { current: number; onSaved: () => vo
       <h2 id="def-h"><Icon name="cloud" />Default storage limit</h2>
       <p>New people get {current ? fmtGB(current) : "no limit"} unless the invite says otherwise. People who already joined keep their limit.</p>
       {!editing ? (
-        <button class="btn secondary" onClick={() => { setGb(String(Math.round(current / 1e9))); setEditing(true); }}>Change default…</button>
+        <button class="btn secondary" onClick={() => { setGb(gbText(current)); setEditing(true); }}>Change default…</button>
       ) : (
         <form onSubmit={(e) => { e.preventDefault(); run(async () => {
-          const n = Number(gb);
-          if (!Number.isFinite(n) || n < 0) throw new Error("Enter a number of GB (0 means no limit).");
-          await api("PATCH", "/api/admin/settings", { default_quota_bytes: Math.round(n * 1e9) });
+          const bytes = gbBytes(gb, current);
+          if (bytes === null) throw new Error("Enter a number of GB (0 means no limit).");
+          await api("PATCH", "/api/admin/settings", { default_quota_bytes: bytes });
           setEditing(false); onSaved();
         }); }}>
-          <Field label="Default limit in GB (0 = no limit)" id="default-quota" value={gb} onInput={setGb} autocomplete="off" />
+          <Field label="Default limit in GB (0 = no limit)" id="default-quota" value={gb} onInput={setGb} autocomplete="off" inputmode="decimal" />
           <ErrorLine text={error} />
           <div class="row"><Submit busy={busy} label="Save default" busyLabel="Saving…" /><button type="button" class="btn secondary" onClick={() => setEditing(false)}>Cancel</button></div>
         </form>
@@ -992,20 +997,32 @@ function DefaultLimit({ current, onSaved }: { current: number; onSaved: () => vo
   );
 }
 
-/** /passkey: the Mac app's passkey step. A Mac app can't use passkeys of any server's name (Apple ties that to names
- *  fixed when the app is built), so it opens this page on the server's own address in a sign-in window; the browser
- *  asks for the passkey here and the answer goes back to the waiting app (docs/THREAT_MODEL.md, "Passkeys"). */
+/** /passkey: the Mac and Android apps' passkey step. A Mac app can't use passkeys of any server's name (Apple ties that
+ *  to names fixed when the app is built), and an Android app can't for a server that isn't reachable from the internet
+ *  (one only on a private network), so the app opens this page on the server's own address; the browser asks for the
+ *  passkey here and the answer goes back to the waiting app at its fixed address (docs/THREAT_MODEL.md, "Passkeys"). */
 export function PasskeyHandoff() {
   const [h] = useState(() => { const x = pk.readHandoff(location.hash); history.replaceState(null, "", "/passkey"); return x; });
+  const [ret, setRet] = useState("");
   const { busy, error, run } = useAction();
   const rp = h ? (h.op === "get" ? h.options.rpId : h.options.rp?.id) : "";
   if (!h || (rp && rp !== location.hostname)) {
-    return <Card title="Passkey"><p>The Cipherfilm app on your Mac opens this page when it needs a passkey. There's nothing to do here.</p></Card>;
+    return <Card title="Passkey"><p>The Cipherfilm app on your Mac or phone opens this page when it needs a passkey. There's nothing to do here.</p></Card>;
   }
-  const back = (answer: Record<string, any> | null, why = "") => { location.href = pk.handoffReturn(answer, why); };
+  const where = h.app === "mac" ? "on your Mac" : "on your phone";
+  // the jump to the app can be blocked after the passkey prompt (Chrome on Android): a link to tap always works
+  const back = (answer: Record<string, any> | null, why = "") => { const url = pk.handoffReturn(answer, why, h.app); setRet(url); location.href = url; };
+  if (ret) {
+    return (
+      <Card title="Back to the app" sealed>
+        <p class="lead">{ret.includes("#error=") ? "Cancelled." : "Done."} Go back to the Cipherfilm app {where} to continue.</p>
+        <div class="row"><a class="btn" href={ret}>Back to the app</a></div>
+      </Card>
+    );
+  }
   return (
     <Card title={h.op === "get" ? "Confirm your sign-in" : "Make a passkey"} sealed>
-      <p class="lead">The Cipherfilm app on your Mac asked for this. Continue only if you just started it there.</p>
+      <p class="lead">The Cipherfilm app {where} asked for this. Continue only if you just started it there.</p>
       <p class="small">{location.host}</p>
       <ErrorLine text={error} />
       <div class="row">

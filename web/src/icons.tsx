@@ -36,6 +36,7 @@ const paths = {
   slash: <><circle cx="12" cy="12" r="8" /><path d="M6.3 6.3l11.4 11.4" /></>,
   turnLeft: <><rect x="9" y="11" width="11" height="9" rx="2" /><path d="M13 4H9a5 5 0 0 0-5 5v4" /><path d="M1.5 10.5L4 13l2.5-2.5" /></>,
   turnRight: <><rect x="4" y="11" width="11" height="9" rx="2" /><path d="M11 4h4a5 5 0 0 1 5 5v4" /><path d="M17.5 10.5L20 13l2.5-2.5" /></>,
+  bell: <><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z" /><path d="M10 20.5a2 2 0 0 0 4 0" /></>,
 } as const;
 
 export type IconName = keyof typeof paths;

@@ -107,6 +107,13 @@ version into the GitHub release notes, so a release cannot be published without 
   discarding changes and shows the place suggestions above the keyboard; storage limits keep their decimals; device
   names are translated and include the maker; no brand names of other apps or phone makers in the texts; clearer
   German for two-step sign-in, uptime and the invite field.
+- Web: security notices (a new sign-in, changes to two-step sign-in) are listed under a bell next to the account
+  button, with a count of the unread ones, instead of a banner above the library; each can be removed, or all at once.
+- Web: the passkey page for the apps also serves the Android app (for servers it can't reach from the internet) and
+  always shows a "Back to the app" button.
+- Web: texts name no third-party apps ("an authenticator app or password manager").
+- Web, admin: storage limits show one decimal and accept decimals, so saving one unchanged keeps it exactly; the
+  server's uptime says "1 hour", not "1 hours"; the backup hint names the `cipherfilm backup-report` command.
 - Web: adding a passkey opens the browser's dialog right after the name and password, without a second button
   (it comes back only when the browser wants a tap of its own or the dialog was cancelled).
 - Web and Mac: the map opens on the region with the most photos (at region level, never street level), with those

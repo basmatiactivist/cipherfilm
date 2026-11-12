@@ -129,13 +129,21 @@ test.describe.serial("two-step sign-in", () => {
     await second.page.getByRole("button", { name: "Sign in" }).click();
     await library(second.page);
 
-    // the first browser shows the new sign-in, and leads to the device list
-    const notice = first.page.locator(".noticebar");
-    await expect(notice).toContainText("New sign-in", { timeout: 15_000 });
-    await notice.getByRole("button", { name: "Review devices" }).click();
+    // the first browser counts the new sign-in on the bell; its list leads to the device list
+    const bell = first.page.getByRole("button", { name: /^Notifications/ });
+    await expect(bell).toHaveAccessibleName("Notifications, 1 unread", { timeout: 15_000 });
+    await bell.click();
+    const panel = first.page.getByRole("dialog", { name: "Notifications" });
+    await expect(panel).toContainText("New sign-in");
+    await expect(bell).toHaveAccessibleName("Notifications"); // opening the list marks it read
+    await panel.getByRole("button", { name: "Review devices" }).click();
+    await expect(panel).toHaveCount(0);
     await expect(first.page.locator(".devices li")).toHaveCount(2); // these two browsers; the password steps made none
-    await first.page.locator(".noticebar").getByRole("button", { name: "Dismiss" }).click();
-    await expect(first.page.locator(".noticebar")).toHaveCount(0);
+    await bell.click();
+    await panel.getByRole("button", { name: /^Remove: New sign-in/ }).click();
+    await expect(panel.getByRole("listitem")).toHaveCount(0);
+    await first.page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
     // dismissed for good: the server no longer lists it for this browser
     await expect.poll(async () => (await (await first.page.request.get("/api/me/notices")).json()).notices.length).toBe(0);
     await first.ctx.close();
@@ -169,7 +177,8 @@ test.describe.serial("two-step sign-in", () => {
     const { ctx, page } = await newPage(browser);
     await passwordStep(page, GRACE, GRACE_PW);
     await library(page); // the password alone again
-    await expect(page.locator(".noticebar")).toContainText("An administrator turned off two-step sign-in");
+    await page.getByRole("button", { name: /^Notifications, \d+ unread$/ }).click();
+    await expect(page.getByRole("dialog", { name: "Notifications" })).toContainText("An administrator turned off two-step sign-in");
     await ctx.close();
   });
 });

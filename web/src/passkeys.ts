@@ -119,19 +119,32 @@ export function suggestName(ua: string): string {
   return os ? `Passkey on ${os}` : "Passkey";
 }
 
-// ---- the Mac app's hand-off (docs/THREAT_MODEL.md, "Passkeys") ----
+// ---- the apps' hand-off (docs/THREAT_MODEL.md, "Passkeys") ----
 
-/** What the Mac app hands to /passkey in the address's fragment (never sent to the server): what to do and the options. */
-export interface Handoff { op: "get" | "create"; options: J }
+/** Which app asked: the Mac app, or the Android app (its release or test build). An older Mac app sends none. */
+export type HandoffApp = "mac" | "android" | "android-test";
+/** Where each app's answer goes: fixed here, never an address taken from the hand-off. */
+const RETURN: Record<HandoffApp, string> = {
+  mac: "cipherfilm-mac://passkey#",
+  android: "cipherfilm://passkey#",
+  "android-test": "cipherfilm-test://passkey#",
+};
+
+/** What an app hands to /passkey in the address's fragment (never sent to the server): what to do, the options, and
+ *  which app it is. */
+export interface Handoff { op: "get" | "create"; options: J; app: HandoffApp }
 
 export function readHandoff(hash: string): Handoff | null {
   try {
     const h = JSON.parse(new TextDecoder().decode(fromB64u(hash.replace(/^#/, ""))));
-    if ((h?.op === "get" || h?.op === "create") && h.options && typeof h.options.challenge === "string") return h as Handoff;
+    if (!((h?.op === "get" || h?.op === "create") && h.options && typeof h.options.challenge === "string")) return null;
+    const app: unknown = h.app === undefined ? "mac" : h.app;
+    if (typeof app !== "string" || !Object.prototype.hasOwnProperty.call(RETURN, app)) return null;
+    return { op: h.op, options: h.options, app: app as HandoffApp };
   } catch { /* not a hand-off */ }
   return null;
 }
 
-/** Where the answer goes back to the Mac app: its own address, which only the sign-in window waiting for it receives. */
-export const handoffReturn = (answer: J | null, error = ""): string =>
-  "cipherfilm-mac://passkey#" + (answer ? toB64u(new TextEncoder().encode(JSON.stringify(answer))) : "error=" + encodeURIComponent(error || "cancelled"));
+/** Where the answer goes back to the app: its own fixed address, which only the sign-in waiting for it receives. */
+export const handoffReturn = (answer: J | null, error = "", app: HandoffApp = "mac"): string =>
+  RETURN[app] + (answer ? toB64u(new TextEncoder().encode(JSON.stringify(answer))) : "error=" + encodeURIComponent(error || "cancelled"));

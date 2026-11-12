@@ -2,8 +2,8 @@
 // devices"), two-step sign-in turned off by an administrator, and the password used for a sign-in that wasn't finished
 // (no right code followed: "Not you? Change your password"), and a change to two-step sign-in made on another device (an
 // authenticator app or a passkey added or removed, new recovery codes, turned off: "Not you? Review two-step sign-in").
-// They arrive with the live updates ("notices"),
-// dismissing one dismisses it on every device, and a dismissed one never comes back.
+// They arrive with the live updates ("notices") and are listed under the bell in the top bar (noticesui.tsx); removing
+// one dismisses it on every device, and a dismissed one never comes back.
 import { api } from "./api";
 
 /** The changes to two-step sign-in that the account's other devices hear about. */
@@ -29,7 +29,7 @@ export function usable(raw: unknown, dismissed: ReadonlySet<number> = new Set())
 export const when = (at: number): string =>
   new Date(at * 1000).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
-/** The banner's sentence (the action, "Review devices", is a separate link). */
+/** What happened, as a sentence (the action, "Review devices", is a separate link). */
 export function noticeText(n: Notice): string {
   const on = `on ${n.device || "an unknown device"}, ${when(n.at)}`;
   switch (n.kind) {
@@ -45,7 +45,7 @@ export function noticeText(n: Notice): string {
   return `New sign-in: ${n.device || "an unknown device"}, ${when(n.at)}. Not you?`;
 }
 
-/** Where the banner's link goes: the part of Account it opens, and what it says. */
+/** Where the notice's link goes: the part of Account it opens, and what it says. */
 export function noticeAction(n: Notice): { open: "devices" | "2fa" | "password"; label: string } {
   if (n.kind === "sign_in") return { open: "devices", label: "Review devices" };
   if (n.kind === "password_used") return { open: "password", label: "Change your password" };
@@ -62,3 +62,24 @@ export async function loadNotices(dismissed: ReadonlySet<number> = new Set()): P
   for (const n of usable(raw)) if (dismissed.has(n.id)) dismissNotice(n.id).catch(() => {});
   return usable(raw, dismissed);
 }
+
+// Unread: the notices newer than the newest this browser showed in the open list, per account. Notice ids only grow
+// (a restore of the server moves them past every one handed out before), so one number per account is enough.
+const READ = "cf-notices-read:";
+
+/** The highest notice id this browser has shown for the account (0: none). */
+export function readUpTo(account: string): number {
+  try { const n = Number(localStorage.getItem(READ + account)); return Number.isSafeInteger(n) && n > 0 ? n : 0; } catch { return 0; }
+}
+
+/** Remembers that the list was seen up to id; never goes back to a lower one. */
+export function markRead(account: string, id: number): void {
+  if (!(id > readUpTo(account))) return;
+  try { localStorage.setItem(READ + account, String(id)); } catch { /* storage off: they count as unread again next time */ }
+}
+
+/** How many of the notices are unread: newer than upTo. */
+export const unreadCount = (list: readonly Notice[], upTo: number): number => list.filter((n) => n.id > upTo).length;
+
+/** The newest id in the list (0 for none). */
+export const newestId = (list: readonly Notice[]): number => list.reduce((m, n) => Math.max(m, n.id), 0);

@@ -21,8 +21,9 @@ import { Icon, IconName, Logo } from "./icons";
 import { checkSession, loadUsage } from "./auth";
 import { hasIndex, loadPeople, refreshIndex, searchFiltered, usePeople } from "./people/people";
 import { coalesce, startLive } from "./live";
-import { dismissNotice, loadNotices, noticeAction, noticeText, type Notice } from "./notices";
+import { dismissNotice, loadNotices, noticeAction, type Notice } from "./notices";
 import { alertNotices } from "./noticeAlerts";
+import { NoticesButton } from "./noticesui";
 import { lazy } from "./lazy";
 import { Loading } from "./loader";
 import { findMemories, todayKey, type Memory } from "./memories/memories";
@@ -104,7 +105,8 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const refreshAlbums = () => loadAlbums().then(setAlbums, (e) => setError(msg(e))).finally(() => setAlbumsLoaded(true));
   const refreshTrash = () => loadTrash().then((r) => { setTrash(r.items); setRetention(r.retentionDays); }, (e) => setError(msg(e)));
   const refreshUsage = () => loadUsage().then(setUsage, () => {});
-  // a new sign-in elsewhere, or an admin turning off two-step sign-in (notices.ts): shown once, on every device
+  // a new sign-in elsewhere, or an admin turning off two-step sign-in (notices.ts): listed under the bell in the top bar
+  // (noticesui.tsx) until removed, which removes it on every device
   const [notices, setNotices] = useState<Notice[]>([]);
   const dismissed = useRef(new Set<number>());
   // and, while this tab is hidden, as the browser's notifications if turned on (noticeAlerts.ts)
@@ -118,6 +120,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
     setNotices((l) => l.filter((x) => x.id !== n.id));
     dismissNotice(n.id).catch(() => {}); // sent again at the next load if it didn't arrive (loadNotices)
   };
+  const dismissAll = () => { for (const n of notices) dismiss(n); };
   useEffect(() => { refreshItems(); refreshAlbums(); refreshTrash(); refreshUsage(); }, []);
   // while the map is on: videos uploaded before their location was read get it now (map/relocate.ts, loaded only then)
   const mapIsOn = useMapOn();
@@ -572,6 +575,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
           {!adminPage && !demo && <button class="btn" aria-label="Upload photos and videos" onClick={() => input.current?.click()}><Icon name="upload" /><span class="lbl">Upload</span></button>}
           <input ref={input} class="sr" type="file" multiple accept="image/*,video/*,.heic,.heif" tabIndex={-1} aria-label="Choose photos and videos"
             onChange={(e) => { const t = e.target as HTMLInputElement; if (t.files?.length) add(t.files); t.value = ""; }} />
+          {!demo && <NoticesButton account={mem.me!.user.id} notices={notices} onAct={(n) => go({ n: "account", open: noticeAction(n).open })} onRemove={dismiss} onRemoveAll={dismissAll} />}
           <div class="menuwrap">
             <button class="avatarbtn" ref={avatarBtn} aria-label="Account menu" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((v) => !v)}>
               <span class="avatar" aria-hidden="true">{props.email.slice(0, 1).toUpperCase()}</span>
@@ -626,19 +630,6 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
 
         <main id="main" tabIndex={-1} class="content">
           {demo && <p class="demonote" role="note">Public demo · read-only · resets every hour</p>}
-          {notices[0] && (() => {
-            const n = notices[0];
-            return (
-              <div class="noticebar" role="status">
-                <Icon name={n.kind === "sign_in" ? "shield" : "key"} size={20} />
-                <span>
-                  {noticeText(n)}{" "}
-                  <button class="link" onClick={() => go({ n: "account", open: noticeAction(n).open })}>{noticeAction(n).label}</button>
-                </span>
-                <button class="iconbtn tiny" aria-label="Dismiss" onClick={() => dismiss(n)}><Icon name="x" size={16} /></button>
-              </div>
-            );
-          })()}
           <div class="pagehead">
             {page.n === "album" && <button class="iconbtn" onClick={() => go({ n: "albums" })} aria-label="All albums"><Icon name="back" /></button>}
             {page.n === "person" && <button class="iconbtn" onClick={() => go({ n: "people" })} aria-label="All people"><Icon name="back" /></button>}

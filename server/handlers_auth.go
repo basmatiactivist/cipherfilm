@@ -490,8 +490,7 @@ func (a *App) newRecoveryKey(w http.ResponseWriter, r *http.Request, u *user, s 
 
 func (a *App) usage(w http.ResponseWriter, r *http.Request, u *user, s *session) {
 	var quota, used int64
-	a.db.QueryRow(`SELECT quota_bytes FROM users WHERE id=?`, u.ID).Scan(&quota)
-	a.db.QueryRow(`SELECT `+usedBytesSQL("?"), u.ID, u.ID, u.ID).Scan(&used)
+	a.db.QueryRow(`SELECT quota_bytes, used_bytes FROM users WHERE id=?`, u.ID).Scan(&quota, &used) // usage.go
 	writeJSON(w, 200, map[string]any{"used_bytes": used, "quota_bytes": quota, "unlimited": quota == 0})
 }
 

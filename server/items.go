@@ -190,7 +190,8 @@ func (a *App) owned(w http.ResponseWriter, r *http.Request, u *user) (*ownedItem
 }
 
 // usedBytesSQL is the storage an account takes: its files plus its encrypted index entries and documents, which live
-// in app.db. id is the SQL expression for the account's id.
+// in app.db. id is the SQL expression for the account's id. It sums the whole library, so requests read the counter
+// users.used_bytes instead (usage.go); this full sum sets the counter at start and serves the admin reports.
 func usedBytesSQL(id string) string {
 	return `(COALESCE((SELECT SUM(stored_bytes) FROM items WHERE user_id=` + id + `),0)
 		+ COALESCE((SELECT SUM(LENGTH(data_enc)) FROM item_index WHERE user_id=` + id + `),0)
@@ -199,8 +200,7 @@ func usedBytesSQL(id string) string {
 
 func (a *App) quotaLeft(userID string) (left int64, unlimited bool) {
 	var quota, used sql.NullInt64
-	a.db.QueryRow(`SELECT quota_bytes FROM users WHERE id=?`, userID).Scan(&quota)
-	a.db.QueryRow(`SELECT `+usedBytesSQL("?"), userID, userID, userID).Scan(&used)
+	a.db.QueryRow(`SELECT quota_bytes, used_bytes FROM users WHERE id=?`, userID).Scan(&quota, &used) // O(1): usage.go
 	if quota.Int64 == 0 {
 		return 0, true
 	}
@@ -211,8 +211,8 @@ func (a *App) quotaLeft(userID string) (left int64, unlimited bool) {
 // uploads cannot all pass the quota check before any of them is counted. Call release when the upload is done
 // (after stored_bytes has been updated, or on failure).
 //
-// The check sums the account's storage in the database, so it runs under a lock of that account only (one of
-// quotaStripes): a large account's sum doesn't hold up everyone else's uploads. resMu guards just the map.
+// The check reads the account's counter (usage.go) under a lock of that account only (one of quotaStripes), so a
+// check and its reservation are one step for that account; resMu guards just the map.
 func (a *App) reserveBytes(userID string, want int64) (release func(), ok bool) {
 	if want <= 0 {
 		return func() {}, true

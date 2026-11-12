@@ -40,6 +40,8 @@ version into the GitHub release notes, so a release cannot be published without 
   for its OK to download the models after an update).
 
 ### Fixed
+- Server: one account's large library no longer slows other accounts' uploads; the storage check reads a counter
+  instead of adding up the whole library each time.
 - Android: locking or signing out closes every screen of the library, also the edit screen and screens further back
   (such as the map), not only the one on top.
 - Android: release builds always block screenshots unless you allow them; only test builds made for the local test

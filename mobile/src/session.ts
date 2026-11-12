@@ -8,7 +8,7 @@ import { open, LABEL } from "@crypto/wrap";
 import type { KdfParams } from "@crypto/kdf";
 import { api, ApiError, remote, setCsrf, setServer, whenRevoked, whenSessionEnds } from "./api";
 import { t } from "./i18n";
-import { codeProblem, methods, pendingToken } from "./twoStep";
+import { codeProblem, methods, pendingToken, withStep, type Step } from "./twoStep";
 import { getPasskey } from "./passkeys";
 
 export interface Me {
@@ -389,8 +389,9 @@ export async function signOut() {
 }
 
 /** Deletes the account and everything in it from the server, permanently (Account › Delete account), after checking the
- *  password here first. Then the phone forgets everything, as at sign-out. The server refuses for its only admin. */
-export async function deleteAccount(password: string) {
+ *  password here first. Then the phone forgets everything, as at sign-out. The server refuses for its only admin.
+ *  While two-step sign-in is on, `second` gives the second step, asked for only once the password is right. */
+export async function deleteAccount(password: string, second?: () => Promise<Step>) {
   const s = await getSodium();
   const me = state.me;
   if (!me) throw new Error(t("Sign in first."));
@@ -403,7 +404,7 @@ export async function deleteAccount(password: string) {
   } finally {
     s.memzero(kek);
   }
-  await api("DELETE", "/api/me", { current_auth: auth });
+  await api("DELETE", "/api/me", withStep({ current_auth: auth }, second ? await second() : null));
   await SecureStore.deleteItemAsync(keyName(me.user.id));
   await SecureStore.deleteItemAsync(bioName(me.user.id));
   await SecureStore.deleteItemAsync(bioNoName(me.user.id));

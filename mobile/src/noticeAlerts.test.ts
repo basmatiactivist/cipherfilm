@@ -60,8 +60,19 @@ describe("which notices become notifications", () => {
     expect(w.text).toMatch(/^New sign-in: Thief's phone, .+\. Not you\? Review devices\.$/);
     expect(alertText(n(2, NOW, "2fa_reset", "")).publicTitle).toBe("Security notice from Cipherfilm");
     expect(alertText(n(3, NOW, "password_used", "")).title).toBe("Unfinished sign-in");
+    // changes to two-step sign-in on another device: the lock screen names neither the device nor the change
+    for (const kind of ["totp_added", "totp_removed", "passkey_added", "passkey_removed", "recovery_codes", "2fa_off"] as const) {
+      const a = alertText(n(4, NOW, kind, "Thief's phone"));
+      expect(a.publicTitle).toBe("Security notice from Cipherfilm");
+      expect(a.text).toContain("Thief's phone");
+    }
+    expect(alertText(n(4, NOW, "passkey_added", "x")).title).toBe("Two-step sign-in changed");
+    expect(alertText(n(4, NOW, "recovery_codes", "x")).text).toMatch(/^New recovery codes were made on x, /);
+    expect(alertText(n(5, NOW, "2fa_off", "x")).title).toBe("Two-step sign-in turned off");
     setLang("de");
     expect(alertText(n(1)).publicTitle).toBe("Neue Anmeldung bei Cipherfilm");
+    expect(alertText(n(4, NOW, "totp_removed", "x")).title).toBe("Anmeldung in zwei Schritten geändert");
+    expect(alertText(n(4, NOW, "totp_removed", "x")).publicTitle).toBe("Sicherheitshinweis von Cipherfilm");
     setLang("en");
     expect(alertId(5)).toBe(5);
     expect(alertId(2 ** 31 + 4)).toBeLessThan(2 ** 31);

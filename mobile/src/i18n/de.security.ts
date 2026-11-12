@@ -14,6 +14,10 @@ export const deSecurity: Record<string, string> = {
   "Use the authenticator app": "Authenticator-App verwenden",
   "Use a recovery code": "Wiederherstellungscode verwenden",
   "Start over": "Neu beginnen",
+  // the second step for a change to the account (SecondStep.tsx, twoStep.ts)
+  "That passkey wasn't accepted. Try again.": "Dieser Passkey wurde nicht akzeptiert. Versuchen Sie es noch einmal.",
+  "Your account uses two-step sign-in: confirm with a second step too.": "Ihr Konto nutzt die Anmeldung in zwei Schritten: Bestätigen Sie auch mit dem zweiten Schritt.",
+  "Delete with a passkey": "Mit Passkey löschen",
   // Account › Two-step sign-in
   "Not available in the public demo.": "In der öffentlichen Demo nicht verfügbar.",
   "On. A new sign-in asks for a code from your authenticator app after the password. Unlocking this phone doesn't.":
@@ -121,6 +125,19 @@ export const deSecurity: Record<string, string> = {
   "Your password was used to start a sign-in that wasn't finished ({time}). Not you? Change your password in Cipherfilm in the browser.":
     "Mit Ihrem Passwort wurde eine Anmeldung begonnen, aber nicht abgeschlossen ({time}). Nicht Sie? Ändern Sie Ihr Passwort in Cipherfilm im Browser.",
   "an unknown device": "ein unbekanntes Gerät",
+  // changes to two-step sign-in on another device
+  "An authenticator app was added to two-step sign-in on {device}, {time}. Not you?":
+    "Eine Authenticator-App wurde zur Anmeldung in zwei Schritten hinzugefügt: {device}, {time}. Nicht Sie?",
+  "The authenticator app was removed from two-step sign-in on {device}, {time}. Not you?":
+    "Die Authenticator-App wurde aus der Anmeldung in zwei Schritten entfernt: {device}, {time}. Nicht Sie?",
+  "A passkey was added to two-step sign-in on {device}, {time}. Not you?":
+    "Ein Passkey wurde zur Anmeldung in zwei Schritten hinzugefügt: {device}, {time}. Nicht Sie?",
+  "A passkey was removed from two-step sign-in on {device}, {time}. Not you?":
+    "Ein Passkey wurde aus der Anmeldung in zwei Schritten entfernt: {device}, {time}. Nicht Sie?",
+  "New recovery codes were made on {device}, {time}; the old ones no longer work. Not you?":
+    "Neue Wiederherstellungscodes wurden erstellt: {device}, {time}. Die alten gelten nicht mehr. Nicht Sie?",
+  "Two-step sign-in was turned off on {device}, {time}. Not you?":
+    "Die Anmeldung in zwei Schritten wurde ausgeschaltet: {device}, {time}. Nicht Sie?",
   "Review devices": "Geräte prüfen",
   "Dismiss": "Ausblenden",
   // several notices in one banner (notices.ts noticeSummary)
@@ -140,6 +157,7 @@ export const deSecurity: Record<string, string> = {
   "New sign-in": "Neue Anmeldung",
   "Two-step sign-in turned off": "Anmeldung in zwei Schritten ausgeschaltet",
   "Unfinished sign-in": "Nicht abgeschlossene Anmeldung",
+  "Two-step sign-in changed": "Anmeldung in zwei Schritten geändert",
   "New sign-in to Cipherfilm": "Neue Anmeldung bei Cipherfilm",
   "Security notice from Cipherfilm": "Sicherheitshinweis von Cipherfilm",
 };

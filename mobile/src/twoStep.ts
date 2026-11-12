@@ -1,5 +1,7 @@
 // Two-step sign-in, the parts without React Native: reading the server's answers and tidying what the person types.
-// The server's contract is server/twofactor.go; the screens are app/signin.tsx and app/two-step.tsx.
+// The server's contract is server/twofactor.go; the screens are app/signin.tsx and app/two-step.tsx, and the second
+// step of a change to the account (SecondStep.tsx: two-step sign-in, deleting the account).
+import { t } from "./i18n";
 
 /** What a failed request carries (ApiError in api.ts): read by shape, so this module needs no native code. */
 interface Failed { status?: number; code?: string; body?: unknown }
@@ -59,4 +61,43 @@ export function passkeyTrouble(e: unknown): "cancelled" | "none" | "unsupported"
   if (f?.code === "ERR_PASSKEY" && /rp ?id|relying party|domain|asset ?links|digital asset|cannot be validated|not associated/i.test(f.message ?? "")) return "server";
   if ((f as Failed | null)?.code === "passkeys_unavailable") return "server";
   return "other";
+}
+
+/** A second step as sent with a change that needs one while two-step sign-in is on: a code as typed (from the
+ *  authenticator app, or a recovery code), or a passkey's answer to the session's challenge. */
+export interface Step { code?: string; passkey?: Record<string, unknown> }
+
+/** What the account offers as a second step here: the authenticator app, a passkey this phone can use. */
+export interface Ways { totp: boolean; passkey: boolean }
+
+/** The request body with the second step added: only what was given (an empty code is left out, the passkey wins). */
+export function withStep<T extends object>(body: T, step?: Step | null): T & Step {
+  const out: T & Step = { ...body };
+  if (step?.passkey) out.passkey = step.passkey;
+  else if (step?.code && step.code.trim()) out.code = step.code.trim();
+  return out;
+}
+
+/** The server wants a second step for this change: two-step sign-in is on, though the app thought it was off. */
+export function stepNeeded(e: unknown): boolean {
+  const f = e as Failed | null;
+  return f?.status === 403 && f.code === "second_step_required";
+}
+
+/** A recovery code is typed: chosen, or the only way left (no app, and no passkey this phone can use). */
+export const usesRecovery = (ways: Ways, chosen: boolean): boolean => chosen || (!ways.totp && !ways.passkey);
+
+/** Which buttons the second step offers: the passkey (unless a recovery code is typed), and the one that sends the code. */
+export function stepButtons(ways: Ways, chosenRecovery: boolean): { passkey: boolean; code: boolean } {
+  const recovery = usesRecovery(ways, chosenRecovery);
+  return { passkey: ways.passkey && !recovery, code: recovery || ways.totp };
+}
+
+/** A refused second step in plain words; anything else as it came. */
+export function stepError(e: unknown): unknown {
+  const f = e as Failed | null;
+  if (f?.code === "wrong_code") return new Error(t("That code isn't right. Try again."));
+  if (f?.code === "wrong_passkey") return new Error(t("That passkey wasn't accepted. Try again."));
+  if (stepNeeded(e)) return new Error(t("Your account uses two-step sign-in: confirm with a second step too."));
+  return e;
 }

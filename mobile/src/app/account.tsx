@@ -22,6 +22,8 @@ import { NoticeAlertsSwitch } from "../NoticeAlertsSetting";
 import { text } from "../tokens";
 import { busyIcon } from "../Loader";
 import { locale, t } from "../i18n";
+import { stepButtons, stepError, stepNeeded } from "../twoStep";
+import { SecondStepFields, stepReady, takeStep, useSecondStep, useStepWays } from "../SecondStep";
 
 /** GitHub's issue form in the browser: the GitHub app would open its start page and drop the prefilled details. */
 const inBrowser = (url: string) => { let ok = false; try { ok = N.openInBrowser(url); } catch { /* older native build */ } if (!ok) Linking.openURL(url); };
@@ -37,11 +39,18 @@ export default function Account() {
   const [usage, setUsage] = useState<{ used_bytes: number; quota_bytes: number; unlimited: boolean }>();
   const [error, setError] = useState<string>();
   const [confirmOut, setConfirmOut] = useState(false);
-  // Delete account: a warning, then the password (checked here first, then sent as the sign-in proof)
+  // Delete account: a warning, then the password (checked here first, then sent as the sign-in proof) and, while
+  // two-step sign-in is on, the second step (also when the server says so: it was turned on elsewhere meanwhile)
   const [del, setDel] = useState<"" | "warn" | "password">("");
   const [delPw, setDelPw] = useState("");
   const [delBusy, setDelBusy] = useState(false);
   const [delError, setDelError] = useState<string>();
+  const [delNeedsStep, setDelNeedsStep] = useState(false);
+  const delStep = useSecondStep();
+  const delSecond = del === "password" && (!!me?.two_factor || delNeedsStep);
+  const delWays = useStepWays(delSecond);
+  const delButtons = delWays ? stepButtons(delWays, delStep.recovery) : { passkey: false, code: false };
+  const delStacked = delSecond && delButtons.passkey;
   const [bioOk, setBioOk] = useState(() => biometricPossible());
   const shake = useShake();
   const shots = useScreenshots();
@@ -72,16 +81,18 @@ export default function Account() {
     else { await signOut(); await forgetServer(); }
     router.replace("/");
   };
-  const closeDel = () => { if (!delBusy) { setDel(""); setDelPw(""); setDelError(undefined); } };
-  const doDelete = async () => {
+  const closeDel = () => { if (!delBusy) { setDel(""); setDelPw(""); setDelError(undefined); setDelNeedsStep(false); delStep.reset(); } };
+  const doDelete = async (withPasskey = false) => {
     setDelError(undefined); setDelBusy(true);
     try {
-      await deleteAccount(delPw);
+      await deleteAccount(delPw, delSecond && delWays ? () => takeStep(delStep, withPasskey) : undefined);
       setDel(""); setDelPw("");
       clearImages();
       forgetLibrary();
       router.replace("/");
-    } catch (e) {
+    } catch (err) {
+      if (stepNeeded(err)) setDelNeedsStep(true);
+      const e = stepError(err);
       setDelError(e instanceof Error ? e.message : t("That didn't work."));
     } finally {
       setDelBusy(false);
@@ -224,11 +235,20 @@ export default function Account() {
           <Dialog.Content>
             <Field label={t("Password")} value={delPw} onChangeText={setDelPw} secureTextEntry textContentType="password" autoComplete="current-password" autoFocus
               hint={delBusy ? t("Checking your password…") : undefined} />
+            {delSecond && delWays ? <SecondStepFields step={delStep} ways={delWays} /> : null}
             <Problem>{delError}</Problem>
           </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={closeDel} disabled={delBusy}>{t("Cancel")}</Button>
-            <Button textColor={th.colors.error} onPress={doDelete} icon={delBusy ? busyIcon : undefined} disabled={delBusy || !delPw}>{t("Delete account")}</Button>
+          {/* with the passkey, three actions: stacked, as for signing out */}
+          <Dialog.Actions style={delStacked ? st.stacked : undefined}>
+            {delStacked ? null : <Button onPress={closeDel} disabled={delBusy}>{t("Cancel")}</Button>}
+            {delStacked ? (
+              <Button textColor={th.colors.error} onPress={() => doDelete(true)} disabled={delBusy || !delPw}>{t("Delete with a passkey")}</Button>
+            ) : null}
+            {!delSecond || !delWays || delButtons.code ? (
+              <Button textColor={th.colors.error} onPress={() => doDelete(false)} icon={delBusy ? busyIcon : undefined}
+                disabled={delBusy || !delPw || (delSecond && (!delWays || !stepReady(delStep, delWays)))}>{t("Delete account")}</Button>
+            ) : null}
+            {delStacked ? <Button onPress={closeDel} disabled={delBusy}>{t("Cancel")}</Button> : null}
           </Dialog.Actions>
         </Dialog>
       </Portal>

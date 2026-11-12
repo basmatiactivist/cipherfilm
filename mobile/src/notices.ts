@@ -1,12 +1,18 @@
 // Notices: what the server asks every other device of the account to show once (server/notices.go): a new sign-in,
-// an administrator turning two-step sign-in off, or the password used for a sign-in that wasn't finished (no right
-// code followed). This part has no React Native: it checks what arrived, keeps only
+// an administrator turning two-step sign-in off, the password used for a sign-in that wasn't finished (no right
+// code followed), or a change to two-step sign-in made on another device (an authenticator app or a passkey added or
+// removed, new recovery codes, turned off). This part has no React Native: it checks what arrived, keeps only
 // kinds it knows, and words them. The store (noticesStore.ts) fetches and dismisses.
 import { locale, t } from "./i18n";
 
-export type NoticeKind = "sign_in" | "2fa_reset" | "password_used";
+/** Changes to two-step sign-in made on one of the account's devices (`device` made them). */
+export type TwoStepChange = "totp_added" | "totp_removed" | "passkey_added" | "passkey_removed" | "recovery_codes" | "2fa_off";
+export type NoticeKind = "sign_in" | "2fa_reset" | "password_used" | TwoStepChange;
 export interface Notice { id: number; kind: NoticeKind; device: string; at: number }
-const KINDS = new Set<string>(["sign_in", "2fa_reset", "password_used"]);
+const CHANGES = new Set<string>(["totp_added", "totp_removed", "passkey_added", "passkey_removed", "recovery_codes", "2fa_off"]);
+const KINDS = new Set<string>(["sign_in", "2fa_reset", "password_used", ...CHANGES]);
+/** Whether the notice is a change to two-step sign-in made on a device of the account. */
+export const isTwoStepChange = (k: NoticeKind): k is TwoStepChange => CHANGES.has(k);
 
 /** The notices to show from a server answer: well formed, of a known kind, not dismissed here, newest first. */
 export function visibleNotices(answer: unknown, dismissed: ReadonlySet<number>): Notice[] {
@@ -27,10 +33,19 @@ export const noticeTime = (at: number): string =>
 
 export function noticeText(n: Notice): string {
   const time = noticeTime(n.at);
+  const device = n.device || t("an unknown device");
+  switch (n.kind) {
+    case "totp_added": return t("An authenticator app was added to two-step sign-in on {device}, {time}. Not you?", { device, time });
+    case "totp_removed": return t("The authenticator app was removed from two-step sign-in on {device}, {time}. Not you?", { device, time });
+    case "passkey_added": return t("A passkey was added to two-step sign-in on {device}, {time}. Not you?", { device, time });
+    case "passkey_removed": return t("A passkey was removed from two-step sign-in on {device}, {time}. Not you?", { device, time });
+    case "recovery_codes": return t("New recovery codes were made on {device}, {time}; the old ones no longer work. Not you?", { device, time });
+    case "2fa_off": return t("Two-step sign-in was turned off on {device}, {time}. Not you?", { device, time });
+  }
   // the password is changed in the browser (Account says so)
   if (n.kind === "password_used") return t("Your password was used to start a sign-in that wasn't finished ({time}). Not you? Change your password in Cipherfilm in the browser.", { time });
   if (n.kind === "2fa_reset") return t("An administrator turned off two-step sign-in for your account ({time}). Turn it on again under Account.", { time });
-  return t("New sign-in: {device}, {time}. Not you? Review devices.", { device: n.device || t("an unknown device"), time });
+  return t("New sign-in: {device}, {time}. Not you? Review devices.", { device, time });
 }
 
 /** "Active now", minutes or hours ago, or the date: for the device list. */
@@ -45,7 +60,8 @@ export function lastActive(sec: number, now = Date.now() / 1000): string {
 
 /** What the library's one banner shows (NoticeBanner.tsx): never a stack. One notice: its own sentence and action.
  *  Several sign-ins: one line counting them, with the newest. Several of mixed kinds: the most urgent one (two-step
- *  sign-in turned off, then a password used, then a sign-in) and how many more there are. "Dismiss all" takes all. */
+ *  sign-in turned off, then a second step removed, then one added or new recovery codes, then a password used, then
+ *  a sign-in) and how many more there are. "Dismiss all" takes all. */
 export interface NoticeSummary {
   text: string;
   /** where its button leads; null: no button (the password is changed in the browser) */
@@ -55,8 +71,10 @@ export interface NoticeSummary {
   many: boolean;
 }
 
-const URGENCY: Record<NoticeKind, number> = { "2fa_reset": 0, password_used: 1, sign_in: 2 };
-const opens = (k: NoticeKind): NoticeSummary["open"] => (k === "sign_in" ? "devices" : k === "2fa_reset" ? "two-step" : null);
+const URGENCY: Record<NoticeKind, number> = {
+  "2fa_reset": 0, "2fa_off": 0, totp_removed: 1, passkey_removed: 1, totp_added: 2, passkey_added: 2, recovery_codes: 2, password_used: 3, sign_in: 4,
+};
+const opens = (k: NoticeKind): NoticeSummary["open"] => (k === "sign_in" ? "devices" : k === "2fa_reset" || isTwoStepChange(k) ? "two-step" : null);
 
 /** list: as visibleNotices gives it, newest first. null when there is nothing to show. */
 export function noticeSummary(list: readonly Notice[]): NoticeSummary | null {

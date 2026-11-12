@@ -17,7 +17,8 @@ import { Field, Problem, useAppTheme } from "../ui";
 import { Icon } from "../icons";
 import { busyIcon } from "../Loader";
 import { useAction } from "../useAction";
-import { cleanCode, codeReady, groupSecret } from "../twoStep";
+import { cleanCode, codeReady, groupSecret, stepButtons, stepError, stepNeeded, withStep, type Ways } from "../twoStep";
+import { SecondStepFields, stepReady, takeStep, useSecondStep } from "../SecondStep";
 import { text } from "../tokens";
 import { t, tn } from "../i18n";
 import { NoticeAlertsHint } from "../NoticeAlertsSetting";
@@ -38,8 +39,8 @@ export default function TwoStep() {
   const [codes, setCodes] = useState<string[] | null>(null);
   const [ask, setAsk] = useState<Ask>(null);
   const [password, setPassword] = useState("");
-  const [code, setCode] = useState("");
-  const [recovery, setRecovery] = useState(false);
+  const [code, setCode] = useState(""); // the code of the authenticator app being set up
+  const step = useSecondStep();
   const [name, setName] = useState("");
   const page = useAction();
   const dialog = useAction();
@@ -52,20 +53,29 @@ export default function TwoStep() {
   const on = !!status?.enabled;
   const totp = status?.totp ?? on;
   const canPasskey = pk.passkeysSupported();
-  const usableKeys = canPasskey && keys.some((k) => k.here);
+  const ways: Ways = { totp, passkey: canPasskey && keys.some((k) => k.here) };
   // while two-step sign-in is on, every change also needs a second step (setting it up the first time doesn't)
   const second = ask !== null && on;
+  const buttons = stepButtons(ways, step.recovery);
 
-  const closeAsk = () => { if (!dialog.busy) { setAsk(null); setPassword(""); setCode(""); setRecovery(false); dialog.setError(undefined); } };
+  const closeAsk = () => { if (!dialog.busy) { setAsk(null); setPassword(""); step.reset(); dialog.setError(undefined); } };
   const showCodes = (c: string[] | null | undefined) => { if (c && c.length) setCodes(c); };
   const confirm = (withPasskey: boolean) => dialog.run(async () => {
-    const proof: pk.Proof = { current_auth: await passwordProof(password) };
-    if (second) {
-      if (withPasskey) proof.passkey = await pk.proofPasskey();
-      else proof.code = code;
+    const proof: pk.Proof = withStep({ current_auth: await passwordProof(password) }, second ? await takeStep(step, withPasskey) : null);
+    try {
+      await change(proof);
+    } catch (e) {
+      // two-step sign-in was turned on elsewhere meanwhile: the dialog asks for the second step now
+      if (stepNeeded(e)) await load();
+      throw stepError(e);
     }
+    setAsk(null); setPassword(""); step.reset();
+    if (ask !== "setup") { await refreshMe().catch(() => null); await load(); }
+  });
+  const change = async (proof: pk.Proof) => {
     if (ask === "setup") {
       setSetup(await api<Setup>("POST", "/api/me/2fa/setup", proof));
+      setCode("");
     } else if (ask === "codes") {
       setCodes((await api<{ recovery_codes: string[] }>("POST", "/api/me/2fa/recovery-codes", proof)).recovery_codes);
     } else if (ask === "off") {
@@ -77,9 +87,7 @@ export default function TwoStep() {
     } else if (ask && typeof ask === "object") {
       await pk.remove(ask.remove.id, proof);
     }
-    setAsk(null); setPassword(""); setCode(""); setRecovery(false);
-    if (ask !== "setup") { await refreshMe().catch(() => null); await load(); }
-  });
+  };
   const enable = () => page.run(async () => {
     const r = await api<{ recovery_codes?: string[] }>("POST", "/api/me/2fa/enable", { code });
     setCode("");
@@ -174,29 +182,17 @@ export default function TwoStep() {
             {ask === "addkey" ? <Field label={t("Name")} value={name} onChangeText={setName} maxLength={64} /> : null}
             <Field label={t("Password")} value={password} onChangeText={setPassword} secureTextEntry textContentType="password" autoComplete="current-password" autoFocus={ask !== "addkey"}
               hint={dialog.busy ? t("Checking your password…") : undefined} />
-            {second ? (
-              <>
-                {recovery ? (
-                  <Field key="rc" label={t("Recovery code")} value={code} onChangeText={(v) => setCode(cleanCode(v, true))} autoCapitalize="none" />
-                ) : totp ? (
-                  <Field key="totp" label={t("Code from your authenticator app")} value={code} onChangeText={(v) => setCode(cleanCode(v, false))} keyboardType="number-pad"
-                    textContentType="oneTimeCode" autoComplete="one-time-code" importantForAutofill="yes" maxLength={6} />
-                ) : null}
-                <Button mode="text" compact onPress={() => { setRecovery(!recovery); setCode(""); }} style={{ alignSelf: "flex-start" }}>
-                  {recovery ? (totp ? t("Use the authenticator app") : t("Back")) : t("Use a recovery code")}
-                </Button>
-              </>
-            ) : null}
+            {second ? <SecondStepFields step={step} ways={ways} /> : null}
             <Problem>{dialog.error}</Problem>
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={closeAsk} disabled={dialog.busy}>{t("Cancel")}</Button>
-            {second && usableKeys && !recovery ? (
+            {second && buttons.passkey ? (
               <Button onPress={() => confirm(true)} disabled={dialog.busy || !password}>{t("Use a passkey")}</Button>
             ) : null}
-            {!second || recovery || totp ? (
+            {!second || buttons.code ? (
               <Button onPress={() => confirm(false)} icon={dialog.busy ? busyIcon : undefined} textColor={danger ? th.colors.error : undefined}
-                disabled={dialog.busy || !password || (second && !codeReady(code, recovery))}>
+                disabled={dialog.busy || !password || (second && !stepReady(step, ways))}>
                 {ask === "off" ? t("Turn off") : danger ? t("Remove") : t("Continue")}
               </Button>
             ) : null}

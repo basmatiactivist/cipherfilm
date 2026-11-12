@@ -4,7 +4,7 @@
 // A notice is shown at most once per phone: its id goes into the "seen" list as soon as it was shown as a
 // notification, or in the app as a banner (then no notification follows). Old ones (from before RECENT) are only
 // marked seen: a phone that was off for a week doesn't get a pile of them, the banner still shows them.
-import { type Notice, noticeText } from "./notices";
+import { isTwoStepChange, type Notice, noticeText } from "./notices";
 import { t } from "./i18n";
 
 export interface Seen {
@@ -64,7 +64,8 @@ export function readSeen(v: unknown): Seen | null {
  * the public version the lock screen shows, which says nothing about the device or the time.
  */
 export function alertText(n: Notice): { title: string; text: string; publicTitle: string } {
-  const title = n.kind === "sign_in" ? t("New sign-in") : n.kind === "2fa_reset" ? t("Two-step sign-in turned off") : t("Unfinished sign-in");
+  const title = n.kind === "sign_in" ? t("New sign-in") : n.kind === "2fa_reset" || n.kind === "2fa_off" ? t("Two-step sign-in turned off")
+    : isTwoStepChange(n.kind) ? t("Two-step sign-in changed") : t("Unfinished sign-in");
   const publicTitle = n.kind === "sign_in" ? t("New sign-in to Cipherfilm") : t("Security notice from Cipherfilm");
   return { title, text: noticeText(n), publicTitle };
 }

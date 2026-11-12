@@ -149,3 +149,30 @@ func TestRemovingTheLastPasskeyDropsOpenCeremonies(t *testing.T) {
 		t.Fatalf("a registration outlived two-step sign-in: %d %v", code, out)
 	}
 }
+
+// Removing the authenticator app when it was the only second step turns two-step sign-in off: a passkey registration
+// begun under it (with a code) can't be finished afterwards, as when the last passkey goes.
+func TestRemovingTheOnlyAuthenticatorDropsOpenCeremonies(t *testing.T) {
+	e := newEnv(t)
+	clk := e.pinClock()
+	admin := e.hostClient()
+	ab := with(bundle(), "setup_token", e.knownSetupToken(), "email", "admin@x.org")
+	if code, out := admin.do("POST", "/api/setup", ab, false); code != 201 {
+		t.Fatalf("setup: %d %v", code, out)
+	}
+	secret, codes := e.enable2FA(admin, ab)
+	clk.tick(30 * time.Second)
+	code, begin := admin.do("POST", "/api/me/passkeys/register/begin", map[string]any{"current_auth": ab["auth"], "code": codeAt(t, secret, clk.at)}, true)
+	if code != 200 {
+		t.Fatalf("begin: %d %v", code, begin)
+	}
+	if code, out := admin.do("POST", "/api/me/2fa/totp/remove", map[string]any{"current_auth": ab["auth"], "code": codes[0]}, true); code != 200 || out["two_factor"] != false {
+		t.Fatalf("remove the authenticator: %d %v", code, out)
+	}
+	if code, out := admin.do("POST", "/api/me/passkeys/register/finish", map[string]any{"credential": newSoftKey(t).create(begin["options"].(map[string]any))}, true); code != 409 {
+		t.Fatalf("a registration outlived two-step sign-in: %d %v", code, out)
+	}
+	if _, out := admin.do("GET", "/api/me", nil, false); out["two_factor"] != false {
+		t.Fatal("two-step sign-in back on")
+	}
+}

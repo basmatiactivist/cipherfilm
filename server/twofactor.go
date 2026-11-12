@@ -824,7 +824,11 @@ func (a *App) twoFactorRemoveTOTP(w http.ResponseWriter, r *http.Request, u *use
 		return
 	}
 	if keys == 0 {
+		// two-step sign-in is off now: as in turnOff and removePasskey, the sign-ins and passkey ceremonies begun
+		// under it go (a registration checked with a code would otherwise turn it on again)
 		a.pending.dropUser(u.ID, a.now())
+		a.waProof.dropUser(u.ID)
+		a.waReg.dropUser(u.ID)
 		a.audit(u.Email, "turned off two-step sign-in", u.Email, "")
 	} else {
 		a.audit(u.Email, "removed the authenticator app", u.Email, "")

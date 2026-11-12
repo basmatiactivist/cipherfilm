@@ -7,7 +7,9 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
-## [2.7.0] - 2026-11-12
+## [2.7.1] - 2026-11-12
+
+(2.7.0 was tagged but never released: its release run stopped at a test. 2.7.1 is the same app.)
 
 ### Note
 - Going back to an older server version is not supported once anyone has added a passkey: older servers don't know

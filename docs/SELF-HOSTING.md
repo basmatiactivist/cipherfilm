@@ -71,6 +71,9 @@ photos.example.com {
 
 For private use with no open ports, [Tailscale Serve](https://tailscale.com/kb/1312/serve) works too:
 `tailscale serve --bg 8080` on the host, with `PUBLIC_HOSTS=<machine>.<tailnet>.ts.net` and `TRUST_PROXY=0`.
+Add `TRUST_TAILSCALE_HEADERS=1` so sign-in limits are kept per tailnet user (the `Tailscale-User-Login` header Serve
+adds) instead of one bucket for everyone, but only if nothing else that passes on client headers reaches the app on
+loopback (no other proxy in front of it on the same host).
 A complete private setup in Docker (Tailscale, your own name, Kopia backups, all without open web ports):
 [TAILNET.md](TAILNET.md).
 
@@ -165,6 +168,7 @@ lost device, make an invite link, status). A password can't be reset from the se
 |---|---|---|---|
 | `PUBLIC_HOSTS` | `.env` | required | names your proxy serves, e.g. `photos.example.com`; others get 421 |
 | `TRUST_PROXY` | `.env` | `1` | trust the last `X-Forwarded-For` entry from exactly one proxy; `0` for a chain, a Cloudflare Tunnel or Tailscale Serve |
+| `TRUST_TAILSCALE_HEADERS` | `.env` | `0` | `1` behind Tailscale Serve with `TRUST_PROXY=0`: requests from loopback are limited per tailnet user (`Tailscale-User-Login`) instead of all as `127.0.0.1`. Only when Serve is the only thing reaching the app on loopback |
 | `TRUSTED_PROXIES` | `.env` | empty (loopback and private networks) | addresses or CIDRs whose `X-Forwarded-For` is believed, comma-separated |
 | `MAP_STYLE` | `.env` | empty (OpenFreeMap, VersaTiles as fallback) | the map tab's base map: `off`, or `LIGHT_STYLE_URL DARK_STYLE_URL` (your own MapLibre styles over https); photo locations never leave the devices, the tile server only sees which map areas are viewed ([docs/MAP.md](MAP.md); your own map server: [Your own map tiles](MAP.md#your-own-map-tiles)) |
 | `DEMO_ACCOUNTS` | `.env` | empty | e-mail addresses of public demo accounts, comma-separated: they can sign in, look and search, but not upload, edit, delete or change the account (403); see [deploy/demo](../deploy/demo/README.md) |

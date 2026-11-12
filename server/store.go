@@ -254,6 +254,15 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	// invites.created_session: the session (pub id) that made the invite; signing that session out, or the creator's
+	// password change from another one, ends the invite ('' for older ones and the server console's)
+	if invCols, err := tableCols(db, "invites"); err != nil {
+		return err
+	} else if !invCols["created_session"] {
+		if _, err := db.Exec(`ALTER TABLE invites ADD COLUMN created_session TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
 	// users.indexer: the one device (session pub id) that computes the search index; the others only read it
 	if !userCols["indexer"] {
 		if _, err := db.Exec(`ALTER TABLE users ADD COLUMN indexer TEXT NOT NULL DEFAULT ''`); err != nil {

@@ -504,7 +504,7 @@ func (a *App) passkeyRegisterBegin(w http.ResponseWriter, r *http.Request, u *us
 		return
 	}
 	var req proofReq
-	if !readJSON(w, r, &req) || !a.checkPassword(w, u, "passkey-add", req.CurrentAuth) {
+	if !readJSON(w, r, &req) || !a.checkPassword(w, r, u, "passkey-add", req.CurrentAuth) {
 		return
 	}
 	if u.twoFactor() && !a.secondFactor(w, r, u, s, req) {
@@ -650,6 +650,7 @@ func (a *App) passkeyRegisterFinish(w http.ResponseWriter, r *http.Request, u *u
 	} else {
 		a.audit(u.Email, "added a passkey", u.Email, "")
 	}
+	a.factorNotice(u, s, r, noticePasskeyAdded)
 	out := map[string]any{"passkey": passkeyView{id, name, ch.rpID, true, now, 0}}
 	if first {
 		out["recovery_codes"] = codes
@@ -692,7 +693,7 @@ func (a *App) passkeyDelete(w http.ResponseWriter, r *http.Request, u *user, s *
 		return
 	}
 	var req proofReq
-	if !readJSON(w, r, &req) || !a.checkPassword(w, u, "passkey-remove", req.CurrentAuth) {
+	if !readJSON(w, r, &req) || !a.checkPassword(w, r, u, "passkey-remove", req.CurrentAuth) {
 		return
 	}
 	var n int
@@ -715,8 +716,10 @@ func (a *App) passkeyDelete(w http.ResponseWriter, r *http.Request, u *user, s *
 	}
 	if off {
 		a.audit(u.Email, "turned off two-step sign-in", u.Email, "passkey")
+		a.factorNotice(u, s, r, noticeTwoFactorOff)
 	} else {
 		a.audit(u.Email, "removed a passkey", u.Email, "")
+		a.factorNotice(u, s, r, noticePasskeyRemoved)
 	}
 	writeJSON(w, 200, map[string]any{"ok": true, "two_factor": !off})
 }

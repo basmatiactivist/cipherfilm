@@ -22,10 +22,12 @@ const (
 var argonSlots = make(chan struct{}, 4)
 
 // Sign-in and recovery from unknown browsers wait in a short queue: when it is full they are turned away at once,
-// so a flood cannot build a backlog that every other sign-in waits behind. Known browsers are never turned away.
+// so a flood cannot build a backlog that every other sign-in waits behind. Known browsers are counted apart
+// (argonKnownWaiting), so they never fill that queue; each account has at most knownInFlight of them at once
+// (App.knownTurn), so one account's known browser can't build an endless backlog either.
 const maxArgonWaiting = 16
 
-var argonWaiting atomic.Int32
+var argonWaiting, argonKnownWaiting atomic.Int32
 
 var errBusy = errors.New("busy")
 
@@ -38,11 +40,15 @@ func argonKey(secret, salt []byte) []byte {
 // argonTurn waits for an Argon2 slot for a credential check, and gives up when the client has gone (the work would
 // be for nobody) or, if capped, when too many are already waiting.
 func argonTurn(ctx context.Context, capped bool) (release func(), err error) {
-	if n := argonWaiting.Add(1); capped && n > maxArgonWaiting {
-		argonWaiting.Add(-1)
+	waiting := &argonWaiting
+	if !capped {
+		waiting = &argonKnownWaiting
+	}
+	if n := waiting.Add(1); capped && n > maxArgonWaiting {
+		waiting.Add(-1)
 		return nil, errBusy
 	}
-	defer argonWaiting.Add(-1)
+	defer waiting.Add(-1)
 	select {
 	case argonSlots <- struct{}{}:
 		return func() { <-argonSlots }, nil

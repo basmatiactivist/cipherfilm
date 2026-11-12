@@ -361,26 +361,35 @@ func TestTwoFactorCodesAreRateLimited(t *testing.T) {
 	if r := c.post("/api/auth/login/2fa", map[string]any{"pending": p, "code": "000000"}); r.code != 429 {
 		t.Fatalf("over the daily limit: %d", r.code)
 	}
-	// and per source
+	// and per source and account
 	e.app.totpDay.clear("2fa|" + u.ID)
 	for i := 0; i < 30; i++ {
-		e.app.loginIP.take("2fa|127.0.0.1")
+		e.app.loginIP.take("2fa|127.0.0.1|" + u.ID)
 	}
 	if r := c.post("/api/auth/login/2fa", map[string]any{"pending": p, "code": "000000"}); r.code != 429 {
 		t.Fatalf("over the source's limit: %d", r.code)
 	}
-	// the code checks behind Account count in the same account buckets
-	e.app.loginIP.clear("2fa|127.0.0.1")
+	// the code checks behind Account count in buckets of their own, as large: wrong codes at sign-in (all someone with
+	// only the password can enter) don't keep a signed-in device from them
+	e.app.loginIP.clear("2fa|127.0.0.1|" + u.ID)
 	for i := 0; i < totpAcctMax; i++ {
-		e.app.totpAcct.take("2fa|" + u.ID)
+		e.app.totpAcct.take("stepup|" + u.ID)
 	}
 	if code, _ := admin.do("POST", "/api/me/2fa/disable", map[string]any{"current_auth": ab["auth"], "code": codeAt(t, secret, clk.at)}, true); code != 429 {
 		t.Fatalf("disable over the limit: %d", code)
 	}
-	// a password change clears them: whoever was guessing doesn't have the new password
-	e.app.forgetCodeTries(u.ID)
-	if !e.app.totpAcct.allowed("2fa|"+u.ID) || !e.app.totpDay.allowed("2fa|"+u.ID) {
-		t.Fatal("not cleared")
+	e.app.totpAcct.clear("stepup|" + u.ID)
+	for i := 0; i < totpDayMax; i++ {
+		e.app.totpDay.take("2fa|" + u.ID)
+	}
+	e.app.totpAcct.take("2fa|" + u.ID)
+	clk.tick(30 * time.Second)
+	if code, out := admin.do("POST", "/api/me/2fa/recovery-codes", map[string]any{"current_auth": ab["auth"], "code": codeAt(t, secret, clk.at)}, true); code != 200 {
+		t.Fatalf("new codes while the sign-in's buckets are full: %d %v", code, out)
+	}
+	// and a right code there lets the real person sign in on a new device again
+	if !e.app.totpAcct.allowed("2fa|"+u.ID) || !e.app.totpDay.allowed("2fa|"+u.ID) || e.app.totpAcct.m["2fa|"+u.ID] != nil {
+		t.Fatal("the sign-in's buckets stay full after a right code")
 	}
 }
 
@@ -687,7 +696,7 @@ func TestRecoveryKeepsTheCodeCount(t *testing.T) {
 	if r := c.post("/api/auth/login/2fa", map[string]any{"pending": p, "code": codeAt(t, secret, clk.at)}); r.code != 401 || r.body["code"] != "two_factor_expired" {
 		t.Fatalf("pending sign-in survived the recovery: %d %v", r.code, r.body)
 	}
-	// the password change of a signed-in device clears it
+	// the password change of a signed-in device, with its second step, clears it (the right code does)
 	e.app.totpAcct.clear("2fa|" + u.ID)
 	nc := e.client()
 	np := e.passwordStep(nc, "admin@x.org", nb)
@@ -698,11 +707,13 @@ func TestRecoveryKeepsTheCodeCount(t *testing.T) {
 		e.app.totpAcct.take("2fa|" + u.ID)
 	}
 	pb := bundle()
-	if code, out := nc.do("POST", "/api/auth/password", map[string]any{"current_auth": nb["auth"], "new_auth": pb["auth"], "new_kdf": pb["kdf"], "new_wrapped_master_pw": pb["wrapped_master_pw"]}, true); code != 200 {
+	clk.tick(30 * time.Second)
+	if code, out := nc.do("POST", "/api/auth/password", map[string]any{"current_auth": nb["auth"], "new_auth": pb["auth"], "new_kdf": pb["kdf"],
+		"new_wrapped_master_pw": pb["wrapped_master_pw"], "code": codeAt(t, secret, clk.at)}, true); code != 200 {
 		t.Fatalf("password change: %d %v", code, out)
 	}
 	if !e.app.totpAcct.allowed("2fa|" + u.ID) {
-		t.Fatal("a password change kept the code count")
+		t.Fatal("a password change with a right code kept the code count")
 	}
 }
 
@@ -1023,5 +1034,72 @@ func TestPasswordStepNeverCreatesASession(t *testing.T) {
 	}
 	if n := rows(); n != before+1 {
 		t.Fatalf("after the code: %d session rows, want %d", n, before+1)
+	}
+}
+
+// A session that has the password guesses codes for turning two-step sign-in off and changes the password between
+// rounds: the change doesn't give it a fresh budget. Of 30 guesses, only totpAcctMax are checked.
+func TestPasswordChangeKeepsTheCodeCount(t *testing.T) {
+	e := newEnv(t)
+	e.pinClock()
+	admin, ab := e.setupAdmin("admin@x.org")
+	e.enable2FA(admin, ab)
+	auth := ab["auth"]
+	checked := 0
+	u, _ := e.app.userByEmail("admin@x.org")
+	for round := 0; round < 6; round++ {
+		e.app.proofs.clear(u.ID) // the password proofs have their own limit (TestSignedInPasswordProofsAreBounded)
+		for i := 0; i < totpAcctMax; i++ {
+			code, _ := admin.do("POST", "/api/me/2fa/disable", map[string]any{"current_auth": auth, "code": "000000"}, true)
+			switch code {
+			case 403:
+				checked++
+			case 429:
+			default:
+				t.Fatalf("guess: %d", code)
+			}
+		}
+		// a password change without the second step is refused; one with it proves a right code anyway
+		next := rb(32)
+		switch code, out := admin.do("POST", "/api/auth/password", map[string]any{"current_auth": auth, "new_auth": next,
+			"new_kdf": ab["kdf"], "new_wrapped_master_pw": rb(wrappedLen)}, true); {
+		case code == 200:
+			auth = next
+		case code == 403 && out["code"] == stepUpRequired:
+		default:
+			t.Fatalf("password change: %d %v", code, out)
+		}
+	}
+	if checked != totpAcctMax {
+		t.Fatalf("%d of 30 guesses checked, want %d", checked, totpAcctMax)
+	}
+}
+
+// One account's own sign-ins, alternating wrong codes with a right one from a shared source (every client of a
+// tailnet server is 127.0.0.1), don't use up the second step for another account signing in from there.
+func TestOwnSignInsDontBlockOthersSecondStep(t *testing.T) {
+	e := newEnv(t)
+	clk := e.pinClock()
+	admin, ab := e.setupAdmin("admin@x.org")
+	bob, bb := e.acceptInvite(e.invite(admin, "bob@x.org"))
+	secret, _ := e.enable2FA(admin, ab)
+	bobSecret, _ := e.enable2FA(bob, bb)
+	for cycle := 0; cycle < 10; cycle++ {
+		clk.tick(30 * time.Second)
+		c := e.client()
+		p := e.passwordStep(c, "admin@x.org", ab)
+		for i := 0; i < totpAcctMax-1; i++ {
+			if r := c.post("/api/auth/login/2fa", map[string]any{"pending": p, "code": "000000"}); r.code != 401 {
+				t.Fatalf("cycle %d wrong code %d: %d", cycle, i, r.code)
+			}
+		}
+		if r := c.post("/api/auth/login/2fa", map[string]any{"pending": p, "code": codeAt(t, secret, clk.at)}); r.code != 200 {
+			t.Fatalf("cycle %d right code: %d %v", cycle, r.code, r.body)
+		}
+	}
+	c := e.client()
+	p := e.passwordStep(c, "bob@x.org", bb)
+	if r := c.post("/api/auth/login/2fa", map[string]any{"pending": p, "code": codeAt(t, bobSecret, clk.at)}); r.code != 200 {
+		t.Fatalf("someone else's right code from the same source: %d %v", r.code, r.body)
 	}
 }

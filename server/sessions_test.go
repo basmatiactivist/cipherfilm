@@ -1,12 +1,13 @@
 package main
 
 import (
-	"slices"
 	"database/sql"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func (e *env) login(email string, b map[string]any) *client {
@@ -312,5 +313,38 @@ func TestNoticesTableLosesItsCheck(t *testing.T) {
 			}
 		}
 		db.Close()
+	}
+}
+
+// An account has at most sessionsMax live sessions: a new sign-in beyond that ends the one idle longest, not one in use.
+func TestLiveSessionsPerAccountAreCapped(t *testing.T) {
+	e := newEnv(t)
+	clk := e.pinClock()
+	first, ab := e.setupAdmin("admin@x.org")
+	second := e.login("admin@x.org", ab)
+	var rest []*client
+	for i := 0; i < sessionsMax+5; i++ {
+		clk.tick(2 * time.Minute)
+		if i == 10 {
+			if code, _ := first.do("GET", "/api/me", nil, false); code != 200 { // the first device is in use
+				t.Fatalf("first: %d", code)
+			}
+		}
+		rest = append(rest, e.login("admin@x.org", ab))
+	}
+	u, _ := e.app.userByEmail("admin@x.org")
+	var n int
+	e.app.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE user_id=?`, u.ID).Scan(&n)
+	if n != sessionsMax {
+		t.Fatalf("%d live sessions, want %d", n, sessionsMax)
+	}
+	if code, _ := second.do("GET", "/api/me", nil, false); code != 401 {
+		t.Fatalf("the session idle longest still works: %d", code)
+	}
+	if code, _ := first.do("GET", "/api/me", nil, false); code != 200 {
+		t.Fatalf("a session in use was ended: %d", code)
+	}
+	if code, _ := rest[len(rest)-1].do("GET", "/api/me", nil, false); code != 200 {
+		t.Fatalf("the newest: %d", code)
 	}
 }

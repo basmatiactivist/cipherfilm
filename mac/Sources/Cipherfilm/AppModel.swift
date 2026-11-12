@@ -175,7 +175,7 @@ final class AppModel {
     codeStep = nil
   }
 
-  // ---- notices (a new sign-in elsewhere, two-step sign-in turned off by an admin) ----
+  // ---- notices (a new sign-in elsewhere, two-step sign-in turned off by an admin or changed on another device) ----
 
   var notices: [Notice] = []
   /** the Settings tab to show (the banner's "Review devices" opens Security) */
@@ -362,9 +362,9 @@ final class AppModel {
 
   /** Account › Delete Account: the server deletes the account and everything in it; then this Mac forgets it all, as at
    *  sign-out (the exported copies stay: they are the person's files now). */
-  func deleteAccount(password: String) async throws {
+  func deleteAccount(password: String, second: TwoFactor.Second = .none) async throws {
     guard let me, let api else { return }
-    try await Account.delete(api: api, me: me, password: password)
+    try await Account.delete(api: api, me: me, password: password, second: second)
     watcher.stop(forget: true)
     wipe(ended: true)
     api.clearCookies()

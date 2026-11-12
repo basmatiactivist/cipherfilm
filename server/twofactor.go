@@ -259,18 +259,17 @@ func (a *App) useCode(u *user, code string) bool {
 	return rowsAffected(res, err) == 1
 }
 
-// codeSlots are the buckets every second-step code is counted in, wherever it is entered.
+// codeSlots are the buckets a second-step code at sign-in is counted in, from whichever source.
 func (a *App) codeSlots(userID string) []slot {
 	return []slot{{a.totpAcct, "2fa|" + userID, true}, {a.totpDay, "2fa|" + userID, true}}
 }
 
-// forgetCodeTries: after a password change whoever was guessing codes no longer has the password, so the real person
-// isn't kept waiting by their failures. Only a password change does this (it needs a session, which passed the code
-// step); a recovery only drops the pending sign-ins, since the recovery key alone gets no further than the code step.
-func (a *App) forgetCodeTries(userID string) {
-	a.totpAcct.clear("2fa|" + userID)
-	a.totpDay.clear("2fa|" + userID)
-	a.pending.dropUser(userID, a.now())
+// stepSlots are the buckets of the second step a signed-in session is asked for (to change the password or two-step
+// sign-in, rotate the recovery key, delete the account), as large as the sign-in's but apart: someone who has only the
+// password and fills the sign-in buckets with wrong codes must not keep the real person, on a device that is signed
+// in, from changing the password. A password change never resets them (only a right code does).
+func (a *App) stepSlots(userID string) []slot {
+	return []slot{{a.totpAcct, "stepup|" + userID, true}, {a.totpDay, "stepup|" + userID, true}}
 }
 
 // ---- pending sign-ins ----
@@ -506,8 +505,11 @@ func (a *App) login2fa(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 401, map[string]string{"error": pendingGone, "code": "two_factor_expired"})
 		return
 	}
+	// per (source, account), like the password's account bucket: a source shared by many people (every client of a
+	// tailnet server is 127.0.0.1) is not one bucket that one account's own sign-ins could fill for everyone else.
+	// A pending token needs the account's right password, and the account's buckets bound the codes across sources.
 	ip := limiterIP(a.clientIP(r))
-	at, ok := reserve(append([]slot{{a.loginIP, "2fa|" + ip, false}}, a.codeSlots(p.userID)...)...)
+	at, ok := reserve(append([]slot{{a.loginIP, "2fa|" + ip + "|" + p.userID, true}}, a.codeSlots(p.userID)...)...)
 	if !ok {
 		a.pending.done(h, false, false, a.now())
 		fail(w, 429, "too many attempts, try later")
@@ -577,7 +579,7 @@ func hasPasskey(raw json.RawMessage) bool { return len(raw) > 0 && string(raw) !
 // secondFactor checks the second step sent with a change to two-step sign-in: a code (used up) or a passkey's answer
 // to this session's challenge. Counted like a code at sign-in.
 func (a *App) secondFactor(w http.ResponseWriter, r *http.Request, u *user, s *session, req proofReq) bool {
-	at, ok := reserve(a.codeSlots(u.ID)...)
+	at, ok := reserve(a.stepSlots(u.ID)...)
 	if !ok {
 		fail(w, 429, "too many attempts, try later")
 		return false
@@ -592,21 +594,75 @@ func (a *App) secondFactor(w http.ResponseWriter, r *http.Request, u *user, s *s
 		return false
 	}
 	at.success()
+	// a right code: whoever filled the sign-in buckets with wrong ones gets no further than the code step, and the
+	// real person, who just proved the second step, may sign in on a new device again
+	for _, sl := range a.codeSlots(u.ID) {
+		sl.l.clear(sl.key)
+	}
 	return true
 }
 
+// stepUpRequired answers an app that sent no second step for a change that needs one: older versions don't ask for
+// it, and show this message.
+const stepUpRequired = "second_step_required"
+
+// stepUp checks the second step for changing the password, rotating the recovery key or deleting the account, when
+// two-step sign-in is on: the same as turning it off needs, so a session and the password alone can't do it.
+func (a *App) stepUp(w http.ResponseWriter, r *http.Request, u *user, s *session, code string, passkey json.RawMessage) bool {
+	if !u.twoFactor() {
+		return true
+	}
+	if strings.TrimSpace(code) == "" && !hasPasskey(passkey) {
+		writeJSON(w, 403, map[string]string{"code": stepUpRequired,
+			"error": "this account uses two-step sign-in: confirm with a code from your authenticator app, a recovery code or a passkey (update the app if it doesn't ask for one)"})
+		return false
+	}
+	return a.secondFactor(w, r, u, s, proofReq{Code: code, Passkey: passkey})
+}
+
 // checkPassword verifies the password proof sent with a change to two-step sign-in, counted like a password change.
-func (a *App) checkPassword(w http.ResponseWriter, u *user, what, proof string) bool {
+func (a *App) checkPassword(w http.ResponseWriter, r *http.Request, u *user, what, proof string) bool {
 	at, ok := reserve(slot{a.loginAcct, what + "|" + u.ID, true})
 	if !ok {
 		fail(w, 429, "too many attempts, try later")
 		return false
 	}
-	if !verifySecret(u.AuthHash, proof) {
-		fail(w, 403, "that password isn't right")
+	if !a.proofOK(w, r, u, at, proof) {
 		return false
 	}
 	at.success()
+	return true
+}
+
+// proofOK checks the password proof of a signed-in session (to change the password or two-step sign-in, rotate the
+// recovery key, delete the account) and answers the request when it fails. The endpoints' own buckets reset on a
+// right proof, so these checks are bounded besides: proofsPerAccount per proofWindow per account, right or wrong,
+// and at most knownInFlight of the account's credential checks at once. They wait for an Argon2 slot in the known
+// lane, never in the queue that turns unknown browsers away, and leave it when the client has gone. On busy, at (the
+// endpoint's bucket) is refunded.
+func (a *App) proofOK(w http.ResponseWriter, r *http.Request, u *user, at *attempt, proof string) bool {
+	if !a.proofs.take(u.ID) {
+		at.refund()
+		fail(w, 429, "too many attempts, try later")
+		return false
+	}
+	release, ok := a.knownTurn(u.ID)
+	if !ok {
+		at.refund()
+		failBusy(w)
+		return false
+	}
+	defer release()
+	good, busy := verifySecretCtx(r.Context(), false, u.AuthHash, proof)
+	if busy != nil {
+		at.refund()
+		failBusy(w)
+		return false
+	}
+	if !good {
+		fail(w, 403, "that password isn't right")
+		return false
+	}
 	return true
 }
 
@@ -617,7 +673,7 @@ func (a *App) twoFactorSetup(w http.ResponseWriter, r *http.Request, u *user, s 
 		return
 	}
 	var req proofReq
-	if !readJSON(w, r, &req) || !a.checkPassword(w, u, "2fa-setup", req.CurrentAuth) {
+	if !readJSON(w, r, &req) || !a.checkPassword(w, r, u, "2fa-setup", req.CurrentAuth) {
 		return
 	}
 	if u.TOTPSecret != "" {
@@ -678,7 +734,7 @@ func (a *App) twoFactorEnable(w http.ResponseWriter, r *http.Request, u *user, s
 		fail(w, http.StatusConflict, "start the setup again")
 		return
 	}
-	at, ok := reserve(a.codeSlots(u.ID)...)
+	at, ok := reserve(a.stepSlots(u.ID)...)
 	if !ok {
 		fail(w, 429, "too many attempts, try later")
 		return
@@ -719,6 +775,7 @@ func (a *App) twoFactorEnable(w http.ResponseWriter, r *http.Request, u *user, s
 		return
 	}
 	at.success()
+	a.factorNotice(u, s, r, noticeTOTPAdded)
 	if codes == nil {
 		a.audit(u.Email, "added an authenticator app", u.Email, "")
 		writeJSON(w, 200, map[string]any{"ok": true})
@@ -732,7 +789,7 @@ func (a *App) twoFactorEnable(w http.ResponseWriter, r *http.Request, u *user, s
 // current code (or a recovery code, which is used up, or a passkey).
 func (a *App) proofAndCode(w http.ResponseWriter, r *http.Request, u *user, s *session, what string) bool {
 	var req proofReq
-	if !readJSON(w, r, &req) || !a.checkPassword(w, u, what, req.CurrentAuth) {
+	if !readJSON(w, r, &req) || !a.checkPassword(w, r, u, what, req.CurrentAuth) {
 		return false
 	}
 	if !u.twoFactor() {
@@ -752,6 +809,7 @@ func (a *App) twoFactorDisable(w http.ResponseWriter, r *http.Request, u *user, 
 		return
 	}
 	a.audit(u.Email, "turned off two-step sign-in", u.Email, "")
+	a.factorNotice(u, s, r, noticeTwoFactorOff)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
@@ -824,10 +882,16 @@ func (a *App) twoFactorRemoveTOTP(w http.ResponseWriter, r *http.Request, u *use
 		return
 	}
 	if keys == 0 {
+		// two-step sign-in is off now: as in turnOff and removePasskey, the sign-ins and passkey ceremonies begun
+		// under it go (a registration checked with a code would otherwise turn it on again)
 		a.pending.dropUser(u.ID, a.now())
+		a.waProof.dropUser(u.ID)
+		a.waReg.dropUser(u.ID)
 		a.audit(u.Email, "turned off two-step sign-in", u.Email, "")
+		a.factorNotice(u, s, r, noticeTwoFactorOff)
 	} else {
 		a.audit(u.Email, "removed the authenticator app", u.Email, "")
+		a.factorNotice(u, s, r, noticeTOTPRemoved)
 	}
 	writeJSON(w, 200, map[string]any{"ok": true, "two_factor": keys > 0})
 }
@@ -855,6 +919,7 @@ func (a *App) twoFactorNewCodes(w http.ResponseWriter, r *http.Request, u *user,
 		return
 	}
 	a.audit(u.Email, "made new recovery codes", u.Email, "")
+	a.factorNotice(u, s, r, noticeRecoveryCodes)
 	writeJSON(w, 200, map[string]any{"recovery_codes": codes})
 }
 

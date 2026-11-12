@@ -147,6 +147,7 @@ func (a *App) endSession(w http.ResponseWriter, r *http.Request, u *user, s *ses
 		return
 	}
 	a.live.recheck(u.ID)
+	a.dropInvitesOf(u.ID, `created_session=?`, id)
 	a.audit(u.Email, "signed out a device", u.Email, device)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
@@ -160,6 +161,7 @@ func (a *App) endOtherSessions(w http.ResponseWriter, r *http.Request, u *user, 
 	}
 	n, _ := res.RowsAffected()
 	a.live.recheck(u.ID)
+	a.dropInvitesOf(u.ID, `created_session<>?`, s.Pub)
 	if n > 0 {
 		a.audit(u.Email, "signed out other devices", u.Email, "")
 	}

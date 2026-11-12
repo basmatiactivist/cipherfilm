@@ -29,6 +29,9 @@ services:
       TRUST_PROXY: "${TRUST_PROXY:-1}"
       # peers whose X-Forwarded-For is believed (addresses or CIDRs); empty: loopback and private networks
       TRUSTED_PROXIES: "${TRUSTED_PROXIES:-}"
+      # 1 behind Tailscale Serve (TRUST_PROXY=0): limit sign-ins per tailnet user (Tailscale-User-Login) instead of
+      # all as 127.0.0.1; only if nothing else that passes on client headers reaches the app on loopback
+      TRUST_TAILSCALE_HEADERS: "${TRUST_TAILSCALE_HEADERS:-0}"
       DEMO_ACCOUNTS: "${DEMO_ACCOUNTS:-}" # public read-only demo logins (deploy/demo); normally empty
       DEMO_LOGIN: "${DEMO_LOGIN:-}"       # "EMAIL PASSWORD" of one of them, shown on the sign-in page; normally empty
       MAP_STYLE: "${MAP_STYLE:-}"         # the map tab's base map (docs/MAP.md); empty: the default

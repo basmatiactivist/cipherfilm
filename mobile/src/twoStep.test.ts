@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { cleanCode, codeProblem, codeReady, firstWay, groupSecret, methods, passkeyTrouble, pendingToken, totpUri, passkeyFor, serverHost } from "./twoStep";
+import { setLang } from "./i18n";
+import { cleanCode, codeProblem, codeReady, firstWay, groupSecret, methods, passkeyTrouble, pendingToken, totpUri, passkeyFor, serverHost, stepButtons, stepError, stepNeeded, usesRecovery, withStep } from "./twoStep";
 
 // The answers of server/twofactor.go, as api.ts turns them into errors (status, code, the JSON body).
 const err = (status: number, code: string, body: unknown = null) => Object.assign(new Error("x"), { status, code, body });
@@ -52,6 +53,55 @@ describe("two-step sign-in", () => {
     expect(passkeyTrouble(n("ERR_PASSKEY", "RP ID cannot be validated."))).toBe("server");
     expect(passkeyTrouble(err(409, "passkeys_unavailable"))).toBe("server");
     expect(passkeyTrouble(n("ERR_PASSKEY", "something else"))).toBe("other");
+  });
+
+  describe("the second step for a change to the account", () => {
+    it("adds only the second step that was given", () => {
+      const body = { current_auth: "proof" };
+      expect(withStep(body)).toEqual({ current_auth: "proof" });
+      expect(withStep(body, null)).toEqual({ current_auth: "proof" });
+      expect(withStep(body, { code: "" })).toEqual({ current_auth: "proof" });
+      expect(withStep(body, { code: "  " })).toEqual({ current_auth: "proof" });
+      expect(withStep(body, { code: "123456" })).toEqual({ current_auth: "proof", code: "123456" });
+      expect(withStep(body, { code: "ABCD-EFGH-IJKL-MNOP" })).toEqual({ current_auth: "proof", code: "ABCD-EFGH-IJKL-MNOP" });
+      expect(withStep(body, { passkey: { id: "k" } })).toEqual({ current_auth: "proof", passkey: { id: "k" } });
+      expect(withStep(body, { code: "123456", passkey: { id: "k" } })).toEqual({ current_auth: "proof", passkey: { id: "k" } });
+      expect(body).toEqual({ current_auth: "proof" }); // the body itself stays as it was
+    });
+
+    it("knows when the server wants a second step", () => {
+      expect(stepNeeded(err(403, "second_step_required"))).toBe(true);
+      expect(stepNeeded(err(403, ""))).toBe(false); // a wrong password
+      expect(stepNeeded(err(403, "wrong_code"))).toBe(false);
+      expect(stepNeeded(err(409, "second_step_required"))).toBe(false);
+      expect(stepNeeded(new Error("offline"))).toBe(false);
+      expect(stepNeeded(null)).toBe(false);
+    });
+
+    it("offers the ways the account has", () => {
+      const both = { totp: true, passkey: true };
+      expect(stepButtons(both, false)).toEqual({ passkey: true, code: true });
+      expect(stepButtons(both, true)).toEqual({ passkey: false, code: true });
+      expect(stepButtons({ totp: false, passkey: true }, false)).toEqual({ passkey: true, code: false });
+      expect(stepButtons({ totp: false, passkey: true }, true)).toEqual({ passkey: false, code: true });
+      expect(stepButtons({ totp: true, passkey: false }, false)).toEqual({ passkey: false, code: true });
+      // only a passkey this phone can't use: a recovery code is the way
+      expect(usesRecovery({ totp: false, passkey: false }, false)).toBe(true);
+      expect(stepButtons({ totp: false, passkey: false }, false)).toEqual({ passkey: false, code: true });
+      expect(usesRecovery({ totp: true, passkey: false }, false)).toBe(false);
+    });
+
+    it("words a refused second step", () => {
+      setLang("en");
+      expect((stepError(err(403, "wrong_code")) as Error).message).toBe("That code isn't right. Try again.");
+      expect((stepError(err(403, "wrong_passkey")) as Error).message).toBe("That passkey wasn't accepted. Try again.");
+      expect((stepError(err(403, "second_step_required")) as Error).message).toMatch(/^Your account uses two-step sign-in/);
+      const other = err(429, "");
+      expect(stepError(other)).toBe(other);
+      setLang("de");
+      expect((stepError(err(403, "wrong_code")) as Error).message).toBe("Dieser Code stimmt nicht. Versuchen Sie es noch einmal.");
+      setLang("en");
+    });
   });
 });
 

@@ -126,7 +126,8 @@ test.describe.serial("passkeys", () => {
     await page.locator(".passkeys li").getByRole("button", { name: "Remove…" }).click();
     await expect(page.getByText(/your only second step/)).toBeVisible();
     await page.getByLabel("Your password").fill(HEIDI_PW);
-    await page.getByLabel("Code from your app, or a recovery code").fill(codes[1]);
+    // this form's field: Change password (closed) asks for the second step with the same label
+    await page.locator("#tf-code").fill(codes[1]);
     await page.getByRole("button", { name: "Remove", exact: true }).click();
     await expect(page.getByRole("button", { name: "Use a passkey…" })).toBeVisible({ timeout: 30_000 });
     await ctx.close();

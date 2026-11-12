@@ -1,12 +1,17 @@
 // Notices: what the other devices of an account show once (server/notices.go). A new sign-in ("Not you? Review
 // devices"), two-step sign-in turned off by an administrator, and the password used for a sign-in that wasn't finished
-// (no right code followed: "Not you? Change your password"). They arrive with the live updates ("notices"),
+// (no right code followed: "Not you? Change your password"), and a change to two-step sign-in made on another device (an
+// authenticator app or a passkey added or removed, new recovery codes, turned off: "Not you? Review two-step sign-in").
+// They arrive with the live updates ("notices"),
 // dismissing one dismisses it on every device, and a dismissed one never comes back.
 import { api } from "./api";
 
-export interface Notice { id: number; kind: "sign_in" | "2fa_reset" | "password_used"; device: string; at: number }
+/** The changes to two-step sign-in that the account's other devices hear about. */
+const TWO_FACTOR = ["totp_added", "totp_removed", "passkey_added", "passkey_removed", "recovery_codes", "2fa_off"] as const;
+export type Kind = "sign_in" | "2fa_reset" | "password_used" | (typeof TWO_FACTOR)[number];
+export interface Notice { id: number; kind: Kind; device: string; at: number }
 
-const KINDS = new Set(["sign_in", "2fa_reset", "password_used"]);
+const KINDS = new Set<string>(["sign_in", "2fa_reset", "password_used", ...TWO_FACTOR]);
 
 /** The notices to show from the server's answer: known kinds only (a newer server may add some), not the ones this
  *  tab already dismissed, newest first. */
@@ -26,6 +31,15 @@ export const when = (at: number): string =>
 
 /** The banner's sentence (the action, "Review devices", is a separate link). */
 export function noticeText(n: Notice): string {
+  const on = `on ${n.device || "an unknown device"}, ${when(n.at)}`;
+  switch (n.kind) {
+    case "totp_added": return `An authenticator app was added to two-step sign-in ${on}. Not you?`;
+    case "totp_removed": return `The authenticator app was removed from two-step sign-in ${on}. Not you?`;
+    case "passkey_added": return `A passkey was added to two-step sign-in ${on}. Not you?`;
+    case "passkey_removed": return `A passkey was removed from two-step sign-in ${on}. Not you?`;
+    case "recovery_codes": return `New recovery codes were made ${on}; the old ones no longer work. Not you?`;
+    case "2fa_off": return `Two-step sign-in was turned off ${on}. Not you?`;
+  }
   if (n.kind === "password_used") return `Your password was used to start a sign-in that wasn't finished (${when(n.at)}). Not you?`;
   if (n.kind === "2fa_reset") return `An administrator turned off two-step sign-in for your account (${when(n.at)}). Turn it on again under Account.`;
   return `New sign-in: ${n.device || "an unknown device"}, ${when(n.at)}. Not you?`;
@@ -35,7 +49,8 @@ export function noticeText(n: Notice): string {
 export function noticeAction(n: Notice): { open: "devices" | "2fa" | "password"; label: string } {
   if (n.kind === "sign_in") return { open: "devices", label: "Review devices" };
   if (n.kind === "password_used") return { open: "password", label: "Change your password" };
-  return { open: "2fa", label: "Open Account" };
+  if (n.kind === "2fa_reset") return { open: "2fa", label: "Open Account" };
+  return { open: "2fa", label: "Review two-step sign-in" };
 }
 
 export const dismissNotice = (id: number) => api("POST", `/api/me/notices/${id}/dismiss`);

@@ -38,6 +38,9 @@ services:
     environment:
       LISTEN_ADDR: "127.0.0.1:8080"   # not even tailnet peers reach it directly, only Serve
       TRUST_PROXY: "0"   # Tailscale Serve does not document X-Forwarded-For, so per-IP limits are not used here
+      # every client reaches the app from 127.0.0.1: per-source sign-in limits are kept per tailnet user instead, by
+      # the Tailscale-User-Login header Serve sets (and removes from what clients send); tagged devices share one
+      TRUST_TAILSCALE_HEADERS: "1"
 
 volumes:
   tsstate:

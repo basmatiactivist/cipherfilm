@@ -1,6 +1,6 @@
 // The notices of notices.ts at the top of the library: a new sign-in elsewhere, two-step sign-in turned off by an
-// administrator, or the password used for a sign-in that wasn't finished (nothing to open here: the password is
-// changed in the browser). Each shows until it is dismissed (on any device). Always one banner, however many there
+// administrator or changed on another device (both open Two-step sign-in), or the password used for a sign-in that
+// wasn't finished (nothing to open here: the password is changed in the browser). Each shows until it is dismissed (on any device). Always one banner, however many there
 // are (noticeSummary): a stack of them pushed the photos far down.
 import { useEffect } from "react";
 import { StyleSheet, View } from "react-native";

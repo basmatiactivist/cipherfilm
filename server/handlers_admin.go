@@ -30,7 +30,7 @@ func (a *App) adminListUsers(w http.ResponseWriter, r *http.Request, u *user, s 
 			out = append(out, map[string]any{"id": x.ID, "email": x.Email, "role": x.Role, "status": x.Status, "created_at": x.CreatedAt, "quota_bytes": x.Quota, "used_bytes": x.Used, "item_count": x.Count, "last_login_at": x.LastLogin, "nsfw": x.NSFW, "two_factor": x.TwoFactor})
 		}
 	}
-	inv, err := a.db.Query(`SELECT id,email,expires_at,quota_bytes FROM invites WHERE used_at IS NULL AND expires_at > ? ORDER BY created_at`, a.now().Unix())
+	inv, err := a.db.Query(`SELECT id,email,expires_at,quota_bytes FROM invites WHERE used_at IS NULL AND expires_at > ? AND `+inviteCreatorOK+` ORDER BY created_at`, a.now().Unix())
 	invites := []map[string]any{}
 	defQuota := a.defaultQuota()
 	if err == nil {
@@ -78,8 +78,8 @@ func (a *App) adminCreateInvite(w http.ResponseWriter, r *http.Request, u *user,
 	exp := a.now().Add(inviteTTL).Unix()
 	// a new invite replaces any open one for the same address
 	a.db.Exec(`DELETE FROM invites WHERE email=? AND used_at IS NULL`, email)
-	if _, err := a.db.Exec(`INSERT INTO invites(id,token_hash,email,created_by,created_at,expires_at,quota_bytes) VALUES (?,?,?,?,?,?,?)`,
-		randID(), sha256hex(tok), email, u.ID, a.now().Unix(), exp, quota); err != nil {
+	if _, err := a.db.Exec(`INSERT INTO invites(id,token_hash,email,created_by,created_at,expires_at,quota_bytes,created_session) VALUES (?,?,?,?,?,?,?,?)`,
+		randID(), sha256hex(tok), email, u.ID, a.now().Unix(), exp, quota, s.Pub); err != nil {
 		fail(w, 500, "server error")
 		return
 	}

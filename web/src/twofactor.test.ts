@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { cleanCode, codeReady, codesFile, groupSecret, qrFor, totpUri } from "./twofactor";
+import { ApiError } from "./api";
+import { cleanCode, codeReady, codesFile, groupSecret, needsStep, qrFor, stepError, stepFields, totpUri } from "./twofactor";
 
 describe("two-step sign-in helpers", () => {
   it("takes codes as people type them", () => {
@@ -24,6 +25,26 @@ describe("two-step sign-in helpers", () => {
     const f = codesFile("a@x.org", ["aaaa-bbbb-cccc-dddd", "eeee-ffff-gggg-hhhh"]);
     expect(f).toContain("a@x.org");
     expect(f).toContain("aaaa-bbbb-cccc-dddd\neeee-ffff-gggg-hhhh");
+  });
+  it("sends only the second step that was given", () => {
+    expect(stepFields()).toEqual({});
+    expect(stepFields({})).toEqual({});
+    expect(stepFields({ code: "  " })).toEqual({});
+    expect(stepFields({ code: " abcd-efgh-jkmn-pqrs " })).toEqual({ code: "abcd-efgh-jkmn-pqrs" });
+    expect(stepFields({ code: "123456", passkey: { id: "k" } })).toEqual({ passkey: { id: "k" } });
+  });
+  it("says the second step's refusals plainly", () => {
+    const required = new ApiError(403, "This account uses two-step sign-in.", { code: "second_step_required" });
+    expect(needsStep(required)).toBe(true);
+    expect(needsStep(new ApiError(403, "That password isn't right.", { error: "that password isn't right" }))).toBe(false);
+    expect(needsStep(new ApiError(401, "x", { code: "second_step_required" }))).toBe(false);
+    expect((stepError(required) as Error).message).toMatch(/^Your account uses two-step sign-in/);
+    expect((stepError(new ApiError(403, "x", { code: "wrong_code" })) as Error).message).toMatch(/^That code isn't right/);
+    expect((stepError(new ApiError(403, "x", { code: "wrong_passkey" })) as Error).message).toMatch(/^That passkey wasn't accepted/);
+    const pw = new ApiError(403, "That password isn't right.", {});
+    expect(stepError(pw)).toBe(pw);
+    const many = new ApiError(429, "Too many attempts, try later.", {});
+    expect(stepError(many)).toBe(many);
   });
 });
 

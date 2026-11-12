@@ -569,15 +569,11 @@ public enum Account {
   }
 
   /** Deletes the account and everything in it on the server, permanently, after checking the password here first (a
-   *  typo shows before anything is sent). The server refuses for its only administrator. */
-  public static func delete(api: API, me: Me, password: String) async throws {
-    try Crypto.assertSaneKdf(me.kdf)
-    var (auth, kek) = try Crypto.deriveFromPassword(password, me.kdf)
-    defer { Sodium.memzero(&auth); Sodium.memzero(&kek) }
-    do { var key = try Crypto.unlockMasterKey(email: me.user.email, kek: kek, wrappedMasterPw: me.wrapped_master_pw); Sodium.memzero(&key) } catch {
-      throw APIError(status: -1, message: "That password isn't right.")
-    }
-    _ = try await api.json("DELETE", "/api/me", body: ["current_auth": B64.encode(auth)])
+   *  typo shows before anything is sent). While two-step sign-in is on, the server also wants the second step (a code
+   *  or a passkey's answer; APIError code "second_step_required" without one). It refuses for its only administrator. */
+  public static func delete(api: API, me: Me, password: String, second: TwoFactor.Second = .none) async throws {
+    let auth = try Account.proof(me: me, password: password)
+    _ = try await TwoFactor.friendly { try await api.json("DELETE", "/api/me", body: try second.body(auth)) }
   }
 
   /** A master key is only accepted if it opens something the server keeps sealed under it. */

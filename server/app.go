@@ -27,6 +27,7 @@ const (
 	// again every 14 days and after a day without use.
 	sessionAbs  = 365 * 24 * time.Hour
 	sessionIdle = 30 * 24 * time.Hour
+	sessionsMax = 50 // live sessions per account; a new sign-in beyond it ends the one idle longest
 	inviteTTL   = 7 * 24 * time.Hour
 	ticketTTL   = 10 * time.Minute
 )
@@ -36,6 +37,7 @@ type App struct {
 	dataDir    string
 	secret     []byte // HMAC key for fake KDF params; persisted in data dir
 	trustProxy bool
+	tsHeaders  bool              // TRUST_TAILSCALE_HEADERS: key per-source limits by Tailscale Serve's user header
 	proxies    []netip.Prefix    // TRUSTED_PROXIES: the peers whose X-Forwarded-For counts; empty: loopback and private
 	hosts      map[string]bool   // PUBLIC_HOSTS; empty: any
 	mapConf    *mapConfig        // MAP_STYLE; nil: no map (mapconf.go)
@@ -45,6 +47,8 @@ type App struct {
 	loginIP    *limiter
 	loginAcct  *limiter         // per (account, source)
 	loginDev   *limiter         // per account, for browsers carrying a valid device cookie
+	knownBusy  inFlight         // credential checks of known browsers and signed-in sessions per account (device.go)
+	proofs     *limiter         // password proofs of signed-in sessions per account, right or wrong (proofOK)
 	demoReqs   *demoBuckets     // requests of demo accounts, per source (demo.go)
 	demoSignIn *limiter         // sign-ins to demo accounts, per source (demo.go)
 	tickets    sync.Map         // recovery tickets: token hash -> ticket
@@ -131,6 +135,7 @@ func newApp(dataDir string) (*App, error) {
 	a := &App{
 		db: db, dataDir: dataDir, secret: secret, dummyHash: dummy,
 		trustProxy: os.Getenv("TRUST_PROXY") == "1",
+		tsHeaders:  os.Getenv("TRUST_TAILSCALE_HEADERS") == "1",
 		proxies:    proxies,
 		hosts:      publicHosts(os.Getenv("PUBLIC_HOSTS")),
 		demo:       demo,
@@ -139,6 +144,7 @@ func newApp(dataDir string) (*App, error) {
 		loginIP:    newLimiter(15*time.Minute, 30),
 		loginAcct:  newLimiter(15*time.Minute, 10),
 		loginDev:   newLimiter(15*time.Minute, 20),
+		proofs:     newLimiter(proofWindow, proofsPerAccount),
 		demoReqs:   newDemoBuckets(),
 		demoSignIn: newLimiter(demoSignInWin, demoSignIns),
 		pending:    newPendingStore(),
@@ -249,7 +255,30 @@ func (a *App) clientIP(r *http.Request) string {
 	if err != nil {
 		return r.RemoteAddr
 	}
+	if id := a.tailscaleUser(r, h); id != "" {
+		return id
+	}
 	return h
+}
+
+// tailscaleUser is the source key for a request that Tailscale Serve forwarded on behalf of a tailnet user: behind
+// Serve every client is 127.0.0.1, so per-source limits would be one bucket for the whole server. Serve sets
+// Tailscale-User-Login to the user it identified and removes the header from what the client sent; it sets none for
+// tagged devices (they keep sharing 127.0.0.1). Only with TRUST_TAILSCALE_HEADERS=1, TRUST_PROXY off and a loopback
+// peer: anything else that can reach the app on loopback (a proxy that passes client headers through, such as Caddy
+// in the domain overlay) could otherwise choose its own key. "" when it does not apply.
+func (a *App) tailscaleUser(r *http.Request, peer string) string {
+	if !a.tsHeaders || a.trustProxy {
+		return ""
+	}
+	if addr, err := netip.ParseAddr(peer); err != nil || !addr.Unmap().IsLoopback() {
+		return ""
+	}
+	v := r.Header.Values("Tailscale-User-Login")
+	if len(v) != 1 || v[0] == "" || len(v[0]) > 256 || clean(v[0]) != v[0] {
+		return ""
+	}
+	return "tailscale:" + strings.ToLower(v[0])
 }
 
 // limiterIP is the key used for rate limiting: IPv6 addresses are grouped by /64, since one subscriber
@@ -405,6 +434,12 @@ func (a *App) startSession(w http.ResponseWriter, r *http.Request, userID, authH
 	}
 	if rowsAffected(res, nil) != 1 {
 		return nil, errCredentialsChanged
+	}
+	// at most sessionsMax per account (each is a row, and a device-list entry, for up to a year): the one idle longest
+	// goes, never this new one. That device is asked to sign in again; nothing is wiped.
+	if res, err := a.db.Exec(`DELETE FROM sessions WHERE user_id=? AND id_hash NOT IN (SELECT id_hash FROM sessions WHERE user_id=?
+		ORDER BY last_seen DESC, created_at DESC LIMIT ?)`, userID, userID, sessionsMax); rowsAffected(res, err) > 0 {
+		a.live.recheck(userID)
 	}
 	// the browser's previous session, if it had one, is replaced by this one: end it rather than leave it valid
 	if c, err := r.Cookie(cookieName); err == nil {

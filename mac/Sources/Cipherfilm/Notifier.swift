@@ -25,7 +25,7 @@ enum Notifier {
 }
 
 /**
- * Account notices (a new sign-in elsewhere, two-step sign-in turned off, an unfinished sign-in) as macOS notifications,
+ * Account notices (a new sign-in elsewhere, two-step sign-in turned off or changed, an unfinished sign-in) as macOS notifications,
  * when the window isn't in front: the banner shows them otherwise. Each at most once (NoticeAlerts, in Core). They
  * come from the live updates while unlocked, and from a check every few minutes while Cipherfilm is locked and keeps
  * running in the menu bar. The title says only that something happened ("New sign-in to Cipherfilm"); the body is

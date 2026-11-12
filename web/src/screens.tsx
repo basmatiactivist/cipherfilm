@@ -80,6 +80,10 @@ export function RecoveryKey({ pending, onDone, title = "Save your recovery key",
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
   const { busy, error, run } = useAction();
+  // a replaced key is stored on Continue: with two-step sign-in on, the second step goes with it (a code is used up)
+  const step = useSecondStep(replacing ? {} : { on: false });
+  useEffect(() => { if (saved) step.warm(); }, [saved, step.passkey]);
+  const go = (withPasskey = false) => run(() => step.send(async (sec) => { await pending.commit(sec); onDone(); }, withPasskey));
   const text = words.join(" ");
   const file = `Cipherfilm recovery key for ${email}\n\n${words.map((w, i) => `${i + 1}. ${w}`).join("\n")}\n\nKeep this somewhere safe and private. Anyone with it can reset your password.\n`;
   return (
@@ -96,8 +100,10 @@ export function RecoveryKey({ pending, onDone, title = "Save your recovery key",
       <p class="warning"><strong>If you lose both your password and your recovery key, your photos are lost.</strong> Not even the administrator can recover them.</p>
       {replacing && <p class="small">Server backups made before today still need your old password or old recovery key. Keep the old key until those backups are gone.</p>}
       <label class="check no-print"><input type="checkbox" checked={saved} onChange={(e) => setSaved((e.target as HTMLInputElement).checked)} /> I've saved my recovery key somewhere safe</label>
+      {step.on && <div class="no-print"><p class="small">Your account uses two-step sign-in: confirm the new key with a code from your app or a recovery code{step.passkey ? ", or a passkey" : ""}.</p>{step.field}</div>}
       {error && <ErrorLine text={`The new key isn't saved yet. ${error} Press Continue to try again.`} />}
-      <button class="btn no-print" disabled={!saved || busy} onClick={() => run(async () => { await pending.commit(); onDone(); })}>{busy ? <><Loader />Saving…</> : "Continue"}</button>
+      <button class="btn no-print" disabled={!saved || busy || (step.on && !step.code.trim())} onClick={() => go()}>{busy ? <><Loader />Saving…</> : "Continue"}</button>
+      {step.passkey && <button class="btn secondary no-print" disabled={!saved || busy} onClick={() => go(true)}>Continue with a passkey</button>}
     </Card>
   );
 }
@@ -204,21 +210,25 @@ function ChangePassword({ open }: { open?: boolean }) {
   const [pw2, setPw2] = useState("");
   const [done, setDone] = useState(false);
   const { busy, error, setError, run } = useAction();
+  const step = useSecondStep();
+  const go = (withPasskey = false) => {
+    setDone(false);
+    const p = passwordProblem(pw, pw2);
+    if (p) return setError(p);
+    run(() => step.send(async (sec) => { await auth.changePassword(cur, pw, sec); setCur(""); setPw(""); setPw2(""); step.setCode(""); setDone(true); }, withPasskey));
+  };
   return (
     <Acc icon="lock" title="Change password" sub="Signs out your other devices" open={open}>
       <p>Your photos stay as they are. Your other devices are signed out.</p>
-      <form onSubmit={(e) => {
-        e.preventDefault();
-        setDone(false);
-        const p = passwordProblem(pw, pw2);
-        if (p) return setError(p);
-        run(async () => { await auth.changePassword(cur, pw); setCur(""); setPw(""); setPw2(""); setDone(true); });
-      }}>
+      {/* the passkey's challenge only once the form is used, not each time Account opens */}
+      <form onFocusIn={step.warm} onSubmit={(e) => { e.preventDefault(); go(); }}>
         <Field label="Current password" id="current" type="password" value={cur} onInput={setCur} autocomplete="current-password" />
         <NewPasswordFields label="New password" pw={pw} setPw={setPw} pw2={pw2} setPw2={setPw2} />
+        {step.field}
         <ErrorLine text={error} />
         {done && <p class="ok" role="status">Password changed.</p>}
         <Submit busy={busy} label="Change password" busyLabel="Changing…" />
+        {step.passkey && <button type="button" class="btn secondary" disabled={busy || !cur || !pw} onClick={() => go(true)}>Change password with a passkey</button>}
       </form>
     </Acc>
   );
@@ -230,6 +240,8 @@ function DeleteAccount() {
   const [cur, setCur] = useState("");
   const [sure, setSure] = useState(false);
   const { busy, error, run } = useAction();
+  const step = useSecondStep();
+  const go = (withPasskey = false) => run(() => step.send(async (sec) => { await auth.deleteAccount(cur, sec); window.dispatchEvent(new Event("cf-account-deleted")); }, withPasskey));
   return (
     <Acc icon="trash" title="Delete account" sub="Delete your account and all your photos">
       <p class="warning">Deletes your account and <strong>all your photos, videos, albums, people and search data</strong> from this server right away. Not even an administrator can bring them back. All your devices are signed out and delete what they keep.</p>
@@ -238,16 +250,15 @@ function DeleteAccount() {
       {!open ? (
         <button class="btn secondary warn" onClick={() => setOpen(true)}>Delete my account…</button>
       ) : (
-        <form onSubmit={(e) => {
-          e.preventDefault();
-          run(async () => { await auth.deleteAccount(cur); window.dispatchEvent(new Event("cf-account-deleted")); });
-        }}>
+        <form onFocusIn={step.warm} onSubmit={(e) => { e.preventDefault(); go(); }}>
           <Field label="Your password" id="del-password" type="password" value={cur} onInput={setCur} autocomplete="current-password" autofocus />
+          {step.field}
           <label class="check"><input type="checkbox" checked={sure} onChange={(e) => setSure((e.target as HTMLInputElement).checked)} /> I understand my photos and videos are deleted permanently</label>
           <ErrorLine text={error} />
           <div class="row">
             <button type="submit" class="btn danger" disabled={busy || !sure || !cur}>{busy ? <><Loader />Deleting…</> : "Delete account"}</button>
-            <button type="button" class="btn secondary" onClick={() => { setOpen(false); setCur(""); setSure(false); }}>Cancel</button>
+            {step.passkey && <button type="button" class="btn secondary" disabled={busy || !sure || !cur} onClick={() => go(true)}>Delete account with a passkey</button>}
+            <button type="button" class="btn secondary" onClick={() => { setOpen(false); setCur(""); setSure(false); step.setCode(""); }}>Cancel</button>
           </div>
         </form>
       )}
@@ -273,7 +284,8 @@ function TwoFactorPanel({ open }: { open?: boolean }) {
   useEffect(() => { if (mode) setStay(true); }, [mode]);
   const { busy, error, setError, run } = useAction();
   const load = () => {
-    tf.status().then((s) => { setSt(s); if (mem.me) mem.me.two_factor = s.enabled; }, () => {});
+    // the other panels that ask for the second step follow (useSecondStep)
+    tf.status().then((s) => { setSt(s); if (mem.me) mem.me.two_factor = s.enabled; window.dispatchEvent(new Event("cf-two-factor")); }, () => {});
     pk.list().then((l) => setKeys(l.passkeys), () => setKeys([]));
   };
   useEffect(() => { load(); }, []);
@@ -390,30 +402,66 @@ function TwoFactorPanel({ open }: { open?: boolean }) {
   );
 }
 
+/** The second step of a change that asks for one while two-step sign-in is on (ProofForm; the password, the recovery
+ *  key and deleting the account): a code from the app or a recovery code, or a passkey where this address has one.
+ *  on, passkey: what the caller knows; left out, they follow the account (mem.me, the passkeys listed here), and a
+ *  "second step required" answer turns the step on (two-step sign-in was turned on elsewhere). */
+function useSecondStep(o: { on?: boolean; passkey?: boolean; eager?: boolean; id?: string } = {}) {
+  const [known, setKnown] = useState(() => !!mem.me?.two_factor);
+  const [asked, setAsked] = useState(false);
+  const [hereKeys, setHereKeys] = useState(false);
+  const [code, setCode] = useState("");
+  const [changed, setChanged] = useState(0);
+  const on = o.on ?? (known || asked);
+  useEffect(() => {
+    if (o.on !== undefined) return;
+    const f = () => { setKnown(!!mem.me?.two_factor); setAsked(false); setChanged((n) => n + 1); };
+    window.addEventListener("cf-two-factor", f);
+    return () => window.removeEventListener("cf-two-factor", f);
+  }, []);
+  useEffect(() => {
+    if (o.passkey === undefined && on && pk.passkeysSupported()) pk.list().then((l) => setHereKeys(l.passkeys.some((k) => k.here)), () => setHereKeys(false));
+  }, [on, changed]);
+  const passkey = on && (o.passkey ?? (pk.passkeysSupported() && hereKeys));
+  // the passkey's challenge is fetched ahead, so the browser's dialog opens right on the tap (some allow it only then)
+  const challenge = useRef<Promise<Record<string, any>> | null>(null);
+  const fetchChallenge = () => api<{ options: Record<string, any> }>("POST", "/api/me/2fa/passkey", {}).then((r) => r.options);
+  const warm = () => { if (passkey && !challenge.current) { challenge.current = fetchChallenge(); challenge.current.catch(() => {}); } };
+  useEffect(() => { if (o.eager) warm(); }, [passkey]);
+  /** Runs act with the second step: the code typed (nothing while the step is off), or a passkey's answer. */
+  const send = async (act: (second: tf.SecondStep) => Promise<void>, withPasskey = false) => {
+    try {
+      if (!withPasskey) return await act(on ? { code } : {});
+      const ready = challenge.current ?? fetchChallenge();
+      challenge.current = null; // a challenge is answered once
+      try {
+        await act({ passkey: await pk.getPasskey(await ready) });
+      } catch (e) { warm(); throw e; }
+    } catch (e) {
+      if (tf.needsStep(e)) setAsked(true);
+      throw tf.stepError(e);
+    }
+  };
+  const field = on ? <Field label="Code from your app, or a recovery code" id={o.id ?? "step-code"} value={code} onInput={setCode} autocomplete="one-time-code" required={!passkey} /> : null;
+  return { on, passkey, code, setCode, field, warm, send };
+}
+
 /** The password and, when two-step sign-in is on, a second step: a code (from the app or a recovery code) or a passkey. */
 function ProofForm(p: { intro: string; submit: string; danger?: boolean; second: boolean; passkey: boolean; onSubmit: (proof: pk.Proof) => Promise<void>; onCancel: () => void }) {
   const [pw, setPw] = useState("");
-  const [code, setCode] = useState("");
   const { busy, error, run } = useAction();
-  // the passkey's challenge is fetched ahead, so the browser's dialog opens right on the tap (some allow it only then)
-  const challenge = useRef<Promise<Record<string, any>> | null>(null);
-  const prepare = () => { if (p.second && p.passkey) { challenge.current = api<{ options: Record<string, any> }>("POST", "/api/me/2fa/passkey", {}).then((r) => r.options); challenge.current.catch(() => {}); } };
-  useEffect(prepare, []);
-  const withPasskey = () => run(async () => {
-    try {
-      const answer = await pk.getPasskey(await (challenge.current ?? Promise.reject(new Error("Try again."))));
-      await p.onSubmit({ current_auth: await auth.passwordProof(pw), passkey: answer });
-    } finally { prepare(); } // a challenge is answered once
-  });
+  const step = useSecondStep({ on: p.second, passkey: p.second && p.passkey, eager: true, id: "tf-code" });
+  // the step sends nothing when off; the endpoints of two-step sign-in itself want the code field while it is on
+  const go = (withPasskey = false) => run(() => step.send(async (sec) => p.onSubmit({ current_auth: await auth.passwordProof(pw), ...(p.second && !withPasskey ? { code: step.code.trim() } : {}), ...tf.stepFields(sec) }), withPasskey));
   return (
-    <form onSubmit={(e) => { e.preventDefault(); run(async () => p.onSubmit({ current_auth: await auth.passwordProof(pw), ...(p.second ? { code: code.trim() } : {}) })); }}>
+    <form onSubmit={(e) => { e.preventDefault(); go(); }}>
       {p.intro && <p>{p.intro}</p>}
       <Field label="Your password" id="tf-password" type="password" value={pw} onInput={setPw} autocomplete="current-password" autofocus />
-      {p.second && <Field label="Code from your app, or a recovery code" id="tf-code" value={code} onInput={setCode} autocomplete="one-time-code" required={!p.passkey} />}
+      {step.field}
       <ErrorLine text={error} />
       <div class="row">
         <Submit busy={busy} label={p.submit} busyLabel="Checking…" danger={p.danger} />
-        {p.second && p.passkey && <button type="button" class="btn secondary" disabled={busy || !pw} onClick={withPasskey}>{p.submit} with a passkey</button>}
+        {step.passkey && <button type="button" class="btn secondary" disabled={busy || !pw} onClick={() => go(true)}>{p.submit} with a passkey</button>}
         <button type="button" class="btn secondary" onClick={p.onCancel}>Cancel</button>
       </div>
     </form>

@@ -3,7 +3,7 @@
 //   CF_AUTOTEST=1 CF_TEST_CA=<root.crt> CF_TEST_SERVER=https://localhost:8443 CF_TEST_EMAIL=… CF_TEST_PASSWORD=…
 //   CF_TEST_DIR=<scratch folder with files to upload> CF_SNAPSHOTS=<folder> [CF_APPEARANCE=dark]
 // CF_MAP=1: only the map's checks (an account with located photos; nothing is changed on the server).
-// CF_SIGNIN_ONLY=1: signs in and stops there, the app stays open.
+// CF_SIGNIN_ONLY=1: signs in and stops there, the app stays open. CF_INDEX_ONLY=1: signs in and indexes for search.
 // Everything it makes in CF_TEST_DIR (copies, exports of the whole library, watched folders) is deleted at the start
 // and the end of a run; only upload/ stays. CF_KEEP=1 keeps the last run's.
 #if DEBUG
@@ -90,6 +90,18 @@ enum DebugDriver {
     check(m.phase == .unlocked, "signed in and unlocked")
     // CF_SIGNIN_ONLY=1: only signs in and leaves the app open as it is, for trying it by hand against the test server
     if env["CF_SIGNIN_ONLY"] == "1" { log("DONE signed in"); return }
+    // CF_INDEX_ONLY=1: turns search on (no faces) and waits until every photo is indexed, its entries on the server;
+    // for preparing demo data
+    if env["CF_INDEX_ONLY"] == "1" {
+      m.settings.faces = false
+      m.settings.indexOnBattery = true
+      m.turnOnSearch(explicit: m.me?.user.nsfw == true ? false : nil)
+      _ = await wait("search ready", timeout: 1800) { m.search.phase == .ready || m.search.phase == .error }
+      check(m.search.phase == .ready, "indexed: \(m.search.index.count.items) items (\(m.search.message))")
+      await m.signOut(deleteExport: false) // the next account signs in from scratch
+      log("DONE \(failures) failed")
+      return
+    }
     m.agent.askNow = false
     m.settings.agentAsked = true
     m.settings.searchAsked = true

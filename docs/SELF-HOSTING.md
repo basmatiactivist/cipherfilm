@@ -159,7 +159,7 @@ How releases are made: [docs/RELEASING.md](RELEASING.md).
 ### Server commands
 
 Accounts can also be managed on the server: `docker compose exec app cipherfilm help`, or `cipherfilm help` in the app container's console (Portainer: Console, `/bin/sh`), lists the commands (list users, make someone an administrator, lock or delete an account, set a storage limit, sign out a
-lost device, make an invite link, status). A password can't be reset from the server, by design. All commands and why:
+lost device, turn off someone's two-step sign-in, make an invite link, status). A password can't be reset from the server, by design. All commands and why:
 [docs/SERVER-COMMANDS.md](SERVER-COMMANDS.md).
 
 ## Settings
@@ -171,7 +171,7 @@ lost device, make an invite link, status). A password can't be reset from the se
 | `TRUST_TAILSCALE_HEADERS` | `.env` | `0` | `1` behind Tailscale Serve with `TRUST_PROXY=0`: requests from loopback are limited per tailnet user (`Tailscale-User-Login`) instead of all as `127.0.0.1`. Only when Serve is the only thing reaching the app on loopback |
 | `TRUSTED_PROXIES` | `.env` | empty (loopback and private networks) | addresses or CIDRs whose `X-Forwarded-For` is believed, comma-separated |
 | `MAP_STYLE` | `.env` | empty (OpenFreeMap, VersaTiles as fallback) | the map tab's base map: `off`, or `LIGHT_STYLE_URL DARK_STYLE_URL` (your own MapLibre styles over https); photo locations never leave the devices, the tile server only sees which map areas are viewed ([docs/MAP.md](MAP.md); your own map server: [Your own map tiles](MAP.md#your-own-map-tiles)) |
-| `DEMO_ACCOUNTS` | `.env` | empty | e-mail addresses of public demo accounts, comma-separated: they can sign in, look and search, but not upload, edit, delete or change the account (403); see [deploy/demo](../deploy/demo/README.md) |
+| `DEMO_ACCOUNTS` | `.env` | empty | e-mail addresses of public demo accounts, comma-separated: they can sign in, look and search, but not upload, edit, delete or change the account (403). Administrators can't delete, disable, promote, re-limit or reset two-step sign-in of these accounts either, so other accounts on the server (an app-store reviewer's, even an administrator) can't change the public one (the server commands still can); see [deploy/demo](../deploy/demo/README.md) |
 | `DEMO_LOGIN` | `.env` | empty | `EMAIL PASSWORD` of one `DEMO_ACCOUNTS` login: the sign-in page shows it with an "Open the demo" button. The password is published, so only for a demo |
 | `ANDROID_APP_CERTS` | `.env` | the official app's release key | SHA-256 fingerprints of the Android app signing certificates whose passkey requests are accepted (as `keytool -list -v` or Play Console › App integrity show them, with or without colons; comma-separated), and listed in `/.well-known/assetlinks.json`; `none` for no app. Add your own key for a self-built app, or the debug key of a test build |
 | `ANDROID_APP_PACKAGES` | `.env` | `app.cipherfilm` | the Android packages listed in `/.well-known/assetlinks.json` (`app.cipherfilm.test` for a test build) |
@@ -193,10 +193,11 @@ for the name the server is reached by, so:
 - Reach the server by its https name, the one in `PUBLIC_HOSTS`, never by an IP address; a passkey made under one name
   doesn't work under another. The proxy must pass the `Host` header on (it already must, for the CSRF check).
 - The Android app (Android 14 and newer) asks Android, which checks `https://<name>/.well-known/assetlinks.json`
-  through Google: the server serves it by itself, but the name and that file must be reachable from the internet. A
-  tailnet-only server (Tailscale Serve, no Funnel) can't offer passkeys on Android; its people keep the code from the
-  authenticator app, and passkeys still work in the browser and on the Mac. A self-built app needs its signing key
-  in `ANDROID_APP_CERTS`.
+  through Google: the server serves it by itself, but for this the name and that file must be reachable from the
+  internet. For a server Google can't reach (a tailnet `*.ts.net` name with Serve and no Funnel, a private or LAN
+  address, `.local`/`.lan`/`.internal`, or one Android refused before on that phone) the app opens the server's
+  `/passkey` page in the browser instead, as the Mac app does, and takes the answer back; nothing to set up on the
+  server. A self-built app needs its signing key in `ANDROID_APP_CERTS` for the direct way.
 - The Mac app opens the server's `/passkey` page in the default browser for each passkey step.
 
 ## Troubleshooting

@@ -28,6 +28,12 @@ build notes: `mac/README.md`.
   (`CipherfilmCore/Memories.swift`, the same rules as the web and Android apps in `web/src/memories/memories.ts`); a
   click opens that year's photos in the viewer. Picked on the Mac from the decrypted dates; Settings › General ›
   Memories turns it off on this Mac.
+- **Map:** photos where they were taken, clustered on a base map, opening on the region with the most photos, with
+  "Photos in This Area" listing those in view; a photo's details name its place and, after "Show Map", show a small map
+  of its spot. Off until turned on; Settings › General › Map turns it off. What the map server sees: docs/MAP.md.
+- **Devices** (Settings › Security): where the account is signed in, with Sign Out for one device and Sign Out All
+  Other Devices…; a device signed out this way deletes what it keeps of the library the next time it reaches the
+  server.
 - **Shortcuts** (menu Photo; they act on the photo in the viewer, else on the selection): ⇧⌘F favorite, ⌃⌘A add to
   album, ⇧⌘N new album with the selection, ⇧⌘S share, ⇧⌘E save originals, ⌘K photos like this one, ⌘J go to date,
   ⌘⌫ move to trash, ⌘U upload, ⌃⌘L lock, ⌘, settings (also at the bottom of the sidebar). In the viewer also F, I, ⌫,
@@ -66,8 +72,8 @@ build notes: `mac/README.md`.
 
 ## Two-step sign-in
 
-Settings › Security turns on two-step sign-in with an authenticator app ("Open in Passwords or Authenticator App"
-hands the account to macOS Passwords or another app registered for `otpauth:`; the key and recovery codes are copied as
+Settings › Security turns on two-step sign-in with an authenticator app ("Open in Password Manager or Authenticator
+App" hands the account to macOS's own password manager or another app registered for `otpauth:`; the key and recovery codes are copied as
 concealed and cleared after a minute) or a passkey, lists the passkeys and removes them. A Mac app can only use
 passkeys of web names fixed when Apple signs it (Associated Domains), which can't name every self-hosted server, and
 the hardware-key provider of AuthenticationServices was not used for the same reason; so passkeys are made and used in
@@ -171,8 +177,8 @@ insides of packages (such as a Photos library). A file that fails three times is
 
 ## Search on the Mac
 
-Off until turned on (the question after the first unlock, or Settings › Search & People). Then the Mac downloads the
-models once from Hugging Face, at the pinned URLs in `server/models.json` (648 MB with faces, checked against the same sizes and
+Off until turned on (the question after the first unlock, or Settings › Search & People). After the question about the
+download (what, how big, where from; docs/MODELS.md "Asked first") the Mac downloads the models once from Hugging Face, at the pinned URLs in `server/models.json` (648 MB with faces, checked against the same sizes and
 SHA-256 values as the phone; no cookie or other app header goes along, docs/MODELS.md), fetches the entries
 other devices made, and indexes every photo and video that has none, six at a time at low priority, also on battery
 (Settings › Search can limit it to power). Entries are sealed to the account's public key and stored on the
@@ -180,7 +186,7 @@ server, so each photo is analysed once for all devices. The download has no over
 may bring a few hundred KB/s); a minute without a byte counts as a drop. Each file goes to `<name>.part` first and
 a drop, or quitting, resumes it with HTTP Range; drops and stalls are retried with backoff (2 s up to a minute) until
 the download is done, never given up. Search & People and the sidebar show the bytes, the speed and the time left, or
-why it is waiting ("The connection to Hugging Face dropped. Trying again in 4 s").
+why it is waiting ("The connection to the model download site dropped. Trying again in 4 s").
 
 Errors say what happened, not a generic "Can't connect": a request that pauses for a minute is "The server is slow to
 answer", a dropped connection, no network, a server that refuses the connection, an unknown name, an untrusted
@@ -257,4 +263,4 @@ as at sign-out. Exported copies stay. The only active administrator must make so
 - Signed and notarised builds: CI builds an unsigned (ad hoc) app until a Developer ID certificate is set up as a
   secret; Gatekeeper asks before opening it.
 - Apple silicon only: Microsoft ships ONNX Runtime for macOS on arm64 only.
-- Sharing, editing, a map view.
+- Sharing, editing (edits made in the web or Android app are shown), duplicates and similar photos.

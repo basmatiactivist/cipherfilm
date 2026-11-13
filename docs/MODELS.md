@@ -23,8 +23,9 @@ before it opens it, so a later change upstream, or anything else on the way, can
 **Asked first:** Hugging Face is a third party, so no device fetches anything from it before the person agreed, on
 that device. Before any model download (turning search on, faces, indexing on this device, a new model after an
 update, the web app's text model for search words) the app says what is downloaded (the models and
-their total size, from this list, for the files that device needs), from whom (Hugging Face, `huggingface.co` and its
-CDN `*.hf.co`), what Hugging Face learns (below), that it happens once per device and that every file is checked
+their total size, from this list, for the files that device needs), where from (in the apps' words "the public site where these
+models are published", which the privacy policy names: Hugging Face, `huggingface.co` and its CDN `*.hf.co`; the apps'
+texts name no companies), what that site learns (below), that it happens once per device and that every file is checked
 (SHA-256), with the buttons "Download and turn on" and "Not now". The yes is kept on the device (any account) for the
 exact files, by SHA-256: other files (the face models, a model changed in a release, as MobileCLIP's replacement
 below) ask again. Files already on the device count only once their hash was checked, never by their name alone. Without it nothing is fetched: the one download function of each app refuses (`mobile/src/search/models.ts`
@@ -33,8 +34,7 @@ below) ask again. Files already on the device count only once their hash was che
 never download). Withdrawing: turning search off deletes the models on Android and in the browser, and offers it on
 the Mac ("Turn Off on This Mac" always does); the yes goes with them, as it does with the image model removed from a
 device that stops indexing. Signing out of the web app deletes its model and the yes. Models already downloaded by an older version count
-as agreed (they aren't downloaded again); the search settings show "Models downloaded from Hugging Face on <date>,
-N MB" (the date from the files, or from the yes). Where the yes is kept: next to the models (`models/consent.json`)
+as agreed (they aren't downloaded again); the search settings show "Models downloaded on <date>, N MB." (the date from the files, or from the yes). Where the yes is kept: next to the models (`models/consent.json`)
 on Android and the Mac, `localStorage` `cf-models-ok` in the browser. On Android the question also says when the
 download waits for Wi-Fi ("Download models only on Wi-Fi", on by default) or uses mobile data.
 

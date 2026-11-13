@@ -16,8 +16,11 @@ Play build and must not appear anywhere.
 
 ## Emulator setup
 
-- Pixel-class device, 1080×2400 (420 dpi), Android 15 or 16, **light theme**, English UI (the app is English only;
-  the DE listing uses the same raw shots with German captions).
+- Pixel-class device, 1080×2400 (420 dpi), Android 15 or 16, **light theme**, English UI (the app is in English and
+  German; set the emulator's or the app's language to English. The DE listing uses the same raw shots with German
+  captions, or German shots taken the same way).
+- Release builds block screenshots: after signing in, turn on Account › **Allow screenshots** (it goes off again at
+  sign-out), else `screencap` returns a black image.
 - Clean status bar (demo mode):
   ```bash
   adb shell settings put global sysui_demo_allowed 1

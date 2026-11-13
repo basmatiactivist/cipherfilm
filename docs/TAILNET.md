@@ -122,6 +122,14 @@ WantedBy=timers.target
 It first makes a consistent database snapshot (`/app backup`), then Kopia saves the data; the result shows under
 Admin › Server. Restoring: [MIGRATION.md](MIGRATION.md).
 
+## Passkeys
+
+Two-step sign-in with passkeys works here too. The browser and the Mac app use the server's name directly. The
+Android app can't use Android's own passkey check for a server that isn't on the internet (Google fetches
+`/.well-known/assetlinks.json` from the internet first), so for a `*.ts.net` name it opens the server's `/passkey` page
+in the browser and takes the answer back; with your own name it tries Android's way once and, when Android refuses,
+uses the browser from then on (docs/SELF-HOSTING.md "Passkeys"). Nothing to set up.
+
 ## Updating
 
 `docker compose pull && docker compose up -d`. Copying new versions of the files in `deploy/tailnet/` over yours is

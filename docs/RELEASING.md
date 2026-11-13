@@ -12,13 +12,24 @@ Versions follow [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`.
 1. Move the entries from `## [Unreleased]` in `CHANGELOG.md` into a new `## [X.Y.Z] - YYYY-MM-DD` section.
    For Google Play, also write the short "What's new" in `docs/play/listing/en-US/changelogs/<versionCode>.txt` and
    `docs/play/listing/de-DE/changelogs/<versionCode>.txt` ("Google Play from CI" below).
-2. Commit that on `master` and wait for CI to pass.
-3. Tag and push:
+2. Commit that as the last commit of the release branch, with the message `Cipherfilm X.Y.Z`, open a pull request to
+   `master` and merge it once the required checks pass. `master` changes only through pull requests (ruleset below).
+3. Tag that `Cipherfilm X.Y.Z` commit, not the merge commit GitHub made for the pull request, and push the tag:
 
    ```bash
-   git tag -a vX.Y.Z -m "Cipherfilm X.Y.Z"
+   git fetch origin
+   git log --oneline origin/master -5          # find "Cipherfilm X.Y.Z" (it is on master through the merge)
+   git tag -a vX.Y.Z <commit> -m "Cipherfilm X.Y.Z"
    git push origin vX.Y.Z
    ```
+
+   The release run is then easy to find under Actions by its commit's name, and the tag points at the commit that
+   holds the version's changelog entry.
+
+**A failed release takes the next patch number.** The tag ruleset restricts moving and deleting `v*` tags (below),
+and a pushed tag is never moved anyway (others may have fetched it), so a release whose run fails after the tag was pushed (a test, the build) can't be tagged again: fix it in a new pull
+request and release `X.Y.Z+1`, saying in its changelog section that `X.Y.Z` was tagged but never released (as 2.7.0
+became 2.7.1). The Google Play versionCode of `X.Y.Z` stays unused.
 
 The `Release` workflow then:
 
@@ -214,8 +225,8 @@ Settings that live on GitHub, not in the repository, set once the repository is 
 - **Allow auto-merge** (General), so Dependabot's minor and patch updates merge once the required checks pass, and
   the label `automerge` (it marks them; the merge works without it).
 - **Ruleset for `master`:** no force pushes or deletion; pull requests need the checks `identity` (it checks the
-  pull request's own commits), `tokens`, `server`, `web`, `mobile`, `android` (the app builds), `decrypt-tool` and `e2e`; the owner may bypass
-  (to push directly).
+  pull request's own commits), `tokens`, `server`, `web`, `mobile`, `android` (the app builds), `decrypt-tool` and `e2e`. The owner is on the bypass
+  list for emergencies, but every change, releases included, goes through a pull request with these checks.
 - **Ruleset for tags `v*`:** only the owner may create, move or delete them (a tag starts a release).
 - **Environment `release`** (Settings › Environments): holds the secrets `ANDROID_KEYSTORE_B64` and
   `ANDROID_KEYSTORE_PASSWORD` (the app signing key) and `ANDROID_UPLOAD_KEYSTORE_B64` and

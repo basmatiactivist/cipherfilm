@@ -1,7 +1,7 @@
 Cipherfilm backs up your photos and videos to a server you run yourself. Every file is encrypted on your phone before upload, so the server stores only encrypted data. It can't open a single picture, and neither can anyone else.
 
 <b>You need your own Cipherfilm server</b>
-Cipherfilm is the Android app for a self-hosted server. It doesn't work on its own, and we don't run a server for you. The server is free, open source and runs in Docker on a small VPS, a NAS or a computer at home. Setup takes a few minutes:
+Cipherfilm is the Android app for a self-hosted server. It doesn't work on its own, and we don't run a server for you. The server is free, open source and runs in a container on a small VPS, a NAS or a computer at home. Setup takes a few minutes:
 https://github.com/basmatiactivist/cipherfilm/blob/master/docs/INSTALL.md
 If someone already runs a Cipherfilm server for your family or friends, ask them for an invite.
 
@@ -11,27 +11,28 @@ If someone already runs a Cipherfilm server for your family or friends, ask them
 • The server sees how many files there are and roughly how big, never what they show, where they were taken or what they are called.
 
 <b>Backup that runs by itself</b>
-• Choose the folders to back up. New photos and videos upload automatically, even when the app is closed.
-• Include the photos already in those folders if you like, and back up only on Wi-Fi or while charging.
+• Choose the folders to back up. New photos and videos upload automatically, even when the app is closed, optionally only on Wi-Fi or while charging.
 • Large videos keep uploading in the background, with a progress notification.
 • Share photos and videos from any app to Cipherfilm to upload them.
-• Free up space: remove originals from the phone once they are backed up. They go to the phone's trash first.
+• Free up space: remove originals from the phone once they are backed up.
 
 <b>Search on your phone</b>
-• Find photos by what is in them, such as "beach", "dog" or "snow". Open models run on your phone; nothing is sent anywhere for analysis.
-• The models are downloaded once from Hugging Face. Hugging Face sees your phone's IP address, nothing of your photos.
+• Find photos by what is in them ("beach", "dog"), by place and by date. Open models run on your phone; nothing is sent anywhere for analysis.
+• The models are downloaded once, after the app asked you. The site they come from sees your phone's IP address, nothing of your photos.
 • Faces are grouped into people you can name.
-• Search results are stored encrypted on your server, so your other devices don't have to redo the work.
 
 <b>A calm library</b>
 • A timeline by the day each photo was taken, albums, favorites and a trash that empties after 30 days.
-• A full-screen viewer with video playback.
+• On this day: photos from today's date in earlier years.
+• A map of where your photos were taken, off until you turn it on.
+• Simple editing: turn, crop, fix the date and place. The original stays untouched.
+• Find duplicates and bursts of nearly the same shot, and move the extras to the trash.
 • Originals are kept byte for byte: JPEG, PNG, WebP, HEIC, MP4 and MOV.
 
-<b>Locks when you want it to</b>
-• Unlock with your fingerprint or face. The key stays in the phone's secure hardware.
-• Locks when you leave the app (at once or after a time you choose) or when the screen turns off.
-• Shake the phone twice to lock and close Cipherfilm at once.
+<b>Locked and in your hands</b>
+• Unlock with your fingerprint or face. Locks when you leave the app or the screen turns off; shake twice to lock and close it.
+• Optional two-step sign-in with a code from an authenticator app or a passkey.
+• See where you're signed in, sign out a lost device, and get a notification when someone signs in to your account.
 
 <b>Private by design</b>
 • No ads, no analytics, no tracking, no crash reporting.
@@ -42,10 +43,8 @@ If someone already runs a Cipherfilm server for your family or friends, ask them
 <b>Good to know</b>
 • If you lose both your password and your recovery key, your photos are lost. Nobody can reset that, not even the server's admin.
 • Cipherfilm is young software and hasn't had an independent security review yet. Keep your own backups.
-• The app is in English.
-• Also available: a web app that comes with the server, and a Mac app.
+• The app is in English and German.
+• Also available: a web app that comes with the server, and a Mac app. Server admins manage invites, storage limits and accounts right in the app.
 
 How the encryption works and what the server can still see: https://cipherfilm.app
 Questions: contact@cipherfilm.app
-
-Hugging Face is a trademark of Hugging Face, Inc. Cipherfilm is not affiliated with or endorsed by Hugging Face.

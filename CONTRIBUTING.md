@@ -15,7 +15,9 @@ The Android app (it shares `web/src/crypto`, so web's packages come first):
 Mac app: `mac/scripts/test.sh` (mac/README.md).
 
 CI runs all of these on every push and pull request, including the browser suite; the Mac app is built and tested
-when `mac/` changes.
+when `mac/` changes. `master` changes only through pull requests that pass these checks. Separately, a weekly canary
+(`.github/workflows/canary.yml`) tests the latest release against the newest Go, Node, Playwright, Android and Xcode
+and opens an issue when something breaks ([docs/RELEASING.md](docs/RELEASING.md#weekly-canary)).
 
 ## Ground rules
 

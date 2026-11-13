@@ -17,7 +17,8 @@ list from the server.
 ## Models
 
 Open models, downloaded by the phone once (about 650 MB with faces, by default only on Wi-Fi), after the person agreed
-in a question that says what, how big, from whom and what Hugging Face learns (docs/MODELS.md "Asked first"), directly
+in a question that says what, how big, where from (the site is named in the privacy policy, not in the app) and what
+that site learns (docs/MODELS.md "Asked first"), directly
 from Hugging Face, where they are published, at URLs pinned to a commit. Each file's URL, SHA-256 and size are in
 `server/models.json`, the one list the server and every app use; the app checks size and SHA-256 before it opens a
 file. A dropped or stalled download continues with HTTP Range. Hugging Face sees the phone's IP address, nothing about
@@ -96,7 +97,9 @@ a photo's details, similar photos and duplicates are not filtered: it is the per
   encrypted people document (`user_blobs` "people", docs/CRYPTO.md), so all their devices follow. Turning it on or off
   changes only what search shows: nothing is downloaded, indexed again or deleted.
 - **Never in the Android app from Google Play** (built with `CF_STORE=play`, `mobile/src/store.ts`): it doesn't offer
-  the switch and always filters, whatever the account chose. The APK from GitHub, the web app and the Mac app offer it.
+  the switch and always filters, whatever the account chose; its admin area (Account › Administration) doesn't show
+  "Allow explicit search" either (`explicitSearchOffered()`), and the people list names no explicit permission. The APK
+  from GitHub, the web app and the Mac app offer it.
 
 How it works: a fixed set of short texts ("concepts") was turned into vectors once with the model's text encoder
 (`scripts/explicit-filter.py`, which writes `server/explicit-filter.json`, read by the web and Android apps when they
@@ -160,10 +163,12 @@ vector.
 `created_at`, `last_seen` (updated at most once a minute), `current`, `indexer`. `DELETE /api/me/sessions/{id}`
 signs one out (not this one: that is sign-out), `POST /api/me/sessions/end-others` all others; both are in the audit
 log. A signed-out device gets 401 at its next request and forgets the library as at sign-out. The device name is what
-the app sends as `X-CF-Device` at sign-in (Android: "<model> (Android app)", Mac: "<computer name> (Mac app)"),
-otherwise a guess from the browser's User-Agent ("Firefox on macOS"); it is only a label. Account › Devices on the web,
-Android and the Mac shows the list. A new sign-in also leaves a notice for the devices signed in before it
-(`GET /api/me/notices`, `POST /api/me/notices/{id}/dismiss`, live topic `notices`; server/notices.go).
+the app sends as `X-CF-Device` at sign-in (Android: "<maker> <model> (Android app)", never the name given to the
+phone in its settings; Mac: "<computer name> (Mac app)"), otherwise a guess from the browser's User-Agent ("Firefox on
+macOS"); it is only a label. Account › Devices on the web and Android, and Settings › Security on the Mac, show the
+list. A new sign-in also leaves a notice for the devices signed in before it (`GET /api/me/notices`,
+`POST /api/me/notices/{id}/dismiss`, live topic `notices`; server/notices.go); the apps list notices behind a bell
+next to the account button (web), Account (Android) or Lock in the toolbar (Mac), with a count of unread ones.
 
 ## Pipeline (`mobile/modules/cf-native/.../Vision.kt`)
 

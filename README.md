@@ -70,8 +70,8 @@ and visitors are signed out every hour. To keep your own photos, [run your own s
   The backup never holds your master key: it seals each new photo to your account's public key, so it can add photos
   but never read any.
 - **Search and people, on your device.** Find photos by content and group faces into people, with one open CLIP model
-  (LAION's ViT-B/32, MIT) and open face models that run locally, the same in every app. Search leaves explicit photos
-  out unless an admin allows otherwise ([docs/SEARCH.md](docs/SEARCH.md), [docs/MODELS.md](docs/MODELS.md)).
+  (LAION's ViT-B/32, MIT) and open face models that run locally, the same in every app. The models are downloaded once per
+  device, only after the app asked you. Search leaves explicit photos out unless an admin allows otherwise ([docs/SEARCH.md](docs/SEARCH.md), [docs/MODELS.md](docs/MODELS.md)).
 - **Map and places.** See your photos on a map, find them by town, region or country, and see where each was taken.
   Coordinates stay encrypted and are only read on your devices. Place names come from a file inside the apps, so
   naming a place sends nothing anywhere; the map is off until you turn it on, and what its tile server sees is in
@@ -87,8 +87,9 @@ and visitors are signed out every hour. To keep your own photos, [run your own s
   shake to lock and close. On Android, screenshots and the recent-apps preview are blocked unless you allow them.
 - **Two-step sign-in and your devices.** Optional codes from an authenticator app (added in one tap) or a passkey at
   every new sign-in, with one-time recovery codes; the password is still needed and still unlocks the photos; a list of
-  signed-in devices to sign out one or all others; a notice on your other devices when a new one signs in, also as a
-  notification on Android and the Mac while the app is closed (no push service).
+  signed-in devices to sign out one or all others; a notice on your other devices when a new one signs in or two-step
+  sign-in changes, collected under a bell with a count of unread ones, also as a notification on Android and the Mac
+  while the app is closed (no push service).
 - **Mac app.** Keeps an export folder up to date, uploads watched folders and indexes for search in the background
   ([docs/MAC.md](docs/MAC.md)).
 - **Made for a small group.** Invite-only, a private library per person, storage limits, an admin area that never
@@ -157,8 +158,8 @@ controls the server could deliver modified JavaScript), is in [docs/THREAT_MODEL
 - No sharing between people. Two-step sign-in uses authenticator-app codes (TOTP), which the server must be able to
   check: whoever runs the server could make codes (it could also serve altered web code, see the threat model).
   Passkeys are only a second step: they can't replace the password, which derives the keys. On Android they need
-  Android 14 and a server Google can reach on the internet (it checks the server's assetlinks.json), so not a
-  tailnet-only one; the Mac uses them through the browser.
+  Android 14; for a server Google can't reach on the internet (it checks the server's assetlinks.json), such as one
+  only in a tailnet or a home network, the app uses the server's passkey page in the browser, as the Mac always does.
 - No server-side thumbnails or transcoding (the server can't see the content). iPhone HEVC videos don't play in every
   browser.
 - Not tested at large scale (tens of thousands of photos).
@@ -171,6 +172,9 @@ Don't rely on it where losing or leaking the data would be catastrophic, and kee
 |---|---|
 | [INSTALL.md](docs/INSTALL.md) | downloads for every platform |
 | [SELF-HOSTING.md](docs/SELF-HOSTING.md) | deploy, back up, update, configure the server |
+| [TAILNET.md](docs/TAILNET.md) | a private setup in your tailnet, with your own name and backups |
+| [SERVER-HARDENING.md](docs/SERVER-HARDENING.md) | preparing a fresh VPS before Cipherfilm goes on it |
+| [MIGRATION.md](docs/MIGRATION.md) | moving the server to another machine |
 | [SERVER-COMMANDS.md](docs/SERVER-COMMANDS.md) | manage accounts from the command line |
 | [TOOLS.md](docs/TOOLS.md) | bulk upload, decrypt without the app, run it on a Mac |
 | [CRYPTO.md](docs/CRYPTO.md) · [THREAT_MODEL.md](docs/THREAT_MODEL.md) | the encryption and what it does and doesn't protect |
@@ -200,7 +204,7 @@ make prod-config # validate the production compose files
 
 `server/` Go and SQLite (no CGO) · `web/` Preact, TypeScript, libsodium · `mobile/` Android (Expo, Kotlin) ·
 `mac/` SwiftUI ([mac/README.md](mac/README.md)) · `tools/` upload and decrypt tools · `e2e/` Playwright ·
-`deploy/` quickstart, demo and local setups · `docs/` everything else. The original design is in [PLAN.md](PLAN.md).
+`deploy/` demo, tailnet and local setups · `docs/` everything else. The original design is in [PLAN.md](PLAN.md).
 
 Contributions are welcome: [CONTRIBUTING.md](CONTRIBUTING.md). Please report vulnerabilities privately, as described
 in [SECURITY.md](SECURITY.md).

@@ -20,6 +20,8 @@ repository is a usable credential.
 | `erin@example.org` | A playable WebM, a broken video, long and emoji file names |
 | `frank@example.org` | One photo and a rotated recovery key |
 | `grace@example.org` | Two-step sign-in, turned on and then off again by the admin (`zzzzzzzztwostep.spec.ts`) |
+| `heidi@example.org` | Two-step sign-in with a passkey (Chromium's virtual authenticator), turned off again by removing the last passkey (`zzzzzzzzzpasskey.spec.ts`) |
+| `liv@example.org` | Photos uploaded, trashed and restored on one of two signed-in sessions, for live updates (`zlive.spec.ts`, `zltabs.spec.ts`) |
 | `demo@example.org` | The read-only public demo login (`DEMO_ACCOUNTS` in `compose.e2e.yaml`); an empty library |
 
 Every `make e2e` run resets its stack. Never point the suite at an instance that holds real data.

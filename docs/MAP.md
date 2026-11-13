@@ -56,7 +56,9 @@ thumbnail or anything else from the library. To keep that small:
 ## Turning it on
 
 The map is off for every account on every device until the person turns it on. The first time they open the Map tab,
-the app asks, names the map server(s) and says what they see; nothing is loaded before "Turn on map", and "Not now"
+the app asks and says what the map server sees: with the default map it speaks of "an external map service" and links
+the privacy policy, which names it (the apps' texts name no companies); with the server's own `MAP_STYLE` it names those
+hosts. Nothing is loaded before "Turn on map", and "Not now"
 leaves it off. While it is off, a photo's details offer "Show on the map", which only opens that question. Account ›
 Map (Settings › General › Map on the Mac) turns it off again; on Android that also clears the map's cache of loaded
 map images, as locking and signing out do.
@@ -128,7 +130,7 @@ them.
    names (an inline style or an http:// URL is ignored, and with nothing left the map stays off).
 5. **Check it.** The apps load the setting from the server when someone signs in or unlocks, so sign out and in (or
    lock and unlock) on each device. The question before the map then names your map server's host instead of
-   OpenFreeMap. If the map stays empty, open the browser's developer tools on the web app: a blocked request
+   "an external map service". If the map stays empty, open the browser's developer tools on the web app: a blocked request
    ("Content-Security-Policy") means a style URL points at another host (step 2), a CORS error means step 3, a
    certificate error means step 1.
 6. **Keep the attribution.** Map data from OpenStreetMap needs its credit; put it in the style's source `attribution`

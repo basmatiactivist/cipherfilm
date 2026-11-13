@@ -2,7 +2,7 @@
 
 Researched 2026-11-05 against the official Play Console Help, Play policy and Android Developers pages linked in each section. Play rules change often, so check every date-bound item again in Play Console before submitting.
 
-**Status (2.1.8, 2026-11-07):** the app is in Play Console and in a **closed test** (track `alpha`, testers join
+**Status (2.7.1, 2026-11-12):** the app is in Play Console and in a **closed test** (track `alpha`, testers join
 through the Google Group `cipherfilm-testers`, then https://play.google.com/apps/testing/app.cipherfilm). Every
 release uploads the Play bundle to internal testing and the closed test by itself; production is the hand-started
 "Google Play promote" workflow (docs/RELEASING.md, "Google Play from CI"). Done in the code since this checklist was
@@ -213,7 +213,7 @@ Source: [Data safety section](https://support.google.com/googleplay/android-deve
 | Personal info → **Email address** | Collected, **not shared**, required, purposes: **App functionality, Account management**. Not processed ephemerally. |
 | Photos and videos | **Not declared**: end-to-end encrypted, the server and developer can't read them (E2E exemption). Mention this in the privacy policy. |
 | Location (EXIF GPS) | Not declared: inside the E2E-encrypted metadata only. |
-| Device or other IDs | Not declared (the server stores only a device label, the phone's model name such as "Pixel 8 (Android app)"; no identifiers). Declare it if a device ID is ever added. |
+| Device or other IDs | Not declared (the server stores only a device label, the phone's maker and model followed by "(Android app)"; no identifiers). Declare it if a device ID is ever added. |
 | App activity / app info and performance / diagnostics | **None**: no analytics or crash SDK, ONNX telemetry removed. |
 | Shared with third parties | None |
 | Independent security review | No (unless one is done) |
@@ -236,7 +236,7 @@ Source: [Sexual content and profanity policy](https://support.google.com/googlep
 - The policy bans apps that *contain or promote* sexual content, and "undress / see-through" apps. A classifier that lets a user find their *own* photos isn't content, and the help page doesn't address it. The risk is a reviewer seeing an "explicit" toggle or label and judging it as promoting sexual content.
 - [ ] It's already off unless an admin allows it (`me.user.nsfw`), and the demo server must **not** allow it. Reviewers then never see it.
 - [ ] Neutral wording in the app: "Sensitive content detection: find or hide photos that may contain nudity" rather than "explicit search". No sample imagery, nothing in screenshots, listing or description.
-- [x] Safest: a Play build flag that removes the explicit choice entirely (the GitHub build keeps it). Done: the Play build has no explicit search and always filters explicit photos and words out of search (`mobile/src/store.ts`, docs/SEARCH.md "Explicit content"). Since one model serves every build, the Play build downloads the same LAION ViT-B/32 files (under the neutral names `clip-b32-*`, no "nsfw" in any name); MobileCLIP S2 is gone from every build (its license is research-only, docs/MODELS.md).
+- [x] Safest: a Play build flag that removes the explicit choice entirely (the GitHub build keeps it). Done: the Play build has no explicit search and always filters explicit photos and words out of search (`mobile/src/store.ts`, docs/SEARCH.md "Explicit content"); its admin area (2.7) doesn't show the "Allow explicit search" switch or an explicit badge either (`explicitSearchOffered()`). Since one model serves every build, the Play build downloads the same LAION ViT-B/32 files (under the neutral names `clip-b32-*`, no "nsfw" in any name); MobileCLIP S2 is gone from every build (its license is research-only, docs/MODELS.md).
 - [ ] Don't market it. If asked, the answer is: "on-device classifier over the user's own private library; no content is provided by the app."
 
 ### 4.9 Other App content items
@@ -258,7 +258,8 @@ Source: [Sexual content and profanity policy](https://support.google.com/googlep
 | Exact alarms / full-screen intent / background location / `MANAGE_MEDIA` / `QUERY_ALL_PACKAGES` | not used, so no declarations |
 | Families policy | not applicable (18+) |
 
-Notifications: `POST_NOTIFICATIONS` needs no declaration. Request it when the user turns on backup, not at first launch.
+Notifications: `POST_NOTIFICATIONS` needs no declaration. Request it when the user turns on backup or security
+notifications (Account › Devices, Two-step sign-in: `mobile/src/NoticeAlertsSetting.tsx`), not at first launch.
 
 ---
 
@@ -269,9 +270,14 @@ Sources: [App access](https://support.google.com/googleplay/android-developer/an
 - Credentials *"must be accessible at all times, reusable, and valid regardless of user location"*, in English, with no 2FA or OTP, plus *"clear instructions"* for special login fields. If a password expires, the app *"may be rejected"*.
 - The production instance is **tailnet-only**, so reviewers can't reach it. Never give it to Google.
 - [ ] Run a **dedicated demo instance** on a public HTTPS domain (e.g. `demo.<project-domain>`, behind an HTTPS proxy with Let's Encrypt). A separate small VPS or a separate compose project with its own volume works, sharing nothing with production. Configuration:
-  - one ordinary user, `reviewer@<domain>`, with a strong static password, no recovery dependency, and no admin rights;
+  - two reviewer accounts with strong static passwords and no recovery dependency: `reviewer@<domain>`, an ordinary
+    user, and `reviewer2@<domain>`, an administrator, so a reviewer can see the admin area (Account › Administration).
+    The public read-only login `demo@<domain>` (`DEMO_ACCOUNTS`) stays as it is: the server refuses every admin change
+    to a `DEMO_ACCOUNTS` account (delete, disable, promote, storage limit, two-step reset; `server/handlers_admin.go`
+    `adminGuard`), so the administrator reviewer can't touch it (deploy/demo/README.md);
   - about 30 pre-loaded neutral demo photos and videos (own or CC0, no identifiable private people), plus one album;
-  - **explicit search not allowed** for the reviewer account (the Play build doesn't offer it anyway; the models come from Hugging Face, not the server), small quota (e.g. 2 GB);
+  - **explicit search not allowed** for the reviewer accounts (the Play build doesn't offer it anyway, and its admin
+    area hides the "Allow explicit search" switch; the models come from Hugging Face, not the server), small quota (e.g. 2 GB);
   - a nightly reset job (restore a snapshot) so reviewer uploads don't pile up, with monitoring and an uptime alert.
 - [ ] App access instructions (≤ 500 chars each field):
   > Cipherfilm is a client for a self-hosted server. On the sign-in screen enter Server: `https://demo.<domain>` · Email: `reviewer@<domain>` · Password: `<…>`. No 2FA. After sign-in, grant photo access and tap "Back up" to see encrypted backup; the demo library already contains sample photos. Biometric unlock is optional (Account → Unlock with fingerprint or face).

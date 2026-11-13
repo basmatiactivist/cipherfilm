@@ -665,7 +665,7 @@ function SearchPanel() {
       {!indexChecked() ? <Loading inline label="Checking…" /> : n === 0 && other === 0 ? (
         <p>To find photos by what's in them (dog, beach, birthday), <strong>turn on search in the Android or Mac app</strong> (Search and people). This browser then uses what the app found.</p>
       ) : (
-        <p>{n === 1 ? "1 photo" : `${n} photos`} can be found by what is in them. Combine with a date or a name, like “beach 2023” or “Anna cake”.{other > 0 && ` ${other === 1 ? "1 more photo" : `${other} more photos`} can be found once your Android or Mac app has updated the index to the new search model.`} Runs in this browser; your search words never leave it. Needs a {mb(TEXT_MODELS[family].size + TOKENIZER.size)} model, downloaded once from Hugging Face after you agree.</p>
+        <p>{n === 1 ? "1 photo" : `${n} photos`} can be found by what is in them. Combine with a date or a name, like “beach 2023” or “Anna cake”.{other > 0 && ` ${other === 1 ? "1 more photo" : `${other} more photos`} can be found once your Android or Mac app has updated the index to the new search model.`} Runs in this browser; your search words never leave it. Needs a {mb(TEXT_MODELS[family].size + TOKENIZER.size)} model, downloaded once from the site where the models are published, after you agree.</p>
       )}
       {adopted && (got || (indexChecked() && n + other > 0)) && (
         got ? (

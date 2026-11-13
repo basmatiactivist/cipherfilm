@@ -16,8 +16,9 @@ version into the GitHub release notes, so a release cannot be published without 
   passkeys, so an account with only passkeys would sign in with the password alone there (docs/RELEASING.md).
 
 ### Added
-- Web, Android, Mac: before the search models are downloaded from Hugging Face, the app asks: what, how big, from
-  whom and what Hugging Face sees. Turning search off deletes them; the settings show when they were downloaded.
+- Web, Android, Mac: before the search models are downloaded, the app asks: what, how big, where from (the site
+  where they are published, named in the privacy policy) and what that site sees. Turning search off deletes them;
+  the settings show when they were downloaded.
 - Two-step sign-in with a passkey: instead of a code from the authenticator app, confirm a new sign-in with a passkey
   from your password manager, phone or a security key (web; Android 14 and newer; Mac through your browser). Your
   password is still needed and still unlocks your photos. Add, rename and remove passkeys under Account › Two-step
@@ -54,8 +55,8 @@ version into the GitHub release notes, so a release cannot be published without 
   server react to the e2e screenshot switch.
 - Two-step sign-in: "Add to authenticator app" (Android, web) and "Open in Password Manager or Authenticator App" (Mac) only
   open an `otpauth://totp/` address. Android uses a passkey only for the server it is set up with.
-- Map: the apps load only https map styles with a plain host name, the hosts the question before the map names; the
-  Account › Map switch also names VersaTiles, the default map's fallback. Mac: a photo's small map in its details loads
+- Map: the apps load only https map styles with a plain host name, the hosts the question before the map stands for
+  (the default map's fallback included). Mac: a photo's small map in its details loads
   after "Show Map" for that photo, not for every photo while the details column is open.
 - Android and Mac: search models already on the device count as agreed only after their SHA-256 was checked, so a
   changed model asks again. Mac: the models and the tokenizer are loaded from exactly the checked bytes.
@@ -70,8 +71,8 @@ version into the GitHub release notes, so a release cannot be published without 
 - Android: the library could stay behind its loading badge for minutes after unlocking (seen on the first unlock
   after an update) when photos changed on another device since the last visit; it now shows after 12 seconds at
   the latest.
-- Android: several notices (new sign-ins) no longer stack up as large cards above the photos: one banner says
-  "3 new sign-ins (latest: …)", with "Review devices" and "Dismiss all".
+- Android: several notices (new sign-ins) no longer stack up as large cards above the photos; they are listed
+  behind the bell (see Changed).
 - Android: the search index kept on the phone (both the standard and the explicit model's) was deleted with the
   cleanup of cached pictures after every library load, so search had to fetch and open the whole index again at each
   start. Both copies now stay; phones that lost them fetch them again once.

@@ -62,7 +62,7 @@ each upload (`mobile/scripts/play-notes.sh`, docs/RELEASING.md "Google Play from
 |---|---|---|
 | App or game | App | |
 | Category | **Photography** | A photo and video library with backup; comparable self-hosted photo apps use Photography. |
-| Tags (up to 5) | Pick from Google's list, closest to: *Photo & video backup*, *Photo gallery*, *Cloud storage*, *Privacy* / *Security*, *Video* | The tag list changes; choose the nearest existing ones. Don't pick tags for features the app lacks (editing, filters, social). |
+| Tags (up to 5) | Pick from Google's list, closest to: *Photo & video backup*, *Photo gallery*, *Cloud storage*, *Privacy* / *Security*, *Video* | The tag list changes; choose the nearest existing ones. Don't pick tags for features the app lacks (filters, social; editing is only turning, cropping, date and place). |
 | Contact e-mail | contact@cipherfilm.app | Role address, no personal name. |
 | Phone | leave empty | Optional. (An organization account has a phone in its *account* profile, which Play may show anyway; REQUIREMENTS §0.) |
 | Website | https://cipherfilm.app | |
@@ -189,9 +189,9 @@ declared. This matches REQUIREMENTS §4.6.
 | **Location** → Precise | **No** | No | The small map never goes past zoom 11 and can't be zoomed; the map tab's areas are chosen by the person. The app requests no location permission. |
 | Web browsing history | No | No | |
 | App activity → App interactions, in-app search history, installed apps, other UGC, other actions | No | No | Search runs on the phone; the search index and people list are encrypted on the device before they are stored. The server keeps upload and sign-in times as part of operating the user's account on the user's own server; they are not sent to the developer. *Conservative fallback if a reviewer asks: "App interactions, App functionality".* |
-| Search models from Hugging Face (not a data type; for the reviewer's notes) | No | No | When the user turns search on and agrees in a question that names the download's size, Hugging Face and what it sees, the app downloads the open search models once from Hugging Face (`huggingface.co`, its CDN under `hf.co`), where they are published. It is a plain download of public files: no user data, account, photo, search word or identifier is sent; Hugging Face sees only the phone's IP address, as any server it connects to does. Each file is checked against a SHA-256 built into the app. Not "sharing" under Play's definition (no user data leaves the app). |
+| Search models from Hugging Face (not a data type; for the reviewer's notes) | No | No | When the user turns search on and agrees in a question that names the download's size, that it comes from the public site where the models are published (named in the privacy policy, which the question links) and what that site sees, the app downloads the open search models once from Hugging Face (`huggingface.co`, its CDN under `hf.co`), where they are published. It is a plain download of public files: no user data, account, photo, search word or identifier is sent; Hugging Face sees only the phone's IP address, as any server it connects to does. Each file is checked against a SHA-256 built into the app. Not "sharing" under Play's definition (no user data leaves the app). |
 | App info and performance → Crash logs, Diagnostics, Other | No | No | No crash reporting or analytics SDK. ONNX Runtime telemetry is removed from the manifest. |
-| Device or other IDs | No | No | No advertising ID (`AD_ID` not in the manifest), no Android ID. The server stores only a readable device label, the phone's model name ("Pixel 8 (Android app)"), so the user can sign out a device. |
+| Device or other IDs | No | No | No advertising ID (`AD_ID` not in the manifest), no Android ID. The server stores only a readable device label, the phone's maker and model followed by "(Android app)", never the name the user gave the phone, so the user can sign out a device. |
 
 #### Security practices summary shown on the listing
 
@@ -200,8 +200,9 @@ declared. This matches REQUIREMENTS §4.6.
 - Independent security review: **No** (none has been done; do not tick).
 - Committed to Play Families Policy: not applicable.
 
-Before each release: check that no new dependency adds network calls (`expo-updates` stays disabled; the only
-other host is Hugging Face for the models, `server/models.json`), that the
+Before each release: check that no new dependency adds network calls (`expo-updates` stays disabled; the other
+hosts are Hugging Face for the models, `server/models.json`, and, only with the map turned on, the map service:
+OpenFreeMap with VersaTiles as fallback by default, `web/src/places/mapHosts.ts`), that the
 merged manifest still has no `AD_ID`, and that these answers still match.
 
 ### 4.9 Government apps

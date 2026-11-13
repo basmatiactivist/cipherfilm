@@ -1,51 +1,50 @@
-Cipherfilm sichert Ihre Fotos und Videos auf einem Server, den Sie selbst betreiben. Jede Datei wird vor dem Hochladen auf Ihrem Handy verschlüsselt; der Server speichert nur verschlüsselte Daten. Er kann kein einziges Bild öffnen, und niemand sonst kann es.
+Cipherfilm sichert Ihre Fotos und Videos auf einem Server, den Sie selbst betreiben. Jede Datei wird vor dem Hochladen auf Ihrem Handy verschlüsselt; der Server speichert nur verschlüsselte Daten. Er kann kein Bild öffnen, niemand sonst kann es.
 
 <b>Sie brauchen Ihren eigenen Cipherfilm-Server</b>
-Cipherfilm ist die Android-App zu einem selbst gehosteten Server. Allein funktioniert sie nicht, und wir betreiben keinen Server für Sie. Der Server ist kostenlos, Open Source und läuft in Docker auf einem kleinen VPS, einem NAS oder einem Rechner zu Hause. Die Einrichtung dauert wenige Minuten:
+Cipherfilm ist die Android-App zu einem selbst gehosteten Server. Allein funktioniert sie nicht; wir betreiben keinen Server für Sie. Der Server ist kostenlos, Open Source und läuft als Container auf einem kleinen VPS, einem NAS oder einem Rechner zu Hause. Die Einrichtung dauert wenige Minuten:
 https://github.com/basmatiactivist/cipherfilm/blob/master/docs/INSTALL.md
-Betreibt schon jemand einen Cipherfilm-Server für Familie oder Freunde, bitten Sie um eine Einladung.
+Betreibt jemand schon einen für Familie oder Freunde: um eine Einladung bitten.
 
 <b>Auf dem Handy verschlüsselt</b>
-• Jedes Foto und Video bekommt seinen eigenen Schlüssel. Datei, Vorschaubild und Angaben (Name, Aufnahmedatum, Ort, Kamera) werden auf dem Handy verschlüsselt.
+• Jedes Foto und Video bekommt seinen eigenen Schlüssel. Datei, Vorschaubild und Angaben (Name, Datum, Ort, Kamera) werden auf dem Handy verschlüsselt.
 • Ihr Passwort verlässt das Handy nie. Es entsperrt Ihre Schlüssel, ebenso Ihr Wiederherstellungsschlüssel aus 24 Wörtern.
-• Der Server sieht, wie viele Dateien es gibt und ungefähr wie groß sie sind, nie, was sie zeigen, wo sie aufgenommen wurden oder wie sie heißen.
+• Der Server sieht, wie viele Dateien es gibt und wie groß etwa, nie, was sie zeigen, wo sie entstanden oder wie sie heißen.
 
 <b>Backup, das von selbst läuft</b>
-• Wählen Sie die Ordner, die gesichert werden. Neue Fotos und Videos werden automatisch hochgeladen, auch wenn die App geschlossen ist.
-• Auf Wunsch auch Fotos, die schon in diesen Ordnern liegen, und nur im WLAN oder beim Laden.
-• Große Videos laden im Hintergrund weiter, mit Fortschritt in der Benachrichtigung.
-• Teilen Sie Fotos und Videos aus jeder App mit Cipherfilm, um sie hochzuladen.
-• Speicher freigeben: Originale vom Handy entfernen, sobald sie gesichert sind. Sie landen zuerst im Papierkorb des Handys.
+• Wählen Sie die Ordner. Neue Fotos und Videos werden automatisch hochgeladen, auch bei geschlossener App, auf Wunsch nur im WLAN oder beim Laden.
+• Große Videos laden im Hintergrund weiter, mit Fortschrittsanzeige.
+• Aus jeder App mit Cipherfilm teilen, um hochzuladen.
+• Speicher freigeben: Originale vom Handy entfernen, sobald sie gesichert sind.
 
 <b>Suche auf Ihrem Handy</b>
-• Finden Sie Fotos nach ihrem Inhalt, etwa „beach“, „dog“ oder „snow“. Offene Modelle laufen auf Ihrem Handy; nichts wird zur Analyse verschickt. Suchbegriffe sind vorerst Englisch.
-• Die Modelle werden einmal von Hugging Face geladen. Hugging Face sieht die IP-Adresse Ihres Handys, nichts von Ihren Fotos.
-• Gesichter werden zu Personen gruppiert, denen Sie Namen geben können.
-• Die Suchergebnisse liegen verschlüsselt auf Ihrem Server, damit Ihre anderen Geräte sie nicht neu berechnen müssen.
+• Fotos nach Inhalt finden („beach“, „dog“; Suchbegriffe vorerst Englisch), nach Ort und Datum. Offene Modelle laufen auf dem Handy; nichts wird zur Analyse verschickt.
+• Die Modelle werden einmal geladen, nachdem die App Sie gefragt hat. Die Website, von der sie kommen, sieht die IP-Adresse Ihres Handys, nichts von Ihren Fotos.
+• Gesichter werden zu Personen gruppiert, die Sie benennen können.
 
 <b>Eine ruhige Bibliothek</b>
 • Zeitleiste nach Aufnahmetag, Alben, Favoriten und ein Papierkorb, der sich nach 30 Tagen leert.
-• Vollbildansicht mit Videowiedergabe.
+• An diesem Tag: Fotos vom heutigen Datum aus früheren Jahren.
+• Eine Karte, wo Ihre Fotos aufgenommen wurden, aus, bis Sie sie einschalten.
+• Einfach bearbeiten: drehen, zuschneiden, Datum und Ort korrigieren. Das Original bleibt unverändert.
+• Doppelte und fast gleiche Fotos finden und die übrigen in den Papierkorb legen.
 • Originale bleiben Byte für Byte erhalten: JPEG, PNG, WebP, HEIC, MP4 und MOV.
 
-<b>Gesperrt, wenn Sie es wollen</b>
-• Entsperren mit Fingerabdruck oder Gesicht. Der Schlüssel bleibt in der sicheren Hardware des Handys.
-• Sperrt sich, wenn Sie die App verlassen (sofort oder nach einer Zeit Ihrer Wahl) oder der Bildschirm ausgeht.
-• Zweimal kräftig schütteln sperrt und schließt Cipherfilm sofort.
+<b>Gesperrt und in Ihrer Hand</b>
+• Entsperren mit Fingerabdruck oder Gesicht. Sperrt sich, wenn Sie die App verlassen oder der Bildschirm ausgeht; zweimal schütteln sperrt und schließt sie.
+• Auf Wunsch Anmeldung in zwei Schritten, mit Code aus einer Authenticator-App oder Passkey.
+• Sehen, wo Sie angemeldet sind, ein verlorenes Gerät abmelden, und eine Mitteilung, wenn sich jemand bei Ihrem Konto anmeldet.
 
 <b>Privat von Grund auf</b>
 • Keine Werbung, keine Statistik, kein Tracking, keine Absturzberichte.
 • Kein Konto bei uns. Ihr Konto liegt auf Ihrem Server.
 • Open Source unter der GNU AGPL-3.0. Die Verschlüsselung nutzt libsodium, keine selbstgebaute Kryptografie.
-• Ein separates Entschlüsselungswerkzeug stellt Ihre Originale aus den Serverdaten wieder her, auch ohne die App.
+• Ein eigenes Werkzeug holt Ihre Originale auch ohne die App aus den Serverdaten.
 
 <b>Gut zu wissen</b>
-• Verlieren Sie Passwort und Wiederherstellungsschlüssel, sind Ihre Fotos verloren. Niemand kann das zurücksetzen, auch nicht der Admin des Servers.
-• Cipherfilm ist junge Software und wurde noch nicht unabhängig auf Sicherheit geprüft. Behalten Sie eigene Backups.
-• Die App ist auf Englisch.
-• Außerdem gibt es eine Web-App, die mit dem Server kommt, und eine Mac-App.
+• Verlieren Sie Passwort und Wiederherstellungsschlüssel, sind Ihre Fotos verloren. Niemand kann das zurücksetzen, auch nicht der Admin.
+• Cipherfilm ist junge Software, noch nicht unabhängig auf Sicherheit geprüft. Behalten Sie eigene Backups.
+• Die App gibt es auf Deutsch und Englisch.
+• Außerdem gibt es eine Web-App, die mit dem Server kommt, und eine Mac-App. Admins verwalten Einladungen, Speichergrenzen und Konten direkt in der App.
 
-So funktioniert die Verschlüsselung und das sieht der Server trotzdem: https://cipherfilm.app/de
+Wie die Verschlüsselung funktioniert und was der Server sieht: https://cipherfilm.app/de
 Fragen: contact@cipherfilm.app
-
-Hugging Face ist eine Marke der Hugging Face, Inc. Cipherfilm steht in keiner Verbindung zu Hugging Face und wird nicht von ihr unterstützt.

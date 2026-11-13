@@ -13,7 +13,9 @@ think the impact is. Expect an answer within a few days; this is a small project
   learns what is listed in [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) (sizes, counts, times, e-mail addresses, album structure).
 - **A web app cannot protect you from whoever controls the server**: that party can deliver modified JavaScript. See the
   threat model.
-- There is no two-factor authentication yet.
+- Two-step sign-in (a code from an authenticator app or a passkey, with one-time recovery codes) is optional and off
+  by default. It protects the sign-in, not the encryption: the password still derives the keys. Whoever runs the
+  server could make codes, since it must know the secret to check them (see the threat model).
 
 ## Audit status
 

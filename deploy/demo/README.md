@@ -5,7 +5,14 @@ encrypted, so the operator could never see what strangers store. That is why the
 (`DEMO_ACCOUNTS`, [docs/SELF-HOSTING.md](../../docs/SELF-HOSTING.md#settings)): visitors can sign in, browse, open
 originals and videos and search, but uploads, edits, albums and account changes get a 403 ("This is the public demo:
 changes are turned off."). The apps say "Public demo · read-only · resets every hour" and hide what would fail. Other
-accounts on the same server (your admin, an app-store reviewer) work as usual.
+accounts on the same server (your admin, app-store reviewers) work as usual.
+
+The project's demo has two reviewer accounts besides `demo@`: `reviewer@`, an ordinary user, and `reviewer2@`, an
+administrator, so a reviewer can see the admin area. That is safe for the public login: the server refuses every
+administrative change to a `DEMO_ACCOUNTS` account (deleting, disabling, making it an administrator, its storage
+limit, turning off its two-step sign-in; `server/handlers_admin.go` `adminGuard`), and a `DEMO_ACCOUNTS` account can
+never use the admin area itself. Only the server commands (`/app …`) can still change it. Give reviewer accounts no
+explicit search and a small storage limit.
 
 The demo account stores nothing, so all that visitors leave behind are their sign-ins: every hour a timer signs out
 all of the demo account's devices (`/app sign-out DEMO_EMAIL`). Once a day (04:00 UTC) the whole server is put back to

@@ -7,6 +7,8 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+## [2.7.3] - 2026-11-15
+
 ### Fixed
 - Web: the search model's download shows as a bar with MB and percent wherever it was started (a search or
   Account › Search), also after the search box is emptied; it says when it's done, and what went wrong with a button

@@ -1,0 +1,2 @@
+• Small fixes and updated libraries.
+Needs your own Cipherfilm server: https://cipherfilm.app

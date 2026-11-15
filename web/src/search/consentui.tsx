@@ -3,6 +3,7 @@
 import { Icon } from "../icons";
 import type { Family } from "./rank";
 import { bytesOf, filesFor, mb, MODELS_PRIVACY_URL } from "./consent";
+import { useModelDownload } from "./content";
 
 export function ModelConsent(p: { family: Family; onYes: () => void; onLater: () => void; busy?: boolean }) {
   return (
@@ -18,4 +19,29 @@ export function ModelConsent(p: { family: Family; onYes: () => void; onLater: ()
       </div>
     </section>
   );
+}
+
+/** The search model's download as it goes (content.ts useModelDownload), wherever it was started: a bar with how many
+ *  MB of how many, then "ready" once, or what went wrong with a button to try again. */
+export function ModelProgress(p: { onRetry?: () => void; showReady?: boolean }) {
+  const d = useModelDownload();
+  if (d.phase === "downloading") {
+    const pct = d.total ? Math.floor((d.done / d.total) * 100) : 0;
+    return (
+      <div class="modelprog" role="status" aria-live="polite">
+        <p class="small">Downloading the search model: {Math.round(d.done / 1e6)} of {Math.round(d.total / 1e6)} MB ({pct}%). You can keep using Cipherfilm meanwhile.</p>
+        <progress max={d.total || 1} value={d.done} aria-label={`Search model download, ${pct}%`} />
+      </div>
+    );
+  }
+  if (d.phase === "error") {
+    return (
+      <div class="modelprog" role="alert">
+        <p class="small error">The search model couldn't be downloaded: {d.error ?? "unknown error"}</p>
+        {p.onRetry && <button class="btn secondary small" onClick={p.onRetry}>Try again</button>}
+      </div>
+    );
+  }
+  if (d.phase === "ready" && p.showReady) return <p class="small" role="status">Search model downloaded. Search by what is in your photos is on.</p>;
+  return null;
 }

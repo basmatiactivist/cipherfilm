@@ -119,9 +119,15 @@ async function fetchIndex(): Promise<void> {
 /** Fetches what other devices indexed since the last time; at most once a minute unless forced. */
 export function refreshIndex(force = false): Promise<void> {
   if (!force && fetchedAt && Date.now() - fetchedAt < 60_000) return Promise.resolve();
-  fetching ??= fetchIndex().finally(() => { fetching = null; });
+  // a change announced while a fetch runs may have come after the fetch read its page: once more after it
+  if (fetching) { if (force) again = true; return fetching; }
+  fetching = fetchIndex().finally(() => {
+    fetching = null;
+    if (again) { again = false; refreshIndex(true).catch(() => {}); }
+  });
   return fetching;
 }
+let again = false;
 
 /** True once the account has index entries: only then are people shown here. */
 export const hasIndex = () => entries > 0;

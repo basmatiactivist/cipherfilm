@@ -3,7 +3,8 @@
 import type { Family, Hit } from "./rank";
 import { MODEL_CACHE, OLD_FILES, familyOf } from "./rank";
 import type { Req, Res } from "./content.worker";
-import { adoptCached, forgetModels, modelsAgreed, NeedsConsent } from "./consent";
+import { useEffect, useState } from "preact/hooks";
+import { adoptCached, filesFor, forgetModels, modelsAgreed, NeedsConsent } from "./consent";
 
 let worker: Worker | null = null;
 let nextId = 1;
@@ -13,6 +14,36 @@ const made = new Map<string, Family>();
 /** items whose entry an older app made with MobileCLIP: the indexing device makes them again (docs/SEARCH.md) */
 const old = new Set<string>();
 
+/** The search model's download, wherever it was started (a search, Account › Search): one state for every screen. */
+export interface ModelDownload { phase: "idle" | "downloading" | "ready" | "error"; done: number; total: number; error?: string }
+let dl: ModelDownload = { phase: "idle", done: 0, total: 0 };
+const dlSubs = new Set<() => void>();
+function setDownload(d: ModelDownload) { dl = d; dlSubs.forEach((f) => f()); }
+export const modelDownload = () => dl;
+/** The download's state, kept current. */
+export function useModelDownload(): ModelDownload {
+  const [, set] = useState(0);
+  useEffect(() => { const f = () => set((x) => x + 1); dlSubs.add(f); return () => { dlSubs.delete(f); }; }, []);
+  return dl;
+}
+
+/** Whether the model's files are really in this browser (Cache Storage), not only agreed to: what "downloaded" says. */
+export async function modelOnDevice(family: Family): Promise<boolean> {
+  if (typeof caches === "undefined") return false;
+  try {
+    const c = await caches.open(MODEL_CACHE);
+    for (const m of filesFor(family)) if (!(await c.match(`/api/models/${m.file}`))) return false;
+    return true;
+  } catch { return false; }
+}
+/** modelOnDevice, checked again whenever the download's state changes; null while checking. */
+export function useModelOnDevice(family: Family): boolean | null {
+  const d = useModelDownload();
+  const [here, setHere] = useState<boolean | null>(null);
+  useEffect(() => { let alive = true; modelOnDevice(family).then((h) => alive && setHere(h)); return () => { alive = false; }; }, [family, d.phase]);
+  return here;
+}
+
 function send(r: Req) {
   if (typeof Worker === "undefined") return;
   if (!worker) {
@@ -20,11 +51,23 @@ function send(r: Req) {
     worker.onmessage = (e: MessageEvent<Res>) => {
       const w = waiting.get(e.data.id);
       if (!w) return;
-      if (e.data.t === "progress") { w.progress?.(e.data.done, e.data.total); return; }
+      if (e.data.t === "progress") {
+        // files found already downloaded report done at once: only a real download shows as one
+        if (e.data.done < e.data.total) setDownload({ phase: "downloading", done: e.data.done, total: e.data.total });
+        else if (dl.phase === "downloading") setDownload({ phase: "ready", done: e.data.total, total: e.data.total });
+        w.progress?.(e.data.done, e.data.total);
+        return;
+      }
       waiting.delete(e.data.id);
+      if (e.data.t === "error" && dl.phase === "downloading") setDownload({ ...dl, phase: "error", error: e.data.error });
+      else if (e.data.t !== "error" && dl.phase === "downloading") setDownload({ phase: "ready", done: dl.total, total: dl.total });
       e.data.t === "done" ? w.ok(e.data.hits) : e.data.t === "scores" ? w.ok(e.data.scores) : w.fail(new Error(e.data.error));
     };
-    worker.onerror = () => { for (const w of waiting.values()) w.fail(new Error("Search stopped working. Reload the page.")); waiting.clear(); };
+    worker.onerror = () => {
+      if (dl.phase === "downloading") setDownload({ ...dl, phase: "error", error: "Search stopped working. Reload the page." });
+      for (const w of waiting.values()) w.fail(new Error("Search stopped working. Reload the page."));
+      waiting.clear();
+    };
   }
   worker.postMessage(r);
 }
@@ -100,6 +143,7 @@ export async function loadModel(family: Family, progress?: (done: number, total:
 
 /** Turning search off in this browser: the worker stops, the files and the yes go. */
 export async function forgetContentModels() {
+  setDownload({ phase: "idle", done: 0, total: 0 });
   worker?.terminate();
   worker = null;
   for (const w of waiting.values()) w.fail(new Error("Search stopped."));

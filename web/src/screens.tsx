@@ -10,9 +10,9 @@ import { Loader, Loading } from "./loader";
 import { BackupReport, backupState } from "./backup";
 import { gbBytes, gbText, uptimeText } from "./limits";
 import { explicitChosen, indexChecked, loadPeople, refreshIndex, setExplicit } from "./people/people";
-import { forgetContentModels, loadModel, oldCount, vectorCount } from "./search/content";
+import { forgetContentModels, loadModel, oldCount, useModelDownload, useModelOnDevice, vectorCount } from "./search/content";
 import { adoptCached, agreeModels, downloaded, mb, modelsAgreed, useModelConsent } from "./search/consent";
-import { ModelConsent } from "./search/consentui";
+import { ModelConsent, ModelProgress } from "./search/consentui";
 import { FAMILY as family, TEXT_MODELS, TOKENIZER } from "./search/rank";
 import * as tf from "./twofactor";
 import * as pk from "./passkeys";
@@ -649,17 +649,16 @@ function SearchPanel() {
   const [adopted, setAdopted] = useState(false);
   useEffect(() => { adoptCached().then(() => setAdopted(true)); }, []);
   const [ask, setAsk] = useState(false);
-  const [loading, setLoading] = useState<string | null>(null);
   const model = useAction();
   const got = downloaded();
   const agreed = modelsAgreed(family);
-  const yes = () => model.run(async () => {
-    agreeModels(family);
-    setAsk(false);
-    setLoading("Downloading the search model…");
-    try { await loadModel(family, (done, total) => setLoading(`Downloading the search model: ${Math.round(done / 1e6)} of ${Math.round(total / 1e6)} MB…`)); } finally { setLoading(null); }
-  });
+  // what is really in this browser, not only agreed to; and a download running (also one a search started)
+  const here = useModelOnDevice(family);
+  const dl = useModelDownload();
+  const fetchModel = () => model.run(async () => { await loadModel(family); });
+  const yes = () => { agreeModels(family); setAsk(false); fetchModel(); };
   const off = () => model.run(async () => { await forgetContentModels(); setAsk(false); });
+  const busyDl = dl.phase === "downloading";
   return (
     <Acc icon="search" title="Search" sub="Find photos by what is in them">
       {!indexChecked() ? <Loading inline label="Checking…" /> : n === 0 && other === 0 ? (
@@ -667,20 +666,24 @@ function SearchPanel() {
       ) : (
         <p>{n === 1 ? "1 photo" : `${n} photos`} can be found by what is in them. Combine with a date or a name, like “beach 2023” or “Anna cake”.{other > 0 && ` ${other === 1 ? "1 more photo" : `${other} more photos`} can be found once your Android or Mac app has updated the index to the new search model.`} Runs in this browser; your search words never leave it. Needs a {mb(TEXT_MODELS[family].size + TOKENIZER.size)} model, downloaded once from the site where the models are published, after you agree.</p>
       )}
-      {adopted && (got || (indexChecked() && n + other > 0)) && (
-        got ? (
+      {adopted && (agreed || got || (indexChecked() && n + other > 0)) && (
+        busyDl || dl.phase === "error" ? <ModelProgress onRetry={fetchModel} /> :
+        agreed && here ? (
           <>
-            <p class="hint">{got.at ? `Search model downloaded on ${new Date(got.at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}, ${mb(got.bytes)}.` : `Search model downloaded, ${mb(got.bytes)}.`} The site it came from saw this device's IP address, nothing of your photos.</p>
-            {loading ? <Loading inline label={loading} /> : agreed ? (
-              <button class="btn secondary" disabled={model.busy} onClick={off}>Turn off and delete the model</button>
-            ) : <button class="btn" disabled={model.busy} onClick={() => setAsk(true)}>Download the model…</button>}
+            <p class="hint">{got?.at ? `Search model downloaded on ${new Date(got.at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}, ${mb(got.bytes)}.` : `Search model downloaded${got ? `, ${mb(got.bytes)}` : ""}.`} The site it came from saw this device's IP address, nothing of your photos.</p>
+            <button class="btn secondary" disabled={model.busy} onClick={off}>Turn off and delete the model</button>
           </>
-        ) : loading ? <Loading inline label={loading} /> : !ask && (
+        ) : agreed && here === false ? (
+          <>
+            <p class="hint">Search is turned on in this browser, but the search model isn't downloaded yet.</p>
+            <button class="btn" disabled={model.busy} onClick={fetchModel}>Download the model now</button>
+          </>
+        ) : here === null && agreed ? <Loading inline label="Checking…" /> : !ask && (
           <button class="btn" disabled={model.busy} onClick={() => setAsk(true)}>Turn on search in this browser…</button>
         )
       )}
       {ask && <ModelConsent family={family} busy={model.busy} onYes={yes} onLater={() => setAsk(false)} />}
-      <ErrorLine text={model.error} />
+      <ErrorLine text={dl.phase === "error" ? "" : model.error ?? ""} />
       {allowed && explicit !== null && (
         <>
           <label class="check">

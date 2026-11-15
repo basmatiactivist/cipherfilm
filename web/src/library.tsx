@@ -7,7 +7,7 @@ import { uploadQueue } from "./upqueue";
 import { haystack, matches, splitQuery } from "./search";
 import { contentSearch, vectorCount } from "./search/content";
 import { agreeModels, askedLater, askLater, NeedsConsent, useModelConsent } from "./search/consent";
-import { ModelConsent } from "./search/consentui";
+import { ModelConsent, ModelProgress } from "./search/consentui";
 import { FAMILY as family, TEXT_MODELS, type Family } from "./search/rank";
 import { downloadItems, downloadOriginal } from "./downloads";
 import { prefetchThumbs } from "./cache";
@@ -383,9 +383,8 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
     const size = TEXT_MODELS[family].size;
     const t = setTimeout(() => {
       setContent((c) => ({ ...c, q: cq, status: "Looking at what's in your photos…" }));
-      contentSearch(cq, family, filtered, (done, total) => {
-        if (alive && done < total) setContent((c) => ({ ...c, status: `Downloading the search model: ${Math.round(done / 1e6)} of ${Math.round(total / 1e6)} MB…` }));
-      }).then((hits) => alive && setContent({ q: cq, ids: hits.map((h) => h.id), status: "" }),
+      // a download on the way shows as a bar (ModelProgress), also when the search box is emptied meanwhile
+      contentSearch(cq, family, filtered).then((hits) => alive && setContent({ q: cq, ids: hits.map((h) => h.id), status: "" }),
         (e) => alive && setContent(e instanceof NeedsConsent ? { q: cq, ids: null, status: "", need: e.family }
           : { q: cq, ids: null, status: `Couldn't search photo content. ${e instanceof Error ? e.message : "Try again."}` }));
     }, size > 1e8 ? 400 : 250);
@@ -677,6 +676,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
                   {!demo && <button class="btn" onClick={() => input.current?.click()}><Icon name="upload" />Add photos and videos</button>}
                 </section>
               )}
+              <ModelProgress showReady={!!q} />
               {q && content.status && <Loading inline={timelineItems.length > 0} label={content.status} />}
               {q && content.need && content.q === split.content && !askedLater(content.need) && (
                 <ModelConsent family={content.need} onYes={() => agreeModels(content.need!)} onLater={() => askLater(content.need!)} />

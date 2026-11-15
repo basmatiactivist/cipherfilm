@@ -7,6 +7,14 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+### Fixed
+- Web: the search model's download shows as a bar with MB and percent wherever it was started (a search or
+  Account › Search), also after the search box is emptied; it says when it's done, and what went wrong with a button
+  to try again. Account › Search says "downloaded" only when the files are really in the browser (it said so from the
+  moment of the yes), and offers "Download the model now" when they aren't.
+- Web: an index change announced while the browser was fetching the index is fetched right after, instead of only with
+  the next change.
+
 ## [2.7.2] - 2026-11-15
 
 ### Fixed

@@ -7,6 +7,18 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+## [2.7.2] - 2026-11-15
+
+### Fixed
+- Mac: search indexed nothing ("0 photos and videos indexed", yet "Up to date") after agreeing to the model
+  download, after taking over the indexing from another device, or when search started before the library had
+  loaded: a restart of the search emptied its list of photos. It keeps the list now and takes the app's library
+  itself whenever its own is empty or out of date; photos another device already indexed aren't computed again.
+- Web: the search settings no longer name the site the model comes from.
+
+### Changed
+- Docs match 2.7 (passkeys on Android for private servers, notices under a bell, demo roles, release process).
+
 ## [2.7.1] - 2026-11-12
 
 (2.7.0 was tagged but never released: its release run stopped at a test. 2.7.1 is the same app.)

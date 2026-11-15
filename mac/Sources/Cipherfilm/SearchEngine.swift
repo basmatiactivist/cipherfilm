@@ -97,6 +97,7 @@ final class SearchEngine {
       // this Mac computes the index or only reads what another device computes (docs/SEARCH.md, "One device indexes")
       phase = .loading
       step = "Loading your search settings"
+      adoptLibrary()
       await refreshMe(vault.api)
       try await loadPeople()
       guard live(vault) else { return }
@@ -134,6 +135,8 @@ final class SearchEngine {
       var cache = IndexCache.read(vault, clip.family)
       try await pull(vault, &cache, pair: pair, faces: faces, all: true)
       guard live(vault) else { return }
+      // what was queued before the server's entries were read (the library arriving meanwhile) and has one by now
+      pending.removeAll { Models.good(tags[$0.id], faces: faces, clip: clip) }
       // MobileCLIP's entries left from before (docs/SEARCH.md "One model"): read by the Mac that indexes, while photos
       // are missing the new entry, for their faces (no face looked for twice; the people document's names stay)
       let old = ClipModel.legacyFamily
@@ -167,6 +170,8 @@ final class SearchEngine {
             if (try? await vault.api.json("DELETE", "/api/index?model=\(old)")) != nil { legacy = IndexCache(); IndexCache.delete(vault, old) }
           }
           try await Task.sleep(nanoseconds: 3_000_000_000)
+          // the library may have arrived or changed without being handed over (search turned on before it loaded)
+          if adoptLibrary() { if !indexes { try? await pull(vault, &cache, pair: pair, faces: faces, all: true) }; queueMissing(); continue }
           // another device may have turned explicit search on or off, an admin changed the permission, or the
           // person chose another device to index (or this one)
           idleRounds += 1
@@ -403,12 +408,25 @@ final class SearchEngine {
     done = min(total, max(0, total - pending.count - inFlight.count))
   }
 
+  /** Takes the app's current library when the one handed over is missing or out of date (another list or count), so a
+   *  run never stays on an empty list; returns whether it changed. */
+  @discardableResult private func adoptLibrary() -> Bool {
+    let now = AppModel.shared.items
+    guard AppModel.shared.vault === runVault, now.count != items.count || (now.first?.id != items.first?.id) else { return false }
+    items = now
+    return true
+  }
+
   /** Starts the run again from the server's entries, for another model: entries made with the other one are made
    *  again (by whichever device gets to them first). */
   func restart() {
     guard let v = runVault else { return }
     let faces = runFaces
+    // the library it was handed stays: stop(clear:) empties it, and the app hands it over again only when the library
+    // changes, so a restart (this Mac taking over the indexing, another model) would index nothing
+    let kept = items, keptSettings = settings
     stop(clear: true)
+    items = kept; settings = keptSettings
     runVault = v; runFaces = faces
     run = Task { await self.start(vault: v, faces: faces) }
   }

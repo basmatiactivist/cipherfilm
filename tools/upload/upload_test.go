@@ -355,3 +355,18 @@ func TestMalformedItemIdFromTheServerIsRefused(t *testing.T) {
 		delete(fake.items, id)
 	}
 }
+
+// The helpers the uploader starts (sips, qlmanage, ffmpeg) never inherit a password from the environment, also when
+// the password comes from a file.
+func TestPasswordLeavesTheEnvironmentWithAPasswordFile(t *testing.T) {
+	f := filepath.Join(t.TempDir(), "pw")
+	os.WriteFile(f, []byte("from-file\n"), 0o600)
+	t.Setenv("CIPHERFILM_PASSWORD", "from-env")
+	pw, err := readPassword(f)
+	if err != nil || pw != "from-file" {
+		t.Fatalf("got %q, %v", pw, err)
+	}
+	if _, set := os.LookupEnv("CIPHERFILM_PASSWORD"); set {
+		t.Fatal("CIPHERFILM_PASSWORD is still in the environment")
+	}
+}

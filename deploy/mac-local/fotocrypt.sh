@@ -33,6 +33,13 @@ case "$cmd" in
   restore)
     FILE="${2:-}"; [ -f "$FILE" ] || { echo "usage: ./fotocrypt.sh restore backups/fotocrypt-....tar --yes" >&2; exit 2; }
     [ "${3:-}" = "--yes" ] || { echo "Das ERSETZT alle Daten in ./data durch die Sicherung. Mit --yes bestaetigen." >&2; exit 2; }
+    # eine fruehere Wiederherstellung, deren after-restore nicht klappte: data/.previous haelt dann die echten Daten
+    if [ -e data/.restore-pending ]; then
+      echo "Eine fruehere Wiederherstellung ist nicht fertig (ihr after-restore hat nicht geklappt); data/.previous haelt die" >&2
+      echo "Daten, die sie ersetzt hat. Beenden mit: docker compose run --rm --no-deps -T app after-restore" >&2
+      echo "(oder data/.previous von Hand zurueckholen und data/.restore-pending loeschen), dann erneut versuchen." >&2
+      exit 1
+    fi
     # die Listen in einem eigenen, privaten Ordner (nicht unter festen Namen im gemeinsamen /tmp)
     L="$(mktemp -d)"; trap 'rm -rf "$L"' EXIT
     tar -tf "$FILE" > "$L/names"; tar -tvf "$FILE" > "$L/long"
@@ -41,6 +48,7 @@ case "$cmd" in
     if grep -v '^[-d]' "$L/long" >/dev/null || grep -E ' (->|link to) ' "$L/long" >/dev/null; then echo "Archiv enthaelt Links oder Geraete" >&2; exit 1; fi
     if grep -Ev '^(backup|blobs)(/|$)' "$L/names" >/dev/null; then echo "Archiv hat unerwartete Eintraege" >&2; exit 1; fi
     docker compose stop app >/dev/null
+    if [ -n "$(docker compose ps -q --status running app)" ]; then echo "Die App laeuft noch; ihre Daten bleiben unberuehrt" >&2; exit 1; fi
     # privat entpacken (wie die eigenen Ordner des Servers) und danach pruefen, was wirklich ausgepackt wurde: das
     # Archiv kann sich seit der Liste oben geaendert haben (z. B. auf einem geteilten oder externen Laufwerk)
     umask 077
@@ -49,12 +57,20 @@ case "$cmd" in
       || [ ! -f .restore-tmp/backup/app.db ] || [ ! -f .restore-tmp/backup/secret ]; then
       rm -rf .restore-tmp; docker compose start app >/dev/null; echo "Archiv hat sich beim Entpacken als unsicher erwiesen; nichts ersetzt" >&2; exit 1
     fi
-    mv data "data.vorher-$TS"; mkdir data data/.previous
+    [ ! -e "data.vorher-$TS" ] || { rm -rf .restore-tmp; docker compose start app >/dev/null; echo "data.vorher-$TS gibt es schon; nichts ersetzt" >&2; exit 1; }
+    # die neuen Daten daneben fertig machen. .restore-pending sagt, bis after-restore geklappt hat: die App startet nicht
+    # (sie wuerde die Sitzungen der Sicherung annehmen), und ein neuer Versuch laeuft nicht ueber data/.previous
+    rm -rf .restore-new && mkdir .restore-new .restore-new/.previous && touch .restore-new/.restore-pending
     # die ersetzte Datenbank dorthin, wo after-restore sie sucht: spaetere Abmeldungen, Passwoerter und gesperrte Konten bleiben
-    for f in app.db app.db-wal app.db-shm secret; do [ ! -e "data.vorher-$TS/$f" ] || cp -p "data.vorher-$TS/$f" data/.previous/; done
-    if [ -d .restore-tmp/blobs ]; then mv .restore-tmp/blobs data/blobs; fi; mv .restore-tmp/backup/app.db data/app.db; mv .restore-tmp/backup/secret data/secret; rm -rf .restore-tmp
+    for f in app.db app.db-wal app.db-shm secret; do [ ! -e "data/$f" ] || cp -p "data/$f" .restore-new/.previous/; done
+    if [ -d .restore-tmp/blobs ]; then mv .restore-tmp/blobs .restore-new/blobs; fi; mv .restore-tmp/backup/app.db .restore-new/app.db; mv .restore-tmp/backup/secret .restore-new/secret; rm -rf .restore-tmp
+    mv data "data.vorher-$TS"; mv .restore-new data
     # vor dem Start: alle Sitzungen beenden, Spaeteres uebernehmen und dem Papierkorb der Sicherung frische 30 Tage geben
-    docker compose run --rm --no-deps -T app after-restore
+    if ! docker compose run --rm --no-deps -T app after-restore; then
+      echo "after-restore hat nicht geklappt: die App bleibt aus. Die ersetzten Daten liegen in data/.previous und data.vorher-$TS." >&2
+      echo "Ursache beheben, dann: docker compose run --rm --no-deps -T app after-restore; danach ./fotocrypt.sh start" >&2
+      exit 1
+    fi
     rm -rf data/.previous
     docker compose up -d app; sleep 3
     docker compose exec -T app /app check

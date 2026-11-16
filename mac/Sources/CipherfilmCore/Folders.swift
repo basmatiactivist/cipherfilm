@@ -1,8 +1,8 @@
 // Archive and locked folder (docs/EDITING.md, "Archive and locked folder"): the Mac's copy of web/src/edit/folders.ts,
 // with tests on the same cases (FoldersTests). Which folder an item is in is written INSIDE its encrypted metadata
 // (`archived: true` or `locked: true`, through PUT /api/items/{id}/meta with the metadata version raised, as for every
-// other change), so the server never learns which items are archived or locked: it sees only that an item's metadata
-// changed.
+// other change), so the server is never told which items are archived or locked: it sees that an item's metadata
+// changed, and, when the locked folder or an item in it is opened, which items are fetched together.
 //
 //   library  the main grid, On this day, search, albums, people, map, duplicates
 //   archive  out of the main grid and On this day; still in search, albums, people, the map and favorites

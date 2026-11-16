@@ -98,7 +98,7 @@ import UniformTypeIdentifiers
     #expect(WebDAVAddress.check("http://localhost:8080/dav/") == .unencrypted(URL(string: "http://localhost:8080/dav/")!))
     #expect(WebDAVAddress.check("http://192.168.1.20/dav") == .unencrypted(URL(string: "http://192.168.1.20/dav/")!))
     #expect(WebDAVAddress.check("http://nas.local/dav") == .unencrypted(URL(string: "http://nas.local/dav/")!))
-    #expect(WebDAVAddress.check("http://100.97.1.2/dav") == .unencrypted(URL(string: "http://100.97.1.2/dav/")!))
+    #expect(WebDAVAddress.check("http://100.64.1.2/dav") == .unencrypted(URL(string: "http://100.64.1.2/dav/")!))
     for bad in ["http://nas.example.org/dav", "ftp://nas.local/x", "https://me:pw@nas.example.org/", "https://nas.example.org/?a=1", "", "nas.example.org", "http://8.8.8.8/"] {
       if case .invalid = WebDAVAddress.check(bad) {} else { Issue.record("accepted \(bad)") }
     }

@@ -40,6 +40,8 @@ final class Exporter {
   private var lockedIds: Set<String> = []
   /** ids of the items handed over last (the open library): a running pass writes only items still in it */
   private var openIds: Set<String> = []
+  /** the locked ids dropLocked last went through (the export list is read again only when they change) */
+  private var dropped: Set<String> = []
   private var again = false
   /** bumped by stop(): a pass or loop from before doesn't touch what a newer one holds */
   private var generation = 0
@@ -61,7 +63,8 @@ final class Exporter {
 
   /** Without "Keep up to date" no pass follows a change: copies of items moved to the locked folder go now anyway. */
   private func dropLocked() {
-    guard let vault, let path = settings.exportPath, !lockedIds.isEmpty else { return }
+    guard let vault, let path = settings.exportPath, !lockedIds.isEmpty, lockedIds != dropped else { return }
+    dropped = lockedIds
     let mf = file(vault.userId)
     guard var man = mf.read(), man.root == path, man.userId == vault.userId else { return }
     let root = URL(fileURLWithPath: path, isDirectory: true)
@@ -100,7 +103,7 @@ final class Exporter {
    *  over again (libraryChanged). */
   func forget() {
     stop()
-    vault = nil; items = []; albums = []; settings = AccountSettings(); lockedIds = []; openIds = []
+    vault = nil; items = []; albums = []; settings = AccountSettings(); lockedIds = []; openIds = []; dropped = []
     again = false
   }
 

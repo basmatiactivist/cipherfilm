@@ -56,3 +56,10 @@ describe("Android backup", () => {
     expect(app.expo.android.allowBackup).toBe(false);
   });
 });
+
+describe("the phone's location", () => {
+  it("is never asked for: the map library's location permissions are left out of the app", () => {
+    const app = JSON.parse(appJson);
+    expect(app.expo.android.blockedPermissions).toEqual(expect.arrayContaining(["android.permission.ACCESS_FINE_LOCATION", "android.permission.ACCESS_COARSE_LOCATION"]));
+  });
+});

@@ -398,7 +398,9 @@ final class AppModel {
     if let dir = Vault.cacheDir(of: userId) { try? FileManager.default.removeItem(at: dir) }
   }
 
-  /** Removes what accounts left on this Mac when its session is gone; true if there was something. */
+  /** Removes what accounts left on this Mac when its session is gone, as a running app does when its session ends
+   *  (wipe(ended: true)): the account folders, the encrypted caches, the inbox copies of dropped files and an
+   *  interrupted WebDAV import's temporary files; true if there was an account. */
   @discardableResult
   private func forgetAccounts() -> Bool {
     let root = Paths.support.appendingPathComponent("accounts", isDirectory: true)
@@ -407,6 +409,10 @@ final class AppModel {
       forget(account: id)
       try? FileManager.default.removeItem(at: root.appendingPathComponent(id, isDirectory: true)) // a name from this folder's own listing
     }
+    // caches of an account whose folder is already gone
+    for id in (try? FileManager.default.contentsOfDirectory(atPath: Vault.cacheRoot().path)) ?? [] where !ids.contains(id) { forget(account: id) }
+    Inbox.clear()
+    try? FileManager.default.removeItem(at: WebDAVImporter.temp)
     api?.clearCookies()
     return !ids.isEmpty
   }

@@ -43,9 +43,10 @@ export function tidyOutbox() {
   if (!lastShare || Date.now() - lastShare > KEEP_FOR) clearOutbox();
 }
 
-/** A file name that is safe to hand to another app: no path separators or control characters, never empty. */
+/** A file name that is safe to hand to another app: no path separators, control characters or text-direction
+ *  marks (which could show another extension than the real one), never empty. */
 export function safeName(name: string | undefined, id: string, used: Set<string>): string {
-  let n = (name ?? "").replace(/[\u0000-\u001f\u007f-\u009f/\\:*?"<>|]/g, "_").replace(/^\.+/, "").trim().slice(0, 120) || `photo-${id.slice(0, 8)}`;
+  let n = (name ?? "").replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069/\\:*?"<>|]/g, "_").replace(/^\.+/, "").trim().slice(0, 120) || `photo-${id.slice(0, 8)}`;
   const dot = n.lastIndexOf(".");
   const [base, ext] = dot > 0 ? [n.slice(0, dot), n.slice(dot)] : [n, ""];
   for (let i = 2; used.has(n.toLowerCase()); i++) n = `${base} (${i})${ext}`;

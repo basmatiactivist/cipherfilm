@@ -187,3 +187,15 @@ describe("share", () => {
     expect(disk.size).toBe(0);
   });
 });
+
+describe("file names handed to other apps", () => {
+  it("carry no path parts, control characters or text-direction marks", async () => {
+    const { safeName } = await import("./outbox");
+    const used = new Set<string>();
+    // "photo‮gpj.exe" would show as "photoexe.jpg" in the receiving app
+    expect(safeName("photo‮gpj.exe", "abcdef0123", used)).toBe("photo_gpj.exe");
+    expect(safeName("a⁦b⁩‏.jpg", "abcdef0123", used)).toBe("a_b__.jpg");
+    expect(safeName("../x/y.jpg", "abcdef0123", used)).toBe("_x_y.jpg");
+    expect(safeName("", "abcdef0123", used)).toBe("photo-abcdef01");
+  });
+});

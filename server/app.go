@@ -29,9 +29,12 @@ const (
 	// as if from another device, so it deletes what it keeps.
 	sessionAbs  = 365 * 24 * time.Hour
 	sessionIdle = 30 * 24 * time.Hour
-	sessionsMax = 50 // live sessions per account; a new sign-in beyond it ends the one idle longest
+	sessionsMax = 50 // live sessions per account; a new sign-in beyond it ends another (startSession)
 	inviteTTL   = 7 * 24 * time.Hour
 	ticketTTL   = 10 * time.Minute
+
+	// a session younger than this is the first to go when the account has too many: see startSession
+	sessionSettle = 24 * time.Hour
 )
 
 type App struct {
@@ -451,10 +454,19 @@ func (a *App) startSession(w http.ResponseWriter, r *http.Request, userID, authH
 	if rowsAffected(res, nil) != 1 {
 		return nil, errCredentialsChanged
 	}
-	// at most sessionsMax per account (each is a row, and a device-list entry, for up to a year): the one idle longest
-	// goes, never this new one. That device is asked to sign in again; nothing is wiped.
-	if n, _ := a.deleteSessions(`user_id=? AND id_hash NOT IN (SELECT id_hash FROM sessions WHERE user_id=?
-		ORDER BY last_seen DESC, created_at DESC LIMIT ?)`, userID, userID, sessionsMax); n > 0 {
+	// at most sessionsMax per account (each is a row, and a device-list entry, for up to a year), never this new one.
+	// Which go first: those unused for longer than the account allows (signed out on purpose, as when they come back),
+	// then the ones that signed in within sessionSettle, then the one idle longest. So a burst of sign-ins (someone with
+	// the password) pushes out its own sessions, not the devices that are shown the notices about it. A device pushed
+	// out otherwise is asked to sign in again; nothing is wiped.
+	var idle int
+	a.db.QueryRow(`SELECT device_idle_days FROM users WHERE id=?`, userID).Scan(&idle)
+	limit := idleLimit(idle)
+	over := `user_id=? AND id_hash NOT IN (SELECT id_hash FROM sessions WHERE user_id=?
+		ORDER BY id_hash=? DESC, ?-last_seen > ? ASC, created_at > ? ASC, last_seen DESC, created_at DESC LIMIT ?)`
+	args := []any{userID, userID, sha256hex(tok), now.Unix(), limit, now.Add(-sessionSettle).Unix(), sessionsMax}
+	a.remember(over+` AND ?-last_seen > ?`, append(args, now.Unix(), limit)...)
+	if n, _ := a.deleteSessions(over, args...); n > 0 {
 		a.live.recheck(userID)
 	}
 	// the browser's previous session, if it had one, is replaced by this one: end it rather than leave it valid

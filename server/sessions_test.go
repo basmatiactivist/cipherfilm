@@ -348,3 +348,48 @@ func TestLiveSessionsPerAccountAreCapped(t *testing.T) {
 		t.Fatalf("the newest: %d", code)
 	}
 }
+
+// A burst of sign-ins beyond sessionsMax (someone with the password) pushes out its own new sessions, not the devices
+// that were signed in before it, so those are still shown the sign-ins. A device already unused for longer than the
+// account allows goes first, told it was signed out on purpose.
+func TestSignInBurstDoesNotPushOutTheDevicesThatAreTold(t *testing.T) {
+	e := newEnv(t)
+	clk := e.pinClock()
+	laptop, ab := e.setupAdmin("admin@x.org")
+	phone := e.login("admin@x.org", ab)
+	drawer := e.login("admin@x.org", ab)
+	if code, _ := laptop.do("PUT", "/api/me/device-idle", map[string]int{"days": 7}, true); code != 200 {
+		t.Fatal(code)
+	}
+	use := func() {
+		for _, c := range []*client{laptop, phone} {
+			if code, _ := c.do("GET", "/api/me", nil, false); code != 200 {
+				t.Fatal(code)
+			}
+		}
+	}
+	clk.tick(6 * 24 * time.Hour)
+	use()
+	clk.tick(2 * 24 * time.Hour) // the drawer's device: 8 days unused now
+	use()
+	for range sessionsMax + 3 {
+		clk.tick(time.Second)
+		e.login("admin@x.org", ab)
+	}
+	for name, c := range map[string]*client{"laptop": laptop, "phone": phone} {
+		if code, _ := c.do("GET", "/api/me", nil, false); code != 200 {
+			t.Fatalf("%s was pushed out by the burst: %d", name, code)
+		}
+		if k := shownKinds(t, c); len(k) == 0 || k[0] != noticeSignIn {
+			t.Fatalf("%s is shown %v", name, k)
+		}
+	}
+	if !told(t, e, drawer) {
+		t.Fatal("the device unused for too long was not told it was signed out")
+	}
+	var n int
+	e.app.db.QueryRow(`SELECT COUNT(*) FROM sessions`).Scan(&n)
+	if n != sessionsMax {
+		t.Fatalf("%d live sessions, want %d", n, sessionsMax)
+	}
+}

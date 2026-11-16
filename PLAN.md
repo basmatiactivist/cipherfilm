@@ -1,6 +1,6 @@
 # PLAN: private end-to-end encrypted photo gallery
 
-Status: **historical planning document** from before the build (milestones M1 to M8 are done; the current release is listed in CHANGELOG.md). The implemented system is described in the README, docs/SELF-HOSTING.md, docs/CRYPTO.md and docs/THREAT_MODEL.md and differs in details, for example in the Android and Mac apps, on-device search, deployment behind any HTTPS reverse proxy, and sessions that last 30 days from their last use.
+Status: **historical planning document** from before the build (milestones M1 to M8 are done; the current release is listed in CHANGELOG.md). The implemented system is described in the README, docs/SELF-HOSTING.md, docs/CRYPTO.md and docs/THREAT_MODEL.md and differs in details, for example in the Android and Mac apps, on-device search, deployment behind any HTTPS reverse proxy, and sessions that end after 30 days without use (or 7 or 14, as each account chooses).
 Companion docs: [docs/CRYPTO.md](docs/CRYPTO.md), [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
 
 ## 1. Stack and reasons

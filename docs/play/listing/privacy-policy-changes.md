@@ -62,7 +62,8 @@ address is declared as collected; photos, videos and location are exempt because
   <li>whether you are an administrator, when your account was created and when you last signed in,</li>
   <li>how many photos and videos you have, roughly how big they are, and when they were uploaded or deleted,</li>
   <li>how many albums you have and which items are in which, and which items are favourites,</li>
-  <li>a short label for each signed-in device (the phone's maker and model, followed by "(Android app)"; never the name you gave the phone), so you can sign one out,</li>
+  <li>a short label for each signed-in device (the phone's maker and model, followed by "(Android app)"; never the name you gave the phone), so you can sign one out, and when it last finished an upload (only that time, not what it uploaded),</li>
+  <li>how long a device may go unused before it is signed out (7, 14 or 30 days),</li>
   <li>if you turn on two-step sign-in: that it is on, the authenticator app's secret (stored encrypted), your passkeys' public keys and names, and the unused recovery codes as keyed hashes,</li>
   <li>security notices for your devices (new sign-ins with the device label and time, changes to two-step sign-in), kept at most 90 days,</li>
   <li>your storage use and limit.</li>
@@ -73,7 +74,7 @@ address is declared as collected; photos, videos and location are exempt because
 <p>No ads, no analytics, no tracking, no crash reporting, no advertising ID, and no data shared with or sold to anyone. The apps contain no third-party SDK that sends data elsewhere.</p>
 
 <h3>How long data is kept, and how to delete it</h3>
-<p>Your data stays on your server until you delete it. Deleted items go to the trash and are permanently removed after 30 days, or at once when you empty the trash. You can delete your account with all its photos, videos, albums and search data at any time: in the Android app under Account → Delete account, in the Mac app under Settings → General, in the web app, or by asking your server's administrator. Copies in the administrator's server backups are kept, encrypted, until the administrator's backup retention removes them. Details: <a href="/delete-account">Delete your Cipherfilm account</a>.</p>
+<p>Your data stays on your server until you delete it. Deleted items go to the trash and are permanently removed after 30 days, or at once when you empty the trash. You can delete your account with all its photos, videos, albums and search data at any time: in the Android app under Account → Delete account, in the Mac app under Settings → Account → Delete Account, in the web app, or by asking your server's administrator. Copies in the administrator's server backups are kept, encrypted, until the administrator's backup retention removes them. Details: <a href="/delete-account">Delete your Cipherfilm account</a>.</p>
 <p>Signing out in the app deletes what the app keeps for your account on that phone. Uninstalling the app removes everything it stored on the phone.</p>
 
 <h3>Children</h3>
@@ -117,7 +118,8 @@ Addition to **"Your rights"** (EN):
   <li>ob Sie Administrator sind, wann Ihr Konto angelegt wurde und wann Sie sich zuletzt angemeldet haben,</li>
   <li>wie viele Fotos und Videos Sie haben, ungefähr wie groß sie sind und wann sie hochgeladen oder gelöscht wurden,</li>
   <li>wie viele Alben Sie haben, was in welchem liegt und welche Einträge Favoriten sind,</li>
-  <li>eine kurze Bezeichnung für jedes angemeldete Gerät (Hersteller und Modell des Handys, gefolgt von „(Android app)“; nie der Name, den Sie dem Handy gegeben haben), damit Sie es abmelden können,</li>
+  <li>eine kurze Bezeichnung für jedes angemeldete Gerät (Hersteller und Modell des Handys, gefolgt von „(Android app)“; nie der Name, den Sie dem Handy gegeben haben), damit Sie es abmelden können, und wann es zuletzt einen Upload abgeschlossen hat (nur diese Zeit, nicht was hochgeladen wurde),</li>
+  <li>wie lange ein Gerät unbenutzt bleiben darf, bevor es abgemeldet wird (7, 14 oder 30 Tage),</li>
   <li>wenn Sie die Anmeldung in zwei Schritten einschalten: dass sie an ist, das Geheimnis der Authenticator-App (verschlüsselt gespeichert), die öffentlichen Schlüssel und Namen Ihrer Passkeys und die unbenutzten Wiederherstellungscodes als verschlüsselte Prüfwerte,</li>
   <li>Sicherheitsmitteilungen für Ihre Geräte (neue Anmeldungen mit Gerätebezeichnung und Zeit, Änderungen an der Anmeldung in zwei Schritten), höchstens 90 Tage lang,</li>
   <li>Ihren belegten Speicher und Ihr Limit.</li>
@@ -128,7 +130,7 @@ Addition to **"Your rights"** (EN):
 <p>Keine Werbung, keine Statistik, kein Tracking, keine Absturzberichte, keine Werbe-ID, und keine Daten werden an andere weitergegeben oder verkauft. Die Apps enthalten kein Drittanbieter-SDK, das Daten anderswohin schickt.</p>
 
 <h3>Wie lange Daten bleiben und wie Sie sie löschen</h3>
-<p>Ihre Daten bleiben auf Ihrem Server, bis Sie sie löschen. Gelöschte Einträge kommen in den Papierkorb und werden nach 30 Tagen endgültig entfernt, oder sofort, wenn Sie den Papierkorb leeren. Ihr Konto mit allen Fotos, Videos, Alben und Suchdaten können Sie jederzeit löschen: in der Android-App unter Account → Delete account, in der Mac-App unter Settings → General, in der Web-App oder über den Administrator Ihres Servers. Kopien in den Server-Backups des Administrators bleiben verschlüsselt erhalten, bis seine Aufbewahrungsfrist sie entfernt. Einzelheiten: <a href="/de/konto-loeschen">Cipherfilm-Konto löschen</a>.</p>
+<p>Ihre Daten bleiben auf Ihrem Server, bis Sie sie löschen. Gelöschte Einträge kommen in den Papierkorb und werden nach 30 Tagen endgültig entfernt, oder sofort, wenn Sie den Papierkorb leeren. Ihr Konto mit allen Fotos, Videos, Alben und Suchdaten können Sie jederzeit löschen: in der Android-App unter Account → Delete account, in der Mac-App unter Settings → Account → Delete Account, in der Web-App oder über den Administrator Ihres Servers. Kopien in den Server-Backups des Administrators bleiben verschlüsselt erhalten, bis seine Aufbewahrungsfrist sie entfernt. Einzelheiten: <a href="/de/konto-loeschen">Cipherfilm-Konto löschen</a>.</p>
 <p>Abmelden in der App löscht, was die App für Ihr Konto auf diesem Handy speichert. Deinstallieren entfernt alles, was sie auf dem Handy gespeichert hat.</p>
 
 <h3>Kinder</h3>

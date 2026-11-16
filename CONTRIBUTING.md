@@ -5,7 +5,7 @@ Issues and pull requests are welcome. Please keep changes small and focused.
 ## Run the tests
 
 ```bash
-make test         # design tokens check, Go server tests, web build and unit tests, decrypt tool and uploader tests (needs Docker)
+make test         # design tokens check, Go server tests, web build and unit tests, decrypt tool and uploader tests (needs Docker), restore script checks (no Docker)
 make e2e          # full browser suite in a throwaway Docker stack, then the plaintext leak check (see e2e/README.md)
 make migration-test   # after make e2e: backup, restore into a new stack, sign in, decrypt offline (docs/MIGRATION.md)
 ```
@@ -14,8 +14,9 @@ The Android app (it shares `web/src/crypto`, so web's packages come first):
 `(cd web && npm ci) && cd mobile && npm ci && npx tsc --noEmit && npm test`; the APK is built in CI (`android.yml`). The
 Mac app: `mac/scripts/test.sh` (mac/README.md).
 
-CI runs all of these on every push and pull request, including the browser suite; the Mac app is built and tested
-when `mac/` changes. `master` changes only through pull requests that pass these checks. Separately, a weekly canary
+CI runs all of these on every pull request and every push to `master`, including the browser suite (a change to
+Markdown files and `docs/` alone skips the builds and tests; a push to another branch runs only the identity check,
+the pull request the rest); the Mac app is built and tested on a Mac before merging (GitHub's macOS runners were too often unavailable; the Mac workflow runs for releases and by hand, docs/RELEASING.md). `master` changes only through pull requests that pass these checks. Separately, a weekly canary
 (`.github/workflows/canary.yml`) tests the latest release against the newest Go, Node, Playwright, Android and Xcode
 and opens an issue when something breaks ([docs/RELEASING.md](docs/RELEASING.md#weekly-canary)).
 

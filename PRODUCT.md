@@ -24,11 +24,11 @@ Private by construction rather than by policy: the server never holds a key that
 
 ## Operating Context
 
-Runs behind any HTTPS reverse proxy the operator picks: a public site, or private over Tailscale Serve with no open ports (docs/SELF-HOSTING.md). Invite-only: the admin creates an invite link and hands it over manually. No email is ever sent. Originals (JPEG, PNG, WebP, HEIC, MP4/MOV) are stored unchanged. About 100 GB expected. UI language: English.
+Runs behind any HTTPS reverse proxy the operator picks: a public site, or private over Tailscale Serve with no open ports (docs/SELF-HOSTING.md). Invite-only: the admin creates an invite link and hands it over manually. No email is ever sent. Originals (JPEG, PNG, WebP, HEIC, MP4/MOV) are stored unchanged. About 100 GB expected. UI language: English (the Android app also German).
 
 ## Capabilities and Constraints
 
-Setup and auth flows: one-time first-admin setup (token printed in container logs), invite acceptance, login, recovery with the recovery key, password change. Recovery key is shown once with copy, download and print and an "I've saved it" confirmation. Built since: chunked upload, timeline by capture date, albums, favorites, lightbox, video, ZIP download, trash (30 days), admin user management, devices, on-device search and people (computed by the Android and Mac apps), account self-deletion.
+Setup and auth flows: one-time first-admin setup (token printed in container logs), invite acceptance, login, recovery with the recovery key, password change. Recovery key is shown once with copy, download and print and an "I've saved it" confirmation. Built since: chunked upload, timeline by capture date, albums, favorites, lightbox, video, ZIP download, trash (30 days), admin user management, devices, on-device search and people (computed by the Android and Mac apps), account self-deletion, two-step sign-in with passkeys, a map, On this day, trips and year recaps, turning and cropping, archive and locked folder, and a storage and backup overview.
 Constraints: crypto APIs need a secure context; no inline scripts or third-party origins; no custom crypto; the UI must say plainly that lost password plus lost recovery key means lost data.
 
 ## Brand Commitments

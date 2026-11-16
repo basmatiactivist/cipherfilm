@@ -1,6 +1,6 @@
 # The models Cipherfilm uses, and where they come from
 
-Cipherfilm's search ("beach", "dog") and its people view run open machine-learning models **on your devices**: the
+Cipherfilm's search ("beach", "dog", text in photos) and its people view run open machine-learning models **on your devices**: the
 Android app, the Mac app and, for turning search words into a vector, the web app. No photo, face or search word is
 sent to anyone for this; the server only stores the results, encrypted (docs/SEARCH.md, docs/CRYPTO.md).
 
@@ -65,6 +65,8 @@ MobileCLIP's files are not passed through any more (below), so such an app can't
 | `b9ce24b91a8c62ef8d40ea786051709c93140104cbf2b6b4a2cc270df3838f9c` | `clip-b32-vision.onnx` |
 | `48c25be37b352398f2533c9426dab6f9340535e14e46f884cc894236a5060722` | `clip-b32-text.onnx` |
 | `6d9109cc838977f3ca94a379eec36aecc7c807e1785cd729660ca2fc0171fb35` | `clip-b32-tokenizer.json` |
+| `8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4` | `yunet-2023mar.onnx` |
+| `0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79` | `sface-2021dec.onnx` |
 | `ee40e80071ba3a320d4efda75f3e22047a7d049e9bf7bcaaf9daea23fc21b935` | `ocr-det-v3.onnx` |
 | `614ffc2d6d3902d360fad7f1b0dd455ee45e877069d14c4e51a99dc4ef144409` | `ocr-rec-latin-v5.onnx` |
 | `3c0a8a79b612653c25f765271714f71281e4e955962c153e272b7b8c1d2b13ff` | `ocr-latin-dict.txt` |

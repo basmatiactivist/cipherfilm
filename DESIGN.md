@@ -258,7 +258,7 @@ Spacing rhythm is 4/8/12/16/20/24 with 44px as the minimum touch target.
 
 Responsive (max 860px): the sidebar becomes a fixed bottom tab bar (62px plus safe area) with stacked icon and 0.75rem label; storage card, sidebar head and separators hide; top bar brand name and Upload label hide; drop tray and scrubber hide; lightbox info panel becomes an overlay. At 600px, button labels collapse to icons and admin rows stack.
 
-Admin is a separate area: the same sidebar slot holds its own navigation (Users, Defaults, Server, Activity).
+Admin is a separate area: the same sidebar slot holds its own navigation (Users, Storage, Defaults, Server, Activity).
 
 ## Elevation & Depth
 
@@ -295,10 +295,10 @@ Small, quiet corners: 6px controls (buttons, inputs, nav items, menu items), 8px
 - Card (auth): 8px radius, 1px sand border, card white, 28px/24px padding, serif title. Panel: 20px padding, max 720px. Empty state: dashed strong-sand border on deep paper with a 64px teal-wash icon disc.
 
 ### Navigation
-- **Sidebar item:** 44px, 6px radius, muted semibold text and 22px icon; hover deep paper; current page uses Teal Wash fill with teal-ink text. Items: Timeline, Favorites, Albums, People (only when the Android or Mac app has indexed faces), Map (unless the server turned the map off), Trash. Storage card at the bottom: bordered 8px card, lock icon with "Private to you", and a 5px teal meter.
-- **Top bar:** brand (mark plus serif name), search (names, dates, cameras, albums, people, and what is in a photo once the Android or Mac app has indexed it), Upload, the notices bell (security notices, with a count of unread ones; not for the public demo), avatar button (40px circle, teal ring on hover or open) opening a 280px menu with Account, Duplicates and similar, Admin (admins), Lock, Keyboard shortcuts, Report a problem, Sign out.
+- **Sidebar item:** 44px, 6px radius, muted semibold text and 22px icon; hover deep paper; current page uses Teal Wash fill with teal-ink text. Items: Timeline, Favorites, Albums, People (only when the Android or Mac app has indexed faces), Map (unless the server turned the map off), Archive, Locked folder, Trash. Storage card at the bottom: bordered 8px card, lock icon with "Private to you", and a 5px teal meter.
+- **Top bar:** brand (mark plus serif name), search (names, dates, places, cameras, albums, people, the text in photos and what is in a photo once the Android or Mac app has indexed it; filters show as removable chips above the results), Upload, the notices bell (security notices, with a count of unread ones; not for the public demo), avatar button (40px circle, teal ring on hover or open) opening a 280px menu with Account, Duplicates and similar, Admin (admins), Lock, Keyboard shortcuts, Report a problem, Sign out.
 - **Phones:** the sidebar becomes a bottom tab bar with the same current-state treatment.
-- **Admin:** own sidebar items Users, Defaults, Server, Activity.
+- **Admin:** own sidebar items Users, Storage, Defaults, Server, Activity.
 
 ### Timeline Tiles
 - 3px radius, deep paper placeholder, 12% ink hover veil. Selected tile gets a 4px inset teal outline and a 26px check dot (teal when on). Video tiles carry a 26px dark disc badge (lower left); favorites a filled heart in the same disc (lower right). Unverifiable items show a brick-wash "Couldn't be verified" tile and are never rendered.

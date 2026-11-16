@@ -52,7 +52,9 @@ The item id inside the sealed plaintext binds the key to its item, as the AD doe
 
 Index entries (what the phone found in a photo) use the sealed format too, with the item id inside:
 `0x02 ‖ crypto_box_seal(item id (16 bytes) ‖ sodium_pad(JSON, 512), account public key)`. Readers open them with the
-account's private key and reject an entry whose id differs from the item's. The people list (names) is
+account's private key and reject an entry whose id differs from the item's. Text read in a photo is inside the same
+JSON (`t`, padded with spaces to exactly 1022 bytes, with `o` naming the text model), so how much text a photo has
+doesn't change the entry's size. The people list (names) is
 `seal(pad(JSON, 1024), kdf(master, "PEOPLEST", 0), "blob/people", user id)`. The Android app keeps the opened index
 between unlocks in its cache, encrypted with AEAD under `KDF(master, "IDXCOPY1", 1)` with
 `ad = "cipherfilm search index copy v1|" ‖ user id ‖ "|" ‖ model family`, and deletes it at sign-out. Details:
@@ -84,13 +86,15 @@ ad for every chunk = "seg" || itemId || u32(i) || u32(segment_count) || u64(tota
   The archive and the locked folder (docs/EDITING.md) add the optional `archived: true` and `locked: true`; only
   `true` counts, anything else is dropped after decrypting. Like an edit, a move writes the next version.
   **Metadata version** `mv` (optional integer, `web/src/crypto/metaVersion.ts`): every change of the metadata (an edit,
-  a new date or place, a place added afterwards) writes it one higher than the metadata it changes; an upload writes
+  a new date or place, a place added afterwards, a move to or from the archive or the locked folder) writes it one
+  higher than the metadata it changes; an upload writes
   none (version 0). The `ad` binds the metadata to its item but not to a point in time, so a server could hand out an
   older sealed copy it kept. The web and Android apps remember the highest version they have seen per item (item ids
   and numbers only, at most 10,000 items, in the browser's storage or the app's private files, deleted at sign-out) and
   never show a lower one: the newer metadata decrypted since the last lock stays; without it (after a lock or a
   restart) the item is marked stale and is never downloaded, shared or saved as the original by default (a copy with
-  no place). Older clients and the Mac keep or ignore the field; the Mac and `cipherfilm-decrypt` don't check it.
+  no place). Older clients keep or ignore the field. The Mac raises it when it moves an item to or from a folder (its
+  only metadata change, `Folders.swift` `nextVersion`) but doesn't check it; `cipherfilm-decrypt` ignores it.
 
 Failure policy: any AEAD failure aborts decryption for that object, nothing is rendered, and the UI shows a "could not be verified" placeholder.
 

@@ -9,12 +9,17 @@ What the app does and how export, watched folders and search behave: [docs/MAC.m
   uploads (`Library.swift`, `Upload.swift`), the WebDAV import's client, bookkeeping and ranged video reads
   (`WebDAV.swift`, `WebDAVImport.swift`, `RangedAsset.swift`), and search: ONNX Runtime (`ORT.swift`), the vision pipeline ported from
   Android's `Vision.kt` (`Vision.swift`), the CLIP tokenizer (`Tokenizer.swift`), the in-memory index and face
-  grouping (`SearchIndex.swift`), models, index entries, the people document and the query words (`Search.swift`).
-- `Sources/Cipherfilm`: the SwiftUI app (window, menu bar, Settings), the background work (`SearchEngine.swift`,
-  `Exporter.swift`, `Watcher.swift`, `WebDAVImporter.swift`), video streaming (`VideoLoader.swift`) and a debug-only test driver
-  (`DebugDriver.swift`, compiled out of release builds).
+  grouping (`SearchIndex.swift`), models, index entries, the people document and the query words (`Search.swift`),
+  the query parser ported from the web (`QueryParser.swift`), text in photos (`Ocr.swift`), the close-match cut
+  (`Matches.swift`), On this day, trips and year recaps (`Memories.swift`, `Trips.swift`, `Recap.swift`), the
+  archive and locked folder (`Folders.swift`), and administration and the storage overview (`Admin.swift`).
+- `Sources/Cipherfilm`: the SwiftUI app (window, menu bar, Settings and its panes), the background work (`SearchEngine.swift`,
+  `Exporter.swift`, `Watcher.swift`, `WebDAVImporter.swift`), the locked folder (`LockedFolder.swift`), video streaming
+  (`VideoLoader.swift`) and a debug-only test driver (`DebugDriver.swift`, compiled out of release builds).
 - `Tests/CipherfilmCoreTests`: the web client's test vectors, segment round trips, sealed formats, tokenizer ids,
-  the index, the models, and a parity test against Android's entries on the test server. `scripts/webdav-e2e.sh`
+  the index, the models, the query parser's shared cases, and a parity test against Android's entries on the test
+  server. `Tests/CipherfilmAppTests`: what a lock and sign-out forget, the locked folder's split, the WebDAV import's
+  state. `scripts/webdav-e2e.sh`
   runs the WebDAV import end to end against a throwaway server and reports disk, memory and throughput.
 
 Dependencies, newest stable versions, pinned: libsodium 1.0.22 (swift-sodium 0.11.0) and ONNX Runtime 1.31.1 (the
@@ -37,7 +42,8 @@ With only the Command Line Tools (no Xcode): `./scripts/bundle.sh` builds `build
 signs it ad hoc. The macOS 27 SDK's SwiftUI needs a macro plugin that only Xcode has, so the script builds against the
 newest macOS 26 SDK of the Command Line Tools there; the app runs on macOS 27 either way.
 
-Tests: `./scripts/test.sh` (set `CF_MODELS=<folder with the five model files>` for the model tests).
+Tests: `./scripts/test.sh` (set `CF_MODELS=<folder with the five model files>` for the model tests, and
+`CF_OCR_MODELS=<folder with the three text-in-photos files>` for the text test, or put them in the same folder).
 
 `scripts/make-icon.swift` makes `AppIcon.icns` from `design/icon/icon-1024.png`.
 
@@ -66,7 +72,9 @@ the end of a run, keeping only `upload/`; `CF_KEEP=1` keeps the last run's files
 With `CF_TEST_EXPLICIT=1` it also allows the test account explicit search (it is the test server's admin), turns it
 on (search unfiltered, nothing indexed again), searches, and turns it off again (explicit words find nothing).
 With `CF_LIVE_EXPECT=N` it prints `CFTEST LIVE READY` after the library loads and waits for N photos that another
-device (for example `cipherfilm-upload`) uploads then to appear without a refresh.
+device (for example `cipherfilm-upload`) uploads then to appear without a refresh. `CF_SIGNIN_ONLY=1` only signs in
+and leaves the app open for trying it by hand; with `CF_SETTINGS_SHOTS=1` it first writes a picture of every Settings
+pane into `CF_SNAPSHOTS`. `CF_MAP=1` runs only the map's checks.
 
 LAION ViT-B/32 vectors against the Python reference (`pip install onnxruntime==1.31.1 numpy pillow`):
 

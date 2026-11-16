@@ -126,8 +126,9 @@ actions are under More in the selection bar and ⋮ in the viewer; the web has t
 in the right-click menu; the Mac in the context and Photo menus.
 
 **Older apps.** App versions from before the folders ignore the field and show archived and locked items in the
-library as usual. Update every app before relying on the locked folder. The public demo can't move items (the server
-refuses metadata changes there).
+library as usual. Update every app before relying on the locked folder. `tools/decrypt` doesn't know the folders
+either and exports archived and locked items like any other. The public demo can't move items (the server refuses
+metadata changes there).
 
 ## Limits
 

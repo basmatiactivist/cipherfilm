@@ -18,9 +18,11 @@ repository is a usable credential.
 | `carol@example.org` | JPEG, HEIC and a video placeholder |
 | `dave@example.org` | Photos, albums and 400 deliberately unreadable test items |
 | `erin@example.org` | A playable WebM, a broken video, long and emoji file names |
+| `fern@example.org` | Three photos, one in an album, archived and unarchived, moved into the locked folder and out again (`zarchive.spec.ts`) |
 | `frank@example.org` | One photo and a rotated recovery key |
 | `grace@example.org` | Two-step sign-in, turned on and then off again by the admin (`zzzzzzzztwostep.spec.ts`) |
 | `heidi@example.org` | Two-step sign-in with a passkey (Chromium's virtual authenticator), turned off again by removing the last passkey (`zzzzzzzzzpasskey.spec.ts`) |
+| `ivy@example.org` | Twelve photos with dates and places, six days at home and three in Rome; the suggested trip saved as an album, and the 2024 recap (`zgtrips.spec.ts`) |
 | `liv@example.org` | Photos uploaded, trashed and restored on one of two signed-in sessions, for live updates (`zlive.spec.ts`, `zltabs.spec.ts`) |
 | `demo@example.org` | The read-only public demo login (`DEMO_ACCOUNTS` in `compose.e2e.yaml`); an empty library |
 

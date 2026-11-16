@@ -5,7 +5,8 @@ encrypted, so the operator could never see what strangers store. That is why the
 (`DEMO_ACCOUNTS`, [docs/SELF-HOSTING.md](../../docs/SELF-HOSTING.md#settings)): visitors can sign in, browse, open
 originals and videos and search, but uploads, edits, albums and account changes get a 403 ("This is the public demo:
 changes are turned off."). The apps say "Public demo · read-only · resets every hour" and hide what would fail. Other
-accounts on the same server (your admin, app-store reviewers) work as usual.
+accounts on the same server (your admin, app-store reviewers) work as usual. The storage and backup overview never
+lists the demo account's devices to an administrator, and each visitor sees only their own (`server/storage.go`).
 
 The project's demo has two reviewer accounts besides `demo@`: `reviewer@`, an ordinary user, and `reviewer2@`, an
 administrator, so a reviewer can see the admin area. That is safe for the public login: the server refuses every

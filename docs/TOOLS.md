@@ -56,7 +56,8 @@ If a folder holds both a live database and an older snapshot in `backup/`, the n
 
 - It asks for your password (nothing is shown). Lost it? Add `--recovery` and type your 24-word recovery key.
 - Originals come back unchanged under `Library/<year>/<year-month>/`, deleted items under `Trash/`, and your albums as
-  folders of links under `Albums/`. File dates are set to the capture date.
+  folders of links under `Albums/`. File dates are set to the capture date. Archived items and the locked folder's
+  come back under `Library/` with the rest.
 - `--verify` checks that everything decrypts without writing any files. Damaged or altered files are reported by name,
   and everything else is still restored.
 - It reads the data but never changes it. The database is copied to a temporary folder first. If the app is running and

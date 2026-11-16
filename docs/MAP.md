@@ -66,9 +66,12 @@ map images, as locking and signing out do.
 What a device stores is the list of map servers the person agreed to. If the Cipherfilm server later names other
 ones (`MAP_STYLE`), every device asks again before loading anything from them.
 
-Search by place adds the photos of a place to the other results, ahead of them; a word narrows a longer search to a
-place only when it is that place's whole name ("zurich beach"), so common words ("see", "berg") still search for what
-is in the photos.
+In search, the whole name of a town, region or country where photos in the library were taken (one to three words:
+"zurich", "new york") is a filter, shown as a chip that can be removed ("zurich beach" is the beach photos taken in
+Zurich; docs/SEARCH.md "Combined search"). Any other word is searched for as usual, so common words ("see", "berg")
+still search for what is in the photos.
+
+Trips and year recaps are named from the same place names (docs/MEMORIES.md).
 
 ## Settings
 

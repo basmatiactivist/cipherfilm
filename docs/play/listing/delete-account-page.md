@@ -45,7 +45,7 @@ You don't need the Android app installed for this.
 
 ## Delete it in the Mac app
 
-Open **Settings** (⌘,) → **General** → **Delete Account…**, enter your password and confirm.
+Open **Settings** (⌘,) → **Account** → **Delete Account…**, enter your password and confirm.
 
 ## If you can't sign in any more
 
@@ -120,7 +120,7 @@ Dafür muss die Android-App nicht installiert sein.
 
 ## In der Mac-App löschen
 
-Öffnen Sie **Settings** (⌘,) → **General** → **Delete Account…**, geben Sie Ihr Passwort ein und bestätigen Sie.
+Öffnen Sie **Settings** (⌘,) → **Account** → **Delete Account…**, geben Sie Ihr Passwort ein und bestätigen Sie.
 
 ## Wenn Sie sich nicht mehr anmelden können
 

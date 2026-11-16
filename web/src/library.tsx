@@ -13,7 +13,8 @@ import { chipLabel, narrow as narrowBy, textHits, type Facts } from "./search/co
 import { contentSearch, textOf, vectorCount } from "./search/content";
 import { agreeModels, askedLater, askLater, NeedsConsent, useModelConsent } from "./search/consent";
 import { ModelConsent, ModelProgress } from "./search/consentui";
-import { FAMILY as family, TEXT_MODELS, type Family } from "./search/rank";
+import { FAMILY as family, TEXT_MODELS, type Family, type Hit } from "./search/rank";
+import { closeMatches } from "./search/matches";
 import { downloadItems, downloadOriginal } from "./downloads";
 import { dropStored, forgetLocked, prefetchThumbs } from "./cache";
 import { Album, addToAlbum, createAlbum, deleteAlbum, loadAlbums, removeFromAlbum, renameAlbum } from "./albums";
@@ -469,50 +470,55 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   }, [people.all, placeIdx]);
   const split = { content: parsed.clip };
   // need: the model isn't here and the person wasn't asked yet (search/consent.ts): the question shows, nothing is fetched
-  const [content, setContent] = useState<{ q: string; ids: string[] | null; status: string; need?: Family }>({ q: "", ids: null, status: "" });
+  const [content, setContent] = useState<{ q: string; hits: Hit[] | null; status: string; need?: Family }>({ q: "", hits: null, status: "" });
   const filtered = searchFiltered();
   const searchable = items ? vectorCount(family) : 0;
   const consentTick = useModelConsent();
   useEffect(() => {
     const cq = split.content;
-    if (cq.length < 2 || !searchable || askedLater(family)) { setContent({ q: cq, ids: null, status: "" }); return; }
+    if (cq.length < 2 || !searchable || askedLater(family)) { setContent({ q: cq, hits: null, status: "" }); return; }
     let alive = true;
     const size = TEXT_MODELS[family].size;
     const t = setTimeout(() => {
       setContent((c) => ({ ...c, q: cq, status: "Looking at what's in your photos…" }));
       // a download on the way shows as a bar (ModelProgress), also when the search box is emptied meanwhile
-      contentSearch(cq, family, filtered).then((hits) => alive && setContent({ q: cq, ids: hits.map((h) => h.id), status: "" }),
-        (e) => alive && setContent(e instanceof NeedsConsent ? { q: cq, ids: null, status: "", need: e.family }
-          : { q: cq, ids: null, status: `Couldn't search photo content. ${e instanceof Error ? e.message : "Try again."}` }));
+      contentSearch(cq, family, filtered).then((hits) => alive && setContent({ q: cq, hits, status: "" }),
+        (e) => alive && setContent(e instanceof NeedsConsent ? { q: cq, hits: null, status: "", need: e.family }
+          : { q: cq, hits: null, status: `Couldn't search photo content. ${e instanceof Error ? e.message : "Try again."}` }));
     }, size > 1e8 ? 400 : 250);
     return () => { alive = false; clearTimeout(t); };
   }, [split.content, filtered, searchable > 0, consentTick]);
-  // ranked like Immich (docs/SEARCH.md): every photo the model indexed, best match first, page by page
-  const ranked = content.q === split.content && split.content ? content.ids : null;
+  // ranked by the image model: the close matches are results, the rest "More similar photos" (search/matches.ts,
+  // docs/SEARCH.md "Close matches"), shown page by page when opened
+  const ranked = content.q === split.content && split.content ? content.hits : null;
   const PAGE = 200;
   const [limit, setLimit] = useState(PAGE);
-  useEffect(() => setLimit(PAGE), [split.content]);
+  const [similarOpen, setSimilarOpen] = useState(false);
+  useEffect(() => { setLimit(PAGE); setSimilarOpen(false); }, [split.content]);
 
   // which photos have the words in their text, and the piece that matched (shown in the photo's details)
   const [textFound, setTextFound] = useState<Map<string, string>>(new Map());
-  const match = (list: Item[], withContent = true): Item[] => {
+  /** The items the search finds in list, in order; close: how many of them are results (the rest are similar photos,
+   *  ranked by the image model below its close matches). */
+  const match = (list: Item[], withContent = true): { items: Item[]; close: number } => {
     const visible = view.n === "trash" || showBroken ? list : list.filter((i) => !i.broken);
-    if (!q) return visible;
+    const all = (items: Item[]) => ({ items, close: items.length });
+    if (!q) return all(visible);
     // the filters first; then what the words name (file, camera, album), the text read in the photos, and what the
     // photos show, in that order
     const pool = parsed.chips.length ? narrowBy(visible, parsed, facts) : visible;
-    if (!parsed.text) return pool;
+    if (!parsed.text) return all(pool);
     const named = pool.filter((i) => matches(hay.get(i.id) ?? "", parsed.text));
     const seen = new Set(named.map((i) => i.id));
     const out = [...named];
     const byId = new Map(pool.map((i) => [i.id, i]));
     for (const [id] of textHits(pool, parsed.text, textOf)) { const it = byId.get(id); if (it && !seen.has(id)) { seen.add(id); out.push(it); } }
-    if (!ranked || !withContent) return out;
-    for (const id of ranked) {
-      const it = byId.get(id);
-      if (it && !seen.has(id)) { seen.add(id); out.push(it); }
-    }
-    return out;
+    if (!ranked || !withContent) return all(out);
+    // the cut is worked out among the photos the filters let through: "dog Anna" finds Anna's best dog photos
+    const left = ranked.filter((h) => byId.has(h.id) && !seen.has(h.id));
+    const close = out.length + closeMatches(left.map((h) => h.score));
+    for (const h of left) { seen.add(h.id); out.push(byId.get(h.id)!); }
+    return { items: out, close };
   };
   useEffect(() => {
     if (!parsed.text) { setTextFound(new Map()); return; }
@@ -521,11 +527,32 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   // the timeline leaves archived items out; a search finds them (edit/folders.ts)
   const timelineAll = useMemo(() => match(q ? items ?? [] : mainGrid(items ?? [])), [items, q, showBroken, hay, ranked, parsed, facts]);
   // the locked folder isn't searched (its items have no place in the search words): typing a search leaves it
-  const shownAll = useMemo(() => (view.n === "locked" ? shown : match(shown)), [shown, q, showBroken, hay, ranked, view.n, parsed, facts]);
-  const timelineItems = useMemo(() => (ranked ? timelineAll.slice(0, limit) : timelineAll), [timelineAll, ranked, limit]);
-  const shownItems = useMemo(() => (ranked ? shownAll.slice(0, limit) : shownAll), [shownAll, ranked, limit]);
-  const trashItemsShown = useMemo(() => match(trash ?? [], false), [trash, q, parsed, facts, hay]);
-  const moreLeft = !!ranked && (view.n === "timeline" ? timelineAll : shownAll).length > limit;
+  const shownAll = useMemo(() => (view.n === "locked" ? { items: shown, close: shown.length } : match(shown)), [shown, q, showBroken, hay, ranked, view.n, parsed, facts]);
+  // the similar photos show when opened, or at once when nothing is a close match; the results and the similar photos
+  // are one list for the viewer and for selecting
+  const cutAll = view.n === "timeline" ? timelineAll : shownAll;
+  const similarShown = !!ranked && (similarOpen || cutAll.close === 0);
+  const visibleOf = (r: { items: Item[]; close: number }) => (!ranked ? r.items : r.items.slice(0, similarShown ? r.close + limit : r.close));
+  const timelineItems = useMemo(() => visibleOf(timelineAll), [timelineAll, ranked, limit, similarShown]);
+  const shownItems = useMemo(() => visibleOf(shownAll), [shownAll, ranked, limit, similarShown]);
+  const trashItemsShown = useMemo(() => match(trash ?? [], false).items, [trash, q, parsed, facts, hay]);
+  const moreLeft = similarShown && cutAll.items.length > cutAll.close + limit;
+  /** A view's grid in a search: its results, then the photos the image model ranks below its close matches, behind a
+   *  button, or at once with "No close matches" when nothing else is found. */
+  const results = (list: Item[]) => {
+    const grid = (part: Item[]) => part.length > 0 && <Timeline items={part} flat={!!ranked} selectMode={selectMode} selected={selected} onToggle={pick} onContext={(id, e) => setCtx({ x: e.clientX, y: e.clientY, kind: "item", id })} dragIds={dragIds} onOpen={(id) => openLb(list.findIndex((i) => i.id === id))} />;
+    if (!ranked) return grid(list);
+    const close = Math.min(cutAll.close, list.length), more = cutAll.items.length - cutAll.close;
+    return (
+      <>
+        {grid(list.slice(0, close))}
+        {more > 0 && (close === 0
+          ? <p class="small similarnote" role="status">No close matches for “{searched.trim()}”. These are the most similar photos.</p>
+          : <button class="btn secondary similarbtn" aria-expanded={similarOpen} onClick={() => setSimilarOpen((o) => !o)}>{similarOpen ? "Hide similar photos" : `More similar photos (${more})`}</button>)}
+        {similarShown && grid(list.slice(close))}
+      </>
+    );
+  };
   const [mapList, setMapList] = useState<Item[]>([]);
   // "On this day" (memories/): worked out here from the capture dates, again when the library or the day changes
   const today = todayKey();
@@ -821,7 +848,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
               {!q && <MemoriesRow memories={memories} onOpen={openMemory} />}
               {!q && memOn && items && <RecapRow items={items} onOpen={(year) => go({ n: "recap", year })} />}
               {items && items.length > 0 && albums.length > 0 && !selectMode && !q && <p class="small hint desktoponly">Tip: drag photos onto an album to file them.</p>}
-              {timelineItems.length > 0 && <Timeline items={timelineItems} flat={!!ranked} selectMode={selectMode} selected={selected} onToggle={pick} onContext={(id, e) => setCtx({ x: e.clientX, y: e.clientY, kind: "item", id })} dragIds={dragIds} onOpen={(id) => openLb(timelineItems.findIndex((i) => i.id === id))} />}
+              {results(timelineItems)}
             </>
           )}
 
@@ -830,7 +857,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
           ) : (
             <>
               {q && shownItems.length === 0 && <p class="small">No favorite matches “{searched.trim()}”.</p>}
-              <Timeline items={shownItems} flat={!!ranked} selectMode={selectMode} selected={selected} onToggle={pick} onContext={(id, e) => setCtx({ x: e.clientX, y: e.clientY, kind: "item", id })} dragIds={dragIds} onOpen={(id) => openLb(shownItems.findIndex((i) => i.id === id))} />
+              {results(shownItems)}
             </>
           ))}
 
@@ -840,7 +867,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
             <>
               <p class="small trashnote">Not shown in the timeline or in On this day. Search, albums and the map still find them.</p>
               {q && shownItems.length === 0 && <p class="small">Nothing archived matches “{searched.trim()}”.</p>}
-              <Timeline items={shownItems} flat={!!ranked} selectMode={selectMode} selected={selected} onToggle={pick} onContext={(id, e) => setCtx({ x: e.clientX, y: e.clientY, kind: "item", id })} dragIds={dragIds} onOpen={(id) => openLb(shownItems.findIndex((i) => i.id === id))} />
+              {results(shownItems)}
             </>
           ))}
 
@@ -892,7 +919,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
           {view.n === "trip" && trip && (
             <>
               <TripHeader trip={trip} albums={albums} demo={demo} onSave={saveTrip} onOpenAlbum={(id) => go({ n: "album", id })} />
-              <Timeline items={shownItems} flat={!!ranked} selectMode={selectMode} selected={selected} onToggle={pick} onContext={(id, e) => setCtx({ x: e.clientX, y: e.clientY, kind: "item", id })} dragIds={dragIds} onOpen={(id) => openLb(shownItems.findIndex((i) => i.id === id))} />
+              {results(shownItems)}
             </>
           )}
           {view.n === "recap" && (!items ? <Loading label="Opening your library…" /> : (
@@ -906,7 +933,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
           {view.n === "person" && person && (
             <>
               <PersonHeader key={person.key} group={person} item={person.cover && byId.get(person.cover.item)} onRenamed={(key) => setPage({ n: "person", key })} />
-              {shownItems.length > 0 && <Timeline items={shownItems} flat={!!ranked} selectMode={selectMode} selected={selected} onToggle={pick} onContext={(id, e) => setCtx({ x: e.clientX, y: e.clientY, kind: "item", id })} dragIds={dragIds} onOpen={(id) => openLb(shownItems.findIndex((i) => i.id === id))} />}
+              {results(shownItems)}
             </>
           )}
 
@@ -920,7 +947,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
               {!items ? <Loading label="Opening the album…" /> : shown.length === 0 ? (
                 <section class="panel empty"><span class="emptyicon"><Icon name="albums" size={32} /></span><h2>This album is empty</h2><p>In the timeline, choose Select, pick photos and add them to this album. Or drag photos onto the album.</p></section>
               ) : (
-                <Timeline items={shownItems} flat={!!ranked} selectMode={selectMode} selected={selected} onToggle={pick} onContext={(id, e) => setCtx({ x: e.clientX, y: e.clientY, kind: "item", id })} dragIds={dragIds} onOpen={(id) => openLb(shownItems.findIndex((i) => i.id === id))} />
+                results(shownItems)
               )}
             </>
           )}

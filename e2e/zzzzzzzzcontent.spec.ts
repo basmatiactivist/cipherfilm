@@ -8,6 +8,8 @@ import { pw } from "./creds";
 // account's public key. Here two photos get the text vectors of "dog" and "city at night" (LAION's ViT-B/32, the one
 // search model) from the Python reference (onnxruntime 1.31.1) as their image vectors, a third a random one. The
 // browser downloads the real text model from Hugging Face, turns the typed words into a vector in its worker and must rank the right photo first.
+// Only close matches are results; the rest wait under "More similar photos" (docs/SEARCH.md "Close matches"), checked
+// with those vectors and with the image vectors of three real photos (fixtures/clip-images.json).
 const BASE = process.env.BASE_URL ?? "https://cipherfilm.orb.local";
 const CAROL = "carol@example.org";
 const CAROL_PW = pw("carol");
@@ -78,14 +80,41 @@ test.describe.serial("search by what is in a photo", () => {
     await page.waitForTimeout(1000);
     expect(hf).toEqual([]);
     await page.getByRole("button", { name: "Download and turn on" }).click();
-    // ranked like Immich: every photo with a vector, best match first, no day headings; photos without one don't show
-    await expect(page.locator(".tile")).toHaveCount(3, { timeout: 240_000 }); // the first search downloads the 258 MB model
+    // only the close match is a result (docs/SEARCH.md "Close matches"); the photos ranked below it wait under
+    // "More similar photos", best first, no day headings; photos without a vector don't show at all
+    const more = page.getByRole("button", { name: /^More similar photos/ });
+    await expect(more).toHaveText("More similar photos (2)", { timeout: 240_000 }); // the first search downloads the 258 MB model
     expect(hf.length).toBeGreaterThan(0);
+    await expect(page.locator(".tile")).toHaveCount(1);
     await expect(page.locator(".tile").first()).toHaveAttribute("data-id", items[0].id);
+    await more.click();
+    await expect(page.locator(".tile")).toHaveCount(3);
+    await expect(page.locator(".tile").nth(1)).toHaveAttribute("data-id", items[2].id); // half dog: the more similar one
     await expect(page.locator(".dayhead")).toHaveCount(0);
+    await page.getByRole("button", { name: "Hide similar photos" }).click();
+    await expect(page.locator(".tile")).toHaveCount(1);
     await search.fill("city at night");
     await expect(page.locator(".tile").first()).toHaveAttribute("data-id", items[1].id, { timeout: 30_000 });
+    await expect(page.locator(".tile")).toHaveCount(1);
+    await expect(more).toHaveText("More similar photos (2)");
+    await search.fill("");
+    await expect(page.locator(".tile")).toHaveCount(all);
+
+    // real photos (image vectors by the Python reference, scripts/content-cut.py --fixture): northern lights, beach
+    // umbrellas, a ski slope. "northern lights" finds one; "dog" none closely, so the most similar show at once
+    const IMG: Record<string, number[]> = JSON.parse(readFileSync(join(__dirname, "fixtures", "clip-images.json"), "utf8"));
+    for (const [i, v] of [IMG["northern lights"], IMG["beach umbrellas"], IMG["ski slope"]].entries()) await putEntry(page, me, items[i].id, "laionb32/1", v);
+    await page.reload();
+    await expect(page.locator(".tile").first()).toBeVisible({ timeout: 30_000 });
+    await search.fill("northern lights");
+    await expect(more).toHaveText("More similar photos (2)", { timeout: 60_000 });
+    await expect(page.locator(".tile")).toHaveCount(1);
+    await expect(page.locator(".tile").first()).toHaveAttribute("data-id", items[0].id);
+    await search.fill("dog");
+    await expect(page.getByText("No close matches for “dog”. These are the most similar photos.")).toBeVisible({ timeout: 30_000 });
     await expect(page.locator(".tile")).toHaveCount(3);
+    await expect(page.locator(".tile").first()).toHaveAttribute("data-id", items[1].id); // the beach is the nearest
+    await expect(more).toHaveCount(0);
     await search.fill("");
     await expect(page.locator(".tile")).toHaveCount(all);
 
@@ -151,7 +180,9 @@ test.describe.serial("search by what is in a photo", () => {
     await sw.check();
     await expect(sw).toBeChecked();
     await search.fill("dog");
-    await expect(page.locator(".tile")).toHaveCount(2, { timeout: 60_000 });
+    // the explicit photo isn't a dog: one of the similar photos
+    await page.getByRole("button", { name: "More similar photos (1)" }).click({ timeout: 60_000 });
+    await expect(page.locator(".tile")).toHaveCount(2);
     // off again: filtered again, and the index stays
     await page.getByRole("button", { name: "Account menu" }).click();
     await page.getByRole("menuitem", { name: "Account" }).click();

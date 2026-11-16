@@ -315,6 +315,9 @@ form.inline { max-width: 420px; }
 /* the year scrubber is fixed at the right edge: keep the page head, notes and rows clear of it */
 .content:has(> .timeline.hasscrub) { padding-right: 76px; }
 .moreresults { display: flex; margin: var(--space-4) auto 0; }
+/* a search by content: the photos ranked below its close matches, behind this button (or after the note) */
+.similarbtn { display: flex; margin: var(--space-4) auto; }
+.similarnote { margin: var(--space-2) 0 var(--space-3); }
 
 /* drag and drop */
 .dropveil { position: fixed; inset: 12px; z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-2); color: var(--teal-ink); background: var(--veil); border: 3px dashed var(--teal); border-radius: var(--radius-card); pointer-events: none; text-align: center; }

@@ -219,7 +219,7 @@ your photos" or "Indexed by <device>, last seen …" with "Index on This Mac Ins
 image models are downloaded and the library indexed); turning search off gives the role up (`DELETE /api/me/indexer`).
 Entries are read for the model's family (`GET /api/index?model=laionb32`) and cached (`index-laionb32.json`).
 
-Search by what is in a photo ranks like Immich's smart search: every photo with an entry, best match first, no cut-off, shown 200 at a time (more as the end of the results comes into view).
+Search by what is in a photo ranks every photo with an entry, best match first; only the close matches are results (and counted), the rest show under "More similar photos", or at once after "No close matches" when nothing is close (docs/SEARCH.md "Close matches"), 200 at a time (more as the end of the results comes into view).
 People, years, months, favorites and videos in the query narrow that ranking; a file name or camera containing the
 words comes first.
 

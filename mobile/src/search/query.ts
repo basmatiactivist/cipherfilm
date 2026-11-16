@@ -9,14 +9,16 @@ import { peopleGroups, type Group } from "./people";
 import { locale, t } from "../i18n";
 import { inPlace, placeIndex } from "../places";
 import { fold, inWhen, localDay, parse, removeChip, tokens, type Chip, type When } from "@websearch/parse";
+import { closeMatches } from "@websearch/matches";
 
 export { removeChip, type Chip };
 
-/** chips: what the query was taken as (with label, the words shown on it); snippets: for photos found by the text in
- *  them, a piece of that text */
-export interface Result { items: Item[]; people: Group[]; how: string[]; chips: (Chip & { label: string })[]; snippets: Record<string, string> }
+/** items: what was found (the count says these); similar: the photos the image model ranks below its close matches,
+ *  best first ("More similar photos", docs/SEARCH.md "Close matches"); chips: what the query was taken as (with label,
+ *  the words shown on it); snippets: for photos found by the text in them, a piece of that text */
+export interface Result { items: Item[]; similar: Item[]; people: Group[]; how: string[]; chips: (Chip & { label: string })[]; snippets: Record<string, string> }
 
-const EMPTY: Result = { items: [], people: [], how: [], chips: [], snippets: {} };
+export const EMPTY: Result = { items: [], similar: [], people: [], how: [], chips: [], snippets: {} };
 
 export async function search(qRaw: string, library: Item[], today = localDay(Date.now())): Promise<Result> {
   const q = qRaw.trim();
@@ -49,7 +51,7 @@ export async function search(qRaw: string, library: Item[], today = localDay(Dat
   const raw = tokens(q);
   const chips = p.chips.map((c) => ({ ...c, label: chipLabel(c, raw) }));
   const rest = p.text;
-  if (!rest) return { items: sortByDate(pool), people, how: [], chips, snippets: {} };
+  if (!rest) return { items: sortByDate(pool), similar: [], people, how: [], chips, snippets: {} };
 
   const how: string[] = [];
   // file names and cameras: substring matches first
@@ -69,11 +71,16 @@ export async function search(qRaw: string, library: Item[], today = localDay(Dat
   if (placed) { sortByDate(pool.filter((x) => placed.ids.has(x.id))).forEach(add); how.push(placed.name); }
   const snippets: Record<string, string> = {};
   for (const r of read) { snippets[r.id] = r.snippet; add(inPool.get(r.id)); }
-  for (const h of hits) add(inPool.get(h.id));
+  // what the image model ranks: the close matches among the photos the filters let through are results, the rest
+  // similar photos (@websearch/matches, the same cut as the web and the Mac)
+  const ranked = hits.filter((h) => inPool.has(h.id) && !seen.has(h.id));
+  const close = closeMatches(ranked.map((h) => h.score));
+  for (const h of ranked.slice(0, close)) add(inPool.get(h.id));
+  const similar = ranked.slice(close).map((h) => inPool.get(h.id)!);
   if (read.length) how.push(t('text in photos: "{q}"', { q: read[0].snippet }));
-  if (hits.length) how.push(t('"{q}"', { q: rest }));
+  if (close) how.push(t('"{q}"', { q: rest }));
   else if (named0.length) how.push(t('named "{q}"', { q: rest }));
-  return { items: out, people, how, chips, snippets };
+  return { items: out, similar, people, how, chips, snippets };
 }
 
 /** What a chip shows: the person's name (or the words typed, for two people of that name), the place, the dates. */

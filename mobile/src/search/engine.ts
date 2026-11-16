@@ -706,8 +706,8 @@ async function rememberForBackground(library: Item[], st: SearchSettings, live: 
 
 let tokenizer: Tokenizer | null = null;
 
-/** Every indexed item, best match for the words first: ranked like Immich's smart search, with no cut-off (the list
- *  shows page by page as it scrolls; filters narrow it in search/query.ts). Filtered (docs/SEARCH.md "Explicit
+/** Every indexed item, best match for the words first, nothing cut off here: search/query.ts narrows it by the
+ *  filters and keeps the close matches as results, the rest as similar photos (docs/SEARCH.md "Close matches"). Filtered (docs/SEARCH.md "Explicit
  *  content"): words close to explicit content find nothing, and photos that look explicit are left out. */
 export async function textSearch(q: string, limit = 100_000): Promise<Hit[]> {
   if (!ready) return [];

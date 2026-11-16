@@ -95,6 +95,10 @@ struct PhotoGrid: View {
   var inset: CGFloat = 28
   /** a line of text per item, shown when the pointer rests on it (search: the text in the photo that matched) */
   var captions: [String: String] = [:]
+  /** with grouping .none: the items from index at on get their own part under this view (search: the similar photos) */
+  var split: (at: Int, heading: AnyView)?
+  /** below the grid, scrolling with it (search: "More similar photos") */
+  var footer: AnyView?
   let open: (Item, [Item]) -> Void
   @State private var width: CGFloat = 900
   @FocusState private var focused: Bool
@@ -102,7 +106,10 @@ struct PhotoGrid: View {
   @Environment(Navigator.self) private var nav
 
   var body: some View {
-    let secs = sections(items, grouping)
+    let secs: [GridSection] = {
+      guard grouping == .none, let s = split, s.at > 0, s.at < items.count else { return sections(items, grouping) }
+      return [GridSection(id: "all", title: nil, items: Array(items[..<s.at])), GridSection(id: "split", title: nil, items: Array(items[s.at...]))]
+    }()
     let target: CGFloat = width < 520 ? 120 : width < 900 ? 170 : 210
     let years = grouping == .day ? Array(Set(secs.map(\.year))).sorted(by: >) : []
     let rowsBySec = secs.map { justify($0.items, width: max(100, width), target: target) }
@@ -110,6 +117,7 @@ struct PhotoGrid: View {
     ScrollView {
       LazyVStack(alignment: .leading, spacing: 4, pinnedViews: []) {
         ForEach(Array(zip(secs, rowsBySec)), id: \.0.id) { s, rows in
+          if s.id == "split", let h = split?.heading { h }
           if let t = s.title {
             Text(t).font(Typo.heading).foregroundStyle(Ink.ink).frame(height: 44, alignment: .bottomLeading).padding(.bottom, 2).id(s.id)
           }
@@ -138,6 +146,7 @@ struct PhotoGrid: View {
           }
         }
         if let more { Color.clear.frame(height: 1).onAppear(perform: more) }
+        if let footer { footer }
       }
       .padding(.leading, inset).padding(.trailing, years.count > 1 ? inset + 28 : inset).padding(.bottom, 80)
       .background(GeometryReader { g in Color.clear.onAppear { width = g.size.width - (years.count > 1 ? 2 * inset + 28 : 2 * inset) }.onChange(of: g.size.width) { _, w in width = w - (years.count > 1 ? 2 * inset + 28 : 2 * inset) } })

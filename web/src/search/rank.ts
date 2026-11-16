@@ -75,8 +75,8 @@ export function cosine(a: Float32Array, b: Float32Array): number {
 
 export interface Hit { id: string; score: number }
 
-/** Every vector against the (normalised) query, best match first, nothing cut off: ranked like Immich's smart search
- *  (docs/SEARCH.md). Vectors are normalised already. hidden: items left out (explicit photos in filtered search). */
+/** Every vector against the (normalised) query, best match first, nothing cut off here: where the results end is
+ *  matches.ts's (docs/SEARCH.md "Close matches"), after the filters. Vectors are normalised already. hidden: items left out (explicit photos in filtered search). */
 export function rank(query: Float32Array, vectors: Map<string, Float32Array>, hidden?: Set<string>): Hit[] {
   const hits: Hit[] = [];
   for (const [id, v] of vectors) {

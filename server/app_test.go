@@ -1089,3 +1089,33 @@ func TestAnotherSessionCantUseUpTheOwnersProofs(t *testing.T) {
 		t.Fatalf("the owner's password change: %d %v", code, out)
 	}
 }
+
+// Behind the tailnet domain overlay's Caddy (TRUST_PROXY=1, TRUSTED_PROXIES=127.0.0.1/32, each tailnet device's address
+// in X-Forwarded-For from Serve's PROXY header) one device's wrong sign-ins fill only its own per-source bucket.
+func TestTailnetDevicesBehindCaddyHaveTheirOwnBuckets(t *testing.T) {
+	e := newEnv(t)
+	_, ab := e.setupAdmin("admin@x.org")
+	e.app.trustProxy = true
+	e.app.proxies, _ = trustedProxies("127.0.0.1/32")
+	login := func(from, auth string) int {
+		bb, _ := json.Marshal(map[string]any{"email": "admin@x.org", "auth": auth})
+		req, _ := http.NewRequest("POST", e.srv.URL+"/api/auth/login", bytes.NewReader(bb))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Forwarded-For", from)
+		resp, err := e.client().c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	for i := 0; i < 30; i++ {
+		login("100.64.0.2", rb(32))
+	}
+	if code := login("100.64.0.2", ab["auth"].(string)); code != 429 {
+		t.Fatalf("the guessing device: %d", code)
+	}
+	if code := login("100.64.0.3", ab["auth"].(string)); code != 200 {
+		t.Fatalf("another tailnet device: %d", code)
+	}
+}

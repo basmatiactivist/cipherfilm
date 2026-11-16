@@ -15,6 +15,10 @@ services:
     environment:
       # Serve hands :443 to Caddy as plain TCP and adds no identity header; Caddy would pass on one a client made up
       TRUST_TAILSCALE_HEADERS: "0"
+      # instead Serve tells Caddy each tailnet device's address (PROXY protocol), and Caddy passes it on in
+      # X-Forwarded-For: sign-in limits are kept per device, not one for every client of the server
+      TRUST_PROXY: "1"
+      TRUSTED_PROXIES: "127.0.0.1/32"   # only Caddy, in this namespace
   caddy-perms:   # once per start: the certificate volume belongs to Caddy's user (it ran as root before)
     image: alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
     command: chown -R 10001:10001 /data
@@ -26,7 +30,7 @@ services:
     security_opt: ["no-new-privileges:true"]
   caddy:
     build: ./deploy/tailnet/domain
-    image: cipherfilm-caddy:2.11.7
+    image: cipherfilm-caddy:2.11.8
     restart: unless-stopped
     network_mode: service:tailscale
     depends_on:

@@ -191,7 +191,8 @@ async function download(url: URL): Promise<Response> {
   if (!found || found.expires < Date.now()) return new Response("not found", { status: 404 });
   jobs.delete(token); // once: the address isn't a way back to the file
   const job: Job = found;
-  const base = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" };
+  // as for streams: a browser that ignored the attachment would still not run the bytes as a page of this origin
+  const base = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; sandbox", "Cross-Origin-Resource-Policy": "same-origin" };
   if (job.kind === "file") {
     const e = job.entries[0];
     return new Response(wholeFile(e), { headers: { ...base, "Content-Type": "application/octet-stream", "Content-Length": String(e.size), "Content-Disposition": attachment(e.name) } });

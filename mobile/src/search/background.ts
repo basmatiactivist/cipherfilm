@@ -9,6 +9,7 @@ import N from "../../modules/cf-native/src/CfNativeModule";
 import { api, ApiError, remote, type Remote } from "../api";
 import { savedServer } from "../session";
 import { fingerprint } from "../prints";
+import { ownUploads } from "../ownUploads";
 import { CLIP, haveModels, haveOcr, modelPath, type Clip } from "./models";
 import { loadSettings, saveSettings, type SearchSettings } from "./settings";
 import { analyzeBytes, localFile } from "./engine";
@@ -107,10 +108,12 @@ export async function runBackgroundIndex(): Promise<number> {
     const s = await getSodium();
     const pk = unb64(s, st.pubkey);
     const media = await N.phoneMedia();
+    // the app lists only this phone's own uploads here (engine.ts); a list written before that is checked again
+    const own = await ownUploads(st.userId ?? "");
     const todo: { id: string; uri: string; video: boolean }[] = [];
     for (const m of media.reverse()) { // newest first
       const id = local.prints[await fingerprint(m.name, m.size)];
-      if (id && !done.has(id)) { todo.push({ id, uri: m.uri, video: m.mime?.startsWith("video/") }); done.add(id); }
+      if (id && own.has(id) && !done.has(id)) { todo.push({ id, uri: m.uri, video: m.mime?.startsWith("video/") }); done.add(id); }
     }
     if (!todo.length) return 0;
     await open(st, clip);

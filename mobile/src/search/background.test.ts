@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Background indexing sends to the server its settings were made for, never moves the app's own server or token,
 // and does nothing for a server the app no longer uses. The server and native modules are stand-ins.
-const st = vi.hoisted(() => ({ settings: {} as Record<string, unknown>, local: {} as unknown, saved: "", sent: [] as string[], models: [] as string[][] }));
+const st = vi.hoisted(() => ({ settings: {} as Record<string, unknown>, local: {} as unknown, saved: "", sent: [] as string[], models: [] as string[][], own: new Map<string, string>() }));
+// what this phone uploaded itself (ownUploads.ts)
+vi.mock("../ownUploads", () => ({ ownUploads: async (userId: string) => (userId === "alice" ? st.own : new Map()) }));
 vi.mock("react-native", () => ({ Platform: { constants: { Model: "Test" } }, AppState: { currentState: "active" } }));
 vi.mock("../session", () => ({ savedServer: async () => st.saved }));
 vi.mock("./settings", () => ({ loadSettings: async () => st.settings, saveSettings: async () => st.settings }));
@@ -41,6 +43,7 @@ describe("background indexing", () => {
     st.settings = { enabled: true, background: true, chargingOnly: false, faces: false, server: "https://a.test", userId: "alice", pubkey: b64(s, s.crypto_box_keypair().publicKey) };
     st.local = { userId: "alice", prints: { [await fingerprint("IMG_1.jpg", 10)]: ID }, done: [] };
     st.sent = []; st.models = [];
+    st.own = new Map([[ID, "wrap-print"]]);
   });
 
   it("uses its own server and token and leaves the app's as they are", async () => {
@@ -75,6 +78,16 @@ describe("background indexing", () => {
     expect(api.server()).toBe("https://new.test");
   });
 
+  it("never indexes a phone file for an item this phone didn't upload itself, even when name and size match", async () => {
+    st.saved = "https://a.test";
+    // a list written by an earlier version, naming an item someone else added under the phone file's name and size
+    st.own = new Map();
+    const { runBackgroundIndex } = await import("./background");
+    expect(await runBackgroundIndex()).toBe(0);
+    expect(st.models).toEqual([]);
+    expect(st.sent.filter((r) => r.startsWith("PUT"))).toEqual([]);
+  });
+
   it("does nothing (and doesn't fail) with a list of the phone's photos it can't read", async () => {
     st.saved = "https://a.test";
     const { runBackgroundIndex } = await import("./background");
@@ -94,7 +107,7 @@ describe("background indexing after one model", () => {
     const s = await getSodium();
     st.settings = { enabled: true, background: true, chargingOnly: false, faces: true, clip: "mobileclip-s2", server: "https://a.test", userId: "alice", pubkey: b64(s, s.crypto_box_keypair().publicKey) };
     st.local = { userId: "alice", prints: { [await fingerprint("IMG_1.jpg", 10)]: ID }, done: [] };
-    st.sent = []; st.models = []; st.saved = "https://a.test";
+    st.sent = []; st.models = []; st.saved = "https://a.test"; st.own = new Map([[ID, "wrap-print"]]);
     const { runBackgroundIndex } = await import("./background");
     expect(await runBackgroundIndex()).toBe(1);
     expect(st.models).toEqual([["clip-b32"]]);

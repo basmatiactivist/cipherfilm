@@ -19,6 +19,7 @@ import { api, ApiError } from "../api";
 import { onWipe, refreshMe, session, type Me } from "../session";
 import { imageBytes, type Item } from "../library";
 import { fingerprint } from "../prints";
+import { onlyOwn } from "../ownUploads";
 import { CLIP, downloadModels, downloadOcr, downloadSize, dropOtherModels, family, haveModels, haveOcr, LEGACY_FAMILY, legacyFaces, modelPath, modelTag, NeedsConsent, ocrSize, ocrUnagreed, tokenizerFile, toCompute, unagreed, type Clip } from "./models";
 import { textMatch } from "@websearch/parse";
 import { conceptData, IMAGE_THRESHOLD, queryBlocked, unfiltered } from "@websearch/explicit";
@@ -686,20 +687,25 @@ async function rereadText(s: Sodium, list: Item[], cache: Cache, pk: Uint8Array,
 export const localFile = () => new File(settingsDir(), "local.json");
 /** Each item's fingerprint, worked out once: this runs every 50 photos indexed, over the whole library. */
 const printOf = new Map<string, string>();
-async function rememberForBackground(library: Item[], st: SearchSettings, live: () => boolean = () => true) {
+export async function rememberForBackground(library: Item[], st: SearchSettings, live: () => boolean = () => true) {
   if (!st.background) return;
+  const userId = session().me?.user.id;
+  // only what this phone uploaded itself is matched to a phone file by name and size (ownUploads.ts); everything else
+  // is indexed from its preview while the app is open
+  const own = await onlyOwn(userId, library.filter((it) => it.meta && !it.broken));
+  if (!live()) return;
   const prints: Record<string, string> = {};
   let n = 0;
-  for (const it of library) {
-    if (!it.meta || it.broken) continue;
-    const k = `${it.id}\0${it.meta.name}\0${it.meta.size}`;
+  for (const it of own) {
+    const m = it.meta!;
+    const k = `${it.id}\0${m.name}\0${m.size}`;
     let p = printOf.get(k);
-    if (p === undefined) { p = await fingerprint(it.meta.name, it.meta.size); printOf.set(k, p); if (++n % 500 === 0) { await pause(); if (!live()) return; } }
+    if (p === undefined) { p = await fingerprint(m.name, m.size); printOf.set(k, p); if (++n % 500 === 0) { await pause(); if (!live()) return; } }
     prints[p] = it.id;
   }
   const done = library.filter((i) => good(tags.get(i.id), st.faces) && !missing(i.id, st.faces).length).map((i) => i.id);
   if (!live()) return; // (it isn't waited for: the library may have locked meanwhile)
-  try { settingsDir().create({ intermediates: true, idempotent: true }); await localFile().write(JSON.stringify({ userId: session().me?.user.id, prints, done })); } catch { /* next time */ }
+  try { settingsDir().create({ intermediates: true, idempotent: true }); await localFile().write(JSON.stringify({ userId, prints, done })); } catch { /* next time */ }
 }
 
 // ---- queries ----

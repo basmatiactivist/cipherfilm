@@ -62,6 +62,14 @@ final class SearchEngine {
   func libraryChanged(vault: Vault, items: [Item], settings: AccountSettings) {
     self.items = items
     self.settings = settings
+    // gone from the list it is handed (deleted, or moved to the locked folder, which the app never hands over): out of
+    // the index at once, so no search, similar photos or people group finds it
+    let live = Set(items.map(\.id))
+    let gone = tags.keys.filter { !live.contains($0) }
+    if !gone.isEmpty {
+      for id in gone { tags.removeValue(forKey: id); index.remove(id) }
+      groupsAt = -1; version += 1
+    }
     guard settings.search else {
       // turned off here: another device indexes from now on (the server drops it only if it was this Mac)
       if phase != .off { stop(clear: true); Task { try? await vault.api.json("DELETE", "/api/me/indexer") } }
@@ -621,8 +629,11 @@ final class SearchEngine {
       let person = g.person.flatMap { byId[$0] }
       let its = g.items.filter { live.contains($0) }
       guard !its.isEmpty else { return nil }
+      // the cover is a face in a photo the list has (never one of an item it wasn't handed, such as a locked one)
+      let cover = g.cover.flatMap { live.contains($0.item) ? $0 : nil }
+        ?? its.lazy.flatMap { id in self.index.facesOf(id).filter { g.faces.contains($0.key) }.map { FaceGroup.Cover(key: $0.key, item: id, box: $0.box) } }.first
       if let p = person { guard seen.insert(p.id).inserted else { return nil } }
-      return Group(key: person?.id ?? "g\(i):\(g.cover?.key ?? "")", person: person, items: its, faces: g.faces, cover: g.cover)
+      return Group(key: person?.id ?? "g\(i):\(g.cover?.key ?? "")", person: person, items: its, faces: g.faces, cover: cover)
     }
     groups = allGroups.filter { $0.person != nil || $0.items.count >= People.minFaces }
     groupsAt = version

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { mainGrid } from "@edit/folders";
 import { StyleSheet, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { Appbar, Button, Dialog, FAB, Portal, Text } from "react-native-paper";
@@ -40,6 +41,8 @@ export default function Library() {
   const demo = !!useSession().me?.demo;
   const memories = useMemories(items);
   const years = useRecapYears(items);
+  // archived items stay in the shared list (albums, search, the map) but not in this grid (@edit/folders)
+  const grid = useMemo(() => (items ? mainGrid(items) : null), [items]);
   useEffect(() => { if (!items) refreshLibrary(); }, []);
   // while the map is on: what this phone uploaded without where it was taken gets it (relocate.ts, every few minutes)
   const mapOn = useMapOn();
@@ -75,7 +78,7 @@ export default function Library() {
         </Dialog>
       </Portal>
       <Gallery
-        items={items} error={error} loading={loading} onRefresh={refreshLibrary} bottom={NAV_HEIGHT}
+        items={grid} error={error} loading={loading} onRefresh={refreshLibrary} bottom={NAV_HEIGHT}
         header={
           <View>
             <Appbar.Header style={{ backgroundColor: th.colors.background }}>

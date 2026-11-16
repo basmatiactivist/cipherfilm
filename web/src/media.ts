@@ -26,6 +26,10 @@ export interface ItemMeta {
   sha256?: string;
   /** the metadata's version, raised by every change of it (crypto/metaVersion.ts); none: 0 */
   mv?: number;
+  /** out of the main grid and On this day (edit/folders.ts); written only as `true` */
+  archived?: true;
+  /** in the locked folder only (edit/folders.ts); written only as `true` */
+  locked?: true;
 }
 
 export const isHeic = (f: Pick<File, "type" | "name">): boolean => /^image\/hei[cf]/.test(f.type) || /\.(heic|heif)$/i.test(f.name);

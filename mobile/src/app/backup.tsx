@@ -8,7 +8,7 @@ import { DEMO_BACKUP, backupProgress, blocker, chooseFolders, disableBackup, ena
 import { existingChoice, folderLine, headline, lastLine, liveLine, tooLarge } from "../backupText";
 import { coalesce } from "../coalesce";
 import { server } from "../api";
-import { libraryItems, refreshLibrary } from "../libraryStore";
+import { libraryItems, lockedItems, refreshLibrary } from "../libraryStore";
 import { session } from "../session";
 import { Icon, type IconName } from "../icons";
 import { Problem, SwitchItem, useAppTheme } from "../ui";
@@ -125,7 +125,7 @@ export default function Backup() {
       await enableBackup(me, server(), masterKey, { ...prefs, folders: fs });
       // what the library already has, before the first run: those photos aren't uploaded again
       await refreshLibrary();
-      await rememberLibrary(me.user.id, libraryItems());
+      await rememberLibrary(me.user.id, [...libraryItems(), ...lockedItems()]); // locked ones are backed up already too
       if (!N.backupState().notifications) await askNotifications();
       runBackup("app").catch(() => {});
     } catch (e) {

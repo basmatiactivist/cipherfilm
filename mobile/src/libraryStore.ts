@@ -5,10 +5,16 @@ import { rememberLibrary } from "./backup";
 import { libraryChanged, warmSearch } from "./search/engine";
 import { api } from "./api";
 import { t } from "./i18n";
+import { splitLocked } from "@edit/folders";
 
 // One copy of the decrypted list for the library and the viewer; brought up to date after uploads and live updates
-// (only what changed: library.ts).
+// (only what changed: library.ts). Split right after decrypting (@edit/folders splitLocked): `items`, what every screen
+// reads, never holds a locked item; those are kept apart in `locked`, which only the locked folder takes, after its
+// check (lockedFolder.ts). Archived items stay in `items`: the main grid and On this day leave them out (mainGrid).
 let items: Item[] | null = null;
+let locked: Item[] = [];
+let whole: Item[] | null = null; // the list as library.ts gave it (the same array back: nothing changed)
+const lockedSubs = new Set<() => void>();
 let error: string | undefined;
 let loading = false; // shown: the pull-to-refresh spinner
 let busy = false; // a load runs (also a quiet one, which shows no spinner)
@@ -20,6 +26,21 @@ const emit = () => { snap = { items, error, loading, loadedAt }; subs.forEach((f
 
 export const useLibrary = () => useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => snap);
 export const libraryItems = () => (items && owner === session().me?.user.id && session().masterKey ? items : []);
+
+/** The locked items, for the locked folder only (lockedFolder.ts, after its check); every other screen reads `items`. */
+export const lockedItems = () => (owner === session().me?.user.id && session().masterKey ? locked : []);
+/** Called when the locked items changed (a load, a lock): the open locked folder follows. */
+export const onLockedChange = (f: () => void) => { lockedSubs.add(f); return () => { lockedSubs.delete(f); }; };
+
+/** Takes a decrypted list: the open part for every screen, the locked part apart. */
+function adoptList(list: Item[]) {
+  const split = splitLocked(list);
+  whole = list;
+  items = split.open;
+  const was = locked;
+  locked = split.locked;
+  if (was.length || locked.length) lockedSubs.forEach((f) => f());
+}
 
 let owner = ""; // the account the list was decrypted for
 // bumped whenever the list is forgotten (every lock): a load still running then ends quietly, shows nothing, and
@@ -55,28 +76,30 @@ export async function refreshLibrary(opts?: { quiet?: boolean }) {
     if (!items || owner !== forUser) {
       warmSearch().catch(() => {}); // search from its copy on the phone meanwhile (search/engine.ts)
       const cached = await loadCachedLibrary();
-      if (cached && current() && (!items || owner !== forUser)) { items = cached; owner = forUser; emit(); }
+      if (cached && current() && (!items || owner !== forUser)) { owner = forUser; adoptList(cached); emit(); }
       // (not shown: its item keys are shared with the decrypted list, library.ts, and go with it at the next lock)
     }
     const list = await loadLibrary();
     // the session may have locked or changed while the list was loading: then it is not shown, and its keys go (with
     // the lists that share them)
     if (!current()) { list.forEach((i) => i.itemKey?.fill(0)); forgetLists(); return; }
-    const same = list === items; // a live update that found nothing new: nothing to redo
-    items = list;
+    const same = list === whole; // a live update that found nothing new: nothing to redo
     owner = forUser;
+    if (!same) adoptList(list);
     error = undefined;
     loadedAt = Date.now();
     if (same) return;
     afterChange(quiet, () => {
       if (!current()) return;
-      const now = items ?? list; // the newest list when a later change replaced it meanwhile
+      const now = items ?? list; // the newest list when a later change replaced it meanwhile (the open part)
+      const all = whole ?? list;
       prefetchThumbs(now);
+      // the cached pictures of locked items go too: none are kept for them (library.ts)
       setTimeout(() => current() && pruneCache(new Set(now.map((i) => i.id))), 2000);
       // the rest waits until the grid is on screen and scrolling: both read the whole list on the JS thread
       setTimeout(() => {
         if (!current()) return;
-        rememberLibrary(forUser, now).catch(() => {}); // the backup skips what is already here
+        rememberLibrary(forUser, all).catch(() => {}); // the backup skips what is already here, locked items too
         libraryChanged(now).catch(() => {}); // search: the index for what is new (a run going on takes it along)
       }, 1500);
     });
@@ -95,10 +118,13 @@ export const libraryLoaded = () => busy || (items !== null && owner === session(
 
 export function forgetLibrary() {
   items?.forEach((i) => i.itemKey?.fill(0)); // the unwrapped item keys leave memory with the list
+  locked.forEach((i) => i.itemKey?.fill(0));
   forgetLists(); // which shares them with the lists kept current by live updates (library.ts)
   if (followTimer) clearTimeout(followTimer);
   followTimer = null; followSince = 0;
-  items = null; owner = ""; error = undefined; loadedAt = 0; loading = false; busy = false; again = false; gen++; emit();
+  const hadLocked = locked.length > 0;
+  items = null; locked = []; whole = null; owner = ""; error = undefined; loadedAt = 0; loading = false; busy = false; again = false; gen++; emit();
+  if (hadLocked) lockedSubs.forEach((f) => f());
 }
 
 // a lock, sign-out or account change takes the decrypted list along

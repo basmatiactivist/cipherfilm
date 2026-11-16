@@ -68,6 +68,67 @@ the person removed or set is left alone by the apps that add missing locations a
 An edited copy is a new JPEG: its EXIF holds only the date and place as last set (and orientation "upright"); nothing
 else of the original's EXIF (camera, serial numbers) is copied.
 
+## Archive and locked folder
+
+Two folders besides the library, on every app (web, Android, Mac). The rules are pure functions in
+`web/src/edit/folders.ts`, shared with the Android app (`@edit/folders`) and mirrored for the Mac in
+`mac/Sources/CipherfilmCore/Folders.swift`, with tests on the same cases.
+
+| folder | where the item shows |
+|---|---|
+| library | everywhere (as before) |
+| archive | the Archive view, search, albums, people, the map, favorites; **not** the timeline or On this day |
+| locked | only the locked folder: not the timeline, albums, search, people, the map, On this day, favorites, duplicates, Free up space or the trash |
+
+**Stored encrypted.** The folder is a field of the item's encrypted metadata, `archived: true` or `locked: true`
+(only `true` counts; locked wins if both were ever written), written like any other change: the next metadata version
+through `PUT /api/items/{id}/meta`, every other field kept. Moving back to the library removes the field. The server
+sees only that the item's metadata changed (docs/THREAT_MODEL.md), not which folder it went to. Favorites, by
+contrast, are a plain flag on the server (server/index.go); the folders deliberately don't follow that.
+
+**Split right after decrypting.** Each app splits the decrypted list once: every view outside the locked folder reads
+the list without locked items, so none of them can show one by mistake. An unreadable item can't say where it is and
+stays with the library ("couldn't be verified", as before). A stale item (docs/CRYPTO.md, "Metadata version") is not
+moved: writing over an older copy would undo a change.
+
+**The locked folder's check.** Every time the folder opens, also while the app is unlocked: the web asks for the
+password (checked in the browser by opening the master key with it, as unlocking does; nothing is sent); Android asks
+for the fingerprint or the phone's screen lock, and for the password where neither is set up; the Mac asks for Touch
+ID, or the password. The folder closes when it is left, when the web tab is hidden, when the app goes to the
+background (Android) and when the app locks. This is a gate in the app, not a second key: the item keys and metadata
+are opened with the library's master key as before, so anyone who has the unlocked app in hand and gets past the
+check sees the folder.
+
+**Nothing on disk.** The locked folder's thumbnails and previews are never written to a cache on disk (the web's
+Cache Storage, the Android cache folder and native thumbnail cache, the Mac's caches), and copies stored before an item
+was moved in are deleted when it moves. Decrypted pictures are kept in memory only while the folder is open. Sharing,
+saving and downloading out of the folder go through the usual paths (the Android outbox, the web download, the Mac
+outbox), with their usual clean-up. The decrypted metadata of every item, locked or not, stays in memory while the app
+is unlocked, as before: an app has to read it to know an item is locked.
+
+**Albums.** Moving an item into the locked folder doesn't change any album: album views just don't show or count it,
+and moving it out shows it there again. (Taking it out of the albums would lose where it was, and the album list would
+tell the server which items changed.)
+
+**Deleting from the locked folder** is for good, after a question: the item goes to the trash and out of it at once,
+since the trash doesn't show locked items. A locked item trashed by an app that doesn't know the folder is listed in
+the locked folder ("in the trash"), to restore or delete.
+
+**Search.** Locked items never show in search results; an index may still hold entries for them (made before the move
+or by an app that doesn't know the folder), which are never shown.
+
+**Platform notes.** The Mac also leaves archived items out of its Videos view (part of the main grid there), keeps
+locked items out of the export folder (an earlier exported copy is deleted, not moved to the macOS Trash) and still
+counts their names and sizes when it checks watched folders for files already uploaded. On Android the native
+thumbnail pipeline is never given a locked item's key; one moved into the folder during a session keeps its key in
+that pipeline's memory until the next lock (nothing asks for it, and its cached files are deleted). On Android the
+actions are under More in the selection bar and ⋮ in the viewer; the web has them under More in the selection bar and
+in the right-click menu; the Mac in the context and Photo menus.
+
+**Older apps.** App versions from before the folders ignore the field and show archived and locked items in the
+library as usual. Update every app before relying on the locked folder. The public demo can't move items (the server
+refuses metadata changes there).
+
 ## Limits
 
 - Photos up to 200 MB are edited (they are decoded whole); on Android at most 8192 px on the longer side, so a larger

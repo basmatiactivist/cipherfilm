@@ -9,6 +9,8 @@
 //   not written again; a changed layout moves the files instead of writing new ones.
 // - gone from the library (or no longer chosen): the copy goes to the macOS Trash if it is unchanged and no other
 //   item shares it. Files you rename, move or delete inside the folder are left as they are.
+// - moved to the locked folder: never exported (the app doesn't hand those items over); an unchanged copy from before
+//   is deleted for good, not put in the Trash, whatever "move removed items to the Trash" says.
 import AppKit
 import Foundation
 import Observation
@@ -34,13 +36,16 @@ final class Exporter {
   private var items: [Item] = []
   private var albums: [Album] = []
   private var settings = AccountSettings()
+  /** ids of items in the locked folder (only the ids): their copies are deleted, never kept or trashed */
+  private var lockedIds: Set<String> = []
   private var again = false
   private var firstPassNotified = false
 
   static let marker = ".cipherfilm-export"
 
-  func libraryChanged(vault: Vault, items: [Item], albums: [Album], settings: AccountSettings) {
+  func libraryChanged(vault: Vault, items: [Item], albums: [Album], settings: AccountSettings, locked: Set<String>? = nil) {
     self.vault = vault; self.items = items; self.albums = albums; self.settings = settings
+    if let locked { lockedIds = locked }
     guard settings.exportPath != nil, settings.exportOn else { stop(); return }
     guard settings.exportKeepUpToDate else { if run == nil { phase = .idle }; return }
     start()
@@ -67,7 +72,7 @@ final class Exporter {
    *  over again (libraryChanged). */
   func forget() {
     stop()
-    vault = nil; items = []; albums = []; settings = AccountSettings()
+    vault = nil; items = []; albums = []; settings = AccountSettings(); lockedIds = []
     again = false
   }
 
@@ -147,7 +152,8 @@ final class Exporter {
     for (id, e) in man.entries where !wantIds.contains(id) {
       man.entries.removeValue(forKey: id)
       let shared = man.entries.values.contains { $0.path == e.path }
-      if settings.exportTrashRemoved && !shared { Self.trashIfUnchanged(root.appendingPathComponent(e.path), e) }
+      if lockedIds.contains(id) && !shared { Self.deleteIfUnchanged(root.appendingPathComponent(e.path), e) }
+      else if settings.exportTrashRemoved && !shared { Self.trashIfUnchanged(root.appendingPathComponent(e.path), e) }
     }
 
     // 2. a changed layout or album: the unchanged file moves (never a second copy)
@@ -244,6 +250,12 @@ final class Exporter {
   static func trashIfUnchanged(_ url: URL, _ e: Entry) {
     guard unchanged(url, e) else { return }
     try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
+  }
+
+  /** A copy of an item now in the locked folder: deleted, not trashed (the Trash would keep it decrypted). */
+  static func deleteIfUnchanged(_ url: URL, _ e: Entry) {
+    guard unchanged(url, e) else { return }
+    try? FileManager.default.removeItem(at: url)
   }
 
   static func removeEmptyDirs(_ dir: URL, stop: URL) {

@@ -4,6 +4,7 @@ import { decryptPreview, decryptThumb } from "./crypto/item";
 import type { Item } from "./items";
 import { ThumbBatcher } from "./thumbbatch";
 import { pictureKey } from "./edit/edit";
+import { isLocked } from "./edit/folders";
 
 /** Decrypted images are kept as object URLs in small LRU caches and revoked when evicted or on sign-out. */
 class UrlCache {
@@ -22,11 +23,15 @@ class UrlCache {
       URL.revokeObjectURL(oldUrl);
     }
   }
+  drop(id: string) { const u = this.m.get(id); if (u) { this.m.delete(id); URL.revokeObjectURL(u); } }
   clear() { this.m.forEach((u) => URL.revokeObjectURL(u)); this.m.clear(); }
 }
 
 const thumbs = new UrlCache(600);
 const previews = new UrlCache(24);
+// the locked folder's pictures (edit/folders.ts): only in memory, apart from the others, and dropped when the folder is
+// left (forgetLocked) or the library locks; their ciphertext is never put in Cache Storage
+const lockedPics = new UrlCache(300);
 const inflight = new Map<string, Promise<string>>();
 let generation = 0; // a sign-out clears the caches; images still loading then are not kept
 
@@ -48,8 +53,8 @@ const batcher = new ThumbBatcher((ids) => postForBytes("/api/items/thumbs", { it
 
 // cached by item and picture version: a turned or cropped photo has new ones (edit/edit.ts pictureKey)
 type Pic = Pick<Item, "id" | "meta">;
-export const cachedThumb = (it: Pic) => thumbs.get(pictureKey(it.id, it.meta));
-export const cachedPreview = (it: Pic) => previews.get(pictureKey(it.id, it.meta));
+export const cachedThumb = (it: Pic) => (isLocked(it.meta) ? lockedPics.get("t" + pictureKey(it.id, it.meta)) : thumbs.get(pictureKey(it.id, it.meta)));
+export const cachedPreview = (it: Pic) => (isLocked(it.meta) ? lockedPics.get("p" + pictureKey(it.id, it.meta)) : previews.get(pictureKey(it.id, it.meta)));
 
 // The encrypted thumbnails and previews, exactly as the server sends them, are kept in the browser's Cache Storage, so
 // the next visit shows the grid, and paging back in the lightbox shows the photo, without downloading it again. They
@@ -86,6 +91,9 @@ function previewIndex(): Promise<Map<string, number>> {
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 function touch(m: Map<string, number>, id: string, bytes: number) {
   m.delete(id); m.set(id, bytes);
+  saveSoon(m);
+}
+function saveSoon(m: Map<string, number>) {
   const gen = generation;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => { if (gen === generation) box("preview").then((c) => c.put(INDEX, new Response(JSON.stringify([...m])))).catch(() => {}); }, 1000);
@@ -118,31 +126,34 @@ async function store(kind: "thumb" | "preview", id: string, ct: Uint8Array, gen:
   } catch { /* only a cache */ }
 }
 
-function load(kind: "thumb" | "preview", cache: UrlCache, it: Item, wanted?: () => boolean): Promise<string> {
+function load(kind: "thumb" | "preview", shared: UrlCache, it: Item, wanted?: () => boolean): Promise<string> {
   const pic = pictureKey(it.id, it.meta);
-  const hit = cache.get(pic);
+  const locked = isLocked(it.meta);
+  const cache = locked ? lockedPics : shared;
+  const memKey = locked ? kind[0] + pic : pic;
+  const hit = cache.get(memKey);
   if (hit) return Promise.resolve(hit);
-  const key = kind + pic;
+  const key = kind + pic + (locked ? ":locked" : "");
   const asked = kind + it.id; // interest is per item (wantImage)
   let p = inflight.get(key);
   if (!p) {
-    const gen = generation;
+    const gen = generation, lgen = lockedGen;
     p = (async () => {
       const s = await getSodium();
       const open = (ct: Uint8Array) => (kind === "thumb" ? decryptThumb : decryptPreview)(s, ct, it.itemKey!, it.id);
       let plain: Uint8Array | null = null;
-      const kept = await stored(kind, pic);
+      const kept = locked ? null : await stored(kind, pic);
       if (kept) try { plain = open(kept); } catch { /* damaged copy: fetched again */ }
       if (!plain) {
         const ct = kind === "thumb"
           ? await batcher.get(it.id, () => gen === generation && (wanted ?? (() => (interest.get(asked) ?? 0) > 0))())
           : await limited(() => getBytes(`/api/items/${it.id}/preview`), () => gen === generation);
         plain = open(ct); // only verified ciphertext is kept
-        if (gen === generation) void store(kind, pic, ct, gen);
+        if (gen === generation && !locked) void store(kind, pic, ct, gen);
       }
-      if (gen !== generation) throw new Error("cancelled");
+      if (gen !== generation || (locked && lgen !== lockedGen)) throw new Error("cancelled");
       const url = URL.createObjectURL(new Blob([plain as BlobPart], { type: "image/jpeg" }));
-      cache.set(pic, url);
+      cache.set(memKey, url);
       return url;
     })().finally(() => inflight.delete(key));
     inflight.set(key, p);
@@ -155,14 +166,39 @@ export const previewUrl = (it: Item) => load("preview", previews, it);
 
 /** The newest thumbnails, fetched ahead after the library loads, so the grid has them before it asks. */
 export function prefetchThumbs(items: Item[]) {
-  const want = items.filter((it) => it.has_thumb && !it.broken && it.itemKey).slice(0, 400);
+  const want = items.filter((it) => it.has_thumb && !it.broken && it.itemKey && !isLocked(it.meta)).slice(0, 400);
   // queued oldest first: the batcher sends the latest request first
   for (const it of want.reverse()) load("thumb", thumbs, it, () => true).catch(() => {});
+}
+/** The locked folder's pictures leave memory: when the folder is left. */
+let lockedGen = 0;
+export function forgetLocked() {
+  lockedGen++; // one still loading isn't kept
+  lockedPics.clear();
+}
+
+/** Items that move into the locked folder: their pictures leave this tab's memory and Cache Storage, so nothing of
+ *  them stays on this device outside the folder. `meta` as it was before the move (the stored copies' names). */
+export async function dropStored(items: Pick<Item, "id" | "meta">[]): Promise<void> {
+  for (const it of items) {
+    const pic = pictureKey(it.id, it.meta);
+    thumbs.drop(pic); previews.drop(pic);
+  }
+  if (typeof caches === "undefined") return;
+  try {
+    const [t, p, m] = await Promise.all([box("thumb"), box("preview"), previewIndex()]);
+    for (const it of items) {
+      const pic = pictureKey(it.id, it.meta);
+      await t.delete(storedUrl("thumb", pic));
+      await p.delete(storedUrl("preview", pic));
+      if (m.delete(pic)) saveSoon(m);
+    }
+  } catch { /* only a cache: a lock or sign-out deletes it all */ }
 }
 /** stored: also the thumbnails and previews stored for every tab (Cache Storage), not only this tab's images. */
 export function clearCaches(stored = true) {
   generation++;
-  thumbs.clear(); previews.clear();
+  thumbs.clear(); previews.clear(); lockedPics.clear();
   opened.clear(); lru = null; clearTimeout(saveTimer);
   if (stored && typeof caches !== "undefined") for (const name of Object.values(STORED)) caches.delete(name).catch(() => {});
 }

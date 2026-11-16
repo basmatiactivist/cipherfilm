@@ -1,5 +1,6 @@
 import { memo, useEffect, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
+import { Image } from "expo-image";
 import { Text } from "react-native-paper";
 import { when, type Item } from "./library";
 import { ThumbView } from "../modules/cf-native/src/CfNativeModule";
@@ -24,11 +25,13 @@ interface Props {
   onLongPress: (it: Item) => void;
   /** its picture is on screen, or there is none to wait for (the gallery's first screen waits for these) */
   onShown?: (id: string) => void;
+  /** the thumbnail decrypted in JavaScript, into memory only, instead of natively (the locked folder: lockedFolder.ts) */
+  thumb?: (it: Item) => Promise<string | null>;
 }
 
 /** One square in the library grid: the decrypted thumbnail (native, by id: Thumbs.kt), or a plain-words tile if it can't be verified. In selection
  *  mode every tile shows a circle; a selected one shrinks into its cell with a filled check, as in Google Photos. */
-export const Tile = memo(function Tile({ item, size, selecting, selected, onPress, onLongPress, onShown }: Props) {
+export const Tile = memo(function Tile({ item, size, selecting, selected, onPress, onLongPress, onShown, thumb }: Props) {
   const th = useAppTheme();
   const [failed, setFailed] = useState(false);
   useEffect(() => { if (!item.has_thumb || item.broken || failed) onShown?.(item.id); }, [item.id, failed]);
@@ -43,7 +46,9 @@ export const Tile = memo(function Tile({ item, size, selecting, selected, onPres
       {({ pressed }) => (
         <>
           <View style={[st.tile, { margin: inset, borderRadius: selected ? radius.card : radius.tile, backgroundColor: item.broken ? th.colors.errorContainer : th.colors.surfaceVariant, opacity: pressed && !selecting ? 0.85 : 1 }]}>
-            {item.has_thumb && !item.broken ? <ThumbView item={item.id} style={StyleSheet.absoluteFill} onFailed={() => setFailed(true)} onShown={() => onShown?.(item.id)} /> : null}
+            {item.has_thumb && !item.broken ? (thumb
+              ? <MemoryThumb item={item} load={thumb} onFailed={() => setFailed(true)} onShown={() => onShown?.(item.id)} />
+              : <ThumbView item={item.id} style={StyleSheet.absoluteFill} onFailed={() => setFailed(true)} onShown={() => onShown?.(item.id)} />) : null}
             {item.broken || failed ? (
               <View style={st.center}><Text variant="labelSmall" style={{ color: item.broken ? th.colors.onErrorContainer : th.colors.onSurfaceVariant, textAlign: "center" }}>{item.broken ? t("Couldn't be verified") : t("No preview")}</Text></View>
             ) : null}
@@ -61,6 +66,17 @@ export const Tile = memo(function Tile({ item, size, selecting, selected, onPres
     </Pressable>
   );
 });
+
+/** A thumbnail decrypted in JavaScript (a data: URI held in memory), shown without any image cache. */
+function MemoryThumb({ item, load, onFailed, onShown }: { item: Item; load: (it: Item) => Promise<string | null>; onFailed: () => void; onShown: () => void }) {
+  const [uri, setUri] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    load(item).then((u) => { if (!live) return; if (u) setUri(u); else onFailed(); }, () => { if (live) onFailed(); });
+    return () => { live = false; };
+  }, [item.id]);
+  return uri ? <Image source={{ uri }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="none" onDisplay={onShown} /> : null;
+}
 
 const st = StyleSheet.create({
   tile: { flex: 1, overflow: "hidden" },

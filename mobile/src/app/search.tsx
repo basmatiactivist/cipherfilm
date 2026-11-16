@@ -115,6 +115,8 @@ export default function Search() {
         <Heading title={t("Your photos")} />
         <View style={st.chips}>
           <Shortcut icon="heart" label={t("Favorites")} onPress={() => router.push("/favorites")} />
+          <Shortcut icon="archive" label={t("Archive")} onPress={() => router.push("/archive")} />
+          <Shortcut icon="lock" label={t("Locked folder")} onPress={() => router.push("/locked")} />
           <Shortcut icon="video" label={t("Videos")} onPress={() => setQ("videos")} />
           <Shortcut icon="phone" label={t("Screenshots")} onPress={() => setQ("screenshots")} />
           <Shortcut icon="photos" label={String(new Date().getFullYear() - 1)} onPress={() => setQ(String(new Date().getFullYear() - 1))} />

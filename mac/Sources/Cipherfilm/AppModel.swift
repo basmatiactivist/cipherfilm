@@ -28,8 +28,16 @@ final class AppModel {
   private(set) var api: API?
   private(set) var vault: Vault?
 
+  /** The library every view reads: never an item of the locked folder (split off right after decrypting, setItems).
+   *  Archived items are in it; the main grid and On this day leave them out (Folders.mainGrid). */
   var items: [Item] = []
   private(set) var byId: [String: Item] = [:]
+  /** The locked folder's items: only while it is open, after its check passed (openLocked); empty otherwise. */
+  private(set) var lockedItems: [Item] = []
+  private(set) var lockedOpen = false
+  @ObservationIgnored private var lockedById: [String: Item] = [:]
+  /** locked items the person asked to delete: deleted for good after the locked folder's confirmation */
+  var confirmLockedDelete: [String]?
   var albums: [Album] = []
   var trash: [Item] = []
   var retentionDays = 30
@@ -320,7 +328,7 @@ final class AppModel {
     if let master, let api {
       vault = Vault(api: api, me: me, masterKey: master)
       phase = .unlocked
-      if let cached = vault!.loadCachedLibrary() { setItems(cached); images.prefetch(Array(cached.prefix(400)), vault!) }
+      if let cached = vault!.loadCachedLibrary() { setItems(cached); images.prefetch(Array(items.prefix(400)), vault!) }
       Task { await refresh() }
       restoreUploads()
       every(120)
@@ -446,6 +454,7 @@ final class AppModel {
     TripBook.shared.forget() // the trips hold decrypted items
     Outbox.clear()
     items = []; byId = [:]; albums = []; trash = []; notices = []; noticesSeen = 0
+    lockedItems = []; lockedById = [:]; lockedOpen = false; confirmLockedDelete = nil
     if ended { watcher.stop(forget: true); uploads = []; uploadsOwner = nil; uploadsPaused = false; Inbox.clear() }
   }
 
@@ -496,12 +505,88 @@ final class AppModel {
     }
   }
 
-  private func setItems(_ list: [Item]) {
-    items = list
-    byId = Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+  /** Splits the decrypted list (Folders.splitLocked): the open part is what every view gets; the locked part is kept
+   *  only while the locked folder is open, else let go of at once. */
+  func setItems(_ list: [Item]) {
+    let (open, locked) = Folders.splitLocked(list)
+    items = open
+    byId = Dictionary(open.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+    if lockedOpen {
+      setLocked(locked)
+    } else if !locked.isEmpty {
+      images.forget(locked) // moved there on another device: pictures shown before go from memory
+    }
   }
 
+  private func setLocked(_ list: [Item]) {
+    lockedItems = list.sorted { $0.when > $1.when }
+    lockedById = Dictionary(lockedItems.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+  }
+
+  /** An item of the open library by id (never a locked one: albums, people, the map, search look up through this). */
   func item(_ id: String) -> Item? { byId[id] }
+  /** Also the locked folder's, while it is open: only for its grid's actions and the viewer. */
+  func anyItem(_ id: String) -> Item? { byId[id] ?? lockedById[id] }
+
+  /** What the main grid (Photos, Videos) and On this day show: neither archived nor locked. */
+  var mainItems: [Item] { Folders.mainGrid(items) }
+  var archivedItems: [Item] { Folders.archived(items) }
+
+  // ---- the archive and the locked folder (CipherfilmCore/Folders.swift) ----
+
+  /** Whether this account may move items between folders (the public demo can't change anything). */
+  var canMove: Bool { me?.isDemo != true }
+
+  /** The locked folder's check passed (LockedGate): its items are taken from the library as last loaded. */
+  func openLocked() async {
+    guard let vault, phase == .unlocked else { return }
+    lockedOpen = true
+    let all = await vault.currentLibrary()
+    guard self.vault === vault, lockedOpen else { return }
+    setLocked(Folders.splitLocked(all).locked)
+  }
+
+  /** Leaving the locked folder (another screen, a search, the window closing): its items and their decrypted pictures
+   *  go from memory; the next visit asks again. */
+  func leaveLocked() {
+    lockedOpen = false
+    lockedItems = []; lockedById = [:]; confirmLockedDelete = nil
+    images.forgetLocked()
+  }
+
+  /** Archive, Unarchive, Move to / out of the locked folder: the item's encrypted metadata is written again
+   *  (Vault.move); the screens change at once and the server's list follows. */
+  func move(_ ids: [String], to folder: Folder) {
+    guard canMove else { return }
+    let all = ids.compactMap { anyItem($0) }.filter { !$0.broken && $0.folder != folder }
+    guard !all.isEmpty else { return }
+    let moved = Set(all.map(\.id))
+    func flagged(_ it: Item) -> Item {
+      var c = it
+      c.meta?.archived = folder == .archive ? JSONTrue(true) : nil
+      c.meta?.locked = folder == .locked ? JSONTrue(true) : nil
+      return c
+    }
+    if folder == .locked {
+      images.forget(all)
+      for it in all { vault?.dropPictures(it.id) }
+    }
+    // out of the locked folder: gone from it here; back in the library once the list loads again
+    let fromLocked = all.filter(\.isLocked)
+    if !fromLocked.isEmpty { setLocked(lockedItems.filter { !moved.contains($0.id) }) }
+    setItems((items.map { moved.contains($0.id) ? flagged($0) : $0 } + fromLocked.map(flagged)).sorted { $0.when > $1.when })
+    perform { try await $0.move(all, to: folder) }
+  }
+
+  /** Delete inside the locked folder: the trash never shows locked items, so they are deleted for good (moved to the
+   *  trash, then purged from it), after the folder's own confirmation. */
+  func deleteLocked(_ ids: [String]) {
+    let gone = Set(ids.filter { lockedById[$0] != nil })
+    guard !gone.isEmpty else { return }
+    setLocked(lockedItems.filter { !gone.contains($0.id) })
+    let list = Array(gone)
+    perform { try await $0.trash(list); try await $0.purge(list) }
+  }
 
   /** Which Cipherfilm this is, as people know it: the host (and the port when it isn't the default). */
   var serverName: String {
@@ -522,14 +607,15 @@ final class AppModel {
       guard self.vault === vault else { return }
       // the server's list is the truth also when nothing changed: a change made here (favorite, trash) that the
       // server refused goes back
-      setItems(r.items)
+      setItems(r.items) // the locked folder's items split off here: no other view ever gets them
       let albumsChanged = al != albums
       albums = al
       loadError = nil
       guard r.changed || albumsChanged else { return }
-      images.prefetch(Array(r.items.prefix(400)), vault)
-      if r.changed { vault.pruneCache(keeping: Set(r.items.map(\.id))) }
-      libraryChanged()
+      images.prefetch(Array(items.prefix(400)), vault)
+      // the locked folder's pictures aren't kept on disk: a cached copy from before goes here too
+      if r.changed { vault.pruneCache(keeping: Set(items.map(\.id))) }
+      libraryChanged(all: r.items)
     } catch {
       if !quiet { loadError = error.localizedDescription }
     }
@@ -630,7 +716,7 @@ final class AppModel {
     guard let vault else { return }
     do {
       let t = try await vault.loadTrash()
-      trash = t.items; retentionDays = t.retentionDays
+      trash = Folders.splitLocked(t.items).open; retentionDays = t.retentionDays // the trash never shows locked items
     } catch {
       if !quiet { loadError = error.localizedDescription }
     }
@@ -642,17 +728,23 @@ final class AppModel {
     settings.search = true
   }
 
-  /** The library changed: the background work gets the new list. */
-  private func libraryChanged() {
+  /** The library changed: the background work gets the new list (search and export without the locked folder; the
+   *  watched folders also know the locked items' names and sizes, so a file of one isn't uploaded again into the
+   *  library). */
+  private func libraryChanged(all: [Item]) {
     guard let vault else { return }
-    watcher.remember(library: items)
+    watcher.remember(library: all)
     search.libraryChanged(vault: vault, items: items, settings: settings)
-    exporter.libraryChanged(vault: vault, items: items, albums: albums, settings: settings)
+    exporter.libraryChanged(vault: vault, items: items, albums: albums, settings: settings,
+                            locked: Set(Folders.splitLocked(all).locked.map(\.id)))
   }
 
   private func settingsChanged(from old: AccountSettings) {
     watcher.configure(api: api!, userId: me!.user.id, settings: settings)
-    if settings.watchOn && !old.watchOn && phase == .unlocked { watcher.remember(library: items) } // before its first pass
+    if settings.watchOn && !old.watchOn && phase == .unlocked, let vault { // before its first pass
+      watcher.remember(library: items)
+      Task { let all = await vault.currentLibrary(); if self.vault === vault { watcher.remember(library: all.isEmpty ? items : all) } }
+    }
     if let vault {
       search.libraryChanged(vault: vault, items: items, settings: settings)
       exporter.libraryChanged(vault: vault, items: items, albums: albums, settings: settings)
@@ -676,6 +768,11 @@ final class AppModel {
   }
 
   func moveToTrash(_ ids: [String]) {
+    // locked items aren't trashed (the trash never shows them): they are deleted for good after a confirmation
+    let locked = ids.filter { lockedById[$0] != nil }
+    if !locked.isEmpty { confirmLockedDelete = locked }
+    let ids = ids.filter { lockedById[$0] == nil }
+    guard !ids.isEmpty else { return }
     let gone = Set(ids)
     setItems(items.filter { !gone.contains($0.id) })
     perform { try await $0.trash(ids) }

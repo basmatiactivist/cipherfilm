@@ -9,12 +9,14 @@ import { Problem, useAppTheme, Dialog } from "./ui";
 import { Tile } from "./Tile";
 import { Icon, type IconName } from "./icons";
 import { when, type Item } from "./library";
-import { refreshLibrary, setFavorite } from "./libraryStore";
+import { libraryItems, refreshLibrary, setFavorite } from "./libraryStore";
 import { api } from "./api";
 import { addToAlbum, createAlbum, loadAlbums, type Album } from "./albums";
 import { refreshAlbums } from "./albumsStore";
 import { prepareShare, saveItems } from "./outbox";
 import { setViewerList } from "./viewerList";
+import { canMove, moveTo, type Folder } from "./moveFolder";
+import { deleteForever, lockedThumbUri } from "./lockedFolder";
 import { radius, text } from "./tokens";
 import { Loading } from "./Loader";
 import { Veil } from "./veil";
@@ -54,15 +56,26 @@ interface Props {
   flat?: boolean;
   /** passed to the viewer: swiping stays inside these items (search results, a person) */
   within?: string;
+  /** the archive (its selection offers Unarchive) or the locked folder (Share, Save, Move out, Delete forever; its
+   *  thumbnails decrypted into memory only, lockedFolder.ts) */
+  folder?: "archive" | "locked";
+}
+
+/** What a move says: how many moved, and how many couldn't (partly failed). */
+function movedNote(to: Folder, moved: number, failed: number): string {
+  const done = to === "locked" ? tn(moved, "Moved {n} item to the locked folder.", "Moved {n} items to the locked folder.")
+    : to === "archive" ? tn(moved, "Archived {n} item.", "Archived {n} items.")
+    : tn(moved, "Moved {n} item back to Photos.", "Moved {n} items back to Photos.");
+  return failed ? `${done} ${tn(failed, "{n} item couldn't be moved. Try again.", "{n} items couldn't be moved. Try again.")}` : done;
 }
 
 /** The timeline: day headings, square tiles, and selection as in Google Photos (long press, then tap; Back ends it)
  *  with the actions Share, Add to album, Save to phone, Trash and an optional extra one. */
 /** One row of tiles; renders again only when its items, the tile size or their selection change. */
-const Row = memo(function Row(p: { row: Item[]; size: number; selecting: boolean; sel: string; onPress: (it: Item) => void; onLongPress: (it: Item) => void; onShown: (id: string) => void }) {
+const Row = memo(function Row(p: { row: Item[]; size: number; selecting: boolean; sel: string; onPress: (it: Item) => void; onLongPress: (it: Item) => void; onShown: (id: string) => void; thumb?: (it: Item) => Promise<string | null> }) {
   return (
     <View style={st.row}>
-      {p.row.map((it, i) => <Tile key={it.id} item={it} size={p.size} selecting={p.selecting} selected={p.sel[i] === "1"} onPress={p.onPress} onLongPress={p.onLongPress} onShown={p.onShown} />)}
+      {p.row.map((it, i) => <Tile key={it.id} item={it} size={p.size} selecting={p.selecting} selected={p.sel[i] === "1"} onPress={p.onPress} onLongPress={p.onLongPress} onShown={p.onShown} thumb={p.thumb} />)}
     </View>
   );
 });
@@ -70,7 +83,7 @@ const Row = memo(function Row(p: { row: Item[]; size: number; selecting: boolean
 /** What the first load of each place says. */
 const opening = (within: string): string | undefined => ({ search: t("Searching…"), trash: t("Opening the trash…"), person: t("Loading people…") } as Record<string, string>)[within];
 
-export function Gallery({ items, error, loading, onRefresh, header, top, empty, bottom = 0, fab, nav, extraAction, actions, album, flat, within }: Props) {
+export function Gallery({ items, error, loading, onRefresh, header, top, empty, bottom = 0, fab, nav, extraAction, actions, album, flat, within, folder }: Props) {
   const th = useAppTheme();
   const inset = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
@@ -79,7 +92,9 @@ export function Gallery({ items, error, loading, onRefresh, header, top, empty, 
   const [note, setNote] = useState<{ text: string; undo?: () => void } | null>(null);
   const [albumPicker, setAlbumPicker] = useState(false);
   const [asking, setAsking] = useState<ExtraAction | null>(null);
+  const [more, setMore] = useState(false);
   const selecting = selected.size > 0;
+  const locked = folder === "locked";
 
   // only what is shown stays selected (a new search, an item gone): every action and the count are about what is seen
   useEffect(() => {
@@ -148,10 +163,10 @@ export function Gallery({ items, error, loading, onRefresh, header, top, empty, 
   const press = useCallback((it: Item) => {
     if (live.current.selected.size || actions) toggle(it);
     else if (!it.broken) {
-      if (within) setViewerList((live.current.items ?? []).map((i) => i.id));
-      router.push({ pathname: "/photo/[id]", params: album ? { id: it.id, album } : within ? { id: it.id, within } : { id: it.id } });
+      if (within || folder) setViewerList((live.current.items ?? []).map((i) => i.id));
+      router.push({ pathname: "/photo/[id]", params: album ? { id: it.id, album } : within || folder ? { id: it.id, within: folder ?? within } : { id: it.id } });
     }
-  }, [toggle, album, actions, within]);
+  }, [toggle, album, actions, within, folder]);
 
   const picked = () => (items ?? []).filter((i) => selected.has(i.id) && !i.broken);
   const run = async (label: string, f: (p: (done: number, total: number) => void) => Promise<string | void>) => {
@@ -203,6 +218,26 @@ export function Gallery({ items, error, loading, onRefresh, header, top, empty, 
     setSelected(new Set());
     return allFav ? tn(ids.length, "Removed {n} item from favorites.", "Removed {n} items from favorites.") : tn(ids.length, "Added {n} item to favorites.", "Added {n} items to favorites.");
   });
+  // archive, unarchive, into the locked folder and out of it: inside each item's encrypted metadata (moveFolder.ts)
+  const move = (to: Folder) => run(to === "locked" ? t("Moving to the locked folder") : to === "archive" ? t("Archiving") : t("Moving back to Photos"), async (p) => {
+    setMore(false);
+    const list = picked();
+    const r = await moveTo(list, to, p);
+    setSelected(new Set());
+    await refreshLibrary();
+    return movedNote(to, r.moved.length, r.failed);
+  });
+  const forever: ExtraAction = {
+    icon: "trash", label: t("Delete forever"),
+    confirm: (n) => [tn(n, "Delete {n} item forever?", "Delete {n} items forever?"), tn(n, "Items in the locked folder don't go to the trash. It is deleted from the server now and can't be restored, not even from a backup made after today.", "Items in the locked folder don't go to the trash. They are deleted from the server now and can't be restored, not even from a backup made after today."), t("Delete forever")],
+    run: async (ids) => {
+      await deleteForever(ids);
+      await refreshLibrary();
+      refreshAlbums();
+      return tn(ids.length, "Deleted {n} item permanently.", "Deleted {n} items permanently.");
+    },
+  };
+
   const intoAlbum = (a: Album) => run(t("Adding to the album"), async () => {
     setAlbumPicker(false);
     const ids = picked().map((i) => i.id);
@@ -250,7 +285,7 @@ export function Gallery({ items, error, loading, onRefresh, header, top, empty, 
         refreshControl={<RefreshControl refreshing={loading && !!items} onRefresh={onRefresh} enabled={!selecting} colors={[th.colors.primary]} progressBackgroundColor={th.colors.elevation.level1} />}
         renderSectionHeader={({ section }) => (section.title ? <Text style={[st.day, text.heading]}>{section.title}</Text> : <View style={{ height: 8 }} />)}
         renderItem={({ item: row }) => (
-          <Row row={row} size={size} selecting={selecting} sel={row.map((it) => (selected.has(it.id) ? "1" : "0")).join("")} onPress={press} onLongPress={hold} onShown={shown} />
+          <Row row={row} size={size} selecting={selecting} sel={row.map((it) => (selected.has(it.id) ? "1" : "0")).join("")} onPress={press} onLongPress={hold} onShown={shown} thumb={locked ? lockedThumbUri : undefined} />
         )}
         ListHeaderComponent={error || top ? <>{error ? <View style={{ paddingTop: 8 }}><Problem>{error}</Problem></View> : null}{top}</> : undefined}
         ListEmptyComponent={items && !error ? <>{empty}</> : !items && !error ? <Loading label={opening(within ?? "") ?? (album ? t("Opening the album…") : t("Opening your library…"))} /> : undefined}
@@ -269,14 +304,23 @@ export function Gallery({ items, error, loading, onRefresh, header, top, empty, 
           <View style={st.actions}>
             {actions ? actions.map((a) => (
               <Action key={a.label} icon={a.icon} label={a.label} onPress={() => (a.confirm ? setAsking(a) : runAction(a))} />
-            )) : (
+            )) : locked ? (
+              <>
+                <Action icon="share" label={t("Share")} onPress={share} />
+                <Action icon="download" label={t("Save to phone")} onPress={save} />
+                {canMove() ? <Action icon="unlock" label={t("Move out")} onPress={() => move("library")} /> : null}
+                {canMove() ? <Action icon="trash" label={t("Delete forever")} onPress={() => setAsking(forever)} /> : null}
+              </>
+            ) : (
               <>
                 <Action icon="share" label={t("Share")} onPress={share} />
                 <Action icon={allFav ? "heartOn" : "heart"} label={allFav ? t("Unfavorite") : t("Favorite")} onPress={favorite} />
-                {extraAction && extra ? <Action icon={extraAction.icon} label={extraAction.label} onPress={extra} /> : null}
+                {/* with More (below), the extra one goes there: seven buttons don't fit a phone's width */}
+                {extraAction && extra && !canMove() ? <Action icon={extraAction.icon} label={extraAction.label} onPress={extra} /> : null}
                 <Action icon="folderPlus" label={t("Add to album")} onPress={() => setAlbumPicker(true)} />
                 <Action icon="download" label={t("Save to phone")} onPress={save} />
                 <Action icon="trash" label={t("action|Trash")} onPress={trash} />
+                {canMove() ? <Action icon="more" label={t("More")} onPress={() => setMore(true)} /> : null}
               </>
             )}
           </View>
@@ -291,6 +335,25 @@ export function Gallery({ items, error, loading, onRefresh, header, top, empty, 
           </Dialog.Content>
         </Dialog>
         <AlbumPicker visible={albumPicker} onDismiss={() => setAlbumPicker(false)} onPick={intoAlbum} />
+        <Dialog visible={more} onDismiss={() => setMore(false)}>
+          <Dialog.Title>{tn(selected.size, "{n} item", "{n} items")}</Dialog.Title>
+          <Dialog.Content style={{ paddingHorizontal: 0 }}>
+            {extraAction && extra ? (
+              <List.Item title={extraAction.label} onPress={() => { setMore(false); extra(); }}
+                left={() => <View style={st.moreIcon}><Icon name={extraAction.icon} color={th.colors.primary} /></View>} style={{ minHeight: 56 }} />
+            ) : null}
+            {folder === "archive" ? (
+              <List.Item title={t("Unarchive")} description={t("Back to the photos grid.")} onPress={() => move("library")}
+                left={() => <View style={st.moreIcon}><Icon name="unarchive" color={th.colors.primary} /></View>} style={{ minHeight: 56 }} />
+            ) : (
+              <List.Item title={t("Archive")} description={t("Out of the photos grid and On this day; still in albums, search and the map.")} descriptionNumberOfLines={3} onPress={() => move("archive")}
+                left={() => <View style={st.moreIcon}><Icon name="archive" color={th.colors.primary} /></View>} style={{ minHeight: 56 }} />
+            )}
+            <List.Item title={t("Move to locked folder")} description={t("Shown only in the locked folder, after your fingerprint or screen lock. Nothing of it is kept on this phone.")} descriptionNumberOfLines={3} onPress={() => move("locked")}
+              left={() => <View style={st.moreIcon}><Icon name="lock" color={th.colors.primary} /></View>} style={{ minHeight: 56 }} />
+          </Dialog.Content>
+          <Dialog.Actions><Button onPress={() => setMore(false)}>{t("Cancel")}</Button></Dialog.Actions>
+        </Dialog>
         {asking?.confirm ? (() => {
           const [title, text, button] = asking.confirm(selected.size);
           return (
@@ -333,6 +396,9 @@ export function AlbumPicker({ visible, onDismiss, onPick }: { visible: boolean; 
     setAlbums(null); setName(""); setError(undefined);
     loadAlbums().then((a) => setAlbums(a.filter((x) => !x.broken).sort((x, y) => x.name.localeCompare(y.name))), (e) => setError((e as Error).message));
   }, [visible]);
+  // what the album shows: never locked items (nor what is in the trash), though the album still holds them
+  const live = useMemo(() => new Set(libraryItems().map((i) => i.id)), [albums]);
+  const shownCount = (a: Album) => a.itemIds.filter((id) => live.has(id)).length;
   const create = async () => {
     try { onPick(await createAlbum(name)); } catch (e) { setError((e as Error).message); }
   };
@@ -344,7 +410,7 @@ export function AlbumPicker({ visible, onDismiss, onPick }: { visible: boolean; 
           {error ? <View style={{ paddingHorizontal: 24 }}><Problem>{error}</Problem></View> : null}
           {!albums && !error ? <Loading inline label={t("Loading albums…")} style={{ margin: 24 }} /> : null}
           {albums?.map((a) => (
-            <List.Item key={a.id} title={a.name} description={tn(a.itemIds.length, "{n} item", "{n} items")} onPress={() => onPick(a)}
+            <List.Item key={a.id} title={a.name} description={tn(shownCount(a), "{n} item", "{n} items")} onPress={() => onPick(a)}
               left={() => <View style={{ justifyContent: "center", marginLeft: 16 }}><Icon name="folderPlus" color={th.colors.primary} /></View>} style={{ minHeight: 56 }} />
           ))}
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 24, paddingVertical: 12 }}>
@@ -371,5 +437,6 @@ const st = StyleSheet.create({
   sheet: { position: "absolute", left: 0, right: 0, bottom: 0, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 10 },
   grabber: { alignSelf: "center", width: 36, height: 4, borderRadius: 2, marginBottom: 8, opacity: 0.6 },
   actions: { flexDirection: "row", justifyContent: "space-around", paddingHorizontal: 4 },
+  moreIcon: { justifyContent: "center", marginLeft: 16 },
   action: { flex: 1, maxWidth: 120, minHeight: 80, alignItems: "center", justifyContent: "flex-start", paddingVertical: 8, borderRadius: 12 },
 });

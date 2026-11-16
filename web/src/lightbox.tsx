@@ -1,4 +1,4 @@
-import { Icon } from "./icons";
+import { Icon, type IconName } from "./icons";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Item, fetchOriginal } from "./items";
 import { lazy } from "./lazy";
@@ -52,7 +52,7 @@ function VideoPlayer({ item }: { item: Item }) {
 
 const Editor = lazy(() => import("./edit/editor").then((m) => m.Editor), () => null);
 
-export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number) => void; onClose: () => void; action?: { label: string; run: (it: Item) => Promise<void> }; people?: { all: Group[]; ready: boolean }; onPerson?: (key: string) => void; onFavorite?: (it: Item) => void; onMap?: () => void; onEdited?: (id: string) => void }) {
+export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number) => void; onClose: () => void; action?: { label: string; icon?: IconName; run: (it: Item) => Promise<void> }; people?: { all: Group[]; ready: boolean }; onPerson?: (key: string) => void; onFavorite?: (it: Item) => void; onMap?: () => void; onEdited?: (id: string) => void }) {
   const dlg = useRef<HTMLDialogElement>(null);
   const startX = useRef<number | null>(null);
   const it = p.items[p.index];
@@ -133,7 +133,7 @@ export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number)
         )}
         {p.action && (
           <button class="lbbtn" aria-label={p.action.label} disabled={busy} onClick={async () => { setBusy(true); try { await p.action!.run(it); } catch (e) { setErr(e instanceof Error ? e.message : "That didn't work."); setBusy(false); } }}>
-            <Icon name={p.action.label === "Restore" ? "restore" : "trash"} />
+            <Icon name={p.action.icon ?? (p.action.label === "Restore" ? "restore" : "trash")} />
           </button>
         )}
       </div>

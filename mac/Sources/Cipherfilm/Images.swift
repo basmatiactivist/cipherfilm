@@ -1,5 +1,6 @@
 // Decrypted thumbnails and previews, in memory only (NSCache, emptied at every lock). Thumbnails come in batches of up
 // to 100 per request, are decoded off the main thread, and the newest 400 are fetched ahead when the library opens.
+// Pictures of items in the locked folder are kept apart and dropped when the folder is left (forgetLocked).
 import AppKit
 import ImageIO
 import CipherfilmCore
@@ -8,42 +9,75 @@ final class ImageStore: @unchecked Sendable {
   private let thumbs = NSCache<NSString, NSImage>()
   private let previews = NSCache<NSString, NSImage>()
   private let faces = NSCache<NSString, NSImage>()
+  /** the locked folder's thumbnails ("t:" key) and previews ("p:" key), emptied when it is left and at every lock */
+  private let locked = NSCache<NSString, NSImage>()
   private let gate = Gate(12)
   // counts the clears (every lock and sign-out): work started before one stores nothing after it
   private let genLock = NSLock()
   private var gen = 0
   private var generation: Int { genLock.withLock { gen } }
+  // counts the times the locked folder was left: a locked item's picture loading then stores nothing after it
+  private var lockedGen = 0
+  private var lockedGeneration: Int { genLock.withLock { lockedGen } }
+
+  private func get(_ c: String, _ it: Item) -> NSImage? {
+    it.isLocked ? locked.object(forKey: "\(c):\(it.pictureKey)" as NSString) : (c == "t" ? thumbs : previews).object(forKey: it.pictureKey as NSString)
+  }
+
+  /** Stores a picture unless a lock (or, for a locked item, leaving the folder) came since the load began. */
+  private func put(_ c: String, _ it: Item, _ img: NSImage, _ g: Int, _ lg: Int) {
+    guard g == generation else { return }
+    if it.isLocked {
+      guard lg == lockedGeneration else { return }
+      locked.setObject(img, forKey: "\(c):\(it.pictureKey)" as NSString)
+    } else {
+      (c == "t" ? thumbs : previews).setObject(img, forKey: it.pictureKey as NSString)
+    }
+  }
+
+  /** The locked folder was left: its decrypted pictures go from memory, and what is still loading is not kept. */
+  func forgetLocked() {
+    genLock.withLock { lockedGen += 1 }
+    locked.removeAllObjects()
+  }
+
+  /** Items that moved into the locked folder elsewhere: their pictures from before go from the shared caches. */
+  func forget(_ items: [Item]) {
+    for it in items { thumbs.removeObject(forKey: it.pictureKey as NSString); previews.removeObject(forKey: it.pictureKey as NSString) }
+  }
 
   init() {
     thumbs.countLimit = 3000
     previews.countLimit = 16
+    locked.countLimit = 1000
     faces.countLimit = 400
   }
 
   func clear() {
     genLock.withLock { gen += 1 }
-    thumbs.removeAllObjects(); previews.removeAllObjects(); faces.removeAllObjects()
+    genLock.withLock { lockedGen += 1 }
+    thumbs.removeAllObjects(); previews.removeAllObjects(); faces.removeAllObjects(); locked.removeAllObjects()
   }
 
   // cached by item and picture version: a photo turned or cropped elsewhere has new ones (Item.pictureKey)
-  func cachedThumb(_ it: Item) -> NSImage? { thumbs.object(forKey: it.pictureKey as NSString) }
+  func cachedThumb(_ it: Item) -> NSImage? { get("t", it) }
 
   private let batcher = ThumbBatcher()
 
   /** A thumbnail, decoded off the main thread; asked for together with the other tiles on screen in one request. */
   func thumb(_ it: Item, _ vault: Vault) async -> NSImage? {
-    if let hit = thumbs.object(forKey: it.pictureKey as NSString) { return hit }
+    if let hit = get("t", it) { return hit }
     guard it.hasThumb, !it.broken else { return nil }
-    let g = generation
+    let g = generation, lg = lockedGeneration
     guard let d = await batcher.get(it, vault), let img = await Task.detached(priority: .userInitiated, operation: { Self.decode(d) }).value else { return nil }
-    guard vault.isOpen, g == generation else { return nil }
-    thumbs.setObject(img, forKey: it.pictureKey as NSString)
+    guard vault.isOpen, g == generation, !it.isLocked || lg == lockedGeneration else { return nil }
+    put("t", it, img, g, lg)
     return img
   }
 
   /** Thumbnails of the items the grid will show next, fetched ahead in the background. */
   func prefetch(_ items: [Item], _ vault: Vault) {
-    let want = items.filter { $0.hasThumb && !$0.broken && thumbs.object(forKey: $0.pictureKey as NSString) == nil }
+    let want = items.filter { $0.hasThumb && !$0.broken && !$0.isLocked && thumbs.object(forKey: $0.pictureKey as NSString) == nil }
     let keys = Dictionary(want.map { ($0.id, $0.pictureKey) }, uniquingKeysWith: { a, _ in a })
     guard !want.isEmpty else { return }
     let g = generation
@@ -66,13 +100,13 @@ final class ImageStore: @unchecked Sendable {
   }
 
   func preview(_ it: Item, _ vault: Vault) async -> NSImage? {
-    if let hit = previews.object(forKey: it.pictureKey as NSString) { return hit }
+    if let hit = get("p", it) { return hit }
     guard it.hasPreview || it.hasThumb, !it.broken else { return nil }
-    let g = generation
+    let g = generation, lg = lockedGeneration
     guard let d = try? await vault.picture(it.hasPreview ? .preview : .thumb, of: it),
           let img = await Task.detached(priority: .userInitiated, operation: { Self.decode(d) }).value else { return nil }
-    guard vault.isOpen, g == generation else { return nil }
-    previews.setObject(img, forKey: it.pictureKey as NSString)
+    guard vault.isOpen, g == generation, !it.isLocked || lg == lockedGeneration else { return nil }
+    put("p", it, img, g, lg)
     return img
   }
 

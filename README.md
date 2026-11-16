@@ -84,6 +84,10 @@ and visitors are signed out every hour. To keep your own photos, [run your own s
   the device from the decrypted dates and places ([docs/MEMORIES.md](docs/MEMORIES.md)).
 - **Simple editing.** Turn and crop photos, fix when and where a photo or video was taken, on the web and Android;
   the original is never changed and "Revert to original" brings it back ([docs/EDITING.md](docs/EDITING.md)).
+- **Archive and locked folder.** Archive screenshots and receipts out of the timeline (search, albums and the map
+  still find them), or move photos and videos into a locked folder that shows them nowhere else and asks for your
+  fingerprint or password each time it opens. Which folder a photo is in is encrypted with its other details, so the
+  server doesn't know ([docs/EDITING.md](docs/EDITING.md)).
 - **Free up space.** Remove photos from the phone once they are in Cipherfilm.
 - **Duplicates and similar photos.** Find photos uploaded twice and bursts of nearly the same shot, worked out on
   your device, and move the extras to the trash (web and Android).

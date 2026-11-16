@@ -42,6 +42,9 @@ const paths = {
   sparkle: <Path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" />,
   boxOff: <Rect x="3.5" y="3.5" width="17" height="17" rx="3" />,
   boxOn: <Rect x="3.5" y="3.5" width="17" height="17" rx="3" />,
+  archive: <><Rect x="3" y="4" width="18" height="5" rx="1.5" /><Path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9" /><Path d="M10 13h4" /></>,
+  unarchive: <><Rect x="3" y="4" width="18" height="5" rx="1.5" /><Path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9" /><Path d="M12 17.5v-5M9.5 15l2.5-2.5 2.5 2.5" /></>,
+  unlock: <><Rect x="4" y="10" width="16" height="10" rx="2" /><Path d="M8 10V7a4 4 0 0 1 7.6-1.8" /></>,
   fingerprint: <><Path d="M7.5 5.5A7 7 0 0 1 19 11v1.5" /><Path d="M5 9a7 7 0 0 0-.5 2.5V14" /><Path d="M8.5 19.5A10 10 0 0 0 9 15v-3.5a3 3 0 0 1 6 0V14" /><Path d="M12 11.5V15a13 13 0 0 1-1.2 5.5" /><Path d="M15 17.5a12 12 0 0 1-.7 2.5" /><Path d="M18.6 15.5a13 13 0 0 1-.4 2" /></>,
 } as const;
 

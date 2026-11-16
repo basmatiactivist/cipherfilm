@@ -95,6 +95,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const trash = trashSplit?.open ?? null;
   const [retention, setRetention] = useState(30);
   const [confirmPurge, setConfirmPurge] = useState<"selected" | "all" | null>(null);
+  const [confirmLockedPurge, setConfirmLockedPurge] = useState(false); // locked items found in the trash
   const [note, setNote] = useState<{ text: string; undo?: () => void } | null>(null);
   const [query, setQuery] = useState("");
   const [showBroken, setShowBroken] = useState(false);
@@ -877,7 +878,9 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
               {trashSplit && trashSplit.locked.length > 0 && (
                 <p class="warning small" role="status">
                   {trashSplit.locked.length === 1 ? "1 item of this folder is" : `${trashSplit.locked.length} items of this folder are`} in the trash (moved there by another app).{" "}
-                  {!demo && <><button class="link" onClick={() => restore(trashSplit.locked.map((i) => i.id))}>Restore</button>{" · "}<button class="link" onClick={() => purge(trashSplit.locked.map((i) => i.id))}>Delete forever</button></>}
+                  {!demo && (confirmLockedPurge ? (
+                    <span class="moremenu"><span class="small">Delete {trashSplit.locked.length} forever?</span><button class="btn danger small" onClick={() => { setConfirmLockedPurge(false); purge(trashSplit.locked.map((i) => i.id)); }}>Delete forever</button><KeepButton label="Keep" onClick={() => setConfirmLockedPurge(false)} /></span>
+                  ) : <><button class="link" onClick={() => restore(trashSplit.locked.map((i) => i.id))}>Restore</button>{" · "}<button class="link" onClick={() => setConfirmLockedPurge(true)}>Delete forever…</button></>)}
                 </p>
               )}
               {shown.length === 0 ? (

@@ -295,7 +295,7 @@ func (a *App) createItem(w http.ResponseWriter, r *http.Request, u *user, s *ses
 		fail(w, 400, "invalid request")
 		return
 	}
-	if left, unlimited := a.quotaLeft(u.ID); !unlimited && left < cipherLen(req.Size) {
+	if a.roomLeft(u.ID) < cipherLen(req.Size) { // what in-flight uploads have reserved counts too
 		fail(w, 413, "this would go over your storage limit")
 		return
 	}

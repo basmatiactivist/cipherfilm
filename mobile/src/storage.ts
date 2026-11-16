@@ -5,11 +5,14 @@
 import { api } from "./api";
 import { t, tn } from "./i18n";
 import { size, usageLine } from "./admin";
-import { deviceLabel } from "./notices";
+import { deviceLabel, lastActive } from "./notices";
 
 export interface StorageSplit { photos: number; videos: number; other: number; thumbs: number; index: number }
 export interface StorageDevice {
   id: string; device: string; last_seen: number;
+  /** the server gave only the day the device was last used (another person's device in Administration): last_seen is
+   *  that day's midnight, UTC */
+  last_seen_day_only?: boolean;
   /** 0: none recorded yet (the server notes it only since the overview came) */
   last_upload_at: number;
   /** a phone app that backs up on its own */
@@ -50,6 +53,13 @@ export function splitParts(s: StorageSplit): { key: keyof StorageSplit; label: s
 
 /** Whole days since a time (0 = less than a day ago). */
 export const daysSince = (sec: number, now = Date.now() / 1000): number => Math.max(0, Math.floor((now - sec) / 86400));
+
+/** When a device was last used: minutes or hours when the server gives the time, else today, yesterday or days ago. */
+export function lastSeenText(d: Pick<StorageDevice, "last_seen" | "last_seen_day_only">, now = Date.now() / 1000): string {
+  if (!d.last_seen_day_only) return lastActive(d.last_seen, now);
+  const n = Math.max(0, Math.floor(now / 86400) - Math.floor(d.last_seen / 86400));
+  return n === 0 ? t("active today") : n === 1 ? t("active yesterday") : t("active {n} days ago", { n });
+}
 
 /** When a device last uploaded. */
 export function lastUploadText(d: Pick<StorageDevice, "last_upload_at">, now = Date.now() / 1000): string {

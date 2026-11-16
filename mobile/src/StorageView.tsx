@@ -6,9 +6,8 @@ import { StyleSheet, View } from "react-native";
 import { Button, ProgressBar, Text } from "react-native-paper";
 import { useAppTheme } from "./ui";
 import { Icon } from "./icons";
-import { lastActive } from "./notices";
 import { t, tn } from "./i18n";
-import { type AccountStorage, deviceName, foldDevices, lastUploadText, splitParts, staleText, storageLine, usedShare } from "./storage";
+import { type AccountStorage, deviceName, foldDevices, lastSeenText, lastUploadText, splitParts, staleText, storageLine, usedShare } from "./storage";
 
 /** A thin bar as the app's other ones (Account, Administration › Server); red from 90 %. */
 export function UsageBar({ share }: { share: number }) {
@@ -47,7 +46,7 @@ export function StorageView({ a, compact = false }: { a: AccountStorage; compact
             <View style={st.icon}><Icon name="phone" size={18} color={stale ? th.colors.error : d.current ? th.colors.primary : th.colors.onSurfaceVariant} /></View>
             <View style={{ flex: 1 }}>
               <Text variant="bodyMedium">{deviceName(d) + (d.current ? " · " + t("This phone") : "")}</Text>
-              <Text variant="bodySmall" style={muted}>{[d.current ? "" : lastActive(d.last_seen), lastUploadText(d)].filter(Boolean).join(" · ")}</Text>
+              <Text variant="bodySmall" style={muted}>{[d.current ? "" : lastSeenText(d), lastUploadText(d)].filter(Boolean).join(" · ")}</Text>
               {stale ? <Text variant="bodySmall" style={{ color: th.colors.error, fontWeight: "600", marginTop: 2 }}>{stale}</Text> : null}
             </View>
           </View>

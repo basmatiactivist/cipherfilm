@@ -86,7 +86,7 @@ function decryptRecords(s: Sodium, raw: any[]): Item[] {
   const items = raw.map((x): Item => {
     const it: Item = { id: x.id, kind: x.kind, size: x.size, segment_count: x.segment_count, created_at: x.created_at, has_thumb: x.has_thumb, has_preview: x.has_preview, trashed_at: x.trashed_at, purge_at: x.purge_at, favorite: !!x.favorite };
     const k = known.get(x.id);
-    if (k && k.master === master && k.wrapped === x.wrapped_item_key && k.meta === x.meta_enc) {
+    if (k && k.master === master && k.wrapped === x.wrapped_item_key && k.meta === x.meta_enc && k.item.size === it.size && k.item.segment_count === it.segment_count) {
       // the same record: keep what was decrypted, take the fields that change (favorite, thumbnail, trash) anew
       const same = k.item;
       if (same.favorite === it.favorite && same.has_thumb === it.has_thumb && same.has_preview === it.has_preview && same.trashed_at === it.trashed_at && same.purge_at === it.purge_at) return same;
@@ -97,7 +97,8 @@ function decryptRecords(s: Sodium, raw: any[]): Item[] {
     try {
       it.itemKey = unwrapAnyItemKey(s, unb64(s, x.wrapped_item_key), master, keyPair, x.id);
       it.meta = wellFormed(decryptMeta<ItemMeta>(s, unb64(s, x.meta_enc), it.itemKey, x.id), x.created_at);
-      if (it.meta.size !== it.size) throw new Error("size mismatch");
+      // the size and the number of segments are the server's plain record: both must match what the metadata says
+      if (it.meta.size !== it.size || it.segment_count !== segmentCount(it.meta.size)) throw new Error("size mismatch");
       it.kind = kindOfMeta(it.meta);
     } catch {
       it.broken = true;
@@ -183,12 +184,18 @@ export async function purgeTrash(ids: string[]): Promise<number> {
 /** Decrypt every segment into memory. Fine for photos; the streaming path for large files comes with video/ZIP. */
 export async function fetchOriginal(it: Item, onProgress?: (done: number, total: number) => void): Promise<Blob> {
   const s = await getSodium();
+  // a count that doesn't fit the size would end the loop early, and a short file would pass for the whole one
+  if (!Number.isSafeInteger(it.size) || it.size < 0 || it.segment_count !== segmentCount(it.size)) throw new Error("This file failed verification.");
   const parts: BlobPart[] = [];
+  let total = 0;
   for (let i = 0; i < it.segment_count; i++) {
     const ct = await getBytes(`/api/items/${it.id}/segments/${i}`);
-    parts.push(decryptSegment(s, it.itemKey!, it.id, i, it.segment_count, it.size, ct) as BlobPart);
+    const plain = decryptSegment(s, it.itemKey!, it.id, i, it.segment_count, it.size, ct);
+    total += plain.length;
+    parts.push(plain as BlobPart);
     onProgress?.(i + 1, it.segment_count);
   }
+  if (total !== it.size) throw new Error("This file failed verification.");
   // only ever saved or zipped, never shown: the stored type is not needed and not trusted
   return new Blob(parts, { type: "application/octet-stream" });
 }

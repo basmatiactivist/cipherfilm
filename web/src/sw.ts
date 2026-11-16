@@ -2,7 +2,7 @@
 // in memory and answering HTTP Range requests, so <video> can play and seek without a full download.
 // Keys never leave the browser: the page hands them over by message and the worker keeps them in memory only.
 import { getSodium, unb64 } from "./crypto/sodium";
-import { decryptSegment } from "./crypto/file";
+import { decryptSegment, segmentCount } from "./crypto/file";
 import { parseRange, sliceFor, spanFor } from "./sw-range";
 import { makeZip, predictLength } from "client-zip";
 import { attachment, dedupe } from "./names";
@@ -28,9 +28,11 @@ sw.addEventListener("install", () => sw.skipWaiting());
 sw.addEventListener("activate", (e: any) => e.waitUntil(sw.clients.claim()));
 const ITEM_ID = /^[0-9a-f]{32}$/;
 const isCount = (n: unknown): n is number => Number.isSafeInteger(n) && (n as number) >= 0;
+// the number of segments must fit the size: a smaller one would end a stream early, short of its Content-Length
+const isParams = (p: any): p is Params =>
+  !!p && typeof p.key === "string" && isCount(p.size) && isCount(p.count) && p.count === segmentCount(p.size) && typeof p.mime === "string";
 const isEntry = (e: any): e is Entry =>
-  !!e && typeof e.id === "string" && ITEM_ID.test(e.id) && typeof e.key === "string" && isCount(e.size) && isCount(e.count) &&
-  typeof e.mime === "string" && typeof e.name === "string" && typeof e.mtime === "number";
+  isParams(e) && typeof (e as Entry).id === "string" && ITEM_ID.test((e as Entry).id) && typeof (e as Entry).name === "string" && typeof (e as Entry).mtime === "number";
 
 sw.addEventListener("message", (e: any) => {
   // only this app's own pages hand over keys and jobs
@@ -102,7 +104,7 @@ async function serve(event: any, url: URL): Promise<Response> {
   let p = params.get(id);
   if (!p) {
     const got = await askPage(id, event.clientId);
-    if (got) params.set(id, (p = { ...got }));
+    if (isParams(got)) params.set(id, (p = { key: got.key, size: got.size, count: got.count, mime: got.mime }));
   }
   if (!p) return new Response("not found", { status: 404 });
 

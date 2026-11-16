@@ -31,7 +31,7 @@ const puts = vi.hoisted(() => [] as { path: string; body: { meta_enc: string } }
 vi.mock("./api", () => ({
   newSignIn: () => {}, api: async (method: string, path: string, body: { meta_enc: string }) => { if (method === "PUT") puts.push({ path, body }); return {}; } }));
 const lib = vi.hoisted(() => ({ items: [] as unknown[] }));
-vi.mock("./session", () => ({ session: () => ({ me: { user: { id: "u1" } }, masterKey: new Uint8Array(32) }), onWipe: () => {}, onSignOut: () => {} }));
+vi.mock("./session", () => ({ session: () => ({ me: { user: { id: "u1" } }, masterKey: new Uint8Array(32) }), onOwnSignOut: () => {}, onWipe: () => {}, onSignOut: () => {} }));
 vi.mock("./libraryStore", () => ({ libraryItems: () => lib.items, refreshLibrary: async () => {} }));
 
 const { lacking, matchOnPhone, relocate } = await import("./relocate");
@@ -64,6 +64,8 @@ describe("adding where photos were taken afterwards", () => {
     // what this phone didn't upload itself is never looked at
     own.delete("a");
     expect(lacking(items, new Set(["g"]), own).map((i) => i.id)).toEqual(["f"]);
+    // nor a stale one: its metadata is an older copy than seen here, writing on top of it would undo a change
+    expect(lacking([item("s", "IMG_7.jpg", 10, { stale: true })], new Set(), new Set(["s"]))).toEqual([]);
   });
 
   it("finds the phone's file by name and size, or by the picker's number and size", async () => {

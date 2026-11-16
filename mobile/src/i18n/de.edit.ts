@@ -5,6 +5,8 @@ export const deEdit: Record<string, string> = {
   "Saving": "Speichern",
   "Couldn't save the changes.": "Die Änderungen konnten nicht gespeichert werden.",
   "This item can't be edited.": "Dieses Objekt kann nicht bearbeitet werden.",
+  "This item was changed on another device meanwhile. Open it again to change the current version.": "Dieses Objekt wurde inzwischen auf einem anderen Gerät geändert. Öffnen Sie es erneut, um die aktuelle Fassung zu ändern.",
+  "This item's newest details aren't known on this phone. Reload the library and try again.": "Die neuesten Angaben zu diesem Objekt sind auf diesem Telefon nicht bekannt. Laden Sie die Bibliothek neu und versuchen Sie es noch einmal.",
   "Crop frame": "Zuschnittrahmen",
   "Decrypting the original…": "Original wird entschlüsselt …",
   "Decrypting the original": "Original wird entschlüsselt",

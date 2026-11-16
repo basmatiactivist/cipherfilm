@@ -6,19 +6,15 @@
 // Only into items this phone uploaded itself, with the item key it made (ownUploads.ts): a name and size in an item's
 // details prove nothing, and an item someone else added under a key of their own must never get a location from here.
 import { Directory, File, Paths } from "expo-file-system";
-import { b64, getSodium } from "@crypto/sodium";
-import { encryptMeta } from "@crypto/item";
-import { nextVersion } from "@crypto/metaVersion";
 import { placeChanged } from "@edit/edit";
 import N, { type PhoneMedia } from "../modules/cf-native/src/CfNativeModule";
-import { api } from "./api";
 import { onWipe, session } from "./session";
 import { fingerprint } from "./prints";
 import { provablyOwn } from "./ownUploads";
 import { videoLocationOf } from "./videoGps";
 import { coords } from "./places";
 import { libraryItems, refreshLibrary } from "./libraryStore";
-import type { Item, ItemMeta } from "./library";
+import { writeMeta, type Item, type ItemMeta } from "./library";
 
 const STATE = () => new File(new Directory(Paths.document, "relocate"), "done.json");
 
@@ -67,9 +63,10 @@ export async function matchOnPhone(items: Item[], media: PhoneMedia[]): Promise<
 }
 
 /** Items that could still get a location: this phone's own uploads (own), finished, decrypted, a photo or video, none
- *  yet, not looked at before. */
+ *  yet, not looked at before. Never a stale one (its metadata is an older copy than seen here: writing on top of it
+ *  would undo a change); it is looked at again once its current metadata is known. */
 export function lacking(items: Item[], done: Set<string>, own: Set<string>): Item[] {
-  return items.filter((it) => own.has(it.id) && !it.broken && !it.trashed_at && it.meta && it.itemKey && (it.kind === "image" || it.kind === "video")
+  return items.filter((it) => own.has(it.id) && !it.broken && !it.stale && !it.trashed_at && it.meta && it.itemKey && (it.kind === "image" || it.kind === "video")
     && !coords(it) && !done.has(it.id) && !placeChanged(it.meta)); // not where the person set or removed the place
 }
 
@@ -99,7 +96,6 @@ async function run(): Promise<number> {
   // with the whole library readable, what isn't on this phone came from elsewhere: not looked for again (with only
   // some photos allowed, it may be among the others)
   if (access === "full") for (const it of todo) if (!found.has(it)) done.add(it.id);
-  const s = await getSodium();
   let added = 0;
   for (const [it, m] of found) {
     if (session().me?.user.id !== userId || !session().masterKey) break; // locked or signed out meanwhile
@@ -109,7 +105,7 @@ async function run(): Promise<number> {
       const { lat, lon } = info;
       if (typeof lat === "number" && typeof lon === "number" && Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180 && !(lat === 0 && lon === 0)) {
         const meta: ItemMeta = { ...it.meta!, gps: { lat, lon } };
-        await api("PUT", `/api/items/${it.id}/meta`, { meta_enc: b64(s, encryptMeta(s, nextVersion(meta), it.itemKey!, it.id)) });
+        await writeMeta(it, meta); // changed meanwhile on another device: tried again next time
         added++;
       }
       done.add(it.id);

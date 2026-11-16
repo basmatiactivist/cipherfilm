@@ -6,20 +6,20 @@
 // encrypted names) and the encrypted thumbnails and previews. They open only with the master key, which exists in
 // memory only, so a cached copy reveals no more than the server's copy does. Sign-out removes it.
 import { Directory, File, Paths } from "expo-file-system";
-import { getSodium, unb64, type Sodium } from "@crypto/sodium";
-import { accountKeyPair, decryptMeta, decryptPreview, decryptThumb, unwrapAnyItemKey, type KeyPair } from "@crypto/item";
+import { b64, getSodium, unb64, type Sodium } from "@crypto/sodium";
+import { accountKeyPair, decryptMeta, decryptPreview, decryptThumb, encryptMeta, unwrapAnyItemKey, type KeyPair } from "@crypto/item";
 import { normEmail } from "@crypto/account";
 import N from "../modules/cf-native/src/CfNativeModule";
 import { api, csrfToken, getBytes, postForBytes, server } from "./api";
-import { onWipe, session } from "./session";
+import { onOwnSignOut, onWipe, session } from "./session";
 import { t } from "./i18n";
 import { ThumbBatcher } from "./thumbbatch";
 import { kindOf } from "./kind";
 import { ListSync, type Page } from "./sync";
 import { normEdit, normOrig, pictureKey, type Edit, type Orig } from "@edit/edit";
 import { SHA256_HEX } from "@crypto/sha256";
-import { HighWater, metaVersion } from "@crypto/metaVersion";
-import { isLocked, normFolders, splitLocked } from "@edit/folders";
+import { HighWater, metaDigest, metaVersion } from "@crypto/metaVersion";
+import { asLocked, isLocked, normFolders, splitLocked } from "@edit/folders";
 
 export interface ItemMeta {
   name: string; mime: string; size: number; lastModified: number; capture_ts: number;
@@ -63,9 +63,12 @@ export interface Item {
   wrapped?: string;
   /** Decryption or verification failed: never shown, the screen says so. */
   broken?: boolean;
-  /** The server gave an older version of the metadata than this phone saw before (@crypto/metaVersion) and the newer
-   *  one isn't known here any more: shown, but never shared or saved as the original by default (outbox.ts). */
+  /** The server gave an older version of the metadata than this phone saw before, or another copy at the version seen
+   *  (@crypto/metaVersion), and the newer one isn't known here any more: handled as a locked item (@edit/folders
+   *  asLocked), never changed here, and never shared or saved as the original by default (outbox.ts). */
   stale?: boolean;
+  /** Which sealed copy of the metadata `meta` is (@crypto/metaVersion metaDigest): a change names it as its base. */
+  base?: string;
   /** in the trash: when it was moved there and when the server deletes it permanently (seconds) */
   trashed_at?: number;
   purge_at?: number;
@@ -74,21 +77,25 @@ export interface Item {
 
 // what was decrypted already, by id: the server's list after the cached one (and every reload after an upload)
 // decrypts only what is new or changed instead of the whole library again; dropped at every lock and sign-out
-let known = new Map<string, { w: string; m: string; master: Uint8Array; key?: Uint8Array; meta?: ItemMeta }>();
+let known = new Map<string, { w: string; m: string; d: string; master: Uint8Array; key?: Uint8Array; meta?: ItemMeta }>();
 
 // the highest metadata version seen of each item (@crypto/metaVersion), per account, in the app's private files (item
-// ids and numbers only); kept across locks, deleted at sign-out
+// ids, numbers and digests only); kept across locks and sessions the server ended, deleted only when the person signs
+// out, deletes the account or leaves the server here (onOwnSignOut)
 const VERSIONS = () => new Directory(Paths.document, "cf-mv");
+/** An account id as a file name: the server sends it, so only the same safe form as the cache folder's (userDir). */
+export const SAFE_ID = /^[0-9A-Za-z_-]{1,64}$/;
 let versions: { owner: string; hw: HighWater } | null = null;
 function highWater(owner: string): HighWater {
   if (versions?.owner !== owner) {
-    const f = new File(VERSIONS(), `${owner}.json`);
+    // an id that isn't a safe file name is checked in memory only, never names a file
+    const f = SAFE_ID.test(owner) ? new File(VERSIONS(), `${owner}.json`) : null;
     let loaded: unknown = null;
-    try { if (f.exists) loaded = JSON.parse(f.textSync()); } catch { /* unreadable: started anew */ }
+    try { if (f?.exists) loaded = JSON.parse(f.textSync()); } catch { /* unreadable: started anew */ }
     versions = {
       owner,
       hw: new HighWater((e) => {
-        try { VERSIONS().create({ intermediates: true, idempotent: true }); f.write(JSON.stringify(e)); } catch { /* this run only */ }
+        if (f) try { VERSIONS().create({ intermediates: true, idempotent: true }); f.write(JSON.stringify(e)); } catch { /* this run only */ }
       }, loaded),
     };
   }
@@ -99,26 +106,29 @@ function decrypt(s: Sodium, master: Uint8Array, pair: () => KeyPair, x: any, hw?
   const it: Item = { id: x.id, kind: x.kind, size: x.size, segment_count: x.segment_count, created_at: x.created_at, has_thumb: x.has_thumb, has_preview: x.has_preview, trashed_at: x.trashed_at, purge_at: x.purge_at, favorite: !!x.favorite, wrapped: x.wrapped_item_key };
   const k = known.get(x.id);
   if (k && k.master === master && k.w === x.wrapped_item_key && k.m === x.meta_enc && k.key && k.meta && k.meta.size === x.size) {
-    it.itemKey = k.key; it.meta = k.meta; it.kind = kindOf(k.meta);
+    it.itemKey = k.key; it.meta = k.meta; it.kind = kindOf(k.meta); it.base = k.d;
     return it;
   }
   try {
+    it.base = metaDigest(x.meta_enc);
     it.itemKey = unwrapAnyItemKey(s, unb64(s, x.wrapped_item_key), master, pair, x.id);
     it.meta = checkedMeta(decryptMeta<ItemMeta>(s, unb64(s, x.meta_enc), it.itemKey, x.id));
     if (it.meta.size !== it.size) throw new Error("size mismatch");
     it.kind = kindOf(it.meta);
-    if (hw && !hw.check(x.id, metaVersion(it.meta))) {
-      // an older version of the metadata than seen before: the server handed out a copy it kept (a removed place
-      // back, an edit undone). The newer one decrypted since the last lock stays; without it the item is stale.
-      console.warn(`Cipherfilm: the server sent older metadata for item ${x.id} (version ${metaVersion(it.meta)}, seen ${hw.highest(x.id)}); keeping the newer one.`);
-      if (k?.meta && k.key && k.master === master && metaVersion(k.meta) > metaVersion(it.meta)) { it.meta = k.meta; it.itemKey = k.key; it.wrapped = k.w; it.kind = kindOf(k.meta); }
-      else it.stale = true;
+    if (hw && !hw.check(x.id, metaVersion(it.meta), it.base)) {
+      // an older version of the metadata than seen before, or another copy at the version seen: the server handed out
+      // a copy it kept (a removed place back, an edit undone, out of the locked folder) or one made from an older copy.
+      // The one decrypted since the last lock stays; without it the item is stale (handled as locked, never changed).
+      const keep = !!k?.meta && !!k.key && k.master === master && hw.accepts(x.id, metaVersion(k.meta), k.d);
+      console.warn(`Cipherfilm: the server sent metadata for item ${x.id} that isn't the newest seen here (version ${metaVersion(it.meta)}, seen ${hw.highest(x.id)}); ${keep ? "keeping the newer one" : "marked stale"}.`);
+      if (keep) { it.meta = k!.meta; it.itemKey = k!.key; it.wrapped = k!.w; it.kind = kindOf(k!.meta!); it.base = k!.d; }
+      else { it.stale = true; forgetPictures(x.id); } // nothing of it stays on this phone, as for a locked item
       return it;
     }
     // turned or cropped on some device since: the pictures kept here are the old ones; moved into the locked folder
     // (here or on another device): nothing of it stays on this phone (lockedFolder.ts)
     if (k?.meta && (pictureKey(x.id, k.meta) !== pictureKey(x.id, it.meta) || (isLocked(it.meta) && !isLocked(k.meta)))) forgetPictures(x.id);
-    known.set(x.id, { w: x.wrapped_item_key, m: x.meta_enc, master, key: it.itemKey, meta: it.meta });
+    known.set(x.id, { w: x.wrapped_item_key, m: x.meta_enc, d: it.base, master, key: it.itemKey, meta: it.meta });
   } catch {
     it.broken = true;
   }
@@ -174,7 +184,7 @@ const newest = (a: Item, b: Item) => when(b) - when(a);
 function giveThumbKeys(items: Item[]) {
   const dir = userDir();
   N.thumbsSetup(server(), csrfToken(), dir?.uri ?? null);
-  const withThumb = items.filter((it) => it.itemKey?.length === 32 && it.has_thumb && ID.test(it.id) && !isLocked(it.meta));
+  const withThumb = items.filter((it) => it.itemKey?.length === 32 && it.has_thumb && ID.test(it.id) && !asLocked(it));
   const keys = new Uint8Array(withThumb.length * 32);
   withThumb.forEach((it, i) => keys.set(it.itemKey!, i * 32));
   N.thumbKeys(withThumb.map((it) => it.id), keys);
@@ -343,7 +353,7 @@ async function plainBytes(kind: "thumb" | "preview", it: Item, wanted: () => boo
     return (kind === "thumb" ? decryptThumb : decryptPreview)(s, ct, it.itemKey!, it.id);
   };
   const dir = userDir();
-  const f = dir && ID.test(it.id) && !isLocked(it.meta) ? new File(dir, `${kind}-${it.id}`) : null;
+  const f = dir && ID.test(it.id) && !asLocked(it) ? new File(dir, `${kind}-${it.id}`) : null;
   if (f?.exists) {
     try { return open(await f.bytes()); } catch { if (session().masterKey) try { f.delete(); } catch { /* damaged copy, fetched again */ } }
   }
@@ -364,7 +374,7 @@ export const thumbBytes = (it: Item) => (it.itemKey && it.has_thumb ? plainBytes
  *  page that shows one holds the only copy, gone with it). */
 export function previewUri(it: Item): Promise<string> {
   const key = pictureKey(it.id, it.meta); // a new version after an edit
-  const keep = !isLocked(it.meta);
+  const keep = !asLocked(it);
   const hit = keep ? previews.get(key) : undefined;
   if (hit) return Promise.resolve(hit);
   let p = inflight.get(key);
@@ -382,12 +392,63 @@ export function previewUri(it: Item): Promise<string> {
   return p;
 }
 
-/** The newest thumbnails not yet on this phone, fetched ahead after the library loads (natively, into the encrypted
- *  cache only; after what is on screen). */
+/** The locked and stale items whose thumbnails were fetched ahead since the app started (ids only, never their
+ *  thumbnails); the open ones' stay in the encrypted cache, which lasts over locks too. */
+let ahead = new Set<string>();
+
+/** The newest thumbnails not yet on this phone, fetched ahead after the library loads (after what is on screen).
+ *  Chosen from the whole list (pass it unsplit), whatever folder each item is in, so which ones are asked for doesn't
+ *  tell the server which items are locked: the open ones natively, into the encrypted cache; a locked or stale one's is
+ *  fetched the same way but dropped unopened (nothing of the locked folder on this phone), once per app start. */
 export function prefetchThumbs(items: Item[]) {
-  N.thumbsPrefetch(items.filter((it) => it.has_thumb && !it.broken && it.itemKey && ID.test(it.id) && !isLocked(it.meta)).slice(0, 400).map((it) => it.id));
+  const want = items.filter((it) => it.has_thumb && !it.broken && it.itemKey && ID.test(it.id)).slice(0, 400);
+  N.thumbsPrefetch(want.filter((it) => !asLocked(it)).map((it) => it.id));
+  for (const it of want) {
+    if (!asLocked(it) || ahead.has(it.id)) continue;
+    ahead.add(it.id);
+    batcher.get(it.id, () => !!session().masterKey).then((ct) => ct.fill(0), () => ahead.delete(it.id));
+  }
 }
 export function clearImages() { previews.clear(); inflight.clear(); N.thumbsClearImages(); }
+
+/** The item's metadata changed on another device after the copy here was decrypted: the change was not written. */
+export class MetaChanged extends Error {
+  constructor() { super(t("This item was changed on another device meanwhile. Open it again to change the current version.")); }
+}
+
+/** Whether an item's metadata may be changed here: readable, and its newest metadata known (not stale). */
+export const writable = (it: Item) => !it.broken && !it.stale && !!it.meta && !!it.itemKey;
+
+/**
+ * Writes `meta` as the next version of an item's metadata (@crypto/metaVersion), sealed with the item key, made from
+ * the copy decrypted here: the request names that copy (`base`), and the server refuses it (MetaChanged) when another
+ * device changed the item meanwhile, instead of writing over that change. Never for a stale or unreadable item:
+ * writing on top of an older copy would undo a change on every device. The caller reloads the library afterwards.
+ */
+export async function writeMeta(it: Item, meta: ItemMeta): Promise<void> {
+  if (session().me?.demo) throw new Error(t("This is the public demo: changes are turned off."));
+  const me = session().me;
+  if (!session().masterKey || !me) throw new Error(t("Unlock your library first."));
+  if (!writable(it)) throw new Error(t("This item's newest details aren't known on this phone. Reload the library and try again."));
+  const s = await getSodium();
+  const hw = highWater(me.user.id);
+  // a higher version than any seen here: no device goes back to an older copy the server kept
+  const next: ItemMeta = { ...meta, mv: Math.max(metaVersion(meta), metaVersion(it.meta), hw.highest(it.id)) + 1 };
+  const enc = b64(s, encryptMeta(s, next, it.itemKey!, it.id));
+  const put = (base?: string) => api("PUT", `/api/items/${it.id}/meta`, base ? { meta_enc: enc, base } : { meta_enc: enc });
+  try {
+    await put(it.base).catch((e) => {
+      // a server from before bases refuses the unknown field: written as before (base names only what the server has)
+      if (it.base && (e as { status?: unknown } | null)?.status === 400) return put();
+      throw e;
+    });
+  } catch (e) {
+    if ((e as { status?: unknown } | null)?.status === 409) throw new MetaChanged();
+    throw e;
+  }
+  hw.wrote(it.id, next.mv!, metaDigest(enc));
+  hw.flush();
+}
 
 onWipe(() => { known = new Map(); forgetLists(); });
 
@@ -396,5 +457,10 @@ onWipe((how) => {
   N.forgetThumbs?.(); // thumbnail keys and bitmaps
   N.forgetVideos?.(); // video keys and decrypted segments
   if (how === "ended") try { const r = ROOT(); if (r.exists) r.delete(); } catch { /* best effort */ }
-  if (how === "ended") { versions = null; try { const v = VERSIONS(); if (v.exists) v.delete(); } catch { /* best effort */ } }
+  // the versions' file stays: a session the server ended is not the person's sign-out (onOwnSignOut)
+  if (how === "ended") { versions = null; ahead = new Set(); }
+});
+onOwnSignOut(() => {
+  versions = null;
+  try { const v = VERSIONS(); if (v.exists) v.delete(); } catch { /* best effort */ }
 });

@@ -43,13 +43,15 @@ type storageSplit struct {
 }
 
 type storageDevice struct {
-	ID           string `json:"id"`
-	Device       string `json:"device"`
-	LastSeen     int64  `json:"last_seen"`
-	LastUploadAt int64  `json:"last_upload_at"` // 0: none recorded (the server notes it since the overview came)
-	AutoBackup   bool   `json:"auto_backup"`
-	Stale        bool   `json:"backup_stale"`
-	Current      bool   `json:"current,omitempty"`
+	ID       string `json:"id"`
+	Device   string `json:"device"`
+	LastSeen int64  `json:"last_seen"`
+	// last_seen is only the day (its UTC midnight): what an admin sees of another person's devices
+	SeenDayOnly  bool  `json:"last_seen_day_only,omitempty"`
+	LastUploadAt int64 `json:"last_upload_at"` // 0: none recorded (the server notes it since the overview came)
+	AutoBackup   bool  `json:"auto_backup"`
+	Stale        bool  `json:"backup_stale"`
+	Current      bool  `json:"current,omitempty"`
 }
 
 type accountStorage struct {
@@ -145,6 +147,14 @@ func (a *App) adminStorage(w http.ResponseWriter, r *http.Request, u *user, s *s
 			continue
 		}
 		acc := a.storageOf(x, s.Pub, "", a.isDemo(x))
+		if x.ID != u.ID {
+			// of another person's devices an admin learns on which day each was last used, not when: enough to see
+			// one that is no longer used. backup_stale is already worked out from the exact time.
+			for i := range acc.Devices {
+				acc.Devices[i].LastSeen -= acc.Devices[i].LastSeen % 86400
+				acc.Devices[i].SeenDayOnly = true
+			}
+		}
 		used += acc.UsedBytes
 		items += acc.ItemCount
 		for _, d := range acc.Devices {

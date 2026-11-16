@@ -188,3 +188,38 @@ func TestStorageOverviewKeepsTheDemoAccountsDevicesPrivate(t *testing.T) {
 		t.Fatalf("demo devices shown to the admin: %v", d)
 	}
 }
+
+// Of another person's devices an admin sees on which day each was last used, not the time; the person's own overview,
+// and the admin's own row, keep the exact time. The stale-backup hint still comes from the exact time.
+func TestAdminSeesOnlyTheDayOtherDevicesWereUsed(t *testing.T) {
+	e := newEnv(t)
+	admin, _ := e.setupAdmin("admin@x.org")
+	bob, _ := e.acceptInvite(e.invite(admin, "bob@x.org"))
+	e.readyItem(bob)
+	id := userIDOf(e, "bob@x.org")
+	day := int64(24 * 3600)
+	seen := time.Now().Unix() - 3600
+	if seen%day == 0 {
+		seen-- // a time that is not itself a midnight
+	}
+	e.app.db.Exec(`UPDATE sessions SET device='Pixel 8 (Android app)', last_upload_at=?, last_seen=? WHERE user_id=?`, seen-8*day, seen, id)
+
+	_, all := admin.do("GET", "/api/admin/storage", nil, false)
+	d := storageAccount(t, all, "bob@x.org")["devices"].([]any)[0].(map[string]any)
+	if got := storageNum(d, "last_seen"); got != seen-seen%day || d["last_seen_day_only"] != true {
+		t.Fatalf("bob's device to the admin: last_seen %d (want %d), %v", got, seen-seen%day, d)
+	}
+	if d["backup_stale"] != true || storageNum(d, "last_upload_at") != seen-8*day {
+		t.Fatalf("the stale hint and the last upload stay: %v", d)
+	}
+	mine := storageAccount(t, all, "admin@x.org")["devices"].([]any)[0].(map[string]any)
+	if _, ok := mine["last_seen_day_only"]; ok || storageNum(mine, "last_seen")%day == 0 && storageNum(mine, "last_seen") != 0 {
+		t.Fatalf("the admin's own device: %v", mine)
+	}
+
+	_, own := bob.do("GET", "/api/me/storage", nil, false)
+	od := own["devices"].([]any)[0].(map[string]any)
+	if _, ok := od["last_seen_day_only"]; ok || storageNum(od, "last_seen") < seen {
+		t.Fatalf("bob's own overview keeps the exact time: %v", od)
+	}
+}

@@ -729,6 +729,9 @@ func (a *App) putMeta(w http.ResponseWriter, r *http.Request, u *user, s *sessio
 // listPage and pageBytes bound one list response, in rows and in the bytes of their encrypted fields: a library is
 // fetched page by page (?after=<next of the previous page>), so its size never decides how much memory one request
 // takes. listPerUser bounds how many pages of one account are built and sent at a time; more wait their turn.
+// listsInAll bounds the pages of all accounts that read the database at a time: fewer than its pooled connections
+// (store.go, SetMaxOpenConns(4)), so list pages, however many and however large the libraries, always leave one for
+// everything else, starting with each request's session lookup. A page gives its place up when it starts sending.
 var (
 	// vars for the tests of paging
 	listPage  = 2000
@@ -736,7 +739,7 @@ var (
 )
 
 const (
-	listPerUser   = 4
+	listPerUser   = 2
 	listWriteTime = 5 * time.Minute
 )
 
@@ -763,12 +766,43 @@ func (a *App) listing(h func(http.ResponseWriter, *http.Request, *user, *session
 		case turn <- struct{}{}:
 			defer func() { <-turn }()
 		case <-r.Context().Done():
+			fail(w, 503, "busy, try again")
 			return
 		}
+		select {
+		case listsInAll <- struct{}{}:
+		case <-r.Context().Done():
+			fail(w, 503, "busy, try again")
+			return
+		}
+		var once sync.Once
+		free := func() { once.Do(func() { <-listsInAll }) }
+		defer free()
 		http.NewResponseController(w).SetWriteDeadline(time.Now().Add(listWriteTime))
-		h(w, r, u, s)
+		h(&freeOnWrite{ResponseWriter: w, free: free}, r, u, s)
 	}
 }
+
+var listsInAll = make(chan struct{}, 3)
+
+// freeOnWrite gives the page's place among listsInAll up when the answer starts: its database work is done then, and a
+// slow reader must not keep other accounts' pages waiting.
+type freeOnWrite struct {
+	http.ResponseWriter
+	free func()
+}
+
+func (f *freeOnWrite) WriteHeader(code int) {
+	f.free()
+	f.ResponseWriter.WriteHeader(code)
+}
+
+func (f *freeOnWrite) Write(b []byte) (int, error) {
+	f.free()
+	return f.ResponseWriter.Write(b)
+}
+
+func (f *freeOnWrite) Unwrap() http.ResponseWriter { return f.ResponseWriter }
 
 // pageAfter reads the ?after cursor: "<timestamp>.<id>" of the last item on the previous page.
 func pageAfter(r *http.Request) (ts int64, id string, has, ok bool) {
@@ -801,9 +835,12 @@ func (a *App) listItems(w http.ResponseWriter, r *http.Request, u *user, s *sess
 		fail(w, 500, "server error")
 		return
 	}
-	q, args := `SELECT id,kind,size_bytes,segment_count,wrapped_item_key,meta_enc,has_thumb,has_preview,created_at,favorite FROM items WHERE user_id=? AND state='ready' AND trashed_at IS NULL`, []any{u.ID}
+	// items_lib holds only the library's rows in its order, and the cursor is a range of it: a page reads its own
+	// rows, not the trash or the pages before it
+	q, args := `SELECT id,kind,size_bytes,segment_count,wrapped_item_key,meta_enc,has_thumb,has_preview,created_at,favorite FROM items INDEXED BY items_lib
+		WHERE user_id=? AND state='ready' AND trashed_at IS NULL`, []any{u.ID}
 	if has {
-		q, args = q+` AND (created_at < ? OR (created_at = ? AND id > ?))`, append(args, ts, ts, after)
+		q, args = q+` AND created_at <= ? AND (created_at < ? OR id > ?)`, append(args, ts, ts, after)
 	}
 	rows, err := a.db.QueryContext(r.Context(), q+` ORDER BY created_at DESC, id LIMIT ?`, append(args, listPage)...)
 	if err != nil {

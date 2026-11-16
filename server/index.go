@@ -198,23 +198,28 @@ func (a *App) listIndex(w http.ResponseWriter, r *http.Request, u *user, s *sess
 	}
 	// ?model=family: only that model's entries (MobileCLIP's with those from before 1.9.0, which were MobileCLIP's
 	// too); without it all of them
-	fam, all := r.URL.Query().Get("model"), 1
-	if fam != "" {
-		if modelFamily(fam) != fam {
-			fail(w, 400, "invalid request")
-			return
-		}
-		all = 0
+	fam := r.URL.Query().Get("model")
+	if fam != "" && modelFamily(fam) != fam {
+		fail(w, 400, "invalid request")
+		return
 	}
-	legacy := fam == legacyFamily
+	// one condition per case, so each is a range of an index (item_index_user, item_index_model) and a page reads
+	// its own rows; MobileCLIP's family with those from before 1.9.0 ('') is two ranges
+	where, wargs := `user_id=?`, []any{u.ID}
+	switch {
+	case fam == legacyFamily:
+		where, wargs = `user_id=? AND model IN (?, '')`, []any{u.ID, fam}
+	case fam != "":
+		where, wargs = `user_id=? AND model=?`, []any{u.ID, fam}
+	}
 	var rows *sql.Rows
 	var err error
 	if after != "" {
-		rows, err = a.db.QueryContext(r.Context(), `SELECT item_id,data_enc,updated_at FROM item_index WHERE user_id=? AND (?=1 OR model=? OR (? AND model=''))
-			AND (updated_at > ? OR (updated_at = ? AND item_id > ?)) ORDER BY updated_at, item_id LIMIT ?`, u.ID, all, fam, legacy, since, since, after, indexPage)
+		rows, err = a.db.QueryContext(r.Context(), `SELECT item_id,data_enc,updated_at FROM item_index WHERE `+where+`
+			AND updated_at >= ? AND (updated_at > ? OR item_id > ?) ORDER BY updated_at, item_id LIMIT ?`, append(wargs, since, since, after, indexPage)...)
 	} else {
-		rows, err = a.db.QueryContext(r.Context(), `SELECT item_id,data_enc,updated_at FROM item_index WHERE user_id=? AND (?=1 OR model=? OR (? AND model='')) AND updated_at >= ?
-			ORDER BY updated_at, item_id LIMIT ?`, u.ID, all, fam, legacy, since, indexPage)
+		rows, err = a.db.QueryContext(r.Context(), `SELECT item_id,data_enc,updated_at FROM item_index WHERE `+where+` AND updated_at >= ?
+			ORDER BY updated_at, item_id LIMIT ?`, append(wargs, since, indexPage)...)
 	}
 	if err != nil {
 		fail(w, 500, "server error")
@@ -244,7 +249,7 @@ func (a *App) listIndex(w http.ResponseWriter, r *http.Request, u *user, s *sess
 	// (another device switched models with an app that dropped them) and fetches everything again.
 	if after == "" {
 		var n int64
-		a.db.QueryRow(`SELECT COUNT(*) FROM item_index WHERE user_id=? AND (?=1 OR model=? OR (? AND model=''))`, u.ID, all, fam, legacy).Scan(&n)
+		a.db.QueryRow(`SELECT COUNT(*) FROM item_index WHERE `+where, wargs...).Scan(&n)
 		res["count"] = n
 	}
 	writeJSON(w, 200, res)

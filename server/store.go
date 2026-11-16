@@ -171,6 +171,14 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
+	// list pages read only their own rows (items.go listItems, index.go listIndex): the library alone (finished, not
+	// in the trash) in its order, and one model's index entries in theirs. After migrate, which gives item_index its
+	// model.
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS items_lib ON items(user_id, created_at DESC, id) WHERE state='ready' AND trashed_at IS NULL;
+CREATE INDEX IF NOT EXISTS item_index_model ON item_index(user_id, model, updated_at, item_id);`); err != nil {
+		db.Close()
+		return nil, err
+	}
 	// the incremental lists' change numbers, tombstones and triggers (since.go): after migrate, which they build on
 	if err := migrateSync(db); err != nil {
 		db.Close()

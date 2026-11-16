@@ -730,7 +730,9 @@ func (a *App) twoFactorEnable(w http.ResponseWriter, r *http.Request, u *user, s
 		return
 	}
 	defer clear(secret)
-	if u.twoFactor() && !checked {
+	// a setup is finished only under the two-step sign-in state it was begun in: one begun while it was off can't add a
+	// second step once it is on, and one checked against a second step that is gone since (turned off) can't turn it on
+	if u.twoFactor() != checked {
 		fail(w, http.StatusConflict, "start the setup again")
 		return
 	}

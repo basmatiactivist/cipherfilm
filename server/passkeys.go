@@ -746,6 +746,10 @@ func (a *App) removePasskey(r *http.Request, userID, id string) (off bool, err e
 		if _, err := tx.Exec(`DELETE FROM recovery_codes WHERE user_id=?`, userID); err != nil {
 			return false, err
 		}
+		// an authenticator setup begun under two-step sign-in goes with it, as when it is turned off (turnOff)
+		if _, err := tx.Exec(`UPDATE users SET totp_pending='' WHERE id=?`, userID); err != nil {
+			return false, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return false, err

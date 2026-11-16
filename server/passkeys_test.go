@@ -644,3 +644,32 @@ func TestPasskeyOnlyAccountMakesNewRecoveryCodes(t *testing.T) {
 		}
 	}
 }
+
+// An authenticator setup checked with a second step can't be finished once the last passkey was removed (two-step
+// sign-in went off with it): it would turn two-step sign-in on again with ten new recovery codes.
+func TestSetupCheckedUnderTwoStepEndsWithTheLastPasskey(t *testing.T) {
+	e := newEnv(t)
+	clk := e.pinClock()
+	admin, ab, k, codes := e.adminWithPasskey()
+	code, setup := admin.do("POST", "/api/me/2fa/setup", map[string]any{"current_auth": ab["auth"], "code": codes[0]}, true)
+	if code != 200 {
+		t.Fatalf("setup: %d %v", code, setup)
+	}
+	_, l := admin.do("GET", "/api/me/passkeys", nil, false)
+	id := l["passkeys"].([]any)[0].(map[string]any)["id"].(string)
+	if code, out := admin.do("DELETE", "/api/me/passkeys/"+id, map[string]any{"current_auth": ab["auth"], "passkey": e.proofPasskey(admin, k)}, true); code != 200 || out["two_factor"] != false {
+		t.Fatalf("remove the last passkey: %d %v", code, out)
+	}
+	if code, out := admin.do("POST", "/api/me/2fa/enable", map[string]any{"code": codeAt(t, setup["secret"].(string), clk.at)}, true); code != 409 {
+		t.Fatalf("a setup from before two-step sign-in went off was finished: %d %v", code, out)
+	}
+	// and one sealed as checked is refused while two-step sign-in is off, also if the pending setup were still stored
+	secret := randBytes(20)
+	e.app.db.Exec(`UPDATE users SET totp_pending=? WHERE email='admin@x.org'`, e.app.sealPending(mustUserID(e, "admin@x.org"), secret, true, clk.at))
+	if code, _ := admin.do("POST", "/api/me/2fa/enable", map[string]any{"code": hotp(secret, uint64(clk.at.Unix()/30))}, true); code != 409 {
+		t.Fatalf("a checked setup was finished while two-step sign-in is off: %d", code)
+	}
+	if _, st := admin.do("GET", "/api/me/2fa", nil, false); st["enabled"] != false {
+		t.Fatalf("two-step sign-in is on again: %v", st)
+	}
+}

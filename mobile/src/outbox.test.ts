@@ -129,6 +129,22 @@ describe("photos whose place or date changed", () => {
     expect(native.shared[0]).toMatch(/c\.jpg \(retagged\)$/);
     expect(native.shared[1]).toMatch(/d \(edited\)\.jpg$/); // another format: drawn anew with the metadata as set
   });
+
+  it("over the edit limit are refused by default, never handed out as the original instead", async () => {
+    const { saveItems, prepareShare, leaving } = await import("./outbox");
+    const big = (id: string, extra: object = {}) => ({ ...(placeRemoved(id) as object), size: 210 * 1024 * 1024, ...extra }) as never;
+    const stale = { ...(item("s") as object), size: 250 * 1024 * 1024, stale: true } as never;
+    expect(leaving(big("a"))).toBe("retag");
+    expect(leaving(stale)).toBe("retag");
+    native.saved = []; native.shared = [];
+    await expect(saveItems([big("a")], () => {})).rejects.toThrow(/too large/);
+    await expect(prepareShare([stale], () => {})).rejects.toThrow(/too large/);
+    expect(native.saved).toEqual([]);
+    expect(native.shared).toEqual([]);
+    // asked for explicitly, the original leaves as it is
+    expect(leaving(big("a"), true)).toBe("original");
+
+  });
 });
 
 describe("share", () => {

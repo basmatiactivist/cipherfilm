@@ -85,15 +85,18 @@ const mimeOf = (it: Item) => it.meta?.mime || (it.kind === "video" ? "video/mp4"
 /** How a photo leaves the app unless the original is asked for (@edit/edit leavesAs): turned or cropped as edited (a
  *  JPEG made here, edit.ts); with only its date or place changed as its own JPEG with the metadata as set ("retag", a
  *  removed place is in no part of the file) or, in another format, drawn anew as a JPEG; everything else (videos too)
- *  as the original. Photos over the edit limit leave as the original. */
+ *  as the original. The same for photos over the edit limit: they can't be prepared here (copyOf), but never leave
+ *  as the original instead unless it is asked for. */
 export function leaving(it: Item, original?: boolean): "edited" | "retag" | "redraw" | "original" {
-  if (original || it.size > 200 * 1024 * 1024) return "original"; // edit.ts EDIT_LIMIT
+  if (original) return "original";
   return leavesAs(it.kind, it.meta, it.stale);
 }
+const EDIT_LIMIT = 200 * 1024 * 1024; // edit.ts EDIT_LIMIT: larger pictures aren't decoded or read whole here
 // (edit.ts, with the image manipulator, is loaded only when an edited photo leaves the app)
 const copyOf = async (dir: Directory, it: Item, used: Set<string>, onBytes: (n: number) => void, original?: boolean) => {
   const how = leaving(it, original);
   if (how === "original") return decryptTo(dir, it, used, onBytes);
+  if (it.size > EDIT_LIMIT) throw new Error(t("“{name}” is too large to prepare with its changes on this phone. Use Share original or Save original in its details to use the file as uploaded.", { name: it.meta?.name ?? "" }));
   const edit = await import("./edit");
   return how === "retag" ? edit.retaggedCopyTo(dir, it, used, onBytes) : edit.editedCopyTo(dir, it, used, onBytes);
 };

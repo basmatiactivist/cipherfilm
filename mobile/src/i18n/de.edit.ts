@@ -42,6 +42,7 @@ export const deEdit: Record<string, string> = {
   "Date or place changed. The original is kept.": "Datum oder Ort geändert. Das Original bleibt erhalten.",
   "Share original": "Original teilen",
   "Save original": "Original speichern",
+  "“{name}” is too large to prepare with its changes on this phone. Use Share original or Save original in its details to use the file as uploaded.": "„{name}“ ist zu groß, um auf diesem Handy mit den Änderungen vorbereitet zu werden. Verwenden Sie in den Details „Original teilen“ oder „Original speichern“, um die Datei wie hochgeladen zu verwenden.",
   "This photo couldn't be opened for editing on this phone.": "Dieses Foto lässt sich auf diesem Handy nicht zum Bearbeiten öffnen.",
   "This photo couldn't be opened for editing on this phone. You can still change its date and place.": "Dieses Foto lässt sich auf diesem Handy nicht zum Bearbeiten öffnen. Datum und Ort können Sie trotzdem ändern.",
   "Couldn't save the edited photo: this server can't store edits yet. Ask whoever runs it to update it.": "Das bearbeitete Foto konnte nicht gespeichert werden: Dieser Server kann noch keine Bearbeitungen speichern. Bitte die Person, die ihn betreibt, ihn zu aktualisieren.",

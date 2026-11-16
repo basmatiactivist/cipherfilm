@@ -260,8 +260,8 @@ func failBusy(w http.ResponseWriter) {
 }
 
 func (a *App) logout(w http.ResponseWriter, r *http.Request, u *user, s *session) {
-	a.db.Exec(`DELETE FROM sessions WHERE id_hash=?`, s.IDHash)
-	a.live.recheck(u.ID) // its live-update streams end too
+	a.deleteSessions(`id_hash=?`, s.IDHash) // and the invites made from it
+	a.live.recheck(u.ID)                    // its live-update streams end too
 	clearCookie(w)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
@@ -646,9 +646,12 @@ func (a *App) recoverFinish(w http.ResponseWriter, r *http.Request) {
 // ---- invites ----
 
 // inviteCreatorOK is the condition (on invites) that an invite's creator may still invite: the server console, or an
-// administrator who is still one and active. An invite of someone demoted, disabled or deleted since stops working.
-const inviteCreatorOK = `(invites.created_by='` + consoleActor + `' OR EXISTS (SELECT 1 FROM users c WHERE c.id=invites.created_by
-	AND c.role='admin' AND c.status='active'))`
+// administrator who is still one and active, from a session that still exists. An invite of someone demoted, disabled
+// or deleted since stops working, and so does one whose session has ended (the paths that end a session also delete
+// its invites; this holds should one of them be missed).
+const inviteCreatorOK = `(invites.created_by='` + consoleActor + `' OR (EXISTS (SELECT 1 FROM users c WHERE c.id=invites.created_by
+	AND c.role='admin' AND c.status='active') AND (invites.created_session='' OR EXISTS (SELECT 1 FROM sessions cs
+	WHERE cs.pub=invites.created_session AND cs.user_id=invites.created_by))))`
 
 // dropInvitesOf deletes the open invites an account made from the sessions where selects (a fixed condition on
 // invites, values in args): sessions that were just signed out, by the person or by a password change or recovery,

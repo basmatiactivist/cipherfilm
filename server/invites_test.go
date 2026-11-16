@@ -146,3 +146,71 @@ func TestSigningADeviceOutEndsItsInvites(t *testing.T) {
 		t.Fatal("this device's own invite stopped working")
 	}
 }
+
+// An invite also ends with its session when that session signs itself out, is pushed out by the limit on sessions per
+// account, or reaches the end of its lifetime.
+func TestInvitesEndWithTheirSessionHoweverItEnds(t *testing.T) {
+	e := newEnv(t)
+	owner, ab := e.setupAdmin("admin@x.org")
+	fromOwner := e.invite(owner, "keep@x.org")
+
+	// signed out by itself: gone from the device list, so nobody could sign it out there any more
+	stolen := e.login("admin@x.org", ab)
+	tok := e.invite(stolen, "eve@x.org")
+	if code, _ := stolen.do("POST", "/api/auth/logout", nil, true); code != 200 {
+		t.Fatalf("logout: %d", code)
+	}
+	if e.inviteWorks(tok) {
+		t.Fatal("the invite of a session that signed itself out still works")
+	}
+
+	// pushed out by sessionsMax newer sign-ins (on a server of its own: the others may be pushed out too)
+	{
+		e2 := newEnv(t)
+		_, ab2 := e2.setupAdmin("admin@x.org")
+		old := e2.login("admin@x.org", ab2)
+		tok := e2.invite(old, "eve2@x.org")
+		var pub string
+		e2.app.db.QueryRow(`SELECT created_session FROM invites WHERE email='eve2@x.org'`).Scan(&pub)
+		now := e2.app.now().Unix()
+		e2.app.db.Exec(`UPDATE sessions SET last_seen=?, created_at=? WHERE pub=?`, now-31*24*3600, now-40*24*3600, pub)
+		for range sessionsMax {
+			e2.login("admin@x.org", ab2)
+		}
+		var n int
+		e2.app.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE pub=?`, pub).Scan(&n)
+		if pub == "" || n != 0 {
+			t.Fatal("the session unused longest was not pushed out")
+		}
+		if e2.inviteWorks(tok) {
+			t.Fatal("the invite of a session pushed out by the limit still works")
+		}
+	}
+
+	// at the end of its lifetime (a year after sign-in), found by its own next request or by the next sign-in
+	for _, found := range []string{"request", "sign-in"} {
+		yearOld := e.login("admin@x.org", ab)
+		tok = e.invite(yearOld, "eve-"+found+"@x.org")
+		e.app.db.Exec(`UPDATE sessions SET expires_at=? WHERE pub IN (SELECT created_session FROM invites WHERE email=?)`,
+			e.app.now().Unix()-1, "eve-"+found+"@x.org")
+		if found == "request" {
+			yearOld.do("GET", "/api/me", nil, false)
+		} else {
+			e.login("admin@x.org", ab)
+		}
+		if e.inviteWorks(tok) {
+			t.Fatalf("the invite of a session that ended at its lifetime (found by a %s) still works", found)
+		}
+	}
+
+	// and a session row removed some other way takes its invites' validity with it
+	other := e.login("admin@x.org", ab)
+	tok = e.invite(other, "eve3@x.org")
+	e.app.db.Exec(`DELETE FROM sessions WHERE pub IN (SELECT created_session FROM invites WHERE email='eve3@x.org')`)
+	if e.inviteWorks(tok) {
+		t.Fatal("an invite whose session is gone still works")
+	}
+	if !e.inviteWorks(fromOwner) {
+		t.Fatal("the invite of a session that is still signed in stopped working")
+	}
+}

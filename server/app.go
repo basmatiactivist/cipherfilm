@@ -399,7 +399,7 @@ func (a *App) lookupSession(token string, touch bool) (*user, *session, error) {
 		return nil, nil, errors.New("expired")
 	}
 	if now > exp {
-		a.db.Exec(`DELETE FROM sessions WHERE id_hash=?`, h)
+		a.deleteSessions(`id_hash=?`, h)
 		return nil, nil, errors.New("expired")
 	}
 	u, err := a.userByID(s.UserID)
@@ -437,7 +437,7 @@ func (a *App) startSession(w http.ResponseWriter, r *http.Request, userID, authH
 	// ended sessions go; one that ended because its device went unused (not at the year's end) as signed out on
 	// purpose, as lookupSession does when such a device comes back first
 	a.remember(`expires_at < ? AND expires_at < created_at + ?`, now.Unix(), int64(sessionAbs.Seconds()))
-	if _, err = a.db.Exec(`DELETE FROM sessions WHERE expires_at < ?`, now.Unix()); err != nil {
+	if _, err = a.deleteSessions(`expires_at < ?`, now.Unix()); err != nil {
 		return
 	}
 	// with authHash, the session is only created if the password that was just checked is still the account's: a
@@ -453,13 +453,13 @@ func (a *App) startSession(w http.ResponseWriter, r *http.Request, userID, authH
 	}
 	// at most sessionsMax per account (each is a row, and a device-list entry, for up to a year): the one idle longest
 	// goes, never this new one. That device is asked to sign in again; nothing is wiped.
-	if res, err := a.db.Exec(`DELETE FROM sessions WHERE user_id=? AND id_hash NOT IN (SELECT id_hash FROM sessions WHERE user_id=?
-		ORDER BY last_seen DESC, created_at DESC LIMIT ?)`, userID, userID, sessionsMax); rowsAffected(res, err) > 0 {
+	if n, _ := a.deleteSessions(`user_id=? AND id_hash NOT IN (SELECT id_hash FROM sessions WHERE user_id=?
+		ORDER BY last_seen DESC, created_at DESC LIMIT ?)`, userID, userID, sessionsMax); n > 0 {
 		a.live.recheck(userID)
 	}
 	// the browser's previous session, if it had one, is replaced by this one: end it rather than leave it valid
 	if c, err := r.Cookie(cookieName); err == nil {
-		a.db.Exec(`DELETE FROM sessions WHERE id_hash=?`, sha256hex(c.Value))
+		a.deleteSessions(`id_hash=?`, sha256hex(c.Value))
 	}
 	setSessionCookie(w, tok)
 	a.db.Exec(`UPDATE users SET last_login_at=? WHERE id=?`, now.Unix(), userID)
@@ -467,6 +467,30 @@ func (a *App) startSession(w http.ResponseWriter, r *http.Request, userID, authH
 		a.setDevice(w, u)
 	}
 	return &session{IDHash: sha256hex(tok), UserID: userID, CSRF: csrf, Pub: pub, Created: now.Unix()}, nil
+}
+
+// deleteSessions ends the sessions where selects (a fixed condition, values in args) and the open invites made from
+// them: an invite does not outlive the session that made it, however that session ends.
+func (a *App) deleteSessions(where string, args ...any) (int64, error) {
+	type ended struct{ user, pub string }
+	var gone []ended
+	if rows, err := a.db.Query(`SELECT user_id,pub FROM sessions WHERE `+where, args...); err == nil {
+		for rows.Next() {
+			var x ended
+			if rows.Scan(&x.user, &x.pub) == nil {
+				gone = append(gone, x)
+			}
+		}
+		rows.Close()
+	}
+	res, err := a.db.Exec(`DELETE FROM sessions WHERE `+where, args...)
+	if err != nil {
+		return 0, err
+	}
+	for _, x := range gone {
+		a.dropInvitesOf(x.user, `created_session=?`, x.pub)
+	}
+	return res.RowsAffected()
 }
 
 func setSessionCookie(w http.ResponseWriter, tok string) {

@@ -168,3 +168,44 @@ func TestMetadataWithEditsStillReads(t *testing.T) {
 		t.Fatalf("read %+v", m)
 	}
 }
+
+// A case-insensitive volume (APFS, NTFS) folds more than lowercasing does: a second item whose name differs from an
+// earlier one only by such a character, or by its normalization, gets its own file instead of replacing the first.
+func TestNamesThatFoldTogetherGetTheirOwnFile(t *testing.T) {
+	const a, b = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	dir := filepath.Join("Library", "2024", "2024-05")
+	for _, pair := range [][2]string{
+		{"Screenshot.png", "screenshot.PNG"},
+		{"Screenshot.png", "ſcreenshot.png"}, // long s folds to s
+		{"Σα.jpg", "σα.jpg"},                 // capital sigma and small sigma
+		{"σα.jpg", "ςα.jpg"},                 // small sigma and final sigma
+		{"Café.jpg", "CAFÉ.jpg"},            // composed and decomposed é, different case
+		{"Straße.jpg", "STRASSE.jpg"},        // ß folds to ss
+		{"Ångström.jpg", "ångström.jpg"},     // Angstrom sign and å
+	} {
+		used := map[string]bool{}
+		first := freeName(filepath.Join(dir, pair[0]), a, used)
+		second := freeName(filepath.Join(dir, pair[1]), b, used)
+		if first != filepath.Join(dir, pair[0]) {
+			t.Fatalf("%q: the first item was renamed to %q", pair[0], first)
+		}
+		if nameKey(first) == nameKey(second) || !strings.HasSuffix(strings.TrimSuffix(second, filepath.Ext(second)), "-bbbbbb") {
+			t.Fatalf("%q after %q: got %q, which the volume takes for the same file", pair[1], pair[0], second)
+		}
+	}
+	// names that are really different keep their own name
+	used := map[string]bool{}
+	freeName(filepath.Join(dir, "a.jpg"), a, used)
+	if got := freeName(filepath.Join(dir, "b.jpg"), b, used); got != filepath.Join(dir, "b.jpg") {
+		t.Fatalf("got %q", got)
+	}
+	// nor may an item's temp file land on an earlier item's file
+	used = map[string]bool{}
+	freeName(filepath.Join(dir, "x.jpg.partial"), a, used)
+	if got := freeName(filepath.Join(dir, "ſ.JPG"), b, used); got != filepath.Join(dir, "ſ.JPG") {
+		t.Fatalf("got %q", got)
+	}
+	if got := freeName(filepath.Join(dir, "X.JPG"), b, used); got != filepath.Join(dir, "X-bbbbbb.JPG") {
+		t.Fatalf("got %q", got)
+	}
+}

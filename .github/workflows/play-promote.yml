@@ -3,7 +3,8 @@ name: Google Play promote
 # Gives that version's release on one track (by default internal testing, where release.yml put it) with its notes
 # to another track (by default production; Play reviews it there). A rollout below 1 is staged: 0.2 reaches 20 % of
 # users, and Play Console raises it later. Runs in the "release" environment, which admits only v* tags and holds
-# the service account's key (docs/RELEASING.md, "Google Play from CI").
+# the service account's key (docs/RELEASING.md, "Google Play from CI"). Only a tag on master with a published GitHub
+# release is promoted.
 on:
   workflow_dispatch:
     inputs:
@@ -21,7 +22,15 @@ jobs:
     environment: release
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with: { persist-credentials: false }  # no token left in .git for later steps
+        with: { persist-credentials: false, fetch-depth: 0 }  # full history, for the check below; no token left in .git
+      # only what release.yml released: a tag on master with a published (not draft) GitHub release
+      - name: The tag is a published release on master
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          git merge-base --is-ancestor HEAD origin/master \
+            || { echo "$GITHUB_REF_NAME points at $(git rev-parse HEAD), which is not on master: not promoted"; exit 1; }
+          [ "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = false ] \
+            || { echo "no published GitHub release for $GITHUB_REF_NAME: not promoted"; exit 1; }
       - name: Promote
         env:
           PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}

@@ -15,7 +15,7 @@ const answer = (origin: string, type: string, challenge: string, extra: object =
 
 describe("passkeys through the browser", () => {
   it("takes the browser for a server on a private network, Android's own way for any other", async () => {
-    for (const s of ["https://photos.tail3b37f7.ts.net", "https://192.168.1.20:8443", "https://10.0.0.5", "https://nas.local", "https://100.87.149.85", "https://localhost:8443"]) {
+    for (const s of ["https://photos.example-tailnet.ts.net", "https://192.168.1.20:8443", "https://10.0.0.5", "https://nas.local", "https://100.64.0.5", "https://localhost:8443"]) {
       expect(await h.viaBrowser(s), s).toBe(true);
     }
     for (const s of ["https://photos.example.org", "https://cipherfilm.app", "https://100.200.1.1"]) {

@@ -15,7 +15,7 @@ docker compose exec -T app /app backup
 echo "2/2 copying the encrypted files ..."   # database first, files second: see docs in README
 # written under a temporary name and listed back before it gets its real name: a failed copy (a full disk, say)
 # ends the script with an error and leaves no archive that looks complete
-docker run --rm -v "$VOLUME":/data:ro -v "$DEST":/out alpine:3.24 sh -ec '
+docker run --rm -v "$VOLUME":/data:ro -v "$DEST":/out alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf sh -ec '
   umask 077
   trap "rm -f \"/out/$0.part\"" EXIT
   if [ -d /data/blobs ]; then tar -cf "/out/$0.part" -C /data backup blobs; else tar -cf "/out/$0.part" -C /data backup; fi  # no blobs/ until the first upload

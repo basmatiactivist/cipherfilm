@@ -224,12 +224,12 @@ only on the server your administrator runs.
 
 ## Admin area
 
-**Admin** (visible to administrators only) shows who is on the server and how much they use, last sign-in per person, open invites (revocable), a default storage limit for new people, per-person limits, role changes (make someone an administrator or a regular user), server status (disk, data size, signed-in devices, last backup) and a log of recent admin actions. None of it exposes photos, album names or file names.
+**Admin** (visible to administrators only) shows who is on the server and how much they use, last sign-in per person, open invites (revocable), a default storage limit for new people, per-person limits, role changes (make someone an administrator or a regular user), server status (disk, data size, signed-in devices, last backup) and an activity log. The log shows every administrator the last administrative events (invites, limit and role changes, disabling, deleting, people joining or deleting their own account) and, apart from those, the changes people made to their own sign-in: signing out a device (with that device's label) or all other or unused devices, turning two-step sign-in on or off, adding or removing an authenticator app or a passkey, making new recovery codes; each with the time and the e-mail addresses involved. None of it exposes photos, album names or file names.
 
 **Admin › Storage** is a storage and backup overview: the server's total use and free disk space, and per account its use
 against its limit with a split into photos, videos, other files, thumbnails and previews, and search index and
 settings (from the sizes and the photo/video/other kind the server stores anyway; items finished before 2.0 count their
-small copies as the original), the number of items and, per signed-in device, its label, when it was last seen and when
+small copies as the original), the number of items and, per signed-in device, its label, the day it was last seen (each person sees the time for their own devices) and when
 it last finished an upload. A phone app that is still in use but hasn't uploaded for 7 days is flagged: its automatic
 backup may be off or stuck (or there was simply nothing new). Only the newest upload time per device is kept, not which
 items a device uploaded. The server records upload times from 2.8.0 on; for a device signed in before that, the

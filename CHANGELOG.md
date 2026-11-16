@@ -74,6 +74,34 @@ version into the GitHub release notes, so a release cannot be published without 
   again.
 - Docs match 2.8 (storage and backup overview, unused devices, archive and locked folder, trips and recaps, combined
   search and text in photos, the Mac's settings panes; README, self-hosting, search, threat model, Mac and Play texts).
+- Thumbnails are fetched ahead from the whole library, whatever folder a photo is in (web, Android, Mac); locked ones
+  are fetched and dropped, never kept. So which ones are fetched tells the server less about which photos are in the
+  locked folder (docs/THREAT_MODEL.md says what it can still tell).
+- Server: Account › Storage and Admin › Storage read counters the server keeps, so they stay quick for large libraries
+  and don't slow other people down.
+- Server: list pages read only their own rows, at most 2 per account and 3 across the server are built at a time, and
+  other people's requests always find a free database connection while large libraries load.
+- Server: album changes carry at most 2000 deletions at a time; beyond that the apps load the whole album list.
+- Server: the activity log keeps the last 500 administrative entries however many entries people write about their own
+  devices.
+- Server: replacing a thumbnail or preview reserves its full size while it uploads; near the storage limit, one
+  replacement per account runs at a time.
+- Android: the app no longer declares location permissions. The map never reads where the phone is; a photo's or
+  video's place comes from the file's own metadata, as before.
+- Android: a photo over 200 MB whose date or place was changed is no longer shared or saved as the original by
+  default; use Share original or Save original.
+- Mac: swift-sodium is pinned by its commit, and the release build uses only the package versions in Package.resolved,
+  so the released app always builds the tested libsodium.
+- Release image: built with BuildKit's own Dockerfile frontend and a BuildKit daemon pinned by digest; the QEMU image
+  is no longer taken from the Actions cache.
+- CI: the Mac uploader is tested on every change; updates of the tools' BLAKE2b library are always reviewed by hand.
+- Google Play promote only promotes a release tag on master with a published GitHub release.
+- Demo server: the reviewer administrator is the only administrator, and the daily reset can put the reviewer
+  accounts' roles back.
+- Docs and privacy policy: the admin activity log and storage overview are described in full (people's own sign-in
+  changes, device last use to the day), and so is what the server can tell about the locked folder from which items
+  are fetched and what a WebDAV server can tell from the files the Mac skips; Android's permissions, Free up space and
+  the lock screen are described as they are now.
 
 ### Security
 - A password change, an account turned off by an admin and a recovery now count as signed out from another device:
@@ -86,6 +114,49 @@ version into the GitHub release notes, so a release cannot be published without 
   never shows its cached library again; while locked it learns of such a sign-out within minutes, also with
   notifications off.
 - Web: a session that ended while the page was closed deletes what the browser kept for it at the next visit.
+<!-- server-a -->
+- A change to a photo's details, a move to the archive or the locked folder, or an added location no longer writes
+  over a change made meanwhile on another device. The app loads the item again and moves it from its current details,
+  or asks you to open it again.
+- The apps keep remembering which version of each photo's details they have seen when you lock or the server ends your
+  session, however many photos you have. Only signing out, deleting your account or leaving the server forgets it. The
+  Mac app now checks these versions like the web and Android apps.
+- A photo whose details the server sent in an older form than your device has seen now stays in the locked folder
+  until its current details arrive. It isn't shown elsewhere, kept on the device, or changed.
+- Admin › Storage shows other people's devices only with the day they were last used, no longer the time (web,
+  Android, Mac).
+- Web: video keys and downloads held by the browser's Service Worker belong to the tab that unlocked the library;
+  another tab gets nothing from them, and they go when that tab closes or after a few idle minutes. A download link
+  works once.
+- Web: copied recovery keys, recovery codes, authenticator setup keys and invite links are cleared from the clipboard
+  after a minute. Mac: invite links too. Android: a copied authenticator key or recovery codes are reliably removed
+  after a minute.
+- Android and Mac: a passkey used through the browser counts only when its answer was made for the server the app is
+  connected to and for this request.
+- Android: Free up space and background search match a phone's file only to items this phone uploaded or that were
+  made with your account's key (the Upload button, the web, the Mac), never to items added with only the account's
+  public key.
+- Android: backup and upload progress no longer shows file names on the lock screen.
+- Android: the map loads tiles, fonts and icons only from the map server named before it is turned on, and its image
+  cache is cleared at lock, sign-out and map off also when no map was opened since the app started.
+- Android: the photo viewer opened from the locked folder closes when the folder does, and locking closes the photo
+  editor at once, also with unsaved changes.
+- Android: after being signed out from another device in the background, the next start removes the rest of the
+  account's settings on the phone.
+- Mac: a WebDAV folder over plain http must really be on this Mac or the home network. Its name is looked up before
+  the password or any file is sent, and numbers written in unusual ways are no longer taken for local names.
+- Mac: WebDAV answers are read only as far as what was asked for. A server that sends more, or announces a huge folder
+  listing, is refused instead of filling memory or the disk.
+- Mac: the WebDAV import reads files the locked folder already has like new ones and then drops them, so the WebDAV
+  server can't tell what the locked folder holds. Test Connection no longer counts them.
+- Mac: after a lock or sign-out, work that was still running (search indexing, trips, place names, thumbnails, the
+  export, the WebDAV import) keeps nothing and writes nothing back.
+- Mac: a session that ended while the app was closed also clears the dropped-file copies and an interrupted WebDAV
+  import's temporary files at the next start.
+- Mac: the export never writes an item that was moved to the locked folder while it ran. Without "Keep up to date",
+  copies of newly locked items are deleted right away.
+- Mac: the locked folder asks again when a password or fingerprint check finishes after you left it.
+- Uploader: the password is taken out of the environment also when it comes from a file.
 
 ### Fixed
 - Device lists under storage and backup are folded to this device, stuck backups and recent uploaders, with
@@ -93,6 +164,23 @@ version into the GitHub release notes, so a release cannot be published without 
 - Android: German texts in the archive, locked folder and editing screens use the formal form throughout; a trip shows
   its dates without a confusing day count, and a year recap says "days with photos".
 - Year recap: a month whose photos are from only a few days shows up to four of them, not one per day.
+- Report a problem: the server's version is filled in only when it is a plain release number (on the web, Android and
+  the Mac).
+- Web: an item whose size and segment count don't match is shown as unreadable instead of downloading as an empty
+  file.
+- Web: deleting locked items found in the trash asks first.
+- Web: an authenticator setup too long for a QR code shows the key to type in instead of an error. Android: the
+  authenticator QR code is shown only when it matches the key on screen; the key and recovery codes can only be copied
+  with the Copy button. Mac: the two-step setup's QR code shows only an authenticator address.
+- A copy of a photo whose date or place you changed no longer keeps an embedded second picture from the original file
+  (web, Android).
+- Mac: odd numbers from a WebDAV listing, the storage overview, the device list or the admin panes no longer end the
+  app.
+- Mac: a photo's GPS is kept only when it is a real place. A file with broken GPS details no longer ends the app.
+- Mac: a photo dragged and released inside the window is no longer uploaded again as a new item.
+- Mac: the last upload time this Mac reports is its own note of it.
+- Decrypt tool: two items whose names differ only in a way a Mac or Windows disk ignores (for example "ſ" and "s") are
+  restored as two files instead of one replacing the other.
 
 ## [2.7.3] - 2026-11-15
 

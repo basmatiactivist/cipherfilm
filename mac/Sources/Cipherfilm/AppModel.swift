@@ -37,6 +37,9 @@ final class AppModel {
   /** The locked folder's items: only while it is open, after its check passed (openLocked); empty otherwise. */
   private(set) var lockedItems: [Item] = []
   private(set) var lockedOpen = false
+  /** Which visit of the locked folder this is: changed whenever it is left (and at a lock), so a check that finishes
+   *  after the person left opens nothing (openLocked). */
+  private(set) var lockedVisit = 0
   @ObservationIgnored private var lockedById: [String: Item] = [:]
   /** locked items the person asked to delete: deleted for good after the locked folder's confirmation */
   var confirmLockedDelete: [String]?
@@ -468,7 +471,7 @@ final class AppModel {
     Outbox.clear()
     webdav.stop(forget: ended) // a lock stops the import too: it reads nothing more until the next unlock
     items = []; byId = [:]; albums = []; trash = []; notices = []; noticesSeen = 0
-    lockedItems = []; lockedById = [:]; lockedOpen = false; confirmLockedDelete = nil
+    lockedItems = []; lockedById = [:]; lockedOpen = false; confirmLockedDelete = nil; lockedVisit += 1
     if ended { watcher.stop(forget: true); uploads = []; uploadsOwner = nil; uploadsPaused = false; Inbox.clear() }
   }
 
@@ -551,12 +554,14 @@ final class AppModel {
   /** Whether this account may move items between folders (the public demo can't change anything). */
   var canMove: Bool { me?.isDemo != true }
 
-  /** The locked folder's check passed (LockedGate): its items are taken from the library as last loaded. */
-  func openLocked() async {
-    guard let vault, phase == .unlocked else { return }
+  /** The locked folder's check passed (LockedGate): its items are taken from the library as last loaded. visit: the
+   *  visit the check was started in (lockedVisit then); a check that finishes after the folder was left opens nothing,
+   *  so the next visit asks again. */
+  func openLocked(visit: Int) async {
+    guard let vault, phase == .unlocked, visit == lockedVisit else { return }
     lockedOpen = true
     let all = await vault.currentLibrary()
-    guard self.vault === vault, lockedOpen else { return }
+    guard self.vault === vault, lockedOpen, visit == lockedVisit else { return }
     setLocked(Folders.splitLocked(all).locked)
   }
 
@@ -564,6 +569,7 @@ final class AppModel {
    *  go from memory; the next visit asks again. */
   func leaveLocked() {
     lockedOpen = false
+    lockedVisit += 1
     lockedItems = []; lockedById = [:]; confirmLockedDelete = nil
     images.forgetLocked()
   }

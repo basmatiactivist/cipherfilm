@@ -30,4 +30,14 @@ import Testing
     m.leaveLocked()
     #expect(m.lockedItems.isEmpty && m.anyItem(locked) == nil)
   }
+
+  /** A check that finishes after the folder was left opens nothing: the next visit asks again. */
+  @Test func aCheckFromAnEarlierVisitOpensNothing() async {
+    let m = AppModel.shared
+    let visit = m.lockedVisit
+    m.leaveLocked() // another screen or a search while the check runs
+    #expect(m.lockedVisit != visit)
+    await m.openLocked(visit: visit)
+    #expect(!m.lockedOpen && m.lockedItems.isEmpty)
+  }
 }

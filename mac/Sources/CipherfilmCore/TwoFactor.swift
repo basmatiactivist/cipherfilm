@@ -317,19 +317,12 @@ public enum DeviceIdle {
  *  (before, every device showed "No upload recorded yet"). Sent once per session; the server keeps it only if it has
  *  none for the session, and never for another one. */
 public enum LastUpload {
-  /** The newest upload time (seconds, the server's) among library items this Mac's watched folders uploaded: items whose
-   *  name and size print the watcher noted as done. Not after `notAfter` (when the watcher last wrote its state), so a
-   *  file that only counted as done (a folder's existing files) can't make it newer than the watcher's last upload.
-   *  0 when there is none. */
-  public static func newest(items: [Item], done: Set<String>, notAfter: Date? = nil) -> Int64 {
-    guard !done.isEmpty else { return 0 }
-    var newest = 0.0
-    for it in items where it.createdAt > newest {
-      guard let m = it.meta, done.contains(Crypto.fingerprint(name: m.name, size: m.size)) else { continue }
-      newest = it.createdAt
-    }
-    if let notAfter, newest > notAfter.timeIntervalSince1970 { newest = notAfter.timeIntervalSince1970 }
-    return Int64(newest)
+  /** The time to send (seconds): when this Mac's watched folders last uploaded, as this Mac noted it itself. Nothing
+   *  of the library is looked at, so the answer can't depend on items the server lists; never in the future, 0 when
+   *  there is none. */
+  public static func time(_ last: Date?, now: Date = Date()) -> Int64 {
+    guard let t = last?.timeIntervalSince1970, t.isFinite, t > 0 else { return 0 }
+    return Int64(min(t, now.timeIntervalSince1970))
   }
 
   /** Whether to send for this session: not for the demo, not twice for the same session, not without a time. */

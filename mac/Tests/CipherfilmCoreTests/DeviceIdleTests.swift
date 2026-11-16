@@ -26,6 +26,12 @@ import Testing
     #expect(DeviceIdle.unused(list, days: 30, now: now).isEmpty)
   }
 
+  @Test func oddLastSeenTimesDontTrap() throws {
+    let d: [String: Any] = ["id": "x", "device": "", "created_at": 0, "last_seen": Int64.min, "current": false, "indexer": false]
+    let dev = try JSONDecoder().decode(Device.self, from: JSONSerialization.data(withJSONObject: d))
+    #expect(DeviceIdle.unused([dev], days: 30, now: now).map(\.id) == ["x"])
+  }
+
   private func item(_ id: String, name: String, size: Int64, at: Double) -> Item {
     Item(id: id, kind: .image, size: 1, segmentCount: 1, createdAt: at, hasThumb: false, hasPreview: false, favorite: false,
          trashedAt: nil, purgeAt: nil, meta: ItemMeta(name: name, mime: "image/jpeg", size: size, lastModified: 0, capture_ts: 0),

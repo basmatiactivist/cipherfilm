@@ -332,7 +332,7 @@ struct AdminServer: View {
       Section_(title: "Server") {
         if let s = status {
           if s.disk_total_bytes > 0 {
-            ProgressView(value: Double(s.disk_total_bytes - s.disk_free_bytes), total: Double(s.disk_total_bytes))
+            ProgressView(value: Admin.diskUsed(total: s.disk_total_bytes, free: s.disk_free_bytes), total: Double(s.disk_total_bytes))
               .tint(Double(s.disk_free_bytes) / Double(s.disk_total_bytes) < 0.1 ? Ink.danger : Ink.teal)
           }
           LabeledContent("Disk free", value: "\(Admin.size(s.disk_free_bytes)) of \(Admin.size(s.disk_total_bytes))")
@@ -377,7 +377,7 @@ struct AdminStorage: View {
       if let s = storage {
         Section_(title: "Storage on this server", subtitle: "\(StorageOverview.summary(s)). Only sizes, kinds and times: administrators can't see what a photo shows.") {
           if s.disk_total_bytes > 0 {
-            ProgressView(value: Double(max(0, s.disk_total_bytes - s.disk_free_bytes)), total: Double(s.disk_total_bytes))
+            ProgressView(value: Admin.diskUsed(total: s.disk_total_bytes, free: s.disk_free_bytes), total: Double(s.disk_total_bytes))
               .tint(Double(s.disk_free_bytes) / Double(s.disk_total_bytes) < 0.1 ? Ink.danger : Ink.teal)
             LabeledContent("Disk free", value: "\(Admin.size(s.disk_free_bytes)) of \(Admin.size(s.disk_total_bytes))")
           }

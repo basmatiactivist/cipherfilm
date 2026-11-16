@@ -289,7 +289,7 @@ public enum DeviceIdle {
   /** The other devices unused for longer than the limit: the ones "Sign out unused devices now" ends, never this one. */
   public static func unused(_ list: [Device], days: Int, now: Date = Date()) -> [Device] {
     let limit = Int64(days) * 86400, t = Int64(now.timeIntervalSince1970)
-    return list.filter { !$0.current && t - $0.last_seen > limit }
+    return list.filter { !$0.current && Saturating.sub(t, $0.last_seen) > limit }
   }
 
   /** The devices and the account's choice. */

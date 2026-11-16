@@ -80,4 +80,22 @@ import Testing
     #expect(S.staleSummary(s.stale_devices) == "1 phone seems to have stopped backing up. Details below.")
     #expect(S.staleSummary(0) == nil)
   }
+
+  /** Numbers no server should send are shown oddly at worst, never end the app. */
+  @Test func extremeNumbersDontTrap() throws {
+    let max = Int64.max, min = Int64.min
+    let a = try account(#"{"split":{"photos":\#(max),"videos":\#(max),"thumbs":\#(min)}}"#)
+    #expect(S.parts(a.split).map(\.key) == ["photos", "videos"])
+    let devices = [
+      S.Device(id: "a", device: "", last_seen: min, last_upload_at: min), S.Device(id: "b", device: "", last_seen: max, last_upload_at: 5),
+      S.Device(id: "c", device: "", last_seen: 1, last_upload_at: max), S.Device(id: "d", device: "", last_seen: min, last_upload_at: 0),
+    ]
+    #expect(S.fold(devices, open: false).shown.map(\.id) == ["b", "c", "d"]) // newest uploads first, then the rest
+    let s = try JSONDecoder().decode(S.Server.self, from: Data(#"{"accounts":[{"used_bytes":\#(max),"item_count":\#(max)},{"used_bytes":\#(max),"item_count":1}]}"#.utf8))
+    #expect(s.used_bytes == max && s.item_count == max)
+    #expect(Admin.diskUsed(total: 100, free: min) == 100)
+    #expect(Admin.diskUsed(total: 100, free: 30) == 70)
+    #expect(Admin.diskUsed(total: 100, free: max) == 0)
+    #expect(Saturating.sub(min, 1) == min && Saturating.add(max, 1) == max && Saturating.sum([max, max, min]) == -1)
+  }
 }

@@ -43,7 +43,8 @@ public final class Ocr: @unchecked Sendable {
 
   /** The lines of text in a JPEG, in reading order. */
   public func read(_ jpeg: Data) throws -> [String] {
-    guard let bmp = Pixels.decode(jpeg, maxPx: 1280) else { throw CryptoError.failed("not an image") }
+    // nothing to read in what isn't a picture: no text, and done with it (as on Android), not tried again every time
+    guard let bmp = Pixels.decode(jpeg, maxPx: 1280) else { return [] }
     return try read(bmp)
   }
 

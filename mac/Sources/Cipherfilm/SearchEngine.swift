@@ -64,6 +64,8 @@ final class SearchEngine {
   private var noText: Set<String> = []
   /** read again and failed in this run (the picture can't be loaded): not tried again until the next run */
   private var textSkipped: Set<String> = []
+  /** The account was full for an entry with text (413): the reading waits until search starts again. */
+  private var textFull = false
   /** when the text model was last tried and couldn't be loaded or downloaded (offline): tried again a minute later */
   private var ocrTriedAt = Date.distantPast
   /** the text model waits for the person's OK to download it: images and faces are indexed meanwhile */
@@ -111,7 +113,7 @@ final class SearchEngine {
       items = []; pending = []; inFlight = []
       version += 1
     }
-    phase = .off; done = 0; total = 0; waiting = 0; message = nil; skipped = []; textSkipped = []; ocrWaiting = false; ocrTriedAt = .distantPast
+    phase = .off; done = 0; total = 0; waiting = 0; message = nil; skipped = []; textSkipped = []; textFull = false; ocrWaiting = false; ocrTriedAt = .distantPast
   }
 
   private func live(_ v: Vault) -> Bool { !Task.isCancelled && runVault === v && v.isOpen }
@@ -428,6 +430,7 @@ final class SearchEngine {
    *  again and stored under the same model tag. A few at a time, at the lowest priority; returns how many were done. */
   private func readTextAgain(_ vault: Vault, _ cache: inout IndexCache, ocr: Ocr, pair: KeyPair, pk: Data) async -> Int {
     let byId = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+    guard !textFull else { return 0 }
     let todo = noText.subtracting(textSkipped).compactMap { byId[$0] }.sorted { $0.when > $1.when }.prefix(6)
     var n = 0
     for item in todo {
@@ -447,6 +450,11 @@ final class SearchEngine {
         n += 1
       } catch let err as APIError where err.status == 0 || err.code == "not_indexer" {
         break // offline, or another device indexes now (the run notices): later
+      } catch let err as APIError where err.status == 413 {
+        // the account is full: entries with text are a little larger, so none fits now; not every photo is read only
+        // to throw the text away
+        textFull = true
+        break
       } catch {
         textSkipped.insert(item.id)
       }
@@ -668,14 +676,15 @@ final class SearchEngine {
     }
     // a word or two is a place only when photos were taken there
     let placed = await PlaceBook.names(base)
-    let p = QueryParser.parse(q, .init(people: names, place: { placed.names[$0] }, today: QueryParser.localDay(Date().timeIntervalSince1970 * 1000)))
+    let p = QueryParser.parse(q, .init(people: names, place: { $0.count >= 3 ? placed.names[$0] : nil }, today: QueryParser.localDay(Date().timeIntervalSince1970 * 1000)))
     let pool = base.filter { it in
       if p.favorites && !it.favorite { return false }
       if p.videos && it.kind != .video { return false }
       if p.screenshots && it.name.range(of: "screenshot|bildschirm", options: [.regularExpression, .caseInsensitive]) == nil { return false }
       for ns in p.people where !ns.contains(where: { byName[$0]?.contains(it.id) == true }) { return false }
       if !p.places.isEmpty {
-        guard let here = placed.byItem[it.id], p.places.allSatisfy(here.contains) else { return false }
+        // by the folded name: two places spelled differently can fold alike ("Zürich", "Zurich")
+        guard let here = placed.byItem[it.id]?.map(QueryParser.fold), p.places.allSatisfy({ here.contains(QueryParser.fold($0)) }) else { return false }
       }
       if !p.dates.isEmpty {
         let day = QueryParser.localDay(it.when)

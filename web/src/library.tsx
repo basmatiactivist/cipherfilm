@@ -8,7 +8,7 @@ import { ApiError } from "./api";
 import { mem } from "./state";
 import { uploadQueue } from "./upqueue";
 import { haystack, matches } from "./search";
-import { parse, removeChip, localDay } from "./search/parse";
+import { fold as foldWords, parse, removeChip, localDay } from "./search/parse";
 import { chipLabel, narrow as narrowBy, textHits, type Facts } from "./search/combined";
 import { contentSearch, textOf, vectorCount } from "./search/content";
 import { agreeModels, askedLater, askLater, NeedsConsent, useModelConsent } from "./search/consent";
@@ -452,7 +452,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
     for (const a of albums) for (const id of a.itemIds) add(id, a.name);
     for (const g of people.all) if (g.person?.name && !g.person.hidden) for (const id of g.items) add(id, g.person.name);
     const out = new Map<string, string>();
-    for (const it of [...(items ?? []), ...(trash ?? [])]) out.set(it.id, haystack(it, extra.get(it.id)));
+    for (const it of [...(items ?? []), ...(trash ?? [])]) out.set(it.id, foldWords(haystack(it, extra.get(it.id))));
     return out;
   }, [items, trash, albums, people.all, placeWords]);
 
@@ -461,7 +461,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   // the query taken apart (search/parse.ts): people, dates, places, favorites, videos, screenshots narrow; the words
   // left are looked for in names and albums, in the text read in the photos, and by the image model (in English)
   const day0 = localDay(Date.now());
-  const parsed = useMemo(() => parse(q, { people: personNames, today: day0, place: (f) => placeIdx?.names.get(f) }), [q, personNames, placeIdx, day0]);
+  const parsed = useMemo(() => parse(q, { people: personNames, today: day0, place: (f) => (f.length >= 3 ? placeIdx?.names.get(f) : undefined) }), [q, personNames, placeIdx, day0]);
   const facts = useMemo<Facts>(() => {
     const ppl = new Map<string, Set<string>>();
     for (const g of people.all) if (g.person?.name && !g.person.hidden) ppl.set(g.person.name, new Set([...(ppl.get(g.person.name) ?? []), ...g.items]));

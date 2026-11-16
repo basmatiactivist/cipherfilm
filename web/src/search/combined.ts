@@ -2,7 +2,7 @@
 // people, dates, places, favorites, videos and screenshots; the words left are looked for in names, cameras and
 // albums, in the text read in the photos, and by what the photos show (ranked by the image model, content.ts).
 import type { Item } from "../items";
-import { inWhen, localDay, textMatch, type Chip, type Parsed, type When } from "./parse";
+import { fold, inWhen, localDay, textMatch, type Chip, type Parsed, type When } from "./parse";
 
 export interface Facts {
   /** person name → the items their faces are in */
@@ -21,8 +21,9 @@ export function narrow(list: Item[], p: Parsed, f: Facts): Item[] {
     if (p.screenshots && !/screenshot|bildschirm/i.test(it.meta?.name ?? "")) return false;
     for (const names of p.people) if (!names.some((n) => f.people.get(n)?.has(it.id))) return false;
     if (p.places.length) {
-      const here = f.places.get(it.id);
-      if (!here || !p.places.every((x) => here.includes(x))) return false;
+      // by the folded name: two places spelled differently can fold alike ("Zürich", "Zurich")
+      const here = f.places.get(it.id)?.map(fold);
+      if (!here || !p.places.every((x) => here.includes(fold(x)))) return false;
     }
     if (p.dates.length) {
       const day = localDay(taken(it));

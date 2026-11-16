@@ -808,6 +808,19 @@
       "q": "constructor toString",
       "text": "constructor tostring",
       "chips": []
+    },
+    {
+      "q": "Favorit Hund",
+      "favorites": true,
+      "text": "hund",
+      "clip": "dog",
+      "chips": [
+        [
+          "favorites",
+          0,
+          1
+        ]
+      ]
     }
   ],
   "remove": [

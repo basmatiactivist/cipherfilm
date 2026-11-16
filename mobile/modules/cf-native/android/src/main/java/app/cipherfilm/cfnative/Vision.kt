@@ -128,9 +128,16 @@ internal object Vision {
         }
       }
       if (ocr && Ocr.isOpen()) {
-        val t0 = System.nanoTime()
-        out["text"] = Ocr.read(bmp)
-        out["ocrMs"] = (System.nanoTime() - t0) / 1e6
+        // a failure here leaves only the text out (no "o" in the entry: read again later), never the photo's entry
+        try {
+          val t0 = System.nanoTime()
+          out["text"] = Ocr.read(bmp)
+          out["ocrMs"] = (System.nanoTime() - t0) / 1e6
+        } catch (e: Exception) {
+          android.util.Log.w("cf-ocr", "text not read: ${e.javaClass.simpleName}")
+        } catch (e: OutOfMemoryError) {
+          android.util.Log.w("cf-ocr", "text not read: out of memory")
+        }
       }
       return out
     } finally {

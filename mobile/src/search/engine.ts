@@ -390,7 +390,7 @@ export async function startSearch(library: Item[]) {
     const ids = new Set(library.map((i) => i.id));
     let n = 0, touched = false;
     // entries deleted on the server meanwhile: out of the index, and made again by the phone that indexes
-    if (anew) for (const id of [...tags.keys()]) if (!cache.entries[id]) { tags.delete(id); seen.delete(id); N.indexRemove(id); touched = true; }
+    if (anew) for (const id of [...tags.keys()]) if (!cache.entries[id]) { tags.delete(id); seen.delete(id); readBy.delete(id); texts.delete(id); N.indexRemove(id); touched = true; }
     // only what isn't in the index yet, or changed since (the copy from the last unlock has the rest)
     const open = Object.entries(cache.entries).filter(([id, enc]) => ids.has(id) && !(seen.get(id) === stamp(enc) && good(tags.get(id), st.faces)));
     for (const [id, enc] of open) {
@@ -627,6 +627,8 @@ export function needsText(items: Item[], faces: boolean, entries: Record<string,
 
 /** Photos whose text couldn't be read in this unlock (their preview didn't come, say): tried again next time. */
 const textFailed = new Set<string>();
+/** The account's storage was full for an entry with text: the reading waits for the next unlock. */
+let textFull = false;
 
 /** Reads the text of photos indexed before text in photos, one at a time well behind everything else: the entry keeps
  *  its image vector and faces (the people document names faces by their place in it) and model tag, gets `o` and `t`,
@@ -634,7 +636,7 @@ const textFailed = new Set<string>();
  *  offline, or when another device became the indexer. Only while the app is open: the background can't open the old
  *  entries (it has the public key only). */
 async function rereadText(s: Sodium, list: Item[], cache: Cache, pk: Uint8Array, faces: boolean, live: () => boolean, master: Uint8Array): Promise<"done" | "stopped" | "notIndexer"> {
-  const todo = list.filter((i) => !textFailed.has(i.id));
+  const todo = textFull ? [] : list.filter((i) => !textFailed.has(i.id));
   if (!todo.length) return "done";
   let n = 0, result: "done" | "stopped" | "notIndexer" = "done";
   setText({ phase: "reading", done: 0, total: todo.length, message: undefined });
@@ -664,6 +666,9 @@ async function rereadText(s: Sodium, list: Item[], cache: Cache, pk: Uint8Array,
     } catch (e) {
       if (e instanceof ApiError && e.code === "not_indexer") { result = "notIndexer"; break; }
       if ((e as { status?: number }).status === 0) { result = "stopped"; break; } // offline: next time
+      // the account is full: the entries with text are a little larger, so none fits now; not tried again until the
+      // next unlock (instead of reading every photo only to throw the text away)
+      if ((e as { status?: number }).status === 413) { textFull = true; result = "stopped"; break; }
       textFailed.add(it.id);
     }
     n++;
@@ -744,7 +749,7 @@ export async function forgetSearch(clear: boolean) {
 
 onWipe((how) => {
   if (run) run.cancelled = true;
-  queued = null; printOf.clear(); textFailed.clear();
+  queued = null; printOf.clear(); textFailed.clear(); textFull = false;
   if (how !== "locked" || !downloading) release(); // a download goes on while locked (above)
   wipes++;
   N.indexClear?.();

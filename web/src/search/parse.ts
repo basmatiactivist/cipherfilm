@@ -76,7 +76,7 @@ const LEAD = new Set(["in", "im", "at", "from", "von", "aus", "bei", "near", "on
 /** Words that mean "any photo": dropped from what is searched for. */
 const FILLER = new Set(["photo", "photos", "picture", "pictures", "pics", "pic", "image", "images", "foto", "fotos", "bild", "bilder", "aufnahmen"]);
 const FLAGS: [ChipKind, RegExp][] = [
-  ["favorites", /^(favou?rites?|favoriten?|favs?|liked|herz|hearts?|lieblingsfotos|lieblingsbilder)$/],
+  ["favorites", /^(favou?rites?|favorit(e|en)?|favs?|liked|herz|hearts?|lieblingsfotos|lieblingsbilder)$/],
   ["videos", /^(videos?|filme?|clips?|movies?)$/],
   ["screenshots", /^(screenshots?|bildschirmfotos?)$/],
 ];

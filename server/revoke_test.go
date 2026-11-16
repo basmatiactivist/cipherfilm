@@ -77,3 +77,16 @@ func TestEndedByPasswordDisableOrRecoveryCountsAsSignedOut(t *testing.T) {
 		t.Fatal("device not told after the recovery")
 	}
 }
+
+// The console's disable-user signs the account's devices out as the admin area does: told it was on purpose.
+func TestConsoleDisableCountsAsSignedOut(t *testing.T) {
+	e := newEnv(t)
+	admin, _ := e.setupAdmin("admin@x.org")
+	bob, _ := e.acceptInvite(e.invite(admin, "bob@x.org"))
+	if _, err := e.cli("disable-user", "bob@x.org"); err != nil {
+		t.Fatal(err)
+	}
+	if !told(t, e, bob) {
+		t.Fatal("device of an account disabled from the console not told")
+	}
+}

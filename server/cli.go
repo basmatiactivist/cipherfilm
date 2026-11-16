@@ -270,6 +270,8 @@ func cliStatusTo(status string) func(*App, io.Writer, []string) error {
 			return errors.New("this is the only active administrator: make someone else an administrator first")
 		}
 		if status == "disabled" {
+			// as from the admin area: its devices learn they were signed out on purpose and delete what they keep
+			a.remember(`user_id=?`, u.ID)
 			a.db.Exec(`DELETE FROM sessions WHERE user_id=?`, u.ID)
 			a.audit(consoleActor, "disabled", u.Email, "")
 			fmt.Fprintf(out, "%s is locked and signed out everywhere; its photos stay. Undo with enable-user.\n", u.Email)

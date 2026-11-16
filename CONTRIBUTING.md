@@ -16,7 +16,7 @@ Mac app: `mac/scripts/test.sh` (mac/README.md).
 
 CI runs all of these on every pull request and every push to `master`, including the browser suite (a change to
 Markdown files and `docs/` alone skips the builds and tests; a push to another branch runs only the identity check,
-the pull request the rest); the Mac app is built and tested when `mac/` changes. `master` changes only through pull requests that pass these checks. Separately, a weekly canary
+the pull request the rest); the Mac app is built and tested on a Mac before merging (GitHub's macOS runners were too often unavailable; the Mac workflow runs for releases and by hand, docs/RELEASING.md). `master` changes only through pull requests that pass these checks. Separately, a weekly canary
 (`.github/workflows/canary.yml`) tests the latest release against the newest Go, Node, Playwright, Android and Xcode
 and opens an issue when something breaks ([docs/RELEASING.md](docs/RELEASING.md#weekly-canary)).
 

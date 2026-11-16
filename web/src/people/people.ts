@@ -7,7 +7,7 @@ import { api, ApiError } from "../api";
 import { getSodium, b64, unb64 } from "../crypto/sodium";
 import { accountKeyPair } from "../crypto/item";
 import { normEmail } from "../crypto/account";
-import { decryptPeople, encryptPeople, openIndexEntry } from "../crypto/search";
+import { decryptPeople, encryptPeople, entryText, openIndexEntry } from "../crypto/search";
 import { mem } from "../state";
 import { FaceIndex, type Cover, type FaceFound, type FaceGroup } from "./faces";
 import type { Req } from "./faces.worker";
@@ -84,7 +84,7 @@ async function fetchIndex(): Promise<void> {
       if (mem.masterKey !== masterKey) return; // locked or signed out meanwhile
       pair ??= accountKeyPair(s, unb64(s, me.wrapped_privkey), masterKey, normEmail(me.user.email));
       const put: { item: string; faces: FaceFound[] }[] = [];
-      const vecs: { item: string; m?: string; clip?: Uint8Array }[] = [];
+      const vecs: { item: string; m?: string; clip?: Uint8Array; text?: string }[] = [];
       for (const e of page.entries) {
         since = Math.max(since, e.updated_at);
         let faces: FaceFound[] = [];
@@ -92,7 +92,7 @@ async function fetchIndex(): Promise<void> {
           const entry = openIndexEntry(s, unb64(s, e.data_enc), pair, e.item_id);
           let clip: Uint8Array | undefined;
           try { clip = entry.clip ? unb64(s, entry.clip) : undefined; } catch { /* unreadable vector: not searchable */ }
-          vecs.push({ item: e.item_id, m: entry.m, clip });
+          vecs.push({ item: e.item_id, m: entry.m, clip, text: entry.o ? entryText(entry) : undefined });
           // like the Mac: a face whose vector can't be read is left out before the faces are numbered
           faces = (entry.faces ?? []).flatMap((f) => { try { return [{ box: f.box, score: f.score, emb: unb64(s, f.emb) }]; } catch { return []; } });
         } catch { vecs.push({ item: e.item_id }); /* damaged or not for this item: the phone or Mac makes it again */ }

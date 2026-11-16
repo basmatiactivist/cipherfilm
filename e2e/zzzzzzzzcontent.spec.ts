@@ -24,10 +24,10 @@ function half(f: number): number {
 const fp16 = (v: number[]) => { const out = new Uint8Array(v.length * 2); v.forEach((f, i) => { const h = half(f); out[2 * i] = h & 255; out[2 * i + 1] = h >> 8; }); return out; };
 
 /** Writes an index entry as the apps do: 0x02 ‖ crypto_box_seal(item id ‖ pad512(JSON)). */
-async function putEntry(page: Page, me: { pubkey: string; csrf: string }, item: string, m: string, clip: number[]) {
+async function putEntry(page: Page, me: { pubkey: string; csrf: string }, item: string, m: string, clip: number[], more: Record<string, string> = {}) {
   await sodium.ready;
   const s = sodium, v = s.base64_variants.URLSAFE_NO_PADDING;
-  const json = s.pad(s.from_string(JSON.stringify({ v: 1, m, clip: s.to_base64(fp16(clip), v) })), 512);
+  const json = s.pad(s.from_string(JSON.stringify({ v: 1, m, clip: s.to_base64(fp16(clip), v), ...more })), 512);
   const pt = new Uint8Array(16 + json.length);
   pt.set(s.from_hex(item));
   pt.set(json, 16);
@@ -165,5 +165,47 @@ test.describe.serial("search by what is in a photo", () => {
     expect((await allow(false)).ok()).toBeTruthy();
     await ctx.close();
     await actx.close();
+  });
+
+  test("text in photos and combined search: words the indexing device read are found, filters show as chips", async ({ browser }) => {
+    test.setTimeout(180_000);
+    const ctx = await browser.newContext({ baseURL: BASE, ignoreHTTPSErrors: true, viewport: { width: 1280, height: 800 } });
+    const page = await ctx.newPage();
+    await signIn(page);
+    const me = await (await page.request.get("/api/me")).json();
+    const items = (await (await page.request.get("/api/items")).json()).items.filter((x: { kind: string }) => x.kind === "image").slice(0, 2);
+    // what an indexing device stores (docs/SEARCH.md "Text in photos"): the text padded to a fixed 1022 bytes
+    const text = "BAKERY OPEN Zürich Hauptbahnhof Gleis 7 Fresh bread daily";
+    const slot = text + " ".repeat(1022 - Buffer.byteLength(text));
+    await putEntry(page, me, items[0].id, "laionb32/1", REF["dog"], { o: "ppocr3det+ppocr5latin/1", t: slot });
+    await putEntry(page, me, items[1].id, "laionb32/1", REF["city at night"], { o: "ppocr3det+ppocr5latin/1", t: " ".repeat(1022) });
+    // the server can't tell them apart by size
+    const sizes = (await (await page.request.get("/api/index?model=laionb32")).json()).entries.map((e: { data_enc: string }) => e.data_enc.length);
+    expect(new Set(sizes).size).toBe(1);
+    await page.reload();
+    await expect(page.locator(".tile").first()).toBeVisible({ timeout: 30_000 });
+    const search = page.getByLabel("Search your photos");
+    // the words are in the photo's text: found without the image model (no download needed for it)
+    await search.fill("zurich gleis");
+    await expect(page.locator(`.tile[data-id="${items[0].id}"]`)).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator(`.tile[data-id="${items[1].id}"]`)).toHaveCount(0);
+    // a year range is a filter: a chip, removable; the words stay
+    await search.fill("bakery 1990-2099");
+    const chip = page.getByRole("list", { name: "Search filters" }).getByRole("listitem");
+    await expect(chip).toHaveText("1990–2099");
+    await expect(page.locator(`.tile[data-id="${items[0].id}"]`)).toBeVisible({ timeout: 30_000 });
+    await search.fill("bakery 1990-1991");
+    await expect(page.locator(`.tile[data-id="${items[0].id}"]`)).toHaveCount(0, { timeout: 30_000 });
+    await page.getByRole("button", { name: "Remove filter 1990–1991" }).click();
+    await expect(search).toHaveValue("bakery");
+    await expect(page.getByRole("list", { name: "Search filters" })).toHaveCount(0);
+    // the photo's details show what matched
+    await page.locator(`.tile[data-id="${items[0].id}"]`).click();
+    await page.getByRole("button", { name: "Show info" }).click();
+    await expect(page.getByRole("complementary", { name: "Details" }).getByText("Text found")).toBeVisible();
+    await expect(page.getByRole("complementary", { name: "Details" }).getByText(/BAKERY OPEN Zürich/)).toBeVisible();
+
+    expect((await page.request.delete("/api/index", { headers: { "X-CSRF-Token": me.csrf } })).ok()).toBeTruthy();
+    await ctx.close();
   });
 });

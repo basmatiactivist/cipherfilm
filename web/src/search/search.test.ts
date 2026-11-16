@@ -3,7 +3,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { cosine, familyOf, normalize, padIds, rank, TEXT_MODELS, TOKENIZER } from "./rank";
-import { splitQuery } from "../search";
 import reference from "./reference.json";
 
 const unit = (v: number[]) => normalize(Float32Array.from(v));
@@ -37,13 +36,6 @@ describe("search by content: ranking", () => {
     expect(hits.map((h) => h.id)).toEqual(["best", "mid", "low", "opposite"]);
     expect(hits[0].score).toBeCloseTo(cosine(q, unit([0.9, 0.1, 0])), 6);
     expect(rank(q, new Map())).toEqual([]);
-  });
-
-  it("splits a query into metadata words and words about what is in the photo", () => {
-    expect(splitQuery("Anna beach 2023", ["Anna Muster"])).toEqual({ filters: ["anna", "2023"], content: "beach" });
-    expect(splitQuery("birthday cake march videos")).toEqual({ filters: ["march", "videos"], content: "birthday cake" });
-    expect(splitQuery("dog on the beach")).toEqual({ filters: [], content: "dog on the beach" });
-    expect(splitQuery("14.03.2023 favorites")).toEqual({ filters: ["14.03.2023", "favorites"], content: "" });
   });
 });
 

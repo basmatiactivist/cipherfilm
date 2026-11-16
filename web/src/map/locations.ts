@@ -3,6 +3,7 @@
 import placesUrl from "../places/places-v1.bin?url";
 import { fold, label, Places, summary } from "../places/places";
 import type { Item } from "../items";
+import { fold as foldQuery } from "../search/parse";
 
 export interface Located { item: Item; lat: number; lon: number }
 
@@ -54,6 +55,22 @@ export async function placeWords(items: Item[]): Promise<Map<string, string>> {
     out.set(l.item.id, `${words} ${fold(words)}`);
   }
   return out;
+}
+
+/** For combined search (search/parse.ts): each located photo's place names (town, region, country, as written), and
+ *  every such name folded ("zurich" → "Zürich"), so a query word or two can be taken as a place where photos are.
+ *  Country codes are left out: "de" or "it" are words too. */
+export async function placeNames(items: Item[]): Promise<{ byItem: Map<string, string[]>; names: Map<string, string> }> {
+  const p = await loadPlaces();
+  const byItem = new Map<string, string[]>(), names = new Map<string, string>();
+  for (const l of located(items)) {
+    const r = p.nearest(l.lat, l.lon);
+    if (!r) continue;
+    const these = [r.place?.name ?? "", r.place?.region ?? "", r.country ?? ""].filter(Boolean);
+    byItem.set(l.item.id, these);
+    for (const n of these) if (!names.has(foldQuery(n))) names.set(foldQuery(n), n);
+  }
+  return { byItem, names };
 }
 
 // each photo's place, looked up once (the panel's title is made again after every move of the map)

@@ -7,8 +7,10 @@ import { clearPlayer } from "./player";
 import { ApiError } from "./api";
 import { mem } from "./state";
 import { uploadQueue } from "./upqueue";
-import { haystack, matches, splitQuery } from "./search";
-import { contentSearch, vectorCount } from "./search/content";
+import { haystack, matches } from "./search";
+import { parse, removeChip, localDay } from "./search/parse";
+import { chipLabel, narrow as narrowBy, textHits, type Facts } from "./search/combined";
+import { contentSearch, textOf, vectorCount } from "./search/content";
 import { agreeModels, askedLater, askLater, NeedsConsent, useModelConsent } from "./search/consent";
 import { ModelConsent, ModelProgress } from "./search/consentui";
 import { FAMILY as family, TEXT_MODELS, type Family } from "./search/rank";
@@ -433,12 +435,14 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const personNames = useMemo(() => people.all.flatMap((g) => (g.person?.name && !g.person.hidden ? [g.person.name] : [])), [people.all]);
   // where the photos were taken, as words for search: the place file loads the first time something is searched
   const [placeWords, setPlaceWords] = useState<Map<string, string> | null>(null);
+  const [placeIdx, setPlaceIdx] = useState<{ byItem: Map<string, string[]>; names: Map<string, string> } | null>(null);
   const placeWordsFor = useRef<Item[] | null>(null); // the list they were computed for: again only when it changed
   useEffect(() => {
     if (q.trim().length < 2 || !items?.length || placeWordsFor.current === items) return;
     const these = items;
     let alive = true;
-    import("./map/locations").then((m) => m.placeWords(these)).then((w) => { if (alive) { placeWordsFor.current = these; setPlaceWords(w); } }, () => {});
+    import("./map/locations").then((m) => Promise.all([m.placeWords(these), m.placeNames(these)]))
+      .then(([w, n]) => { if (alive) { placeWordsFor.current = these; setPlaceWords(w); setPlaceIdx(n); } }, () => {});
     return () => { alive = false; };
   }, [q, items]);
   const hay = useMemo(() => {
@@ -454,7 +458,16 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
 
   // what is in the photos: the words that aren't a date, a kind or a name go to the text model (search/content.ts),
   // over the image vectors the Android and Mac apps stored; asked a moment after typing stops
-  const split = useMemo(() => splitQuery(q, personNames), [q, personNames]);
+  // the query taken apart (search/parse.ts): people, dates, places, favorites, videos, screenshots narrow; the words
+  // left are looked for in names and albums, in the text read in the photos, and by the image model (in English)
+  const day0 = localDay(Date.now());
+  const parsed = useMemo(() => parse(q, { people: personNames, today: day0, place: (f) => placeIdx?.names.get(f) }), [q, personNames, placeIdx, day0]);
+  const facts = useMemo<Facts>(() => {
+    const ppl = new Map<string, Set<string>>();
+    for (const g of people.all) if (g.person?.name && !g.person.hidden) ppl.set(g.person.name, new Set([...(ppl.get(g.person.name) ?? []), ...g.items]));
+    return { people: ppl, places: placeIdx?.byItem ?? new Map() };
+  }, [people.all, placeIdx]);
+  const split = { content: parsed.clip };
   // need: the model isn't here and the person wasn't asked yet (search/consent.ts): the question shows, nothing is fetched
   const [content, setContent] = useState<{ q: string; ids: string[] | null; status: string; need?: Family }>({ q: "", ids: null, status: "" });
   const filtered = searchFiltered();
@@ -480,28 +493,38 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const [limit, setLimit] = useState(PAGE);
   useEffect(() => setLimit(PAGE), [split.content]);
 
+  // which photos have the words in their text, and the piece that matched (shown in the photo's details)
+  const [textFound, setTextFound] = useState<Map<string, string>>(new Map());
   const match = (list: Item[], withContent = true): Item[] => {
     const visible = view.n === "trash" || showBroken ? list : list.filter((i) => !i.broken);
     if (!q) return visible;
-    // what the words name (file, date, camera, album, person) first, then what the photos show, the other words narrowing
-    const named = visible.filter((i) => matches(hay.get(i.id) ?? "", q));
-    if (!ranked || !withContent) return named;
-    const byId = new Map(visible.map((i) => [i.id, i]));
+    // the filters first; then what the words name (file, camera, album), the text read in the photos, and what the
+    // photos show, in that order
+    const pool = parsed.chips.length ? narrowBy(visible, parsed, facts) : visible;
+    if (!parsed.text) return pool;
+    const named = pool.filter((i) => matches(hay.get(i.id) ?? "", parsed.text));
     const seen = new Set(named.map((i) => i.id));
     const out = [...named];
+    const byId = new Map(pool.map((i) => [i.id, i]));
+    for (const [id] of textHits(pool, parsed.text, textOf)) { const it = byId.get(id); if (it && !seen.has(id)) { seen.add(id); out.push(it); } }
+    if (!ranked || !withContent) return out;
     for (const id of ranked) {
       const it = byId.get(id);
-      if (it && !seen.has(id) && split.filters.every((w) => (hay.get(id) ?? "").includes(w))) out.push(it);
+      if (it && !seen.has(id)) { seen.add(id); out.push(it); }
     }
     return out;
   };
+  useEffect(() => {
+    if (!parsed.text) { setTextFound(new Map()); return; }
+    setTextFound(textHits(items ?? [], parsed.text, textOf));
+  }, [parsed.text, items, people.all]);
   // the timeline leaves archived items out; a search finds them (edit/folders.ts)
-  const timelineAll = useMemo(() => match(q ? items ?? [] : mainGrid(items ?? [])), [items, q, showBroken, hay, ranked]);
+  const timelineAll = useMemo(() => match(q ? items ?? [] : mainGrid(items ?? [])), [items, q, showBroken, hay, ranked, parsed, facts]);
   // the locked folder isn't searched (its items have no place in the search words): typing a search leaves it
-  const shownAll = useMemo(() => (view.n === "locked" ? shown : match(shown)), [shown, q, showBroken, hay, ranked, view.n]);
+  const shownAll = useMemo(() => (view.n === "locked" ? shown : match(shown)), [shown, q, showBroken, hay, ranked, view.n, parsed, facts]);
   const timelineItems = useMemo(() => (ranked ? timelineAll.slice(0, limit) : timelineAll), [timelineAll, ranked, limit]);
   const shownItems = useMemo(() => (ranked ? shownAll.slice(0, limit) : shownAll), [shownAll, ranked, limit]);
-  const trashItemsShown = useMemo(() => match(trash ?? [], false), [trash, q]);
+  const trashItemsShown = useMemo(() => match(trash ?? [], false), [trash, q, parsed, facts, hay]);
   const moreLeft = !!ranked && (view.n === "timeline" ? timelineAll : shownAll).length > limit;
   const [mapList, setMapList] = useState<Item[]>([]);
   // "On this day" (memories/): worked out here from the capture dates, again when the library or the day changes
@@ -728,6 +751,17 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
 
         <main id="main" tabIndex={-1} class="content">
           {demo && <p class="demonote" role="note">Public demo · read-only · resets every hour</p>}
+          {q && libraryView && view.n !== "map" && parsed.chips.length > 0 && (
+            <ul class="searchchips" aria-label="Search filters">
+              {parsed.chips.map((c, k) => (
+                <li key={`${c.kind}${c.start}`} class="chip">
+                  <Icon name={c.kind === "person" ? "user" : c.kind === "place" ? "map" : c.kind === "favorites" ? "heart" : c.kind === "date" ? "calendar" : c.kind === "videos" ? "video" : "photos"} size={14} />
+                  <span dir="auto">{chipLabel(c)}</span>
+                  <button class="chipx" aria-label={`Remove filter ${chipLabel(c)}`} onClick={() => { const nq = removeChip(searched.trim(), parsed.chips[k]); setQuery(nq); setSearched(nq); }}><Icon name="x" size={12} /></button>
+                </li>
+              ))}
+            </ul>
+          )}
           <div class="pagehead">
             {page.n === "album" && <button class="iconbtn" onClick={() => go({ n: "albums" })} aria-label="All albums"><Icon name="back" /></button>}
             {page.n === "person" && <button class="iconbtn" onClick={() => go({ n: "people" })} aria-label="All people"><Icon name="back" /></button>}
@@ -783,7 +817,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
               {q && content.need && content.q === split.content && !askedLater(content.need) && (
                 <ModelConsent family={content.need} onYes={() => agreeModels(content.need!)} onLater={() => askLater(content.need!)} />
               )}
-              {q && items && items.length > 0 && timelineItems.length === 0 && !content.status && <p class="small">Nothing matches “{searched.trim()}”. Search covers file names, dates (2023, March, 14.03.2023), cameras, albums and people{searchable ? ", and what's in your photos" : ""}.{!searchable && " To search by what's in photos (dog, beach), turn on search in the Android or Mac app."}</p>}
+              {q && items && items.length > 0 && timelineItems.length === 0 && !content.status && <p class="small">Nothing matches “{searched.trim()}”. Search covers file names, dates (2023, March, 2019–2021), places, cameras, albums, people and text in photos{searchable ? ", and what's in them" : ""}.{!searchable && " To search by what's in photos (dog, beach), turn on search in the Android or Mac app."}</p>}
               {!q && <MemoriesRow memories={memories} onOpen={openMemory} />}
               {!q && memOn && items && <RecapRow items={items} onOpen={(year) => go({ n: "recap", year })} />}
               {items && items.length > 0 && albums.length > 0 && !selectMode && !q && <p class="small hint desktoponly">Tip: drag photos onto an album to file them.</p>}
@@ -960,7 +994,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
       {report && <ReportDialog serverVersion={mem.me?.server_version} onClose={() => setReport(false)} />}
 
       {lb !== null && libraryView && lbList[lb] && (
-        <Lightbox items={lbList} index={lb} onIndex={setLb} onClose={closeLb} onPerson={(key) => { closeLb(); openPerson(key); }}
+        <Lightbox found={view.n === "locked" ? undefined : textFound} items={lbList} index={lb} onIndex={setLb} onClose={closeLb} onPerson={(key) => { closeLb(); openPerson(key); }}
           onEdited={view.n === "trash" || view.n === "locked" ? undefined : (id) => { follow.current = { id, old: lbList.find((x) => x.id === id) }; refreshItems(); }}
           onFavorite={view.n === "trash" || view.n === "locked" ? undefined : (it) => favorite([it.id], !it.favorite)}
           onMap={view.n === "locked" ? undefined : () => { closeLb(); go({ n: "map" }); }}

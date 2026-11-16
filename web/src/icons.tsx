@@ -37,6 +37,7 @@ const paths = {
   turnLeft: <><rect x="9" y="11" width="11" height="9" rx="2" /><path d="M13 4H9a5 5 0 0 0-5 5v4" /><path d="M1.5 10.5L4 13l2.5-2.5" /></>,
   turnRight: <><rect x="4" y="11" width="11" height="9" rx="2" /><path d="M11 4h4a5 5 0 0 1 5 5v4" /><path d="M17.5 10.5L20 13l2.5-2.5" /></>,
   archive: <><rect x="3" y="4" width="18" height="5" rx="1.5" /><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9" /><path d="M10 13h4" /></>,
+  calendar: <><rect x="3.5" y="5" width="17" height="15" rx="2.5" /><path d="M3.5 10h17M8 3v4M16 3v4" /></>,
   bell: <><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z" /><path d="M10 20.5a2 2 0 0 0 4 0" /></>,
 } as const;
 

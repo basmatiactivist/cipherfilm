@@ -756,6 +756,7 @@ export async function forgetSearch(clear: boolean) {
 onWipe((how) => {
   if (run) run.cancelled = true;
   queued = null; printOf.clear(); textFailed.clear(); textFull = false;
+  filtered = true; // until the (next) account's choice is known again (accountFiltered)
   if (how !== "locked" || !downloading) release(); // a download goes on while locked (above)
   wipes++;
   N.indexClear?.();

@@ -211,8 +211,9 @@ final class WebDAVImporter {
       let client = WebDAVClient(folder: folder, user: src.user, password: password)
       defer {
         client.invalidate()
-        try? FileManager.default.removeItem(at: Self.temp)
+        // a pass stopped before (lock, then a quick unlock) leaves the temporary folder to the one running now
         if gen == generation {
+          try? FileManager.default.removeItem(at: Self.temp)
           task = nil
           if again { again = false; tick() }
         }

@@ -30,7 +30,9 @@ final class AppModel {
 
   /** The library every view reads: never an item of the locked folder (split off right after decrypting, setItems).
    *  Archived items are in it; the main grid and On this day leave them out (Folders.mainGrid). */
-  var items: [Item] = []
+  var items: [Item] = [] { didSet { itemsVersion &+= 1 } }
+  /** changes with every new list (also one of the same length), for views that work something out from it */
+  private(set) var itemsVersion = 0
   private(set) var byId: [String: Item] = [:]
   /** The locked folder's items: only while it is open, after its check passed (openLocked); empty otherwise. */
   private(set) var lockedItems: [Item] = []
@@ -770,7 +772,9 @@ final class AppModel {
     Task {
       do {
         try await LastUpload.send(api: api, at: at)
-        file.write(LastUploadSent(session: session))
+        // signed out meanwhile: nothing written into a folder that was deleted
+        guard self.me?.user.id == me.user.id else { return }
+        file.writeIfPresent(LastUploadSent(session: session))
       } catch { /* an older server, or offline: tried again at the next start */ }
     }
   }

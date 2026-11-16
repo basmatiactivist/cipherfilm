@@ -159,7 +159,8 @@ public final class Vault: @unchecked Sendable {
   }
 
   func keep(_ name: String, _ data: Data) {
-    guard let dir = cacheDir else { return }
+    // after a lock or sign-out (work that was in flight) nothing is kept, and a deleted folder isn't made again
+    guard isOpen, let dir = cacheDir else { return }
     try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
     let f = dir.appendingPathComponent(name)
     if (try? data.write(to: f, options: .atomic)) != nil { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: f.path) }

@@ -143,4 +143,11 @@ struct AccountFile<T: Codable> {
   func write(_ v: T) {
     if let d = try? JSONEncoder().encode(v) { Paths.write(d, to: url) }
   }
+  /** For work that finishes after an await: written only while the account's folder is still there, so a sign-out
+   *  that deleted it meanwhile isn't undone. */
+  func writeIfPresent(_ v: T) {
+    var dir: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: Paths.account(userId).path, isDirectory: &dir), dir.boolValue else { return }
+    write(v)
+  }
 }

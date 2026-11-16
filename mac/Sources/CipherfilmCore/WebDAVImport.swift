@@ -88,6 +88,9 @@ public enum WebDAVImport {
               let before = last.value
               if done > before { last.add(done - before); event(.bytes(done - before)) }
             }
+            // stopped meanwhile (lock, sign-out): the bookkeeping isn't written again into a folder that may be gone;
+            // the file is in the library, so the next pass finds it there
+            try live()
             book.markDone(e)
             event(.uploaded(e.name, id: id))
           } catch {

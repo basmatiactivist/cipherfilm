@@ -275,8 +275,12 @@ type waChallenge struct {
 	rpID     string
 	userID   string
 	authHash string // the password it was begun under (registration)
-	// twoFactorAtBegin: two-step sign-in was on when the registration began, so a second step was checked for it
+	// twoFactorAtBegin: two-step sign-in was on when the registration began, so a second step was checked for it;
+	// totpAtBegin and keysAtBegin are the second steps it was checked against (the stored authenticator secret and the
+	// passkeys' ids)
 	twoFactorAtBegin bool
+	totpAtBegin      string
+	keysAtBegin      []string
 	expires          time.Time
 }
 
@@ -525,7 +529,9 @@ func (a *App) passkeyRegisterBegin(w http.ResponseWriter, r *http.Request, u *us
 		return
 	}
 	var exclude []protocol.CredentialDescriptor
+	var keys []string
 	for _, p := range all {
+		keys = append(keys, p.ID)
 		if id, err := base64.RawURLEncoding.DecodeString(p.CredID); err == nil && p.RPID == rp.Config.RPID {
 			exclude = append(exclude, protocol.CredentialDescriptor{Type: protocol.PublicKeyCredentialType, CredentialID: id})
 		}
@@ -535,7 +541,8 @@ func (a *App) passkeyRegisterBegin(w http.ResponseWriter, r *http.Request, u *us
 		fail(w, 500, "server error")
 		return
 	}
-	a.waReg.put(s.IDHash, &waChallenge{sd: *sd, rpID: rp.Config.RPID, userID: u.ID, authHash: u.AuthHash, twoFactorAtBegin: u.twoFactor(), expires: a.now().Add(waTTL)}, a.now())
+	a.waReg.put(s.IDHash, &waChallenge{sd: *sd, rpID: rp.Config.RPID, userID: u.ID, authHash: u.AuthHash, twoFactorAtBegin: u.twoFactor(),
+		totpAtBegin: u.TOTPSecret, keysAtBegin: keys, expires: a.now().Add(waTTL)}, a.now())
 	writeJSON(w, 200, map[string]any{"options": opts.Response})
 }
 
@@ -600,15 +607,28 @@ func (a *App) passkeyRegisterFinish(w http.ResponseWriter, r *http.Request, u *u
 		return
 	}
 	defer tx.Rollback()
-	var wasOn, count int
-	if err := tx.QueryRow(`SELECT totp_secret<>'', (SELECT COUNT(*) FROM passkeys WHERE user_id=users.id) FROM users WHERE id=? AND auth_hash=? AND status='active'`,
-		u.ID, u.AuthHash).Scan(&wasOn, &count); err != nil {
+	var totp string
+	var count, kept int
+	if err := tx.QueryRow(`SELECT totp_secret, (SELECT COUNT(*) FROM passkeys WHERE user_id=users.id) FROM users WHERE id=? AND auth_hash=? AND status='active'`,
+		u.ID, u.AuthHash).Scan(&totp, &count); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "start adding the passkey again", "code": "passkey_expired"})
 		return
 	}
-	// begun while two-step sign-in was off (no second step checked), and it is on now: this would add a second step
-	// without one
-	if !ch.twoFactorAtBegin && (wasOn != 0 || count > 0) {
+	for _, k := range ch.keysAtBegin {
+		var n int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM passkeys WHERE id=? AND user_id=?`, k, u.ID).Scan(&n); err != nil {
+			fail(w, 500, "server error")
+			return
+		}
+		kept += n
+	}
+	// Decided here, from what is stored, not from what this process remembers (the server console turns two-step sign-in
+	// off in a process of its own). Begun while it was off (no second step checked) and on now: this would add a second
+	// step without one. Begun while it was on and off now, or on again with none of the second steps it was checked
+	// against (turned off and on again meanwhile): what was checked is gone.
+	on := totp != "" || count > 0
+	same := (ch.totpAtBegin != "" && totp == ch.totpAtBegin) || kept > 0
+	if ch.twoFactorAtBegin != on || (on && !same) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "start adding the passkey again", "code": "passkey_expired"})
 		return
 	}
@@ -633,7 +653,7 @@ func (a *App) passkeyRegisterFinish(w http.ResponseWriter, r *http.Request, u *u
 		return
 	}
 	var codes []string
-	first := wasOn == 0 && count == 0
+	first := !on
 	if first {
 		codes = newRecoveryCodes()
 		if a.replaceCodes(tx, u.ID, codes) != nil {

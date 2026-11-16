@@ -108,7 +108,7 @@ final class SearchEngine {
   func stop(clear: Bool) {
     run?.cancel(); run = nil
     if clear {
-      index.clear(); tags = [:]; texts = [:]; noText = []; runVault = nil; people = PeopleDoc(); peopleVersion = 0; peopleLoaded = false; groupsAt = -1; groups = []
+      index.clear(); tags = [:]; texts = [:]; noText = []; runVault = nil; people = PeopleDoc(); peopleVersion = 0; peopleLoaded = false; groupsAt = -1; groups = []; allGroups = []
       // the decrypted items it was handed (with their item keys) and what was queued from them
       items = []; pending = []; inFlight = []
       version += 1
@@ -270,6 +270,8 @@ final class SearchEngine {
           for _ in 0..<6 { next() }
           for await (item, stored, err) in g {
             inFlight.remove(item.id)
+            // locked or signed out meanwhile: what the photos in flight gave is dropped, not kept
+            guard live(vault) else { continue }
             for (e, enc) in stored {
               let d = e.decoded(faces: faces)
               index.put(item.id, clip: d.clip, faces: d.faces)
@@ -445,6 +447,7 @@ final class SearchEngine {
         e.setText(text)
         let sealed = B64.encode(try e.seal(pk: pk, itemId: item.id))
         try await Self.put(sealed, model: e.m, item: item.id, api: vault.api)
+        guard live(vault) else { break }
         cache.entries[item.id] = sealed
         noteText(item.id, e)
         n += 1
@@ -938,7 +941,8 @@ struct IndexCache: Codable {
     return url(v, family).flatMap { try? Data(contentsOf: $0) }.flatMap { try? JSONDecoder().decode(IndexCache.self, from: $0) } ?? IndexCache()
   }
   func write(_ v: Vault, _ family: String) {
-    guard let u = Self.url(v, family) else { return }
+    // after a lock or sign-out (the vault closed; the folder may be deleted) nothing is written or made again
+    guard v.isOpen, let u = Self.url(v, family) else { return }
     try? FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
     if let d = try? JSONEncoder().encode(self), (try? d.write(to: u, options: .atomic)) != nil { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: u.path) }
   }

@@ -37,10 +37,12 @@ public enum WebDAVError: Error, LocalizedError, Equatable, Sendable {
     }
   }
 
+  var isAddress: Bool { if case .address = self { return true } else { return false } }
+
   /** The server or the way to it rather than one file: the pass ends and is tried again later, no file counts as failed. */
   public var transient: Bool {
     switch self {
-    case .offline, .unauthorized, .certificate, .diskFull: return true
+    case .offline, .unauthorized, .certificate, .diskFull, .address: return true
     case .status(let s): return s == 408 || s == 429 || s >= 500
     default: return false
     }
@@ -74,26 +76,104 @@ public enum WebDAVAddress {
     return isPrivate(host) ? .unencrypted(url) : .invalid("Only https:// addresses can be used, except for this Mac or a home network.")
   }
 
-  /** This Mac, a private (RFC 1918, link-local, CGNAT as tailnets use, unique-local IPv6) address or a local name. */
+  /** This Mac, a private (RFC 1918, link-local, CGNAT as tailnets use, unique-local IPv6) address or a local name.
+   *  Decided from the spelling: an address only in its plain form (four decimal numbers, no leading zeros; IPv6 as
+   *  written), and a number in any other spelling (2130706433, 0x7f000001, 0177.0.0.1, 10.1) is never taken for a
+   *  name. Before anything is sent over http the name is also looked up (resolvesPrivately). */
   public static func isPrivate(_ hostIn: String) -> Bool {
     let host = hostIn.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
     if host == "localhost" || host.hasSuffix(".localhost") { return true }
     for s in [".local", ".lan", ".home.arpa", ".internal"] where host.hasSuffix(s) { return true }
-    let parts = host.split(separator: ".", omittingEmptySubsequences: false)
-    if parts.count == 4, case let n = parts.compactMap({ UInt8($0) }), n.count == 4 {
-      switch (n[0], n[1]) {
-      case (127, _), (10, _), (192, 168), (169, 254): return true
-      case (172, 16...31): return true
-      case (100, 64...127): return true
-      default: return false
-      }
-    }
-    if host.contains(":") { // IPv6
-      if host == "::1" { return true }
-      return host.hasPrefix("fc") || host.hasPrefix("fd") || host.hasPrefix("fe8") || host.hasPrefix("fe9") || host.hasPrefix("fea") || host.hasPrefix("feb")
-    }
+    if let a = ipv4(host) { return isPrivate(v4: a) }
+    if host.contains(":") { return ipv6(host).map { isPrivate(v6: $0) } ?? false }
+    // the last label of a name is never a number; one that is is an address in an odd spelling
+    let last = host.split(separator: ".", omittingEmptySubsequences: false).last.map(String.init) ?? host
+    if last.range(of: #"^([0-9]+|0x[0-9a-f]*)$"#, options: .regularExpression) != nil { return false }
     // a single name without dots (a NAS's name on the home network)
     return !host.contains(".") && host.range(of: #"^[a-z0-9-]+$"#, options: .regularExpression) != nil
+  }
+
+  /** Four decimal numbers 0…255 without leading zeros, nothing else. */
+  static func ipv4(_ s: String) -> [UInt8]? {
+    let parts = s.split(separator: ".", omittingEmptySubsequences: false)
+    guard parts.count == 4 else { return nil }
+    var out: [UInt8] = []
+    for p in parts {
+      guard (1...3).contains(p.count), p.allSatisfy({ ("0"..."9").contains($0) }), p == "0" || !p.hasPrefix("0"), let n = UInt8(p) else { return nil }
+      out.append(n)
+    }
+    return out
+  }
+
+  static func ipv6(_ s: String) -> [UInt8]? {
+    let plain = s.split(separator: "%", maxSplits: 1).first.map(String.init) ?? s // a zone (fe80::1%en0)
+    var a = in6_addr()
+    guard inet_pton(AF_INET6, plain, &a) == 1 else { return nil }
+    return withUnsafeBytes(of: &a) { Array($0) }
+  }
+
+  static func isPrivate(v4 n: [UInt8]) -> Bool {
+    switch (n[0], n[1]) {
+    case (127, _), (10, _), (192, 168), (169, 254): return true
+    case (172, 16...31): return true
+    case (100, 64...127): return true
+    default: return false
+    }
+  }
+
+  /** ::1, unique-local fc00::/7, link-local fe80::/10, and an IPv4 one written as IPv6 (::ffff:a.b.c.d). */
+  static func isPrivate(v6 b: [UInt8]) -> Bool {
+    if b == [UInt8](repeating: 0, count: 15) + [1] { return true }
+    if b[0] & 0xfe == 0xfc { return true }
+    if b[0] == 0xfe, b[1] & 0xc0 == 0x80 { return true }
+    if b[0..<10].allSatisfy({ $0 == 0 }), b[10] == 0xff, b[11] == 0xff { return isPrivate(v4: Array(b[12..<16])) }
+    return false
+  }
+
+  /** Whether every address the name leads to is this Mac, a private network or, for IPv6, the same /64 network as one
+   *  of this Mac's own (a home network's global IPv6 addresses). A name that can't be looked up counts as not private.
+   *  Blocking: call off the main thread. */
+  public static func resolvesPrivately(_ hostIn: String) -> Bool {
+    let host = hostIn.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+    var hints = addrinfo()
+    hints.ai_socktype = SOCK_STREAM
+    var res: UnsafeMutablePointer<addrinfo>?
+    guard getaddrinfo(host, nil, &hints, &res) == 0, let first = res else { return false }
+    defer { freeaddrinfo(first) }
+    let own = ownV6Networks()
+    var any = false
+    var p: UnsafeMutablePointer<addrinfo>? = first
+    while let a = p {
+      defer { p = a.pointee.ai_next }
+      guard let sa = a.pointee.ai_addr else { continue }
+      switch Int32(sa.pointee.sa_family) {
+      case AF_INET:
+        let b = sa.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { s in withUnsafeBytes(of: s.pointee.sin_addr) { Array($0) } }
+        guard isPrivate(v4: b) else { return false }
+      case AF_INET6:
+        let b = sa.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { s in withUnsafeBytes(of: s.pointee.sin6_addr) { Array($0) } }
+        guard isPrivate(v6: b) || own.contains(Array(b[0..<8])) else { return false }
+      default: return false
+      }
+      any = true
+    }
+    return any
+  }
+
+  /** The /64 networks of this Mac's own global IPv6 addresses. */
+  static func ownV6Networks() -> Set<[UInt8]> {
+    var out = Set<[UInt8]>()
+    var list: UnsafeMutablePointer<ifaddrs>?
+    guard getifaddrs(&list) == 0, let first = list else { return out }
+    defer { freeifaddrs(first) }
+    var p: UnsafeMutablePointer<ifaddrs>? = first
+    while let i = p {
+      defer { p = i.pointee.ifa_next }
+      guard let sa = i.pointee.ifa_addr, Int32(sa.pointee.sa_family) == AF_INET6 else { continue }
+      let b = sa.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { s in withUnsafeBytes(of: s.pointee.sin6_addr) { Array($0) } }
+      if b[0] & 0xe0 == 0x20 { out.insert(Array(b[0..<8])) } // global unicast 2000::/3
+    }
+    return out
   }
 }
 
@@ -143,7 +223,8 @@ public enum PropFind {
             let u = URL(string: href, relativeTo: folder)?.absoluteURL ?? href.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed).flatMap({ URL(string: $0, relativeTo: folder)?.absoluteURL })
       else { continue }
       // the same server (an absolute href may name it), directly inside the folder
-      guard u.host?.lowercased() == folder.host?.lowercased(), (u.port ?? defaultPort(u)) == (folder.port ?? defaultPort(folder)) else { continue }
+      guard u.scheme?.lowercased() == folder.scheme?.lowercased(), u.host?.lowercased() == folder.host?.lowercased(),
+            (u.port ?? defaultPort(u)) == (folder.port ?? defaultPort(folder)) else { continue }
       let path = u.path(percentEncoded: false)
       let dir = path.hasSuffix("/") && path.count > 1 ? String(path.dropLast()) : path
       if dir + "/" == base || dir == base || path == base { continue } // the folder itself
@@ -153,6 +234,8 @@ public enum PropFind {
       guard !name.isEmpty, name != ".", name != "..", !name.contains("/"), !name.contains("\u{0}") else { continue }
       if r.collection || r.href?.hasSuffix("/") == true && r.length == nil { folders += 1; continue }
       if name.hasPrefix(".") { continue }
+      // a size no file can have is a listing that can't be trusted for this member: left out
+      if let n = r.length, n < 0 { continue }
       files.append(WebDAVEntry(name: name, url: u, size: r.length ?? 0, etag: r.etag, modified: r.modified.flatMap(httpDate),
                                contentType: r.contentType, isFolder: false))
     }
@@ -251,8 +334,11 @@ public final class WebDAVClient: NSObject, URLSessionTaskDelegate, @unchecked Se
     c.httpMaximumConnectionsPerHost = 8
     c.urlCredentialStorage = nil
     if !protocols.isEmpty { c.protocolClasses = protocols + (c.protocolClasses ?? []) }
+    sessionMade = true
     return URLSession(configuration: c, delegate: self, delegateQueue: nil)
   }()
+  /** whether `session` exists (a client that never sent anything doesn't make one on its way out) */
+  private var sessionMade = false
   private let protocols: [AnyClass]
   /** bytes read from the server, for the import's speed and the tests' measurements */
   public let received = Counter()
@@ -262,8 +348,8 @@ public final class WebDAVClient: NSObject, URLSessionTaskDelegate, @unchecked Se
     self.folder = folder; self.user = user; self.password = password; self.protocols = protocols
   }
 
-  deinit { session.invalidateAndCancel() }
-  public func invalidate() { session.invalidateAndCancel() }
+  deinit { if sessionMade { session.invalidateAndCancel() } }
+  public func invalidate() { if sessionMade { session.invalidateAndCancel() } }
 
   /** The folder's members (one PROPFIND, Depth 1). */
   public func list() async throws -> WebDAVListing {
@@ -272,13 +358,18 @@ public final class WebDAVClient: NSObject, URLSessionTaskDelegate, @unchecked Se
     r.setValue("1", forHTTPHeaderField: "Depth")
     r.setValue("application/xml; charset=utf-8", forHTTPHeaderField: "Content-Type")
     r.httpBody = PropFind.body
-    let (d, h) = try await send(r)
+    let (bytes, h) = try await open(r)
     switch h.statusCode {
-    case 207: return try PropFind.parse(d, folder: h.url.map { Self.sameFolder($0, folder) } ?? folder)
-    case 200, 405, 501: throw WebDAVError.notWebDAV
-    default: throw Self.failure(h.statusCode)
+    case 207:
+      let d = try await body(bytes, h, cap: Self.listingCap, tooLong: .malformed)
+      return try PropFind.parse(d, folder: h.url.map { Self.sameFolder($0, folder) } ?? folder)
+    case 200, 405, 501: bytes.task.cancel(); throw WebDAVError.notWebDAV
+    default: bytes.task.cancel(); throw Self.failure(h.statusCode)
     }
   }
+
+  /** A folder listing larger than this is refused (one of 100,000 files takes far less). */
+  public static let listingCap = 64 << 20
 
   /** A redirect may have added the slash; the listing is still read against the folder that was asked for. */
   static func sameFolder(_ u: URL, _ folder: URL) -> URL { u.host == folder.host && u.port == folder.port && u.scheme == folder.scheme ? u : folder }
@@ -298,24 +389,34 @@ public final class WebDAVClient: NSObject, URLSessionTaskDelegate, @unchecked Se
       r.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
       if let et = e.etag, !et.hasPrefix("W/") { r.setValue(et, forHTTPHeaderField: "If-Range") }
       do {
-        let (d, h) = try await send(r)
+        // never more than was asked for is taken in: a longer answer stops the transfer
+        let (bytes, h) = try await open(r)
         switch h.statusCode {
         case 206:
           // Content-Range: bytes a-b/total
           if let cr = h.value(forHTTPHeaderField: "Content-Range"), let total = cr.split(separator: "/").last.flatMap({ Int64($0) }), total != e.size {
+            bytes.task.cancel()
             throw WebDAVError.changed
           }
+          let d = try await body(bytes, h, cap: len, tooLong: .changed)
           guard d.count == len else { throw WebDAVError.changed }
           return d
         case 200:
-          // the whole file: fine when that is what was asked for, otherwise the server ignores ranges (or the file changed)
-          if offset == 0, Int64(len) == e.size, d.count == len { return d }
-          if Int64(d.count) != e.size { throw WebDAVError.changed }
+          // the whole file: fine when that is what was asked for, otherwise the server ignores ranges (or the file
+          // changed), found out without reading it
+          if offset == 0, Int64(len) == e.size {
+            let d = try await body(bytes, h, cap: len, tooLong: .changed)
+            guard d.count == len else { throw WebDAVError.changed }
+            return d
+          }
+          bytes.task.cancel()
+          if h.expectedContentLength >= 0, h.expectedContentLength != e.size { throw WebDAVError.changed }
+          rangeLock.withLock { rangesKnown = false }
           throw WebDAVError.noRanges
-        case 412, 416: throw WebDAVError.changed
-        default: throw Self.failure(h.statusCode)
+        case 412, 416: bytes.task.cancel(); throw WebDAVError.changed
+        default: bytes.task.cancel(); throw Self.failure(h.statusCode)
         }
-      } catch let w as WebDAVError where w.transient && w != .unauthorized && w != .certificate {
+      } catch let w as WebDAVError where w.transient && w != .unauthorized && w != .certificate && !w.isAddress {
         last = w
       }
     }
@@ -324,6 +425,9 @@ public final class WebDAVClient: NSObject, URLSessionTaskDelegate, @unchecked Se
 
   private let rangeLock = NSLock()
   private var rangesKnown: Bool?
+
+  /** What sendsRanges found out, nil before. */
+  public var knownToSendRanges: Bool? { rangeLock.withLock { rangesKnown } }
 
   /** Whether the server sends parts of files: asked once, with a small Range request whose answer is dropped unread if
    *  it is the whole file. */
@@ -334,10 +438,8 @@ public final class WebDAVClient: NSObject, URLSessionTaskDelegate, @unchecked Se
     r.httpMethod = "GET"
     r.setValue("bytes=0-0", forHTTPHeaderField: "Range")
     r.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
-    let (bytes, resp): (URLSession.AsyncBytes, URLResponse)
-    do { (bytes, resp) = try await session.bytes(for: r) } catch { throw Self.mapped(error) }
+    let (bytes, h) = try await open(r)
     bytes.task.cancel()
-    guard let h = resp as? HTTPURLResponse else { throw WebDAVError.malformed }
     let ok: Bool
     switch h.statusCode {
     case 206: ok = true
@@ -348,34 +450,79 @@ public final class WebDAVClient: NSObject, URLSessionTaskDelegate, @unchecked Se
     return ok
   }
 
-  /** The whole file into a file of this Mac's own (only for a server that sends no parts). */
+  /** The whole file into a file of this Mac's own (only for a server that sends no parts), written straight there.
+   *  Never more than the listed size is written: a longer answer stops the transfer and leaves no file. */
   public func download(_ e: WebDAVEntry, to dest: URL) async throws {
     var r = URLRequest(url: e.url, timeoutInterval: 120)
     r.httpMethod = "GET"
     r.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
-    let (tmp, resp): (URL, URLResponse)
-    do { (tmp, resp) = try await session.download(for: r) } catch { throw Self.mapped(error) }
-    defer { try? FileManager.default.removeItem(at: tmp) }
-    guard let h = resp as? HTTPURLResponse else { throw WebDAVError.malformed }
-    guard h.statusCode == 200 else { throw Self.failure(h.statusCode) }
-    let got = (try? FileManager.default.attributesOfItem(atPath: tmp.path)[.size] as? NSNumber)?.int64Value ?? -1
+    let (bytes, h) = try await open(r)
+    guard h.statusCode == 200 else { bytes.task.cancel(); throw Self.failure(h.statusCode) }
+    if h.expectedContentLength >= 0, h.expectedContentLength != e.size { bytes.task.cancel(); throw WebDAVError.changed }
+    let fm = FileManager.default
+    try? fm.removeItem(at: dest)
+    guard fm.createFile(atPath: dest.path, contents: nil, attributes: [.posixPermissions: 0o600]), let fh = try? FileHandle(forWritingTo: dest) else {
+      bytes.task.cancel()
+      throw APIError(status: -1, message: "No room for a temporary copy.")
+    }
+    var done = false
+    defer { try? fh.close(); if !done { try? fm.removeItem(at: dest) } }
+    let chunk = 1 << 20
+    var buf = [UInt8](), got: Int64 = 0
+    buf.reserveCapacity(chunk)
+    func flush() throws {
+      guard got + Int64(buf.count) <= e.size else { bytes.task.cancel(); throw WebDAVError.changed }
+      try fh.write(contentsOf: buf)
+      got += Int64(buf.count)
+      _ = received.add(Int64(buf.count))
+      buf.removeAll(keepingCapacity: true)
+    }
+    do {
+      for try await b in bytes {
+        buf.append(b)
+        if buf.count >= chunk || got + Int64(buf.count) > e.size { try flush() }
+      }
+      try flush()
+    } catch let w as WebDAVError { throw w } catch let a as APIError { throw a } catch { throw Self.mapped(error) }
     guard got == e.size else { throw WebDAVError.changed }
-    _ = received.add(got)
-    try? FileManager.default.removeItem(at: dest)
-    try FileManager.default.moveItem(at: tmp, to: dest)
+    done = true
   }
 
-  private func send(_ r: URLRequest) async throws -> (Data, HTTPURLResponse) {
+  private let plainLock = NSLock()
+  private var plainChecked: Date?
+
+  /** Over http, the folder's name must still lead only to this Mac or a private network, looked up before anything
+   *  (the password included) is sent, and again after a minute. https needs no look-up. */
+  func checkPlain() async throws {
+    guard folder.scheme?.lowercased() == "http" else { return }
+    if let t = plainLock.withLock({ plainChecked }), Date().timeIntervalSince(t) < 60 { return }
+    let host = folder.host ?? ""
+    let ok = await Task.detached { WebDAVAddress.isPrivate(host) && WebDAVAddress.resolvesPrivately(host) }.value
+    guard ok else { throw WebDAVError.address("This address doesn't lead to this Mac or a home network, so nothing is sent to it without https://.") }
+    plainLock.withLock { plainChecked = Date() }
+  }
+
+  private func open(_ r: URLRequest) async throws -> (URLSession.AsyncBytes, HTTPURLResponse) {
+    try await checkPlain()
+    let (bytes, resp): (URLSession.AsyncBytes, URLResponse)
+    do { (bytes, resp) = try await session.bytes(for: r) } catch { throw Self.mapped(error) }
+    guard let h = resp as? HTTPURLResponse else { bytes.task.cancel(); throw WebDAVError.malformed }
+    return (bytes, h)
+  }
+
+  /** An answer's body, refused (and the transfer stopped) as soon as it would pass `cap` bytes. */
+  private func body(_ bytes: URLSession.AsyncBytes, _ h: HTTPURLResponse, cap: Int, tooLong: WebDAVError) async throws -> Data {
+    if h.expectedContentLength > Int64(cap) { bytes.task.cancel(); throw tooLong }
+    var d = [UInt8]()
+    d.reserveCapacity(h.expectedContentLength > 0 ? Int(h.expectedContentLength) : min(cap, 1 << 20))
     do {
-      let (d, resp) = try await session.data(for: r)
-      guard let h = resp as? HTTPURLResponse else { throw WebDAVError.malformed }
-      _ = received.add(Int64(d.count))
-      return (d, h)
-    } catch let e as WebDAVError {
-      throw e
-    } catch {
-      throw Self.mapped(error)
-    }
+      for try await b in bytes {
+        guard d.count < cap else { bytes.task.cancel(); throw tooLong }
+        d.append(b)
+      }
+    } catch let w as WebDAVError { throw w } catch { throw Self.mapped(error) }
+    _ = received.add(Int64(d.count))
+    return Data(d)
   }
 
   static func mapped(_ error: Error) -> Error {
@@ -410,6 +557,7 @@ public final class WebDAVClient: NSObject, URLSessionTaskDelegate, @unchecked Se
     // the password only to the folder's own server, once per challenge (a wrong one isn't sent again and again)
     let space = challenge.protectionSpace
     guard m == NSURLAuthenticationMethodHTTPBasic || m == NSURLAuthenticationMethodHTTPDigest,
+          space.protocol?.lowercased() == folder.scheme?.lowercased(),
           space.host.lowercased() == folder.host?.lowercased(), space.port == (folder.port ?? PropFind.defaultPort(folder)),
           challenge.previousFailureCount == 0, !user.isEmpty else {
       completionHandler(.rejectProtectionSpace, nil); return

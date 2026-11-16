@@ -26,22 +26,17 @@ import Testing
     #expect(DeviceIdle.unused(list, days: 30, now: now).isEmpty)
   }
 
-  private func item(_ id: String, name: String, size: Int64, at: Double) -> Item {
-    Item(id: id, kind: .image, size: 1, segmentCount: 1, createdAt: at, hasThumb: false, hasPreview: false, favorite: false,
-         trashedAt: nil, purgeAt: nil, meta: ItemMeta(name: name, mime: "image/jpeg", size: size, lastModified: 0, capture_ts: 0),
-         itemKey: nil, broken: false)
+  @Test func oddLastSeenTimesDontTrap() throws {
+    let d: [String: Any] = ["id": "x", "device": "", "created_at": 0, "last_seen": Int64.min, "current": false, "indexer": false]
+    let dev = try JSONDecoder().decode(Device.self, from: JSONSerialization.data(withJSONObject: d))
+    #expect(DeviceIdle.unused([dev], days: 30, now: now).map(\.id) == ["x"])
   }
 
-  @Test func newestUploadOfTheWatchedFolders() {
-    let items = [item("1", name: "a.jpg", size: 10, at: 100), item("2", name: "b.jpg", size: 20, at: 300), item("3", name: "c.jpg", size: 30, at: 200)]
-    let done: Set<String> = [Crypto.fingerprint(name: "a.jpg", size: 10), Crypto.fingerprint(name: "c.jpg", size: 30)]
-    #expect(LastUpload.newest(items: items, done: done) == 200)
-    #expect(LastUpload.newest(items: items, done: []) == 0)
-    #expect(LastUpload.newest(items: [], done: done) == 0)
-    // never after the watcher last wrote its state
-    #expect(LastUpload.newest(items: items, done: done, notAfter: Date(timeIntervalSince1970: 150)) == 150)
-    // same name, other size: not this Mac's
-    #expect(LastUpload.newest(items: [item("4", name: "a.jpg", size: 11, at: 900)], done: done) == 0)
+  /** The time sent is this Mac's own note of its last upload: nothing the server lists can change it. */
+  @Test func lastUploadIsThisMacsOwnNote() {
+    #expect(LastUpload.time(Date(timeIntervalSince1970: 1_799_000_000), now: now) == 1_799_000_000)
+    #expect(LastUpload.time(nil, now: now) == 0)
+    #expect(LastUpload.time(Date(timeIntervalSince1970: 1_900_000_000), now: now) == 1_800_000_000) // never in the future
   }
 
   private func me(session: String?, demo: Bool = false) throws -> Me {

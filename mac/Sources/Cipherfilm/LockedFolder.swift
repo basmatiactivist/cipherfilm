@@ -71,6 +71,8 @@ struct LockedGateView: View {
   @State private var usePassword = !LockedGate.fingerprintAvailable
   @State private var error: String?
   @State private var busy = false
+  /** the check in progress: cancelled when the gate goes (another screen, a search); openLocked also refuses it then */
+  @State private var check: Task<Void, Never>?
 
   var body: some View {
     Spacer()
@@ -108,16 +110,17 @@ struct LockedGateView: View {
     .overlay(RoundedRectangle(cornerRadius: Radius.card).strokeBorder(Ink.rule, lineWidth: 1))
     .frame(maxWidth: .infinity)
     .task { if !usePassword && NSApp.isActive { checkFingerprint() } }
-    .onDisappear { password = "" }
+    .onDisappear { password = ""; check?.cancel(); check = nil; busy = false }
     Spacer()
   }
 
   private func checkFingerprint() {
     guard !busy else { return }
     busy = true; error = nil
-    Task {
-      do { if try await LockedGate.fingerprint() { await model.openLocked() } }
-      catch { self.error = "Your fingerprint wasn't recognized. Try again or use your password." }
+    let visit = model.lockedVisit
+    check = Task {
+      do { if try await LockedGate.fingerprint(), !Task.isCancelled { await model.openLocked(visit: visit) } }
+      catch { if !Task.isCancelled { self.error = "Your fingerprint wasn't recognized. Try again or use your password." } }
       busy = false
     }
   }
@@ -126,9 +129,12 @@ struct LockedGateView: View {
     guard !busy, !password.isEmpty, let me = model.me, let vault = model.vault else { return }
     busy = true; error = nil
     let pw = password
-    Task {
-      do { try await LockedGate.password(pw, me: me, vault: vault); password = ""; await model.openLocked() }
-      catch { self.error = error.localizedDescription }
+    let visit = model.lockedVisit
+    check = Task {
+      do {
+        try await LockedGate.password(pw, me: me, vault: vault); password = ""
+        if !Task.isCancelled { await model.openLocked(visit: visit) }
+      } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
       busy = false
     }
   }

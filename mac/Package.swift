@@ -11,7 +11,10 @@ let package = Package(
     .executable(name: "Cipherfilm", targets: ["Cipherfilm"]),
   ],
   dependencies: [
-    .package(url: "https://github.com/jedisct1/swift-sodium.git", exact: "0.11.0"),
+    // swift-sodium 0.11.0 (libsodium 1.0.22), by its commit rather than its tag: a tag can be moved, the commit can't,
+    // so every build (swift test, and xcodebuild for the released app) compiles the same libsodium. To update, put the
+    // new release's commit here and run `swift package resolve`.
+    .package(url: "https://github.com/jedisct1/swift-sodium.git", revision: "cfd195c76882aa9b997560ca7cb95d72fbf5db00"),
   ],
   targets: [
     .binaryTarget(name: "onnxruntime", path: "Vendor/onnxruntime.xcframework"),

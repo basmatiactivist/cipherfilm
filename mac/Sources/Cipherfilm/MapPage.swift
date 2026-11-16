@@ -31,6 +31,8 @@ enum PlaceBook {
 
   private static let lock = NSLock()
   nonisolated(unsafe) private static var words: [String: [String]] = [:]
+  /** bumped by forget(): a look-up that started before a lock or sign-out keeps nothing */
+  nonisolated(unsafe) private static var generation = 0
 
   /** The located items whose place (town, region, country, country code; with and without accents) starts with every
    *  word typed, as web/src/library.tsx finds them. Each item's place words are worked out once, the first time
@@ -39,13 +41,14 @@ enum PlaceBook {
     let q = Places.fold(query).split(whereSeparator: \.isWhitespace).map(String.init)
     guard !q.isEmpty, q.allSatisfy({ $0.count >= 2 }) else { return [] }
     let located = items.compactMap { it in it.location.map { (it.id, $0) } }
+    let gen = lock.withLock { generation }
     return await Task.detached(priority: .userInitiated) {
       guard let p = places else { return Set<String>() }
       var out = Set<String>()
       for (id, g) in located {
         let w: [String] = lock.withLock { words[id] } ?? {
           let w = p.nearest(g.lat, g.lon).map { Places.fold($0.words).split(separator: " ").map(String.init) } ?? []
-          lock.withLock { words[id] = w }
+          lock.withLock { if generation == gen { words[id] = w } }
           return w
         }()
         if !w.isEmpty, q.allSatisfy({ qw in w.contains { $0.hasPrefix(qw) } }) { out.insert(id) }
@@ -62,13 +65,14 @@ enum PlaceBook {
   static func names(_ items: [Item]) async -> (byItem: [String: [String]], names: [String: String]) {
     let located = items.compactMap { it in it.location.map { (it.id, $0) } }
     guard !located.isEmpty else { return ([:], [:]) }
+    let gen = lock.withLock { generation }
     return await Task.detached(priority: .userInitiated) {
       guard let p = places else { return ([:], [:]) }
       var byItem: [String: [String]] = [:], names: [String: String] = [:]
       for (id, g) in located {
         let these: [String] = lock.withLock { placeNames[id] } ?? {
           let these = p.nearest(g.lat, g.lon).map { r in [r.place?.name ?? "", r.place?.region ?? "", r.country].filter { !$0.isEmpty } } ?? []
-          lock.withLock { placeNames[id] = these }
+          lock.withLock { if generation == gen { placeNames[id] = these } }
           return these
         }()
         guard !these.isEmpty else { continue }
@@ -80,7 +84,7 @@ enum PlaceBook {
   }
 
   /** Signing out or locking: nothing about where photos were taken stays in memory. */
-  static func forget() { lock.withLock { words = [:]; placeNames = [:] } }
+  static func forget() { lock.withLock { words = [:]; placeNames = [:]; generation += 1 } }
 }
 
 /** One photo on the map, as the page gets it. */

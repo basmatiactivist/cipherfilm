@@ -38,17 +38,43 @@ final class Exporter {
   private var settings = AccountSettings()
   /** ids of items in the locked folder (only the ids): their copies are deleted, never kept or trashed */
   private var lockedIds: Set<String> = []
+  /** ids of the items handed over last (the open library): a running pass writes only items still in it */
+  private var openIds: Set<String> = []
+  /** the locked ids dropLocked last went through (the export list is read again only when they change) */
+  private var dropped: Set<String> = []
   private var again = false
+  /** bumped by stop(): a pass or loop from before doesn't touch what a newer one holds */
+  private var generation = 0
   private var firstPassNotified = false
 
   static let marker = ".cipherfilm-export"
 
   func libraryChanged(vault: Vault, items: [Item], albums: [Album], settings: AccountSettings, locked: Set<String>? = nil) {
     self.vault = vault; self.items = items; self.albums = albums; self.settings = settings
+    openIds = Set(items.map(\.id))
     if let locked { lockedIds = locked }
     guard settings.exportPath != nil, settings.exportOn else { stop(); return }
-    guard settings.exportKeepUpToDate else { if run == nil { phase = .idle }; return }
+    guard settings.exportKeepUpToDate else {
+      if run == nil { phase = .idle; dropLocked() }
+      return
+    }
     start()
+  }
+
+  /** Without "Keep up to date" no pass follows a change: copies of items moved to the locked folder go now anyway. */
+  private func dropLocked() {
+    guard let vault, let path = settings.exportPath, !lockedIds.isEmpty, lockedIds != dropped else { return }
+    dropped = lockedIds
+    let mf = file(vault.userId)
+    guard var man = mf.read(), man.root == path, man.userId == vault.userId else { return }
+    let root = URL(fileURLWithPath: path, isDirectory: true)
+    var changed = false
+    for (id, e) in man.entries where lockedIds.contains(id) {
+      man.entries.removeValue(forKey: id)
+      changed = true
+      if !man.entries.values.contains(where: { $0.path == e.path }) { Self.deleteIfUnchanged(root.appendingPathComponent(e.path), e) }
+    }
+    if changed { mf.writeIfPresent(man) }
   }
 
   /** One pass now (also when "Keep up to date" is off). */
@@ -59,10 +85,15 @@ final class Exporter {
 
   private func start() {
     if run != nil { again = true; return }
-    run = Task { await self.loop() }
+    let gen = generation
+    run = Task {
+      await self.loop()
+      if self.generation == gen { self.run = nil } // a stop meanwhile may have started another run: that one stays
+    }
   }
 
   func stop() {
+    generation += 1
     run?.cancel(); run = nil
     phase = .off; current = nil; message = nil
   }
@@ -72,7 +103,7 @@ final class Exporter {
    *  over again (libraryChanged). */
   func forget() {
     stop()
-    vault = nil; items = []; albums = []; settings = AccountSettings(); lockedIds = []
+    vault = nil; items = []; albums = []; settings = AccountSettings(); lockedIds = []; openIds = []; dropped = []
     again = false
   }
 
@@ -93,7 +124,6 @@ final class Exporter {
   }
 
   private func loop() async {
-    defer { run = nil }
     repeat {
       again = false
       await pass()
@@ -133,6 +163,9 @@ final class Exporter {
     let fm = FileManager.default
     let userId = vault.userId
     let mf = file(userId)
+    let gen = generation
+    // the list of what was written: never after a stop (lock, sign-out) or once the account's folder is gone
+    func save(_ m: Manifest) { if gen == generation { mf.writeIfPresent(m) } }
     var man = mf.read() ?? Manifest(root: path, userId: userId)
     if man.root != path || man.userId != userId { man = Manifest(root: path, userId: userId) }
     do {
@@ -174,7 +207,7 @@ final class Exporter {
         taken.remove(rel.lowercased())
       }
     }
-    mf.write(man)
+    save(man)
 
     // 3. new: written once
     var byPrint: [String: Entry] = [:]
@@ -186,7 +219,9 @@ final class Exporter {
     message = nil
     var written = 0
     for it in todo {
-      if Task.isCancelled || !vault.isOpen { mf.write(man); return }
+      if Task.isCancelled || !vault.isOpen || gen != generation { save(man); return }
+      // moved to the locked folder (or gone) while this pass runs: not written
+      guard openIds.contains(it.id), !lockedIds.contains(it.id) else { continue }
       let print = Crypto.fingerprint(name: it.name, size: it.size)
       // the same photo uploaded twice: one file
       if let twin = byPrint[print], fm.fileExists(atPath: root.appendingPathComponent(twin.path).path) {
@@ -207,21 +242,29 @@ final class Exporter {
       do {
         try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
         try await vault.saveOriginal(it, to: dest)
+        // stopped meanwhile (lock, sign-out): nothing more is recorded or written
+        guard gen == generation else { return }
+        // moved to the locked folder, or gone, while it was being written: the copy goes again
+        guard openIds.contains(it.id), !lockedIds.contains(it.id) else {
+          try? fm.removeItem(at: dest)
+          taken.remove(rel.lowercased())
+          continue
+        }
         try fm.setAttributes([.creationDate: it.date, .modificationDate: it.date], ofItemAtPath: dest.path)
         let a = try fm.attributesOfItem(atPath: dest.path)
         let e = Entry(path: rel, size: (a[.size] as? NSNumber)?.int64Value ?? it.size, mtime: ((a[.modificationDate] as? Date) ?? it.date).timeIntervalSince1970, print: print)
         man.entries[it.id] = e; byPrint[print] = e
         done += 1; written += 1
-        if done % 20 == 0 { mf.write(man) }
+        if done % 20 == 0 { save(man) }
       } catch is CancellationError {
-        mf.write(man); return
+        save(man); return
       } catch {
         taken.remove(rel.lowercased())
         message = "\(it.name): \(error.localizedDescription)"
-        if (error as? APIError)?.status == 0 { mf.write(man); phase = .error; return } // offline: next pass
+        if (error as? APIError)?.status == 0 { save(man); phase = .error; return } // offline: next pass
       }
     }
-    mf.write(man)
+    save(man)
     current = nil
     if phase != .error { phase = .idle }
     if written >= 20 && !firstPassNotified {

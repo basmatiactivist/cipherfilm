@@ -28,7 +28,8 @@ final class PasskeyBrowser: NSObject, ASWebAuthenticationPresentationContextProv
       if !s.start() { cont.resume(throwing: APIError(status: -1, message: "The browser window for the passkey didn't open.")) }
     }
     session = nil
-    return try Passkeys.answer(from: back)
+    // only an answer the browser made for this server and this challenge
+    return try Passkeys.answer(from: back, server: server, op: op, options: options)
   }
 
   private nonisolated static func friendly(_ e: Error?) -> Error {

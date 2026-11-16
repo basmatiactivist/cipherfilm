@@ -5,7 +5,8 @@
 	<!-- Hardened runtime, not sandboxed: watched folders and the export folder can be anywhere the person chooses.
 	     Library validation is off because an ad-hoc signature has no team, and with it on the runtime refuses the
 	     embedded ONNX Runtime ("different Team IDs"); everything else the runtime protects (no DYLD_* variables, no
-	     unsigned executable memory, no debugger) stays on. -->
+	     unsigned executable memory, no debugger) stays on. This is a choice for the ad-hoc signed build only: once the
+	     app is signed with a Developer ID (a team), this key goes and library validation is on again (docs/MAC.md). -->
 	<key>com.apple.security.cs.disable-library-validation</key>
 	<true/>
 </dict>

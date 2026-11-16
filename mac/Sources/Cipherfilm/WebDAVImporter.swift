@@ -51,6 +51,8 @@ final class WebDAVImporter {
   private var unlocked = false
   /** the library's names and sizes (Crypto.fingerprint), in memory only; nil until the library loaded after unlock */
   private var known: Set<String>?
+  /** the same of the locked folder's items (WebDAVImport.plan reads those files and drops them) */
+  private var knownLocked: Set<String> = []
   private var task: Task<Void, Never>?
   private var timer: Timer?
   private var again = false
@@ -98,7 +100,8 @@ final class WebDAVImporter {
 
   /** The decrypted library (with the locked folder's items): files it has are not imported again. */
   func libraryChanged(_ all: [Item]) {
-    known = Set(all.compactMap { it in it.meta.map { Crypto.fingerprint(name: $0.name, size: $0.size) } })
+    known = Set(all.filter { !$0.isLocked }.compactMap { it in it.meta.map { Crypto.fingerprint(name: $0.name, size: $0.size) } })
+    knownLocked = Set(all.filter(\.isLocked).compactMap { it in it.meta.map { Crypto.fingerprint(name: $0.name, size: $0.size) } })
     tick()
   }
 
@@ -108,7 +111,7 @@ final class WebDAVImporter {
     generation += 1
     task?.cancel(); task = nil
     timer?.invalidate(); timer = nil
-    known = nil
+    known = nil; knownLocked = []
     again = false
     unlocked = false
     for k in status.keys where status[k]?.phase == .listing || status[k]?.phase == .importing {
@@ -191,7 +194,7 @@ final class WebDAVImporter {
   }
 
   private func run(_ src: WebDAVSource) {
-    guard let api, let userId, let pkB64 = settings.pubkey, let pk = try? B64.decode(pkB64), let known,
+    guard let api, let userId, let pkB64 = settings.pubkey, let pk = try? B64.decode(pkB64), let known, case let locked = knownLocked,
           let folder = URL(string: src.url) else { return }
     guard let password = WebDAVPasswords.get(userId: userId, source: src.id) else {
       status[src.id]?.phase = .problem
@@ -211,8 +214,9 @@ final class WebDAVImporter {
       let client = WebDAVClient(folder: folder, user: src.user, password: password)
       defer {
         client.invalidate()
-        try? FileManager.default.removeItem(at: Self.temp)
+        // a pass stopped before (lock, then a quick unlock) leaves the temporary folder to the one running now
         if gen == generation {
+          try? FileManager.default.removeItem(at: Self.temp)
           task = nil
           if again { again = false; tick() }
         }
@@ -221,7 +225,7 @@ final class WebDAVImporter {
       do {
         let listing = try await client.list()
         guard stillOn() else { return }
-        let plan = WebDAVImport.plan(listing, book: b, known: known)
+        let plan = WebDAVImport.plan(listing, book: b, known: known, locked: locked)
         status[id]?.plan = plan
         status[id]?.bytesTotal = plan.bytes
         status[id]?.phase = .importing
@@ -237,7 +241,7 @@ final class WebDAVImporter {
         }
         defer { ticker.cancel() }
         try await WebDAVImport.run(plan.todo, client: client, api: api, wrap: .sealed(pk: pk), book: b, parallel: parallel, temp: Self.temp,
-                                   live: { if flag.get() != gen { throw Stopped() } }) { ev in
+                                   readOnly: plan.readOnly, live: { if flag.get() != gen { throw Stopped() } }) { ev in
           if case .bytes(let n) = ev { meter.add(n) }
           if case .failed(_, _, false) = ev { retryable.add(1) }
           Task { @MainActor in
@@ -245,6 +249,8 @@ final class WebDAVImporter {
             switch ev {
             case .started(let name, _): self.status[id]?.current.append(name)
             case .bytes(let n): self.status[id]?.bytesDone += n
+            case .alreadyThere(let name):
+              self.status[id]?.current.removeAll { $0 == name }
             case .uploaded(let name, _):
               self.status[id]?.current.removeAll { $0 == name }
               self.status[id]?.uploaded += 1

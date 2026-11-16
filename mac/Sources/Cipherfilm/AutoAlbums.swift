@@ -17,20 +17,26 @@ final class TripBook {
   static let shared = TripBook()
   private(set) var trips: [Trip]?
   private var key = ""
+  /** bumped by each update and by forget(): a result worked out for an older list, or before a lock, is dropped */
+  private(set) var generation = 0
 
   /** The library's trips, worked out again when it changed. */
   func update(_ items: [Item]) async {
-    let k = "\(items.count)-\(items.first?.id ?? "")-\(items.last?.id ?? "")-\(items.reduce(0) { $0 &+ $1.when.hashValue })"
+    let k = "\(items.count)-\(items.first?.id ?? "")-\(items.last?.id ?? "")-\(items.reduce(0) { $0 &+ $1.id.hashValue &+ $1.when.hashValue })"
     guard k != key else { return }
     key = k
+    generation += 1
+    let gen = generation
     let list = items
-    trips = await Task.detached(priority: .utility) {
+    let found = await Task.detached(priority: .utility) {
       Trips.find(list, lookup: placeLookup)
     }.value
+    guard gen == generation else { return }
+    trips = found
   }
 
   func trip(_ key: String) -> Trip? { trips?.first { $0.key == key } }
-  func forget() { trips = nil; key = "" }
+  func forget() { trips = nil; key = ""; generation += 1 }
 }
 
 /** A square photo with a title and a line under it, for the rows and grids here. */
@@ -119,7 +125,7 @@ struct TripsSection: View {
       }
     }
     .padding(.horizontal, 28).padding(.vertical, 12)
-    .task(id: on ? model.items.count : -1) { if on { await book.update(model.items) } }
+    .task(id: on ? model.itemsVersion : -1) { if on { await book.update(model.items) } }
   }
 }
 
@@ -177,7 +183,7 @@ struct TripView: View {
         Spacer(); EmptyState(icon: "map", title: "This trip isn't in your library anymore", text: "Its photos may have been moved to the trash or changed on another device."); Spacer()
       }
     }
-    .task(id: model.items.count) { await book.update(model.items) }
+    .task(id: model.itemsVersion) { await book.update(model.items) }
   }
 }
 

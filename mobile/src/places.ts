@@ -115,6 +115,28 @@ export async function inPlace(items: Item[], words: string, exact = false): Prom
   return ids.size ? { ids, name } : null;
 }
 
+/** For the search box's place filter (@websearch/parse): the places the photos are in, by their whole folded name
+ *  (town, region or country, as the file names them and in the app's language): find gives the name as shown for a
+ *  phrase only when some photo is there; ids the photos in a place so found. Built once per search, from each photo's
+ *  place worked out once. */
+export async function placeIndex(items: Item[]): Promise<{ find: (folded: string) => string | undefined; ids: (name: string) => Set<string> }> {
+  const p = await loadPlaces();
+  const names = new Map<string, string>();
+  const byName = new Map<string, Set<string>>();
+  for (const it of items) {
+    const w = placeWords(p, it);
+    if (!w) continue;
+    w.folded.forEach((f, i) => {
+      if (!names.has(f)) names.set(f, w.names[i]);
+      const name = names.get(f)!;
+      let set = byName.get(name);
+      if (!set) byName.set(name, (set = new Set()));
+      set.add(it.id);
+    });
+  }
+  return { find: (q) => (q.length >= 3 ? names.get(q) : undefined), ids: (name) => byName.get(name) ?? new Set() };
+}
+
 // each photo's place, looked up once (the map's panel gets its title anew after every move)
 const placeOf = new WeakMap<Item, ReturnType<Places["nearest"]>>();
 

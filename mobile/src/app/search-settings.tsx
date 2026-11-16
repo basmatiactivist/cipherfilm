@@ -8,12 +8,12 @@ import { api, server } from "../api";
 import { refreshMe, session, useSession } from "../session";
 import { libraryItems } from "../libraryStore";
 import { scheduleBackground } from "../backup";
-import { forgetSearch, indexesHere, indexHere, startSearch, stopSearch, useSearchProgress } from "../search/engine";
+import { forgetSearch, indexesHere, indexHere, startSearch, stopSearch, useSearchProgress, useTextProgress } from "../search/engine";
 import { loadPeople, setExplicit } from "../search/people";
 import { explicitSearchOffered } from "../store";
 import { expectAway } from "../autolock";
 import { backgroundUse, ownBatteryRules, useOnReturn } from "../deviceState";
-import { agreeModels, checkModelsHere, CLIP, deleteModels, downloadSize, modelsOnPhone, onConsentChange, unagreed } from "../search/models";
+import { agreeModels, agreeOcr, checkModelsHere, CLIP, deleteModels, deleteOcr, downloadSize, modelsOnPhone, ocrSize, ocrUnagreed, onConsentChange, unagreed } from "../search/models";
 import { ModelConsentDialog, type ConsentAsk } from "../modelConsent";
 import { loadSettings, onSettingsChange, pinAccount, saveSettings, type SearchSettings } from "../search/settings";
 import { Problem, SwitchItem, useAppTheme } from "../ui";
@@ -50,6 +50,7 @@ export default function SearchSettingsScreen() {
   const [busy, setBusy] = useState(false);
   const [device, setDevice] = useState(() => N.backupState());
   const p = useSearchProgress();
+  const tp = useTextProgress();
   useOnReturn(() => setDevice(N.backupState())); // back from Android's settings
   const [, setConsentTick] = useState(0);
   useEffect(() => {
@@ -62,7 +63,7 @@ export default function SearchSettingsScreen() {
 
   // before anything is downloaded from Hugging Face, the question (modelConsent.tsx); then what was asked for goes on
   const [ask, setAsk] = useState<(ConsentAsk & { then: () => void }) | null>(null);
-  const withConsent = (a: ConsentAsk, then: () => void) => { if (unagreed(a.faces, a.clip, a.indexes).length) setAsk({ ...a, then }); else then(); };
+  const withConsent = (a: ConsentAsk, then: () => void) => { if ((a.ocrOnly ? ocrUnagreed() : unagreed(a.faces, a.clip, a.indexes, !!a.ocr)).length) setAsk({ ...a, then }); else then(); };
 
   const restart = () => { startSearch(libraryItems()).catch(() => {}); };
   const change = async (patch: Partial<SearchSettings>, again = true) => {
@@ -75,7 +76,7 @@ export default function SearchSettingsScreen() {
   };
 
   const turnOn = async (agreed = false) => {
-    if (!agreed && s && unagreed(s.faces, CLIP, here).length) { setAsk({ faces: s.faces, clip: CLIP, indexes: here, then: () => turnOn(true) }); return; }
+    if (!agreed && s && unagreed(s.faces, CLIP, here, s.ocr).length) { setAsk({ faces: s.faces, clip: CLIP, indexes: here, ocr: s.ocr, then: () => turnOn(true) }); return; }
     setBusy(true); setError(undefined);
     try {
       const { me, masterKey } = session();
@@ -107,7 +108,22 @@ export default function SearchSettingsScreen() {
   const current = CLIP;
   const size = downloadSize(s.faces, current, here);
   const onPhone = modelsOnPhone();
-  const moveHere = () => withConsent({ faces: s.faces, clip: current, indexes: true }, moveHereNow);
+  const moveHere = () => withConsent({ faces: s.faces, clip: current, indexes: true, ocr: s.ocr }, moveHereNow);
+  // text in photos: its own files, asked for like the others; off deletes them (search and people go on either way)
+  const switchText = (on: boolean) => {
+    if (!on) { deleteOcr(); change({ ocr: false }); return; }
+    if (s.enabled && here) withConsent({ faces: s.faces, clip: current, indexes: true, ocrOnly: true }, () => change({ ocr: true }));
+    else change({ ocr: true });
+  };
+  const textState = !s.ocr ? t("Off. Turning it on downloads {size} after your OK.", { size: mb(ocrSize()) })
+    : !s.enabled ? t("Finds words in signs, documents and screenshots.")
+    : !here ? t("Read by the device that indexes your photos.")
+    : tp.phase === "consent" ? t("Waiting for your OK to download its model ({size})", { size: mb(tp.total) })
+    : tp.phase === "waitWifi" ? t("Waiting for Wi-Fi to download its model ({size})", { size: mb(tp.total) })
+    : tp.phase === "download" ? t("Downloading · {done} of {total}", { done: mb(tp.done), total: mb(tp.total) })
+    : tp.phase === "reading" ? t("Reading the text in older photos · {done} of {total}", { done: num(tp.done), total: num(tp.total) })
+    : tp.phase === "error" ? t("Stopped: {message}", { message: tp.message ?? "" })
+    : t("Finds words in signs, documents and screenshots.");
   const moveHereNow = async () => {
     setBusy(true); setError(undefined);
     try { await indexHere(libraryItems()); } catch (e) { setError(e instanceof Error ? e.message : t("That didn't work.")); } finally { setBusy(false); }
@@ -185,6 +201,11 @@ export default function SearchSettingsScreen() {
 
         <SwitchItem title={t("Find people")} description={t("Group photos by face. You can name people.")} value={s.faces}
           onValueChange={(v) => (v && s.enabled ? withConsent({ faces: true, clip: current, indexes: here }, () => change({ faces: true })) : change({ faces: v }))} />
+        <SwitchItem title={t("Text in photos")} description={textState} value={s.ocr} disabled={busy} onValueChange={switchText} />
+        {s.enabled && here && s.ocr && tp.phase === "consent" ? (
+          <Button mode="outlined" compact style={{ marginLeft: 16, alignSelf: "flex-start" }}
+            onPress={() => setAsk({ faces: s.faces, clip: current, indexes: true, ocrOnly: true, then: restart })}>{t("Download…")}</Button>
+        ) : null}
         <SwitchItem title={t("Download models only on Wi-Fi")} value={s.wifiOnly} onValueChange={(v) => change({ wifiOnly: v })} />
         {allowed && s.enabled && explicit !== null ? (
           <SwitchItem title={t("Explicit search")} disabled={busy}
@@ -215,7 +236,7 @@ export default function SearchSettingsScreen() {
         </Text>
       </ScrollView>
       <ModelConsentDialog ask={ask} wifiOnly={s.wifiOnly}
-        onYes={() => { if (!ask) return; agreeModels(ask.faces, ask.clip, ask.indexes); const go = ask.then; setAsk(null); go(); }}
+        onYes={() => { if (!ask) return; if (ask.ocrOnly) agreeOcr(); else agreeModels(ask.faces, ask.clip, ask.indexes, !!ask.ocr); const go = ask.then; setAsk(null); go(); }}
         onLater={() => setAsk(null)} />
       <Portal>
         <Dialog visible={off} onDismiss={() => setOff(false)}>

@@ -97,6 +97,7 @@ internal object Vision {
   )
 
   @Synchronized fun close() {
+    Ocr.close() // the text in photos goes with the rest (search off, the background done)
     listOf(image, text, det, rec).forEach { runCatching { it?.close() } }
     image = null; text = null; det = null; rec = null; dir = null
     shown = snapshot()
@@ -105,8 +106,9 @@ internal object Vision {
   // ---- one photo ----
 
   /** The image vector of each model named (in that order) and the faces in a JPEG, found once whatever the number of
-   *  models; vectors as little-endian float16. */
-  fun analyze(jpeg: ByteArray, faces: Boolean, clips: List<String>): Map<String, Any> {
+   *  models; vectors as little-endian float16. ocr: also the text in it (Ocr.kt), when the text models are open:
+   *  "text" (and "ocrMs", how long reading it took); left out when they aren't. */
+  fun analyze(jpeg: ByteArray, faces: Boolean, clips: List<String>, ocr: Boolean = false): Map<String, Any> {
     val models = clips.map { c ->
       val k = CLIPS[c] ?: throw IllegalArgumentException("unknown model $c")
       (if (k === clipKind) image else null)?.let { it to k } ?: throw IllegalStateException("search models not loaded")
@@ -124,6 +126,11 @@ internal object Vision {
             "emb" to half(normalize(embed(r, bmp, f))),
           )
         }
+      }
+      if (ocr && Ocr.isOpen()) {
+        val t0 = System.nanoTime()
+        out["text"] = Ocr.read(bmp)
+        out["ocrMs"] = (System.nanoTime() - t0) / 1e6
       }
       return out
     } finally {
@@ -280,7 +287,7 @@ internal object Vision {
   // ---- helpers ----
 
   /** Decodes a JPEG at a power-of-two reduction that keeps its long side at least maxPx/2, upright as stored. */
-  private fun decode(jpeg: ByteArray, maxPx: Int): Bitmap? {
+  internal fun decode(jpeg: ByteArray, maxPx: Int): Bitmap? {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, bounds)
     if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null

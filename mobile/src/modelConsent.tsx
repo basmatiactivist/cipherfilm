@@ -3,25 +3,37 @@
 import { Linking } from "react-native";
 import { Button, Dialog, Portal, Text } from "react-native-paper";
 import N from "../modules/cf-native/src/CfNativeModule";
-import { downloadSize, needed, type Clip } from "./search/models";
+import { modelDir, needed, OCR_MODELS, type Clip, type Model } from "./search/models";
+import { File } from "expo-file-system";
 import { privacyUrl } from "./store";
 import { expectAway } from "./autolock";
 import { useAppTheme } from "./ui";
 import { locale, t } from "./i18n";
 
-export interface ConsentAsk { faces: boolean; clip: Clip; indexes: boolean }
+/** ocr: with the text-in-photos files (the device that indexes, the setting on); ocrOnly: only those (search is on) */
+export interface ConsentAsk { faces: boolean; clip: Clip; indexes: boolean; ocr?: boolean; ocrOnly?: boolean }
+
+/** The files a yes covers. */
+export const askFiles = (a: ConsentAsk): Model[] => (a.ocrOnly ? OCR_MODELS : needed(a.faces, a.clip, a.indexes, !!a.ocr));
 
 const mb = (n: number) => `${Math.max(1, Math.round(n / 1e6)).toLocaleString(locale())} MB`;
 
 /** Which models the download holds, in words, by what they are for (the files and sizes come from the shared list,
  *  server/models.json, whichever model the account uses). */
 export function modelWords(a: ConsentAsk): string {
-  const files = needed(a.faces, a.clip, a.indexes);
-  return files.some((m) => m.faces) ? t("the search model and the face models") : t("the search model");
+  const files = askFiles(a);
+  const ocr = files.some((m) => m.ocr), faces = files.some((m) => m.faces);
+  if (a.ocrOnly) return t("the model that reads text in photos");
+  if (ocr) return faces ? t("the search model, the face models and the model that reads text in photos") : t("the search model and the model that reads text in photos");
+  return faces ? t("the search model and the face models") : t("the search model");
 }
 
 /** What the download fetches for these settings: the files not on this phone yet. */
-export const askBytes = (a: ConsentAsk) => downloadSize(a.faces, a.clip, a.indexes) || needed(a.faces, a.clip, a.indexes).reduce((n, m) => n + m.size, 0);
+export const askBytes = (a: ConsentAsk) => {
+  const files = askFiles(a);
+  const here = (m: Model) => { try { return new File(modelDir(), m.name).exists; } catch { return false; } };
+  return files.filter((m) => !here(m)).reduce((n, m) => n + m.size, 0) || files.reduce((n, m) => n + m.size, 0);
+};
 
 export function ModelConsentDialog(p: { ask: ConsentAsk | null; wifiOnly: boolean; onYes: () => void; onLater: () => void }) {
   const th = useAppTheme();

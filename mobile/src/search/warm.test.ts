@@ -19,6 +19,7 @@ const st = vi.hoisted(() => ({
   master: new Uint8Array(32).fill(7) as Uint8Array | null,
   gate: null as Promise<void> | null, // holds indexLoad until released
   entries: [] as { item_id: string; data_enc: string; updated_at: number }[],
+  entry: { v: 1, m: "laionb32/1", clip: "AAAA" } as Record<string, unknown>, // what opening an entry gives
 }));
 vi.mock("expo-file-system", () => {
   const uri = (p: unknown) => (typeof p === "string" ? p : (p as { uri: string }).uri);
@@ -58,8 +59,11 @@ vi.mock("../../modules/cf-native/src/CfNativeModule", () => ({
 }));
 vi.mock("@crypto/item", () => ({ accountKeyPair: () => ({ pk: new Uint8Array(32), sk: new Uint8Array(32) }) }));
 vi.mock("@crypto/search", () => ({
-  openIndexEntry: () => { st.opened++; return { v: 1, m: "laionb32/1", clip: "AAAA" }; },
+  openIndexEntry: () => { st.opened++; return { ...st.entry }; },
   sealIndexEntry: () => new Uint8Array(1),
+  entryText: (e: { t?: string }) => (e.t ?? "").trim(),
+  OCR_TAG: "ppocr3det+ppocr5latin/1",
+  textSlot: (x: string) => x.padEnd(1022, " "),
   decryptPeople: () => ({}),
 }));
 vi.mock("../api", () => ({
@@ -101,7 +105,7 @@ const lib = (ids: string[]) => ids.map((id) => ({ id, kind: "image", size: 1, se
 describe("search after unlocking", () => {
   beforeEach(() => {
     st.wipe(); // as a lock does
-    Object.assign(st, { copy: null, loads: [], saves: [], calls: [], opened: 0, visionOpens: [], master: new Uint8Array(32).fill(7), gate: null, entries: [], have: true, download: null, holds: [], downloads: 0, unagreed: [] });
+    Object.assign(st, { copy: null, loads: [], saves: [], calls: [], opened: 0, visionOpens: [], master: new Uint8Array(32).fill(7), gate: null, entries: [], have: true, download: null, holds: [], downloads: 0, unagreed: [], entry: { v: 1, m: "laionb32/1", clip: "AAAA" } });
     st.vision = { clip: null, dir: null, text: false, image: false, faces: false };
   });
 
@@ -122,7 +126,7 @@ describe("search after unlocking", () => {
 
   it("then opens only the entries that changed since, and keeps the copy up to date", async () => {
     const enc = (s: string) => `AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA${s}`;
-    st.copy = JSON.stringify({ v: 1, items: { a: ["laionb32/1", enc("aaaaaaaaaaaaaaaaaaaaaaaa").slice(-24)], b: ["laionb32/1", enc("bbbbbbbbbbbbbbbbbbbbbbbb").slice(-24)] } });
+    st.copy = JSON.stringify({ v: 2, items: { a: ["laionb32/1", enc("aaaaaaaaaaaaaaaaaaaaaaaa").slice(-24)], b: ["laionb32/1", enc("bbbbbbbbbbbbbbbbbbbbbbbb").slice(-24)] } });
     st.entries = [
       { item_id: "a", data_enc: enc("aaaaaaaaaaaaaaaaaaaaaaaa"), updated_at: 1 }, // unchanged
       { item_id: "b", data_enc: enc("BBBBBBBBBBBBBBBBBBBBBBBB"), updated_at: 2 }, // made again on another device
@@ -137,6 +141,29 @@ describe("search after unlocking", () => {
     st.opened = 0;
     await engine.startSearch(lib(["a", "b", "c"]));
     expect(st.opened).toBe(0);
+  });
+
+  it("keeps the text in photos in the copy, and a copy from before it (v 1) opens every entry once for their text", async () => {
+    const enc = (s: string) => `AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA${s}`;
+    st.copy = JSON.stringify({ v: 1, items: { a: ["laionb32/1", enc("aaaaaaaaaaaaaaaaaaaaaaaa").slice(-24)] } }); // an older app's
+    st.entries = [{ item_id: "a", data_enc: enc("aaaaaaaaaaaaaaaaaaaaaaaa"), updated_at: 1 }];
+    st.entry = { v: 1, m: "laionb32/1", clip: "AAAA", o: "ppocr3det+ppocr5latin/1", t: "BAKERY OPEN Zürich".padEnd(1022, " ") }; // read on the Mac
+    await engine.warmSearch();
+    expect(engine.searchReady()).toBe(true); // search works from the old copy meanwhile
+    await engine.startSearch(lib(["a"]));
+    expect(st.opened).toBe(1); // unchanged on the server, but opened again for its text
+    expect(engine.photoText("a")).toBe("BAKERY OPEN Zürich");
+    expect(engine.textHits(["a", "b"], "zurich bake")).toEqual([{ id: "a", snippet: "BAKERY OPEN Zürich" }]);
+    const saved = JSON.parse(st.saves.at(-1)!.extra);
+    expect(saved.v).toBe(2);
+    expect(saved.items.a).toEqual(["laionb32/1", "aaaaaaaaaaaaaaaaaaaaaaaa", "ppocr3det+ppocr5latin/1", "BAKERY OPEN Zürich"]);
+    // after a lock, the new copy brings the text back without opening anything
+    st.wipe(); st.master = new Uint8Array(32).fill(7); st.opened = 0;
+    expect(engine.photoText("a")).toBe("");
+    st.copy = st.saves.at(-1)!.extra;
+    await engine.startSearch(lib(["a"]));
+    expect(st.opened).toBe(0);
+    expect(engine.photoText("a")).toBe("BAKERY OPEN Zürich");
   });
 
   it("a copy still loading when the library locks is dropped", async () => {

@@ -11,7 +11,11 @@ export interface BackupState {
 }
 
 /** clips: one image vector per model asked for, in that order; faces found once */
-export interface Analysis { clips: Bytes[]; faces?: { box: number[]; score: number; emb: Bytes }[] }
+export interface Analysis {
+  clips: Bytes[]; faces?: { box: number[]; score: number; emb: Bytes }[];
+  /** the text in the picture (Ocr.kt), when it was asked for and the text models are open; ocrMs: how long it took */
+  text?: string; ocrMs?: number;
+}
 export interface Hit { id: string; score: number }
 export interface FaceGroup { person: string | null; faces: string[]; items: string[]; cover: { key: string; item: string; box: number[] } | null }
 export interface PhoneMedia { id: number; uri: string; name: string; size: number; mime: string; bucket: string; folder: string; taken: number }
@@ -111,8 +115,14 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   visionClose(): void;
   /** what visionOpen has open (dir is the model folder's path) */
   visionState(): { clip: string | null; dir: string | null; text: boolean; image: boolean; faces: boolean };
-  /** clips: the open image models to run (the main one, the second one, or both) */
-  visionAnalyze(jpeg: Bytes, faces: boolean, clips: string[]): Promise<Analysis>;
+  /** clips: the open image models to run (the main one, the second one, or both); ocr: also read the text in it */
+  visionAnalyze(jpeg: Bytes, faces: boolean, clips: string[], ocr: boolean): Promise<Analysis>;
+  /** text in photos (Ocr.kt): the three files in the model folder, checked before (models.ts) */
+  ocrOpen(dir: string): Promise<void>;
+  ocrClose(): void;
+  ocrState(): boolean;
+  /** only the text of a picture (entries made before text in photos keep the rest) */
+  ocrRead(jpeg: Bytes): Promise<{ text: string; ms: number }>;
   visionText(ids: number[]): Promise<Bytes>;
   faceCrop(jpeg: Bytes, box: number[], px: number): Promise<Bytes | null>;
   indexPut(item: string, clip: Bytes | null, boxes: number[][], scores: number[], embs: Bytes): Promise<void>;

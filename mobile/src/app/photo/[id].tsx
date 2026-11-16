@@ -14,7 +14,7 @@ import { deleteForever, lockedFolderItems, lockedThumbUri, useLockedFolder } fro
 import { viewerList } from "../../viewerList";
 import { faceUri, facesIn, nameFace, type FaceInPhoto } from "../../search/people";
 import { NameDialog } from "../albums";
-import { searchReady } from "../../search/engine";
+import { photoText, searchReady } from "../../search/engine";
 import { refreshAlbums, useAlbums } from "../../albumsStore";
 import { addToAlbum, type Album } from "../../albums";
 import { api, server } from "../../api";
@@ -455,6 +455,8 @@ function Info({ item, visible, onClose, onOriginal }: { item: Item; visible: boo
     [t("Size"), fmtSize(item.size) + (m?.width && m?.height ? ` · ${m.width} × ${m.height}` : "")],
     [t("Camera"), [m?.make, m?.model].filter(Boolean).join(" ") || undefined],
     [t("Place"), m?.gps ? `${place ? place + "\n" : ""}${m.gps.lat.toFixed(4)}, ${m.gps.lon.toFixed(4)}` : undefined],
+    // the text search read in it (docs/SEARCH.md "Text in photos"), from the index in memory; long text cut short
+    [t("Text"), (() => { const x = photoText(item.id); return x.length > 300 ? x.slice(0, 300) + "…" : x || undefined; })()],
   ];
   return (
     <Portal>

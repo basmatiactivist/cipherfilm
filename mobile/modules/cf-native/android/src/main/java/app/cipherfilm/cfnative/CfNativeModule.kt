@@ -179,7 +179,25 @@ class CfNativeModule : Module() {
     // after the jobs already asked for (an analysis still running finishes first); doesn't wait for them
     Function("visionClose") { Lanes.visionExecutor.execute { Vision.close() } }
     Function("visionState") { Vision.state() }
-    AsyncFunction("visionAnalyze") Coroutine { jpeg: ByteArray, faces: Boolean, clips: List<String> -> withContext(Lanes.vision) { Vision.analyze(jpeg, faces, clips) } }
+    AsyncFunction("visionAnalyze") Coroutine { jpeg: ByteArray, faces: Boolean, clips: List<String>, ocr: Boolean ->
+      withContext(Lanes.vision) { Vision.analyze(jpeg, faces, clips, ocr) }
+    }
+    // text in photos (Ocr.kt): opened next to the image models by the device that indexes, when the person agreed
+    AsyncFunction("ocrOpen") Coroutine { dir: String -> withContext(Lanes.vision) { Ocr.open(dir) } }
+    Function("ocrClose") { Lanes.visionExecutor.execute { Ocr.close() } }
+    Function("ocrState") { Ocr.isOpen() }
+    // only the text, for entries made before text in photos (the rest of the entry is kept)
+    AsyncFunction("ocrRead") Coroutine { jpeg: ByteArray ->
+      withContext(Lanes.vision) {
+        val bmp = Vision.decode(jpeg, 1280) ?: throw UnusableImage()
+        try {
+          if (Math.min(bmp.width, bmp.height) < 16) throw UnusableImage()
+          val t0 = System.nanoTime()
+          val text = Ocr.read(bmp)
+          mapOf("text" to text, "ms" to (System.nanoTime() - t0) / 1e6)
+        } finally { bmp.recycle() }
+      }
+    }
     AsyncFunction("visionText") Coroutine { ids: List<Int> -> withContext(Lanes.vision) { Vision.textVector(ids.toIntArray()) } }
     // no model: only decoding and cropping, next to whatever the models do
     AsyncFunction("faceCrop") Coroutine { jpeg: ByteArray, box: List<Double>, px: Int ->

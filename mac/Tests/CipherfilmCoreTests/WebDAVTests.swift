@@ -314,3 +314,49 @@ final class StubDAV: URLProtocol, @unchecked Sendable {
     await #expect(throws: WebDAVError.notWebDAV) { try await client(ranges: true).list() }
   }
 }
+
+/** The temporary copies' disk budget: files take turns only when together they'd pass the limit, one always may,
+ *  and the disk keeps its margin. */
+@Suite struct DiskBudgetTests {
+  final class Free: @unchecked Sendable { let lock = NSLock(); var v: Int64?; init(_ v: Int64?) { self.v = v }; func get() -> Int64? { lock.withLock { v } } }
+
+  @Test func smallFilesShareTheBudget() async throws {
+    let b = DiskBudget(limit: 100, margin: 0, free: { nil })
+    try await b.acquire(40); try await b.acquire(40)
+    #expect(b.inUse == 80)
+  }
+
+  @Test func oneFileAlwaysMayWhateverItsSize() async throws {
+    let b = DiskBudget(limit: 100, margin: 0, free: { nil })
+    try await b.acquire(10_000)
+    #expect(b.inUse == 10_000)
+  }
+
+  @Test func aSecondLargeFileWaitsForTheFirst() async throws {
+    let b = DiskBudget(limit: 100, margin: 0, free: { nil })
+    try await b.acquire(80)
+    let second = Task { try await b.acquire(80) }
+    try await Task.sleep(nanoseconds: 300_000_000)
+    #expect(b.inUse == 80) // still waiting
+    b.release(80)
+    try await second.value
+    #expect(b.inUse == 80)
+  }
+
+  @Test func theDiskKeepsItsMargin() async throws {
+    let free = Free(1_000)
+    let b = DiskBudget(limit: 10_000, margin: 500, free: { free.get() })
+    await #expect(throws: WebDAVError.diskFull) { try await b.acquire(600) }
+    #expect(b.inUse == 0)
+    try await b.acquire(400)
+    // the space reserved for the first copy counts as gone
+    await #expect(throws: WebDAVError.diskFull) { try await b.acquire(200) }
+    #expect(WebDAVError.diskFull.transient) // the pass ends and is tried again later; no file counts as failed
+  }
+
+  @Test func aStopEndsTheWait() async throws {
+    let b = DiskBudget(limit: 100, margin: 0, free: { nil })
+    try await b.acquire(80)
+    await #expect(throws: Stopped.self) { try await b.acquire(80, live: { throw Stopped() }) }
+  }
+}

@@ -69,8 +69,9 @@ public enum WebDAVImport {
   /** Uploads the files, `parallel` at a time, recording each in the book as it is done. Throws what ended the pass
    *  early (Stopped, or a server that can't be reached); a file's own problem is counted against it instead. */
   public static func run(_ todo: [WebDAVEntry], client: WebDAVClient, api: API, wrap: Uploader.Wrap, book: ImportBook,
-                         parallel: Int = defaultParallel, temp: URL, live: @escaping @Sendable () throws -> Void,
+                         parallel: Int = defaultParallel, temp: URL, budget: DiskBudget? = nil, live: @escaping @Sendable () throws -> Void,
                          event: @escaping @Sendable (Event) -> Void) async throws {
+    let budget = budget ?? DiskBudget(temp: temp)
     try await withThrowingTaskGroup(of: Void.self) { g in
       var running = 0
       for e in todo {
@@ -80,7 +81,7 @@ public enum WebDAVImport {
           event(.started(e.name, size: e.size))
           let last = Counter()
           do {
-            let id = try await upload(e, client: client, api: api, wrap: wrap, temp: temp, live: live) { done, _ in
+            let id = try await upload(e, client: client, api: api, wrap: wrap, temp: temp, budget: budget, live: live) { done, _ in
               let before = last.value
               if done > before { last.add(done - before); event(.bytes(done - before)) }
             }
@@ -100,7 +101,7 @@ public enum WebDAVImport {
   }
 
   /** Uploads one file of the folder; resolves with the new item's id. */
-  public static func upload(_ e: WebDAVEntry, client: WebDAVClient, api: API, wrap: Uploader.Wrap, temp: URL,
+  public static func upload(_ e: WebDAVEntry, client: WebDAVClient, api: API, wrap: Uploader.Wrap, temp: URL, budget: DiskBudget? = nil,
                             live: @escaping @Sendable () throws -> Void = {},
                             progress: @escaping @Sendable (Int64, Int64) -> Void = { _, _ in }) async throws -> String {
     guard let mime = mime(for: e.name) else { throw APIError(status: -1, message: "This type of file isn't imported.") }
@@ -116,6 +117,10 @@ public enum WebDAVImport {
     } catch WebDAVError.noRanges {
       // a server that only sends whole files: through a temporary file below
     }
+    // the temporary copies of all files in flight together stay within the budget, and never fill the disk
+    let budget = budget ?? DiskBudget(temp: temp)
+    try await budget.acquire(e.size, live: live)
+    defer { budget.release(e.size) }
     return try await viaFile(e, modified: modified, client: client, api: api, wrap: wrap, temp: temp, live: live, progress: progress)
   }
 
@@ -184,6 +189,56 @@ public enum WebDAVImport {
     try fm.setAttributes([.modificationDate: modified], ofItemAtPath: f.path)
     return try await Uploader.upload(f, api: api, wrap: wrap, live: live, progress: progress)
   }
+}
+
+/** How much the temporary copies (WebDAVImport.viaFile) may take at once: files take turns once together they would
+ *  pass `limit` (4 GB, or a tenth of the free space when that is less), but one file always may, whatever its size, so
+ *  a video of any size still imports. Before each copy the disk must keep `margin` free after it; otherwise the pass
+ *  stops with WebDAVError.diskFull rather than filling the disk. Streamed files (photos up to 48 MB, videos from a
+ *  server that sends parts of files) take nothing from it. */
+public final class DiskBudget: @unchecked Sendable {
+  public let limit: Int64
+  public let margin: Int64
+  private let free: @Sendable () -> Int64?
+  private let lock = NSLock()
+  private var used: Int64 = 0
+
+  public static func freeSpace(_ url: URL) -> Int64? {
+    var u = url
+    while !FileManager.default.fileExists(atPath: u.path), u.pathComponents.count > 1 { u = u.deletingLastPathComponent() }
+    return (try? u.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?.volumeAvailableCapacityForImportantUsage
+  }
+
+  public convenience init(temp: URL) {
+    let f = Self.freeSpace(temp)
+    self.init(limit: min(4 << 30, max(256 << 20, (f ?? 0) / 10)), margin: 2 << 30, free: { Self.freeSpace(temp) })
+  }
+
+  /** free: the free space now (nil: unknown, then only the limit counts). */
+  public init(limit: Int64, margin: Int64, free: @escaping @Sendable () -> Int64?) {
+    self.limit = limit; self.margin = margin; self.free = free
+  }
+
+  public var inUse: Int64 { lock.withLock { used } }
+
+  /** Waits until `n` bytes fit (or nothing else is held), then reserves them. */
+  public func acquire(_ n: Int64, live: @Sendable () throws -> Void = {}) async throws {
+    while true {
+      try live()
+      try Task.checkCancellation()
+      let got: Bool = try lock.withLock {
+        guard used == 0 || used + n <= limit else { return false }
+        // the space the other copies reserved may not be written yet: counted as gone already
+        if let f = free(), f - (used) < n + margin { throw WebDAVError.diskFull }
+        used += n
+        return true
+      }
+      if got { return }
+      try await Task.sleep(nanoseconds: 200_000_000)
+    }
+  }
+
+  public func release(_ n: Int64) { lock.withLock { used = max(0, used - n) } }
 }
 
 /** What a source imported: per file name its size, ETag and modification time, so an interrupted or repeated import

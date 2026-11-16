@@ -192,6 +192,11 @@ Insights › Dependency graph › Dependabot: a rejected file stops every update
   github.com/caddy-dns/cloudflare@…`) is invisible to Dependabot; check its releases by hand.
 - **Helper images** in the `Makefile` and `scripts/` (`alpine`, `golang`, `node`) are invisible to Dependabot.
   Check them by hand before each release; Go and Node must match the `Dockerfile`.
+- **The image build's own images** in `release.yml` are invisible to Dependabot too: the BuildKit daemon
+  (`driver-opts` of `setup-buildx-action`, `moby/buildkit` by digest) and QEMU (`image` of `setup-qemu-action`,
+  `tonistiigi/binfmt`, taken without the Actions cache). Move them by hand: `docker buildx imagetools inspect
+  moby/buildkit:buildx-stable-1` shows the current digest. The `Dockerfile` has no `# syntax=` line, so BuildKit's
+  built-in frontend reads it and no frontend image is fetched.
 
 ## Weekly canary
 
@@ -219,7 +224,8 @@ the package (`github.com/<owner>?tab=packages`), then Package settings, and set 
 The workflows follow the usual supply-chain hardening (OpenSSF Scorecard, zizmor): every action is pinned to a
 commit hash with its version as a comment (Dependabot keeps both current), every checkout drops its token
 (`persist-credentials: false`), each job gets only the permissions it needs, a release uses no Actions caches at
-all (no `actions/cache`, no cache in the `setup-*` actions, no buildx cache: the image is built with `no-cache`) and
+all (no `actions/cache`, no cache in the `setup-*` actions, no buildx cache: the image is built with `no-cache`, and
+the QEMU image is not cached either) and
 checks what it downloads for the Android build against pinned hashes (NDK, Gradle, libsodium), only the jobs that sign
 or push run in the `release` environment, new dependency versions wait a few days (`cooldown` in
 `.github/dependabot.yml`), release files are checked for build paths before upload, and CodeQL and Scorecard run on

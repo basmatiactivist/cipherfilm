@@ -86,8 +86,15 @@ jobs:
           major="${v%%.*}"; rest="${v#*.}"; minor="$major.${rest%%.*}"
           { echo "minor=$(top "$minor.")"; echo "major=$(top "$major.")"; echo "latest=$(top "")"; } >> "$GITHUB_OUTPUT"
           cat "$GITHUB_OUTPUT"
+      # QEMU runs the arm64 steps of the image's last stage. Its image is never taken from the Actions cache.
+      # TODO(owner): pin it by digest, image: docker.io/tonistiigi/binfmt:<version>@sha256:<digest> (docs/RELEASING.md)
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          cache-image: false
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          # the BuildKit daemon that builds the image, by digest (buildkitd v0.34.2), not by the moving tag alone
+          driver-opts: image=moby/buildkit:buildx-stable-1@sha256:c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io

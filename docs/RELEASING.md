@@ -192,7 +192,8 @@ Insights › Dependency graph › Dependabot: a rejected file stops every update
 - **Caddy's Cloudflare module** in `deploy/tailnet/domain/Dockerfile` (`xcaddy build --with
   github.com/caddy-dns/cloudflare@…`) is invisible to Dependabot; check its releases by hand.
 - **Helper images** in the `Makefile` and `scripts/` (`alpine`, `golang`, `node`) are invisible to Dependabot.
-  Check them by hand before each release; Go and Node must match the `Dockerfile`.
+  Check them by hand before each release; Go and Node must match the `Dockerfile`. The `alpine` of `scripts/` and
+  `deploy/demo/reset.sh` is pinned by digest, the same as the `Dockerfile`'s: move them together.
 - **The image build's own images** in `release.yml` are invisible to Dependabot too: the BuildKit daemon
   (`driver-opts` of `setup-buildx-action`, `moby/buildkit` by digest) and QEMU (`image` of `setup-qemu-action`,
   `tonistiigi/binfmt`, taken without the Actions cache). Move them by hand: `docker buildx imagetools inspect

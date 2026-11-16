@@ -11,6 +11,8 @@ server/static/*
 *.p12
 *.jks
 *.keystore
+# private notes with test sign-ins, never committed
+TEST-LOGIN*
 data/
 deploy/demo/seed.tar
 .DS_Store

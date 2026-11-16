@@ -11,7 +11,7 @@ VOLUME="${DATA_VOLUME:-cipherfilm_data}"
 FILE="$(cd "$(dirname "$FILE")" && pwd)/$(basename "$FILE")"
 
 echo "checking the archive ..."
-docker run --rm -v "$FILE":/in.tar:ro alpine:3.24 sh -ec '
+docker run --rm -v "$FILE":/in.tar:ro alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf sh -ec '
   tar -tf /in.tar > /tmp/names
   tar -tvf /in.tar > /tmp/long
   grep -qx "backup/app.db" /tmp/names || { echo "archive has no backup/app.db" >&2; exit 1; }
@@ -30,7 +30,7 @@ if [ -n "$(docker compose ps -q --status running app)" ]; then
 fi
 docker compose create app >/dev/null   # makes Compose own the data volume (also on a brand-new host)
 echo "restoring into volume $VOLUME ..."
-docker run --rm -v "$VOLUME":/data -v "$FILE":/in.tar:ro alpine:3.24 sh -ec '
+docker run --rm -v "$VOLUME":/data -v "$FILE":/in.tar:ro alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf sh -ec '
   # an earlier run that stopped half-way may have left the live data only in .previous: never drop that
   if [ -e /data/.restore-pending ]; then
     echo "an earlier restore was not finished: its after-restore step did not succeed, and /data/.previous holds the" >&2
@@ -76,4 +76,4 @@ docker compose up -d app
 sleep 2
 docker compose exec -T app /app check
 echo "The data that was replaced is in the volume under .previous/. Once the restore looks right, remove it with:"
-echo "  docker run --rm -v $VOLUME:/data alpine:3.24 sh -c '[ ! -e /data/.restore-pending ] && rm -rf /data/.previous'"
+echo "  docker run --rm -v $VOLUME:/data alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf sh -c '[ ! -e /data/.restore-pending ] && rm -rf /data/.previous'"

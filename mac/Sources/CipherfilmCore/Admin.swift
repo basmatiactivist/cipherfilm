@@ -235,6 +235,7 @@ public enum Admin {
     case "default limit changed": return ("externaldrive", "\(who) set the default storage limit to \(limit(Int64(a.detail) ?? 0))", false)
     case "signed out a device": return ("rectangle.portrait.and.arrow.right", "\(who) signed out \(a.detail.isEmpty ? "a device" : a.detail)", false)
     case "signed out other devices": return ("rectangle.portrait.and.arrow.right", "\(who) signed out all other devices", false)
+    case "signed out unused devices": return ("rectangle.portrait.and.arrow.right", "\(who) signed out unused devices", false)
     case "two-step sign-in turned off": return ("key", "\(who) turned off two-step sign-in for \(t)", true)
     case "turned on two-step sign-in": return ("key", "\(who) turned on two-step sign-in", false)
     case "turned off two-step sign-in": return ("key", "\(who) turned off two-step sign-in", false)

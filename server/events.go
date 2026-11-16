@@ -172,8 +172,9 @@ func (a *App) changed(user string, t topic) { a.live.changed(user, t) }
 func (a *App) sessionLive(idHash string) bool {
 	var exp, last int64
 	var status string
-	err := a.db.QueryRow(`SELECT s.expires_at, s.last_seen, u.status FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.id_hash=?`, idHash).
-		Scan(&exp, &last, &status)
+	var idleDays int
+	err := a.db.QueryRow(`SELECT s.expires_at, s.last_seen, u.status, u.device_idle_days FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.id_hash=?`, idHash).
+		Scan(&exp, &last, &status, &idleDays)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false
 	}
@@ -181,7 +182,7 @@ func (a *App) sessionLive(idHash string) bool {
 		return true
 	}
 	now := a.now().Unix()
-	return now <= exp && now-last <= int64(sessionIdle.Seconds()) && status == "active"
+	return now <= exp && now-last <= idleLimit(idleDays) && status == "active"
 }
 
 func (a *App) eventRoutes(m *http.ServeMux) {

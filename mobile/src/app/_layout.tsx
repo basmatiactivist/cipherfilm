@@ -12,6 +12,7 @@ import { clearOutbox, tidyOutbox } from "../outbox";
 import { runBackup, scheduleBackground } from "../backup";
 import { startShake } from "../shake";
 import "../screenshots"; // its sign-out reset, whether or not Account was opened
+import "../lastUploadSend"; // sends this phone's newest upload time once per session, after the library loaded
 import { startAutoLock } from "../autolock";
 import { liveUnlocked } from "../live";
 import { startLiveSync } from "../liveSync";

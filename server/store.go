@@ -238,6 +238,13 @@ func migrate(db *sql.DB) error {
 			}
 		}
 	}
+	// users.device_idle_days: how long a device may go unused before it is signed out, the person's choice of 7, 14
+	// or 30 days (sessions.go idleLimit)
+	if !userCols["device_idle_days"] {
+		if _, err := db.Exec(`ALTER TABLE users ADD COLUMN device_idle_days INTEGER NOT NULL DEFAULT 30`); err != nil {
+			return err
+		}
+	}
 	// invites.quota_bytes: storage limit chosen when inviting (NULL = the server default)
 	irows, err := db.Query(`PRAGMA table_info(invites)`)
 	if err != nil {

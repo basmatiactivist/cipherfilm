@@ -32,6 +32,11 @@ export const lockedItems = () => (owner === session().me?.user.id && session().m
 /** Called when the locked items changed (a load, a lock): the open locked folder follows. */
 export const onLockedChange = (f: () => void) => { lockedSubs.add(f); return () => { lockedSubs.delete(f); }; };
 
+/** Called with the whole list after a new one from the server, once the grid is on screen (this phone's last upload
+ *  time: lastUploadSend.ts). */
+const loadedSubs = new Set<(userId: string, list: Item[]) => void>();
+export const onLibraryLoaded = (f: (userId: string, list: Item[]) => void) => { loadedSubs.add(f); };
+
 /** Takes a decrypted list: the open part for every screen, the locked part apart. */
 function adoptList(list: Item[]) {
   const split = splitLocked(list);
@@ -101,6 +106,7 @@ export async function refreshLibrary(opts?: { quiet?: boolean }) {
         if (!current()) return;
         rememberLibrary(forUser, all).catch(() => {}); // the backup skips what is already here, locked items too
         libraryChanged(now).catch(() => {}); // search: the index for what is new (a run going on takes it along)
+        for (const f of loadedSubs) { try { f(forUser, all); } catch { /* the others still run */ } }
       }, 1500);
     });
   } catch (e) {

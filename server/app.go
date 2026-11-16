@@ -24,7 +24,9 @@ const (
 	// A session lasts while it is used: it ends after 30 days without a request (the cookie and expires_at move
 	// forward with use), and at the latest a year after sign-in. Devices are listed and can be signed out one by one
 	// (sessions.go), so a lost one doesn't need short sessions everywhere; before 1.9.0 every device had to sign in
-	// again every 14 days and after a day without use.
+	// again every 14 days and after a day without use. sessionIdle is the longest a device may go unused; the person
+	// can choose a shorter time for their account (sessions.go idleLimit), and a device unused for longer is signed out
+	// as if from another device, so it deletes what it keeps.
 	sessionAbs  = 365 * 24 * time.Hour
 	sessionIdle = 30 * 24 * time.Hour
 	sessionsMax = 50 // live sessions per account; a new sign-in beyond it ends the one idle longest
@@ -87,6 +89,7 @@ type user struct {
 	TOTPSecret, TOTPPending                string // encrypted (twofactor.go); "" = none
 	TOTPLast                               int64  // the last time step a code was accepted for
 	Passkeys                               int    // how many passkeys it has (passkeys.go)
+	IdleDays                               int    // a device unused this many days is signed out (sessions.go)
 }
 
 // twoFactor: the account signs in with a code from an authenticator app, or a passkey, after the password.
@@ -379,13 +382,23 @@ func (a *App) lookupSession(token string, touch bool) (*user, *session, error) {
 	var s session
 	var last, exp int64
 	var created int64
-	err := a.db.QueryRow(`SELECT id_hash,user_id,csrf,pub,created_at,last_seen,expires_at FROM sessions WHERE id_hash=?`, h).
-		Scan(&s.IDHash, &s.UserID, &s.CSRF, &s.Pub, &created, &last, &exp)
+	var idleDays int
+	err := a.db.QueryRow(`SELECT id_hash,user_id,csrf,pub,created_at,last_seen,expires_at,
+		COALESCE((SELECT device_idle_days FROM users WHERE id=sessions.user_id),0) FROM sessions WHERE id_hash=?`, h).
+		Scan(&s.IDHash, &s.UserID, &s.CSRF, &s.Pub, &created, &last, &exp, &idleDays)
 	if err != nil {
 		return nil, nil, err
 	}
 	s.Created = created
-	if now > exp || now-last > int64(sessionIdle.Seconds()) {
+	// unused for longer than the account allows (sessions.go idleLimit): signed out as if from another device, so the
+	// device deletes what it keeps when it comes back (an unused device may be a lost one)
+	if now-last > idleLimit(idleDays) {
+		a.remember(`id_hash=?`, h)
+		a.db.Exec(`DELETE FROM sessions WHERE id_hash=?`, h)
+		a.dropInvitesOf(s.UserID, `created_session=?`, s.Pub)
+		return nil, nil, errors.New("expired")
+	}
+	if now > exp {
 		a.db.Exec(`DELETE FROM sessions WHERE id_hash=?`, h)
 		return nil, nil, errors.New("expired")
 	}
@@ -405,8 +418,8 @@ func (a *App) lookupSession(token string, touch bool) (*user, *session, error) {
 func (a *App) userBy(where string, arg any) (*user, error) {
 	var u user
 	err := a.db.QueryRow(`SELECT id,email,role,status,kdf,auth_hash,pubkey,wrapped_master_pw,wrapped_master_recovery,wrapped_privkey,recovery_hash,created_at,nsfw,indexer,totp_secret,totp_pending,totp_last,
-		(SELECT COUNT(*) FROM passkeys p WHERE p.user_id=users.id) FROM users WHERE `+where, arg).
-		Scan(&u.ID, &u.Email, &u.Role, &u.Status, &u.KDF, &u.AuthHash, &u.Pubkey, &u.WrappedMasterPW, &u.WrappedMasterRecovery, &u.WrappedPrivkey, &u.RecoveryHash, &u.CreatedAt, &u.NSFW, &u.Indexer, &u.TOTPSecret, &u.TOTPPending, &u.TOTPLast, &u.Passkeys)
+		(SELECT COUNT(*) FROM passkeys p WHERE p.user_id=users.id),device_idle_days FROM users WHERE `+where, arg).
+		Scan(&u.ID, &u.Email, &u.Role, &u.Status, &u.KDF, &u.AuthHash, &u.Pubkey, &u.WrappedMasterPW, &u.WrappedMasterRecovery, &u.WrappedPrivkey, &u.RecoveryHash, &u.CreatedAt, &u.NSFW, &u.Indexer, &u.TOTPSecret, &u.TOTPPending, &u.TOTPLast, &u.Passkeys, &u.IdleDays)
 	if err != nil {
 		return nil, err
 	}
@@ -421,6 +434,9 @@ var errCredentialsChanged = errors.New("credentials changed")
 func (a *App) startSession(w http.ResponseWriter, r *http.Request, userID, authHash string) (s *session, err error) {
 	tok, csrf, pub := randToken(), randToken(), randID()[:24]
 	now := a.now()
+	// ended sessions go; one that ended because its device went unused (not at the year's end) as signed out on
+	// purpose, as lookupSession does when such a device comes back first
+	a.remember(`expires_at < ? AND expires_at < created_at + ?`, now.Unix(), int64(sessionAbs.Seconds()))
 	if _, err = a.db.Exec(`DELETE FROM sessions WHERE expires_at < ?`, now.Unix()); err != nil {
 		return
 	}

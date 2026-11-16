@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -18,6 +19,9 @@ func (a *App) sessionRoutes(m *http.ServeMux) {
 	m.HandleFunc("GET /api/me/sessions", a.auth(false, a.listSessions))
 	m.HandleFunc("DELETE /api/me/sessions/{id}", a.auth(false, a.endSession))
 	m.HandleFunc("POST /api/me/sessions/end-others", a.auth(false, a.endOtherSessions))
+	m.HandleFunc("POST /api/me/sessions/end-unused", a.auth(false, a.endUnusedSessions))
+	m.HandleFunc("PUT /api/me/device-idle", a.auth(false, a.setDeviceIdle))
+	m.HandleFunc("POST /api/me/sessions/current/last-upload", a.auth(false, a.backfillLastUpload))
 	m.HandleFunc("PUT /api/me/indexer", a.auth(false, a.claimIndexer))
 	m.HandleFunc("DELETE /api/me/indexer", a.auth(false, a.dropIndexer))
 }
@@ -81,7 +85,8 @@ func (a *App) liveIndexer(u *user) string {
 		return ""
 	}
 	var n int
-	a.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE pub=? AND user_id=? AND expires_at>=?`, u.Indexer, u.ID, a.now().Unix()).Scan(&n)
+	now := a.now().Unix()
+	a.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE pub=? AND user_id=? AND expires_at>=? AND last_seen>=?`, u.Indexer, u.ID, now, now-idleLimit(u.IdleDays)).Scan(&n)
 	if n == 0 {
 		return ""
 	}
@@ -93,8 +98,9 @@ func (a *App) mayIndex(u *user, s *session) bool {
 	if u.Indexer == s.Pub {
 		return true
 	}
-	res, err := a.db.Exec(`UPDATE users SET indexer=? WHERE id=? AND (indexer='' OR indexer=? OR NOT EXISTS (SELECT 1 FROM sessions WHERE pub=users.indexer AND user_id=users.id AND expires_at>=?))`,
-		s.Pub, u.ID, s.Pub, a.now().Unix())
+	now := a.now().Unix()
+	res, err := a.db.Exec(`UPDATE users SET indexer=? WHERE id=? AND (indexer='' OR indexer=? OR NOT EXISTS (SELECT 1 FROM sessions WHERE pub=users.indexer AND user_id=users.id AND expires_at>=? AND last_seen>=?))`,
+		s.Pub, u.ID, s.Pub, now, now-idleLimit(u.IdleDays))
 	if rowsAffected(res, err) == 1 {
 		u.Indexer = s.Pub
 		return true
@@ -115,16 +121,111 @@ func (a *App) listSessions(w http.ResponseWriter, r *http.Request, u *user, s *s
 	}
 	defer rows.Close()
 	indexer := a.liveIndexer(u)
+	now, limit := a.now().Unix(), idleLimit(u.IdleDays)
 	out := []map[string]any{}
 	for rows.Next() {
 		var pub, device string
 		var created, seen int64
 		if rows.Scan(&pub, &device, &created, &seen) == nil {
+			// unused: signed out the next time it connects, or now with "Sign out unused devices" (endUnusedSessions)
 			out = append(out, map[string]any{"id": pub, "device": device, "created_at": created, "last_seen": seen,
-				"current": pub == s.Pub, "indexer": pub == indexer})
+				"current": pub == s.Pub, "indexer": pub == indexer, "unused": pub != s.Pub && now-seen > limit})
 		}
 	}
-	writeJSON(w, 200, map[string]any{"sessions": out})
+	writeJSON(w, 200, map[string]any{"sessions": out, "idle_days": idleDays(u.IdleDays)})
+}
+
+// Devices not used for a while are signed out: after 30 days without a request, or after 7 or 14 if the person chose
+// that (PUT /api/me/device-idle). They are signed out as from another device (remember), so a lost phone or a
+// forgotten browser deletes what it keeps when it comes back, instead of only asking to sign in again.
+var idleChoices = []int{7, 14, 30}
+
+// idleDays is the account's choice, or 30 days for a value that isn't one of the choices.
+func idleDays(d int) int {
+	if slices.Contains(idleChoices, d) {
+		return d
+	}
+	return int(sessionIdle.Hours() / 24)
+}
+
+// idleLimit is how long, in seconds, a device of an account with this choice may go unused.
+func idleLimit(d int) int64 { return int64(idleDays(d)) * 24 * 3600 }
+
+func (a *App) setDeviceIdle(w http.ResponseWriter, r *http.Request, u *user, s *session) {
+	var req struct {
+		Days int `json:"days"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if !slices.Contains(idleChoices, req.Days) {
+		fail(w, 400, "choose 7, 14 or 30 days")
+		return
+	}
+	a.db.Exec(`UPDATE users SET device_idle_days=? WHERE id=?`, req.Days, u.ID)
+	writeJSON(w, 200, map[string]int{"idle_days": req.Days})
+}
+
+// endUnusedSessions signs out the account's other devices that have gone unused for longer than its limit now,
+// rather than when they next connect; never this one. The answer is how many.
+func (a *App) endUnusedSessions(w http.ResponseWriter, r *http.Request, u *user, s *session) {
+	before := a.now().Unix() - idleLimit(u.IdleDays)
+	const where = `user_id=? AND pub<>? AND last_seen<?`
+	rows, err := a.db.Query(`SELECT pub FROM sessions WHERE `+where, u.ID, s.Pub, before)
+	if err != nil {
+		fail(w, 500, "server error")
+		return
+	}
+	var pubs []string
+	for rows.Next() {
+		var p string
+		if rows.Scan(&p) == nil {
+			pubs = append(pubs, p)
+		}
+	}
+	rows.Close()
+	a.remember(where, u.ID, s.Pub, before)
+	res, err := a.db.Exec(`DELETE FROM sessions WHERE `+where, u.ID, s.Pub, before)
+	if err != nil {
+		fail(w, 500, "server error")
+		return
+	}
+	n, _ := res.RowsAffected()
+	for _, p := range pubs {
+		a.dropInvitesOf(u.ID, `created_session=?`, p)
+	}
+	if n > 0 {
+		a.live.recheck(u.ID)
+		a.audit(u.Email, "signed out unused devices", u.Email, "")
+	}
+	writeJSON(w, 200, map[string]int64{"ended": n})
+}
+
+// backfillLastUpload: the time of this device's newest upload as the app remembers it, for a session that has none
+// recorded (the server only notes uploads since the storage overview came, so it had nothing to show). Only for this
+// session, and only once: a recorded time, the app's or the server's own (markUploaded), is never changed. The time is
+// kept within the last year and never in the future. It is only a time, as markUploaded keeps.
+func (a *App) backfillLastUpload(w http.ResponseWriter, r *http.Request, u *user, s *session) {
+	var req struct {
+		At int64 `json:"at"` // seconds
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if req.At <= 0 {
+		fail(w, 400, "invalid request")
+		return
+	}
+	now := a.now().Unix()
+	at := min(max(req.At, now-365*24*3600), now)
+	res, err := a.db.Exec(`UPDATE sessions SET last_upload_at=? WHERE id_hash=? AND last_upload_at=0`, at, s.IDHash)
+	if err != nil {
+		fail(w, 500, "server error")
+		return
+	}
+	var stored int64
+	a.db.QueryRow(`SELECT last_upload_at FROM sessions WHERE id_hash=?`, s.IDHash).Scan(&stored)
+	writeJSON(w, 200, map[string]any{"set": rowsAffected(res, nil) == 1, "last_upload_at": stored})
 }
 
 // endSession signs another device out: its next request is refused and the app forgets the library (as at sign-out).

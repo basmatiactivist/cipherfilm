@@ -153,6 +153,8 @@ public enum PropFind {
       guard !name.isEmpty, name != ".", name != "..", !name.contains("/"), !name.contains("\u{0}") else { continue }
       if r.collection || r.href?.hasSuffix("/") == true && r.length == nil { folders += 1; continue }
       if name.hasPrefix(".") { continue }
+      // a size no file can have is a listing that can't be trusted for this member: left out
+      if let n = r.length, n < 0 { continue }
       files.append(WebDAVEntry(name: name, url: u, size: r.length ?? 0, etag: r.etag, modified: r.modified.flatMap(httpDate),
                                contentType: r.contentType, isFolder: false))
     }

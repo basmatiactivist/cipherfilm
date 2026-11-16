@@ -129,6 +129,20 @@ import UniformTypeIdentifiers
     #expect(p.unsupported == ["notes.txt", "raw.CR3"])
   }
 
+  /** Sizes are the server's word: impossible ones leave the member out, huge ones are summed without overflowing. */
+  @Test func listedSizesNeverOverflowThePlan() throws {
+    func resp(_ name: String, _ len: String) -> String {
+      "<d:response><d:href>/p/\(name)</d:href><d:propstat><d:prop><d:getcontentlength>\(len)</d:getcontentlength></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>"
+    }
+    let xml = "<?xml version=\"1.0\"?><d:multistatus xmlns:d=\"DAV:\">" + resp("a.jpg", "9223372036854775807") + resp("b.jpg", "1")
+      + resp("c.jpg", "9223372036854775807") + resp("neg.jpg", "-9223372036854775808") + "</d:multistatus>"
+    let l = try PropFind.parse(Data(xml.utf8), folder: URL(string: "https://dav.example/p/")!)
+    #expect(l.files.map(\.name) == ["a.jpg", "b.jpg", "c.jpg"])
+    let p = WebDAVImport.plan(l, book: ImportBook(file: nil), known: [])
+    #expect(p.todo.count == 3)
+    #expect(p.bytes == .max)
+  }
+
   // ---- bookkeeping ----
 
   @Test func bookResumesAcrossRestarts() throws {

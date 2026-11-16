@@ -44,7 +44,10 @@ public enum WebDAVImport {
       guard mime(for: e.name) != nil else { p.unsupported.append(e.name); continue }
       if let m = book.mark(e) { if m.skipped != nil { p.failed += 1 } else { p.done += 1 }; continue }
       if known.contains(Crypto.fingerprint(name: e.name, size: e.size)) { p.inLibrary += 1; continue }
-      p.todo.append(e); p.bytes += e.size
+      p.todo.append(e)
+      // sizes are the server's word: summed without overflowing (a file over Media.maxFile fails on its own in upload)
+      let (sum, over) = p.bytes.addingReportingOverflow(max(0, e.size))
+      p.bytes = over ? .max : sum
     }
     p.todo.sort { ($0.modified ?? .distantPast, $0.name) < ($1.modified ?? .distantPast, $1.name) }
     return p

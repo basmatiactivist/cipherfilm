@@ -969,3 +969,84 @@ func TestSignedInPasswordProofsAreBounded(t *testing.T) {
 		t.Fatalf("another proof endpoint over the limit: %d", code)
 	}
 }
+
+// Right sign-ins and recovery starts from unknown browsers count too: one source has at most sourceInFlight of them
+// running or waiting at once (the rest get 503 at once), so whoever knows an account's password and recovery key can't
+// fill the queue from one address and keep everyone else's sign-ins on new browsers out.
+func TestOneSourceCantFillTheQueueWithRightCredentials(t *testing.T) {
+	e := newEnv(t)
+	_, ab := e.setupAdmin("admin@x.org")
+	e.app.trustProxy = true // the test server is reached from loopback: X-Forwarded-For names the source
+	for i := 0; i < cap(argonSlots); i++ {
+		argonSlots <- struct{}{}
+	}
+	held := true
+	free := func() {
+		if held {
+			held = false
+			for i := 0; i < cap(argonSlots); i++ {
+				<-argonSlots
+			}
+		}
+	}
+	t.Cleanup(free)
+	send := func(path, source string, body map[string]any) int {
+		bb, _ := json.Marshal(body)
+		req, _ := http.NewRequest("POST", e.srv.URL+path, bytes.NewReader(bb))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Forwarded-For", source)
+		resp, err := e.client().c.Do(req)
+		if err != nil {
+			return 0
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	const n = 12
+	codes := make(chan int, n+1)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if i%2 == 0 {
+				codes <- send("/api/auth/login", "203.0.113.7", map[string]any{"email": "admin@x.org", "auth": ab["auth"]})
+			} else {
+				codes <- send("/api/auth/recover/start", "203.0.113.7", map[string]any{"email": "admin@x.org", "recovery_auth": ab["recovery_verifier"]})
+			}
+		}()
+	}
+	busy := 0
+	for end := time.Now().Add(5 * time.Second); busy < n-sourceInFlight && time.Now().Before(end); {
+		select {
+		case c := <-codes:
+			if c != 503 {
+				t.Fatalf("answered while every slot was taken: %d", c)
+			}
+			busy++
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	if busy != n-sourceInFlight || argonWaiting.Load() != sourceInFlight {
+		t.Fatalf("%d turned away, %d waiting; want %d and %d", busy, argonWaiting.Load(), n-sourceInFlight, sourceInFlight)
+	}
+	// another source still gets in line
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		codes <- send("/api/auth/login", "198.51.100.9", map[string]any{"email": "admin@x.org", "auth": ab["auth"]})
+	}()
+	for end := time.Now().Add(3 * time.Second); argonWaiting.Load() != sourceInFlight+1; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(end) {
+			t.Fatalf("another source was not let in: %d waiting", argonWaiting.Load())
+		}
+	}
+	free()
+	wg.Wait()
+	close(codes)
+	for c := range codes {
+		if c != 200 {
+			t.Fatalf("a waiting check: %d", c)
+		}
+	}
+}

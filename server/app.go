@@ -53,6 +53,7 @@ type App struct {
 	loginAcct  *limiter         // per (account, source)
 	loginDev   *limiter         // per account, for browsers carrying a valid device cookie
 	knownBusy  inFlight         // credential checks of known browsers and signed-in sessions per account (device.go)
+	sourceBusy inFlight         // credential checks of unknown browsers per source (device.go)
 	proofs     *limiter         // password proofs of signed-in sessions per account, right or wrong (proofOK)
 	demoReqs   *demoBuckets     // requests of demo accounts, per source (demo.go)
 	demoSignIn *limiter         // sign-ins to demo accounts, per source (demo.go)

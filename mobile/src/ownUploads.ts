@@ -64,4 +64,12 @@ export async function provablyOwn(userId: string, items: { id: string; wrapped?:
   return out;
 }
 
+/** Of `items`, those this phone uploaded itself (provablyOwn), in their order: the only ones that may be matched to a
+ *  phone file by name and size (Free up space, the background search). Nothing without an account. */
+export async function onlyOwn<T extends { id: string; wrapped?: string }>(userId: string | undefined, items: T[]): Promise<T[]> {
+  if (!userId) return [];
+  const own = await provablyOwn(userId, items);
+  return items.filter((it) => own.has(it.id));
+}
+
 onSignOut(() => { try { const d = DIR(); if (d.exists) d.delete(); } catch { /* best effort */ } });

@@ -73,7 +73,7 @@ three apps now use the web's dark palette, one set of type roles, and the same r
 | P3 | Mac | Buttons are 30 pt, not 44. | macOS is a pointer platform; 30 pt is above the system's own controls. Touch sizes apply to the web and Android. |
 | P3 | Web | Off-grid half steps (2, 6, 10, 14 px) remain in some gaps and paddings. | They align icons with text optically; every on-grid value now uses the `--space-*` tokens. |
 | P3 | Android | "Shake to lock" and "Free up space" share the phone icon in Account. | Copy and icon choice, not the design system; worth a look when the icon set grows. |
-| — | Mac | The Settings window was not captured in the screenshots. | The SwiftUI Settings scene cannot be opened from code in this build; it is a standard macOS form. |
+| — | Mac | The Settings window was not captured in the screenshots. | Fixed: the debug driver opens it through the app menu's Settings… item and captures every pane (`CF_SETTINGS_SHOTS=1`); the panes are now compact two-column forms like the system's own settings. |
 
 ## Positive findings
 
@@ -85,5 +85,5 @@ three apps now use the web's dark palette, one set of type roles, and the same r
 
 ## Next steps
 
-- `/impeccable polish` the Mac Settings window by hand once it can be screenshotted.
+- Mac Settings: redesigned as a native toolbar of compact two-column panes; screenshots with `CF_SETTINGS_SHOTS=1`.
 - If the brief changes, consider `rule-strong` at 3:1 for field boundaries (see above).

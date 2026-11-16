@@ -9,28 +9,30 @@ import SwiftUI
 struct SecuritySettings: View {
   @Environment(AppModel.self) private var model
 
+  @State private var touchError: String?
+
   var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 22) {
-        if let me = model.me {
-          if !me.isDemo {
-            TwoFactorSection()
-            Divider()
-          }
-          DevicesSection()
-          Divider()
-          MyStorageSection()
-          if !me.isDemo {
-            Divider()
-            NoticeNotificationsSection()
-          }
-        } else {
-          Text("Not signed in.").foregroundStyle(.secondary)
-        }
+    Pane(scrolls: true) {
+      Section_(title: "Touch ID", subtitle: "Your library's key is kept locked in this Mac's security chip. Changing your fingerprints turns it off. Your password always works.") {
+        Toggle("Unlock with your fingerprint", isOn: Binding(get: { model.touchID }, set: { on in
+          touchError = nil
+          if on { Task { do { try await model.enableTouchID() } catch { touchError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription } } }
+          else { model.disableTouchID() }
+        }))
+        .disabled(!TouchID.available || (model.phase != .unlocked && !model.touchID))
+        if !TouchID.available { Text("This Mac has no fingerprint sensor, or no fingerprint is set up.").font(Typo.caption).foregroundStyle(.secondary) }
+        else if model.phase != .unlocked && !model.touchID { NeedsUnlock() }
+        if let touchError { Text(touchError).font(Typo.caption).foregroundStyle(Ink.danger) }
       }
-      .padding(24)
+      if let me = model.me {
+        PaneDivider()
+        if !me.isDemo {
+          TwoFactorSection()
+          PaneDivider()
+        }
+        DevicesSection()
+      }
     }
-    .frame(height: 560)
   }
 }
 
@@ -41,7 +43,7 @@ struct NoticeNotificationsSection: View {
   @State private var on = NoticeNotifier.enabled
 
   var body: some View {
-    Section_(title: "Notifications", subtitle: "While the window isn't in front, or Cipherfilm is locked and runs in the menu bar, a notification tells you about a new sign-in to your account. Its preview shows the device and the time; where macOS hides previews (the lock screen, by default), only that there was a new sign-in.") {
+    Section_(title: "New sign-ins", subtitle: "While the window isn't in front, or Cipherfilm is locked and runs in the menu bar, a notification tells you about a new sign-in to your account. Its preview shows the device and the time; where macOS hides previews (the lock screen, by default), only that there was a new sign-in.") {
       Toggle("Notify me about new sign-ins", isOn: Binding(get: { on }, set: { on = $0; NoticeNotifier.enabled = $0 }))
     }
   }

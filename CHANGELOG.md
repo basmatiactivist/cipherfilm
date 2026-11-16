@@ -7,6 +7,12 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+### Changed
+- Mac: Settings laid out like the system's own settings windows: a toolbar of panes (General, Account, Security,
+  Search & People, Import, Export, Notifications, Administration, About), each a compact form with right-aligned labels,
+  the window sized to each pane instead of one long scrolling list. Every setting is still there; the last pane opens
+  again.
+
 ### Added
 - Mac: import from WebDAV folders (Settings › Import). Any WebDAV folder (https; http only for this Mac or a home
   network, with a warning) imported once or kept importing every 15 minutes to a day; several folders; Test Connection.

@@ -51,6 +51,34 @@ enum DebugDriver {
     try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(name).png"))
   }
 
+  /** Every Settings pane as a picture (CF_SNAPSHOTS/settings-<pane>.png), for the design review and the PR. */
+  static func settingsShots() async {
+    let m = AppModel.shared
+    func settingsWindow() -> NSWindow? { NSApp.windows.first { $0.isVisible && ($0.identifier?.rawValue.localizedCaseInsensitiveContains("settings") ?? false) } }
+    for _ in 0..<20 where settingsWindow() == nil {
+      NSApp.activate(ignoringOtherApps: true)
+      // the app menu's own "Settings…" (⌘,), as a person opens it
+      if let menu = NSApp.mainMenu?.items.first?.submenu, let i = menu.items.firstIndex(where: { $0.keyEquivalent == "," }) {
+        menu.performActionForItem(at: i)
+      } else {
+        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+      }
+      try? await Task.sleep(nanoseconds: 1_000_000_000)
+    }
+    log("settings windows: " + NSApp.windows.filter(\.isVisible).map { "\($0.identifier?.rawValue ?? "-") \($0.title)" }.joined(separator: ", "))
+    let before = m.settingsTab
+    for tab in ["general", "account", "security", "search", "import", "export", "notifications", "admin", "about"] {
+      m.settingsTab = tab
+      try? await Task.sleep(nanoseconds: 1_500_000_000)
+      guard let dir = env["CF_SNAPSHOTS"], let w = settingsWindow(),
+            let v = w.contentView?.superview ?? w.contentView, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) else { log("no settings window"); continue }
+      v.cacheDisplay(in: v.bounds, to: rep)
+      try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: dir).appendingPathComponent("settings-\(tab).png"))
+      log("settings \(tab): \(Int(w.frame.width))x\(Int(w.frame.height))")
+    }
+    m.settingsTab = before
+  }
+
   /** Deletes what earlier runs left in CF_TEST_DIR: an export is a copy of the whole library, and a few runs fill a disk. */
   static func cleanTestDir() {
     guard let dir = env["CF_TEST_DIR"] else { return }
@@ -89,6 +117,7 @@ enum DebugDriver {
     }
     check(m.phase == .unlocked, "signed in and unlocked")
     // CF_SIGNIN_ONLY=1: only signs in and leaves the app open as it is, for trying it by hand against the test server
+    if env["CF_SETTINGS_SHOTS"] == "1" { await settingsShots() }
     if env["CF_SIGNIN_ONLY"] == "1" { log("DONE signed in"); return }
     m.agent.askNow = false
     m.settings.agentAsked = true

@@ -1,6 +1,17 @@
-// Settings › Import: WebDAV folders to import from (WebDAVImporter.swift).
+// Settings › Import: watched folders on this Mac (WatchSettings) and WebDAV folders to import from
+// (WebDAVImporter.swift).
 import CipherfilmCore
 import SwiftUI
+
+struct ImportPane: View {
+  var body: some View {
+    Pane(scrolls: true) {
+      WatchSettings()
+      PaneDivider()
+      WebDAVSettings()
+    }
+  }
+}
 
 struct WebDAVSettings: View {
   @Environment(AppModel.self) private var model
@@ -9,27 +20,22 @@ struct WebDAVSettings: View {
 
   var body: some View {
     @Bindable var model = model
-    ScrollView {
-      VStack(alignment: .leading, spacing: 20) {
-        Section_(title: "Import from WebDAV folders", subtitle: "Photos and videos in a folder on a WebDAV server, such as a network drive, go straight into your timeline: each file is read from the server piece by piece, encrypted on this Mac and uploaded, without a copy of the folder on this Mac. Only the folder itself, not its subfolders. Files already in your library (same name and size) are skipped. Runs while your library is unlocked.") {
-          if model.settings.webdav.isEmpty { Text("No folders yet.").font(Typo.caption).foregroundStyle(.secondary) }
-          ForEach(model.settings.webdav) { s in
-            WebDAVSourceRow(source: s, status: model.webdav.status[s.id] ?? .init(), remove: { removing = s })
-            Divider()
-          }
-          HStack {
-            Button("Add Folder…") { adding = true }.disabled(model.phase != .unlocked || model.me?.isDemo == true)
-            Spacer()
-            Picker("Files at the same time", selection: $model.settings.webdavParallel) {
-              ForEach(1...6, id: \.self) { Text("\($0)").tag($0) }
-            }.fixedSize()
-          }
-          if model.phase != .unlocked { NeedsUnlock() }
+    Group {
+      Section_(title: "WebDAV folders", subtitle: "Photos and videos in a folder on a WebDAV server, such as a network drive, go straight into your timeline: read piece by piece, encrypted on this Mac and uploaded, without a copy of the folder here. Only the folder itself, not its subfolders. Files already in your library (same name and size) are skipped. Runs while your library is unlocked.") {
+        if model.settings.webdav.isEmpty { Text("No folders yet.").font(Typo.caption).foregroundStyle(.secondary) }
+        ForEach(model.settings.webdav) { s in
+          WebDAVSourceRow(source: s, status: model.webdav.status[s.id] ?? .init(), remove: { removing = s })
+          Divider()
         }
+        Button("Add WebDAV Folder…") { adding = true }.disabled(model.phase != .unlocked || model.me?.isDemo == true)
+        if model.phase != .unlocked { NeedsUnlock() }
       }
-      .padding(24)
+      Section_(title: "At the same time") {
+        Picker("Files at the same time", selection: $model.settings.webdavParallel) {
+          ForEach(1...6, id: \.self) { Text("\($0) file\($0 == 1 ? "" : "s")").tag($0) }
+        }.labelsHidden().fixedSize()
+      }
     }
-    .frame(minHeight: 420)
     .sheet(isPresented: $adding) { AddWebDAVSheet() }
     .confirmationDialog("Remove this folder?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), presenting: removing) { s in
       Button("Remove", role: .destructive) { model.webdav.remove(s.id) }

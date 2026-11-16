@@ -20,8 +20,7 @@ struct AdminSettings: View {
   @State private var error: String?
 
   var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 22) {
+    Pane(scrolls: true) {
         if refused || !Admin.offered(model.me) {
           Text("Only administrators of this server can see this.").foregroundStyle(.secondary)
         } else {
@@ -43,10 +42,8 @@ struct AdminSettings: View {
           default: AdminPeople(accounts: accounts, reload: reload)
           }
         }
-      }
-      .padding(24)
     }
-    .frame(height: 560)
+    .environment(\.paneStacked, true)
     .task { await load() }
   }
 

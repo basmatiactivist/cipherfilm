@@ -4,7 +4,8 @@
 // browser checks the address itself, so for such a server the app opens the server's own /passkey page, as the Mac app
 // does (web/src/screens.tsx PasskeyHandoff), and the answer comes back to this app's own address
 // (cipherfilm://passkey#…, cipherfilm-test:// for a test build), which +native-intent.ts hands here.
-// The options travel in the address's fragment, which the browser never sends to the server.
+// The options travel in the address's fragment, which the browser never sends to the server. An answer counts only when
+// the browser made it on the configured server's own page for this request (answerFor: origin, kind and challenge).
 import { getSodium } from "@crypto/sodium";
 import { t } from "./i18n";
 
@@ -92,6 +93,34 @@ export function readReturn(url: string): { state: string; answer: J | null } {
   } catch { return { state: m[1], answer: null }; }
 }
 
+/** The browser's origin of the server's address ("https://Photos.example.org:443/" is "https://photos.example.org"):
+ *  what the server's own /passkey page writes into a passkey's answer. Empty for anything but https. */
+export function originOf(server: string): string {
+  const m = /^https:\/\/(\[[^\]]+\]|[^/:?#@]+)(?::(\d{1,5}))?(?:[/?#]|$)/i.exec(server.trim());
+  if (!m) return "";
+  const port = m[2] && Number(m[2]) !== 443 ? `:${Number(m[2])}` : "";
+  return `https://${m[1].toLowerCase()}${port}`;
+}
+
+const sameB64u = (a: string, b: string) => {
+  const n = (s: string) => s.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return n(a) === n(b);
+};
+
+/** Whether a passkey's answer was made on the configured server's own /passkey page for this very request. The
+ *  browser writes the page's origin, the kind of request and its challenge into the answer (clientDataJSON, which the
+ *  passkey signs); an answer made on another site's page (that the server's page sent the browser on to) never fits. */
+export function answerFor(answer: J, server: string, op: "get" | "create", options: J): boolean {
+  try {
+    const r = answer.response as J | undefined;
+    const want = originOf(server);
+    if (!want || !r || typeof r.clientDataJSON !== "string" || typeof options.challenge !== "string") return false;
+    const c = JSON.parse(unb64u(r.clientDataJSON)) as J;
+    return c.origin === want && c.type === (op === "get" ? "webauthn.get" : "webauthn.create") && c.crossOrigin !== true &&
+      typeof c.challenge === "string" && !!c.challenge && sameB64u(c.challenge, options.challenge);
+  } catch { return false; }
+}
+
 let waiting: { state: string; done: (url: string | null) => void } | null = null;
 
 /** +native-intent.ts: the page sent an answer back. Only the waiting request whose state it carries takes it; any
@@ -136,7 +165,8 @@ export async function viaBrowserPasskey(server: string, op: "get" | "create", op
       clearTimeout(timer);
       sub.remove();
       const answer = u ? readReturn(u).answer : null;
-      if (answer) resolve(answer); else reject(Object.assign(new Error(t("No passkey was used. Try again, or use a code instead.")), { code: "ERR_PASSKEY_CANCELLED" }));
+      if (answer && !answerFor(answer, server, op, options)) reject(new Error(t("its answer was made for another site, not for this server")));
+      else if (answer) resolve(answer); else reject(Object.assign(new Error(t("No passkey was used. Try again, or use a code instead.")), { code: "ERR_PASSKEY_CANCELLED" }));
     };
     const me = { state, done: finish };
     waiting = me;

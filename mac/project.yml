@@ -6,6 +6,10 @@ options:
   bundleIdPrefix: app.cipherfilm
   deploymentTarget: { macOS: "15.0" }
   createIntermediateGroups: true
+  # the package pins (swift-sodium by its commit, Package.swift) also for xcodebuild: the generated workspace gets
+  # mac/Package.resolved, so `xcodebuild -onlyUsePackageVersionsFromResolvedFile -disableAutomaticPackageResolution`
+  # builds exactly what `swift test` tested
+  postGenCommand: mkdir -p Cipherfilm.xcodeproj/project.xcworkspace/xcshareddata/swiftpm && cp Package.resolved Cipherfilm.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 packages:
   CipherfilmCore:
     path: .

@@ -803,6 +803,11 @@
           7
         ]
       ]
+    },
+    {
+      "q": "constructor toString",
+      "text": "constructor tostring",
+      "chips": []
     }
   ],
   "remove": [

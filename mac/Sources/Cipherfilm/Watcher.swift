@@ -120,7 +120,7 @@ final class Watcher {
     if task != nil { again = true; return }
     guard let api, let userId, let pkB64 = settings.pubkey, let pk = try? B64.decode(pkB64) else { return }
     let folders = settings.watched
-    let faces = settings.faces, search = settings.search
+    let faces = settings.faces, search = settings.search, text = settings.textInPhotos
     let clip = ClipModel.clip
     var indexes = true
     let gen = generation
@@ -161,7 +161,7 @@ final class Watcher {
           let flag = live
           let id = try await Uploader.upload(c.url, api: api, wrap: .sealed(pk: pk), live: { if flag.get() != gen { throw Stopped() } })
           guard stillOn() else { return }
-          if search && indexes { await SearchEngine.indexFile(c.url, id: id, video: Media.kind(name: c.url.lastPathComponent, mime: Media.mime(of: c.url)) == .video, faces: faces, clip: clip, pk: pk, api: api) }
+          if search && indexes { await SearchEngine.indexFile(c.url, id: id, video: Media.kind(name: c.url.lastPathComponent, mime: Media.mime(of: c.url)) == .video, faces: faces, text: text, clip: clip, pk: pk, api: api) }
           st.done.insert(c.print); st.failures.removeValue(forKey: c.print); st.uploaded += 1
           uploaded = st.uploaded
           waiting -= 1

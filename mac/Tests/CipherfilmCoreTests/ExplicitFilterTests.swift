@@ -59,7 +59,10 @@ private func vec(_ text: String) -> [Float] { Vision.normalize(Vision.unhalf(try
   }
 
   @Test func oneModelAndMobileCLIPsEntriesFromBefore() throws {
-    #expect(Models.every.map(\.name) == ["clip-b32-vision.onnx", "clip-b32-text.onnx", "clip-b32-tokenizer.json", "yunet-2023mar.onnx", "sface-2021dec.onnx"])
+    #expect(Models.every.map(\.name) == ["clip-b32-vision.onnx", "clip-b32-text.onnx", "clip-b32-tokenizer.json", "yunet-2023mar.onnx", "sface-2021dec.onnx",
+                                         "ocr-det-v3.onnx", "ocr-rec-latin-v5.onnx", "ocr-latin-dict.txt"])
+    // the text model is asked for on its own: never part of what search itself needs
+    #expect(!Models.needed(faces: true).contains { $0.name.hasPrefix("ocr-") } && !Models.needed(faces: true, reader: true).contains { $0.name.hasPrefix("ocr-") })
     // explicit search's LAION entries are the model's: kept, not made again
     #expect(Models.good("laionb32+yunet23+sface21/1", faces: true) && Models.good("laionb32/1", faces: false))
     #expect(!Models.good("mcs2+yunet23+sface21/2", faces: true) && !Models.good("mcs2/2", faces: false))

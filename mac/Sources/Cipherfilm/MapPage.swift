@@ -54,8 +54,33 @@ enum PlaceBook {
     }.value
   }
 
+  nonisolated(unsafe) private static var placeNames: [String: [String]] = [:]
+
+  /** For combined search (QueryParser): each located item's place names (town, region, country, as written), and every
+   *  such name folded ("zurich" → "Zürich"), so a word or two of a query is taken as a place where photos are (as
+   *  web/src/map/locations.ts placeNames). Country codes are left out: "de" or "it" are words too. */
+  static func names(_ items: [Item]) async -> (byItem: [String: [String]], names: [String: String]) {
+    let located = items.compactMap { it in it.location.map { (it.id, $0) } }
+    guard !located.isEmpty else { return ([:], [:]) }
+    return await Task.detached(priority: .userInitiated) {
+      guard let p = places else { return ([:], [:]) }
+      var byItem: [String: [String]] = [:], names: [String: String] = [:]
+      for (id, g) in located {
+        let these: [String] = lock.withLock { placeNames[id] } ?? {
+          let these = p.nearest(g.lat, g.lon).map { r in [r.place?.name ?? "", r.place?.region ?? "", r.country].filter { !$0.isEmpty } } ?? []
+          lock.withLock { placeNames[id] = these }
+          return these
+        }()
+        guard !these.isEmpty else { continue }
+        byItem[id] = these
+        for n in these { let f = QueryParser.fold(n); if names[f] == nil { names[f] = n } }
+      }
+      return (byItem, names)
+    }.value
+  }
+
   /** Signing out or locking: nothing about where photos were taken stays in memory. */
-  static func forget() { lock.withLock { words = [:] } }
+  static func forget() { lock.withLock { words = [:]; placeNames = [:] } }
 }
 
 /** One photo on the map, as the page gets it. */

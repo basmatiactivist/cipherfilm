@@ -4,7 +4,7 @@ import { fold, inWhen, parse, removeChip, textMatch, type ParseContext, type Whe
 
 // The same cases run on the Mac (QueryParserTests.swift), so all apps read a query alike.
 const places = CASES.context.places as Record<string, string>;
-const ctx: ParseContext = { people: CASES.context.people, today: CASES.context.today, place: (f) => places[f] };
+const ctx: ParseContext = { people: CASES.context.people, today: CASES.context.today, place: (f) => (Object.hasOwn(places, f) ? places[f] : undefined) };
 
 describe("combined search: the query parser", () => {
   for (const c of CASES.cases) {

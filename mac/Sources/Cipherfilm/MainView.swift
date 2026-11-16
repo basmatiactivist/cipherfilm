@@ -332,6 +332,13 @@ struct StatusCard: View {
         case .error: StatusLine(icon: "exclamationmark.triangle", text: s.message ?? "Search stopped", problem: true)
         case .ready, .off: EmptyView()
         }
+        // text in photos waits for its own OK; images and faces are indexed meanwhile
+        if s.ocrWaiting && model.settings.textInPhotos, let a = s.ocrAsk() {
+          Button { consent = a } label: { StatusLine(icon: "text.viewfinder", text: "Text in photos waits for your OK to download its model") }
+            .buttonStyle(TileButton(radius: 6)).help("See what is downloaded")
+        } else if s.phase == .ready && s.textLeft > 0 {
+          StatusLine(icon: "text.viewfinder", text: "Reading text in photos · \(s.textLeft) left")
+        }
       }
       HStack(spacing: 8) {
         Image(systemName: "lock.fill").font(Typo.caption).foregroundStyle(Ink.teal)
@@ -496,6 +503,7 @@ struct SearchResults: View {
   @State private var result: SearchEngine.Result?
   /** how many of the ranked results are shown: a page of 200, then more as the end comes into view */
   @State private var shown = 200
+  @State private var shownFor = ""
 
   /** Why nothing was found, and what helps: photos another device hasn't indexed yet are said (docs/SEARCH.md). */
   private var emptyText: String {
@@ -510,6 +518,16 @@ struct SearchResults: View {
   var body: some View {
     VStack(spacing: 0) {
       PageTitle(title: "Search", subtitle: result.map { r in r.items.isEmpty ? "Nothing found" : (r.ranked ? "Best matches first" : "\(r.items.count) found") + (r.how.isEmpty ? "" : " · " + r.how.joined(separator: " · ")) } ?? "Searching…")
+      // what the query was taken as: each a filter that can be dropped (its words leave the search box)
+      if let r = result, !r.chips.isEmpty {
+        ScrollView(.horizontal, showsIndicators: false) {
+          HStack(spacing: 8) {
+            ForEach(Array(r.chips.enumerated()), id: \.offset) { _, c in
+              QueryChip(chip: c) { nav.query = QueryParser.removeChip(nav.query, c) }
+            }
+          }.padding(.horizontal, 28).padding(.vertical, 4)
+        }
+      }
       if let r = result, !r.people.isEmpty {
         ScrollView(.horizontal, showsIndicators: false) {
           HStack(spacing: 14) { ForEach(r.people) { g in FaceChip(group: g) { nav.query = ""; nav.go(.person(g.key)) } } }.padding(.horizontal, 28).padding(.vertical, 6)
@@ -522,7 +540,7 @@ struct SearchResults: View {
           Spacer()
         } else {
           PhotoGrid(items: Array(r.items.prefix(shown)), grouping: .none, selection: selection,
-                    more: r.items.count > shown ? { shown += 200 } : nil) { it, list in nav.viewer = ViewerState(ids: list.map(\.id), index: list.firstIndex(of: it) ?? 0) }
+                    more: r.items.count > shown ? { shown += 200 } : nil, captions: r.found) { it, list in nav.viewer = ViewerState(ids: list.map(\.id), index: list.firstIndex(of: it) ?? 0) }
         }
       } else {
         Loading(label: "Searching…")
@@ -533,9 +551,38 @@ struct SearchResults: View {
       if Task.isCancelled { return }
       let r = await model.search.search(query, library: model.items)
       if Task.isCancelled { return }
-      if result?.how != r.how { shown = 200 } // a new query starts at the top page
+      if shownFor != query { shown = 200; shownFor = query } // a new query starts at the top page
       result = r
     }
+  }
+}
+
+/** One part of the query taken as a filter (a person, place, date, favorites, videos, screenshots), with × to drop it. */
+struct QueryChip: View {
+  let chip: QueryParser.Chip
+  let remove: () -> Void
+
+  private var icon: String {
+    switch chip.kind {
+    case .person: "person"
+    case .place: "mappin.and.ellipse"
+    case .date: "calendar"
+    case .favorites: "heart"
+    case .videos: "film"
+    case .screenshots: "camera.viewfinder"
+    }
+  }
+
+  var body: some View {
+    HStack(spacing: 5) {
+      Image(systemName: icon).font(Typo.caption).foregroundStyle(Ink.teal)
+      Text(QueryParser.label(chip)).font(Typo.caption).foregroundStyle(Ink.ink).lineLimit(1)
+      Button(action: remove) { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(Ink.muted) }
+        .buttonStyle(.plain).help("Remove this filter").accessibilityLabel("Remove \(QueryParser.label(chip))")
+    }
+    .padding(.horizontal, 10).padding(.vertical, 5)
+    .background(Capsule().fill(Ink.card))
+    .overlay(Capsule().strokeBorder(Ink.rule, lineWidth: 1))
   }
 }
 

@@ -93,6 +93,8 @@ struct PhotoGrid: View {
   var more: (() -> Void)?
   /** the space left and right of the photos (the map's side panel is narrower) */
   var inset: CGFloat = 28
+  /** a line of text per item, shown when the pointer rests on it (search: the text in the photo that matched) */
+  var captions: [String: String] = [:]
   let open: (Item, [Item]) -> Void
   @State private var width: CGFloat = 900
   @FocusState private var focused: Bool
@@ -116,6 +118,7 @@ struct PhotoGrid: View {
               ForEach(Array(zip(row.items, row.widths)), id: \.0.id) { it, w in
                 Tile(item: it, selected: selection.ids.contains(it.id))
                   .frame(width: w, height: row.height)
+                  .help(captions[it.id].map { "Text in the photo: \($0)" } ?? "")
                   .id(it.id)
                   // a click opens; a long press starts selecting; while something is selected, clicks pick
                   .gesture(LongPressGesture(minimumDuration: 0.35).onEnded { _ in selection.toggle(it.id); focused = true }

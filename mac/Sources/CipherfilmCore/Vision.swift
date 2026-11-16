@@ -94,14 +94,24 @@ struct Pixels {
   /** Resizing as Pillow's resize(BICUBIC) does it, the LAION model's reference: the cubic kernel (a = -0.5) widened by
    *  the scale factor, so a downscale averages instead of aliasing; horizontally, then vertically, 8 bits in between. */
   func bicubic(_ nw: Int, _ nh: Int) -> Pixels {
-    func kernel(_ t: Double) -> Double {
+    resampled(nw, nh, support: 2) { t in
       let a = -0.5, x = abs(t)
       if x < 1 { return ((a + 2) * x - (a + 3)) * x * x + 1 }
       if x < 2 { return (((x - 5) * x + 8) * x - 4) * a }
       return 0
     }
+  }
+
+  /** Resizing as Pillow's resize(BILINEAR) does it, the text model's reference (scripts/ocr-reference.py): the
+   *  triangle kernel widened by the scale factor, the same passes as bicubic. */
+  func bilinearPIL(_ nw: Int, _ nh: Int) -> Pixels {
+    resampled(nw, nh, support: 1) { t in let x = abs(t); return x < 1 ? 1 - x : 0 }
+  }
+
+  /** Pillow's separable resampling with a kernel of the given support (in source pixels at scale 1). */
+  func resampled(_ nw: Int, _ nh: Int, support kernelSupport: Double, _ kernel: (Double) -> Double) -> Pixels {
     func taps(_ size: Int, _ out: Int) -> [(lo: Int, w: [Double])] {
-      let scale = Double(size) / Double(out), fs = max(scale, 1), support = 2 * fs
+      let scale = Double(size) / Double(out), fs = max(scale, 1), support = kernelSupport * fs
       return (0..<out).map { x in
         let center = (Double(x) + 0.5) * scale
         let lo = max(0, Int(center - support + 0.5)), hi = min(size, Int(center + support + 0.5))
@@ -171,7 +181,9 @@ public struct Analysis: Sendable {
 public struct Analyses: Sendable {
   public var clips: [(model: ClipModel, vector: Data)]
   public var faces: [FaceFound]?
-  public init(clips: [(model: ClipModel, vector: Data)], faces: [FaceFound]?) { self.clips = clips; self.faces = faces }
+  /** The text read in the photo (Ocr), nil when the text model didn't run (off, not downloaded, or it failed). */
+  public var text: String?
+  public init(clips: [(model: ClipModel, vector: Data)], faces: [FaceFound]?, text: String? = nil) { self.clips = clips; self.faces = faces; self.text = text }
 }
 
 public final class Vision: @unchecked Sendable {
@@ -214,8 +226,9 @@ public final class Vision: @unchecked Sendable {
     return Analysis(clip: a.clips[0].vector, faces: a.faces)
   }
 
-  /** The image vector of each model in clips and the faces in a JPEG, found once. */
-  public func analyze(_ jpeg: Data, faces: Bool, clips: [ClipModel]) throws -> Analyses {
+  /** The image vector of each model in clips and the faces in a JPEG, found once; with ocr also the text in it, read
+   *  from the same decoded picture (a failure there leaves text nil: it is read again later). */
+  public func analyze(_ jpeg: Data, faces: Bool, clips: [ClipModel], ocr: Ocr? = nil) throws -> Analyses {
     let run = try clips.map { m -> (ClipModel, OrtModel) in
       guard let s = m == model ? image : nil else { throw CryptoError.failed("this device only reads the index") }
       return (m, s)
@@ -228,6 +241,7 @@ public final class Vision: @unchecked Sendable {
         return FaceFound(box: box, score: (Double(f.score) * 1000).rounded() / 1000, emb: Self.half(Self.normalize(try embed(rec, bmp, f))))
       }
     }
+    if let ocr { out.text = (try? ocr.read(bmp)).map(Ocr.normalize) }
     return out
   }
 

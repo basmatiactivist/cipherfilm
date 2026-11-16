@@ -84,7 +84,8 @@ const FLAGS: [ChipKind, RegExp][] = [
 /** Small words a photo's text needn't contain for a match ("the" in "the bakery"). */
 const STOP = new Set(["a", "an", "the", "and", "or", "of", "in", "on", "at", "with", "der", "die", "das", "ein", "eine", "und", "oder", "im", "am", "mit", "auf", "von"]);
 
-const glossary = GLOSSARY as Record<string, string>;
+const glossary = new Map(Object.entries(GLOSSARY as Record<string, string>));
+const isMonth = (w: string | undefined): w is string => w !== undefined && Object.hasOwn(MONTHS, w);
 
 interface Found { kind: ChipKind; len: number; names?: string[]; place?: string; when?: When }
 
@@ -120,16 +121,16 @@ function dateAt(w: string[], i: number, today: string): Found | null {
     return { kind: "date", len: 1, when: { months: [11, 11], days: [20, 27] } };
   }
   // months: "may", "may 2025", "2025 may", "may to july", "mai bis juli 2025"
-  if (a in MONTHS) {
+  if (isMonth(a)) {
     let m0 = MONTHS[a], m1 = m0, len = 1;
-    if (b && RANGE_TO.has(b) && c && c in MONTHS) { m1 = MONTHS[c]; len = 3; }
+    if (b && RANGE_TO.has(b) && isMonth(c)) { m1 = MONTHS[c]; len = 3; }
     const y = w[i + len];
     if (m1 < m0) [m0, m1] = [m1, m0];
     if (isYear(y)) return { kind: "date", len: len + 1, when: monthsWhen(+y, m0, m1) };
     return { kind: "date", len, when: { months: [m0, m1] } };
   }
   if (isYear(a)) {
-    if (b && b in MONTHS) return { kind: "date", len: 2, when: monthsWhen(+a, MONTHS[b], MONTHS[b]) };
+    if (isMonth(b)) return { kind: "date", len: 2, when: monthsWhen(+a, MONTHS[b], MONTHS[b]) };
     return { kind: "date", len: 1, when: yearsWhen(+a, +a) };
   }
   return null;
@@ -195,7 +196,7 @@ export function parse(q: string, ctx: ParseContext): Parsed {
     videos: chips.some((c) => c.kind === "videos"),
     screenshots: chips.some((c) => c.kind === "screenshots"),
     text: rest.join(" "),
-    clip: rest.map((x) => glossary[x] ?? x).join(" "),
+    clip: rest.map((x) => glossary.get(x) ?? x).join(" "),
   };
 }
 

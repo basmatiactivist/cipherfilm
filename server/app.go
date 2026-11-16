@@ -355,7 +355,7 @@ func (a *App) auth(admin bool, next func(http.ResponseWriter, *http.Request, *us
 			}
 		}
 		if s.renewed {
-			setSessionCookie(w, c.Value)
+			setSessionCookie(w, c.Value, s.Created+int64(sessionAbs.Seconds())-a.now().Unix())
 		}
 		if a.isDemo(u) && !a.demoReqs.take(limiterIP(a.clientIP(r))) {
 			w.Header().Set("Retry-After", "10")
@@ -475,7 +475,7 @@ func (a *App) startSession(w http.ResponseWriter, r *http.Request, userID, authH
 	if c, err := r.Cookie(cookieName); err == nil {
 		a.deleteSessions(`id_hash=?`, sha256hex(c.Value))
 	}
-	setSessionCookie(w, tok)
+	setSessionCookie(w, tok, int64(sessionAbs.Seconds()))
 	a.db.Exec(`UPDATE users SET last_login_at=? WHERE id=?`, now.Unix(), userID)
 	if u, uerr := a.userByID(userID); uerr == nil {
 		a.setDevice(w, u)
@@ -507,8 +507,12 @@ func (a *App) deleteSessions(where string, args ...any) (int64, error) {
 	return res.RowsAffected()
 }
 
-func setSessionCookie(w http.ResponseWriter, tok string) {
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: tok, Path: "/", MaxAge: int(sessionIdle.Seconds()),
+// setSessionCookie sends the session's cookie, kept by the browser for the session's whole remaining lifetime (maxAge
+// seconds, up to the year's end), not only for the time it may go unused: a device that comes back after it was signed
+// out (also because it went unused) must still present it, or it can't be told it was signed out on purpose and only
+// asks to sign in again, keeping its copy. The server ends an unused session itself.
+func setSessionCookie(w http.ResponseWriter, tok string, maxAge int64) {
+	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: tok, Path: "/", MaxAge: int(max(maxAge, 1)),
 		HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode})
 }
 

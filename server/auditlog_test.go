@@ -35,3 +35,20 @@ func TestOwnEntriesNeverTrimTheAdminPart(t *testing.T) {
 		t.Fatalf("own entries after admin burst: %d, want %d", n, auditKeep)
 	}
 }
+
+// Every entry people write about their own sign-in counts as their own, also a new recovery key, so a burst of them
+// never trims the administrative part.
+func TestOwnSignInChangesAreKeptApart(t *testing.T) {
+	e := newEnv(t)
+	for _, action := range []string{"signed out a device", "signed out other devices", "signed out unused devices",
+		"turned on two-step sign-in", "turned off two-step sign-in", "made new recovery codes", "made a new recovery key",
+		"added a passkey", "removed a passkey", "added an authenticator app", "removed the authenticator app"} {
+		e.app.db.Exec(`DELETE FROM audit_log`)
+		e.app.audit("bob@x.org", action, "bob@x.org", "")
+		var n int
+		e.app.db.QueryRow(`SELECT COUNT(*) FROM audit_log WHERE ` + selfService).Scan(&n)
+		if n != 1 {
+			t.Fatalf("%q is not kept with the own entries", action)
+		}
+	}
+}

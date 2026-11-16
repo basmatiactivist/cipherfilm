@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math/rand"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -40,7 +41,36 @@ func checkCounters(e *env, step string) {
 		if want := fullUsed(e, r.id); r.used != want {
 			e.t.Fatalf("%s: %s counter %d, full sum %d", step, r.email, r.used, want)
 		}
+		if got, want := splitCounters(e, r.id), fullSplit(e, r.id); got != want {
+			e.t.Fatalf("%s: %s split counters %v, full sums %v", step, r.email, got, want)
+		}
 	}
+}
+
+// splitCounters reads the account's split counters (users.split_*, ready_items).
+func splitCounters(e *env, userID string) (v [5]int64) {
+	e.t.Helper()
+	if err := e.app.db.QueryRow(`SELECT `+strings.Join(splitCols, ",")+` FROM users WHERE id=?`, userID).
+		Scan(&v[0], &v[1], &v[2], &v[3], &v[4]); err != nil {
+		e.t.Fatal(err)
+	}
+	return
+}
+
+// fullSplit is the split summed from scratch over the account's items, what the counters must always equal.
+func fullSplit(e *env, userID string) (v [5]int64) {
+	e.t.Helper()
+	q := `SELECT `
+	for i, t := range splitTerms("it") {
+		if i > 0 {
+			q += `, `
+		}
+		q += `COALESCE(SUM(` + t + `),0)`
+	}
+	if err := e.app.db.QueryRow(q+` FROM items it WHERE it.user_id=?`, userID).Scan(&v[0], &v[1], &v[2], &v[3], &v[4]); err != nil {
+		e.t.Fatal(err)
+	}
+	return
 }
 
 // The counter equals the full sum after any sequence of the writes that change stored bytes: segments, thumbnails
@@ -194,12 +224,18 @@ func TestUsageCounterIsSetAtStart(t *testing.T) {
 	if got := e.app.usedBytes(uid); got != want {
 		t.Fatalf("after the migration: %d, want %d", got, want)
 	}
-	db.Exec(`UPDATE users SET used_bytes=12345`)
+	if got, want := splitCounters(e, uid), fullSplit(e, uid); got != want || want[3] == 0 {
+		t.Fatalf("split after the migration: %v, want %v", got, want)
+	}
+	db.Exec(`UPDATE users SET used_bytes=12345, split_photos=1, split_aux=2, ready_items=3`)
 	if err := migrateUsage(db); err != nil {
 		t.Fatal(err)
 	}
 	if got := e.app.usedBytes(uid); got != want {
 		t.Fatalf("after a restart: %d, want %d", got, want)
+	}
+	if got, want := splitCounters(e, uid), fullSplit(e, uid); got != want {
+		t.Fatalf("split after a restart: %v, want %v", got, want)
 	}
 	// and the triggers work again
 	admin.put("/api/items/"+id+"/preview", randBytes(900))
@@ -254,6 +290,16 @@ func TestLargeLibraryDoesNotSlowOtherAccounts(t *testing.T) {
 	if soloBig > 2*time.Millisecond {
 		t.Errorf("the quota check of a large account takes %v: it still grows with the library", soloBig)
 	}
+	// the storage overview reads counters too (it took about 160 ms when it summed the rows)
+	bigUser, _ := e.app.userByID(bigID)
+	soloOverview := timeIt(50, func() { e.app.storageOf(bigUser, "", "", false) })
+	if got := e.app.storageOf(bigUser, "", "", false); got.ItemCount != rows || got.Split.Photos+got.Split.Thumbs != rows*8300 {
+		t.Fatalf("overview of the large account: %d items, %+v", got.ItemCount, got.Split)
+	}
+	t.Logf("solo: storage overview of the %d-row account %v", rows, soloOverview)
+	if soloOverview > 2*time.Millisecond {
+		t.Errorf("the storage overview of a large account takes %v: it still grows with the library", soloOverview)
+	}
 
 	for _, load := range []struct {
 		name string
@@ -262,6 +308,11 @@ func TestLargeLibraryDoesNotSlowOtherAccounts(t *testing.T) {
 		{"POST /api/items over quota", func() {
 			if code, _ := big.do("POST", "/api/items", map[string]any{"kind": "image", "size": 1000, "segment_count": 1}, true); code != 413 {
 				t.Errorf("over-quota create: %d", code)
+			}
+		}},
+		{"GET /api/me/storage", func() {
+			if code, _ := big.do("GET", "/api/me/storage", nil, false); code != 200 {
+				t.Errorf("storage overview: %d", code)
 			}
 		}},
 		{"reservations", func() {

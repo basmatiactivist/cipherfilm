@@ -184,4 +184,5 @@ export const deSearch: Record<string, string> = {
   "Christmas {year}": "Weihnachten {year}",
   "Since {year}": "Seit {year}",
   "Until {year}": "Bis {year}",
+  "Remove {name}": "{name} entfernen",
 };

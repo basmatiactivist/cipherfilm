@@ -54,7 +54,7 @@ export default function TripScreen() {
       top={trip ? (
         <View style={st.top}>
           <Text variant="bodyMedium" style={{ color: th.colors.onSurfaceVariant }}>
-            {`${day.format(trip.start)} – ${day.format(trip.end)} · ${tn(trip.days, "{n} day", "{n} days")} · ${tn(trip.items.length, "{n} item", "{n} items")}`}
+            {`${day.format(trip.start)} – ${day.format(trip.end)} · ${tn(trip.items.length, "{n} item", "{n} items")}`}
           </Text>
           <Problem>{problem}</Problem>
           {saved ? (

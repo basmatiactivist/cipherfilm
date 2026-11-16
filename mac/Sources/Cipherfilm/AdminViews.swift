@@ -408,6 +408,8 @@ struct AdminStorage: View {
 struct AccountStorageView: View {
   let account: StorageOverview.Account
   var compact = false
+  /** a long list of devices (every browser that ever signed in) stays folded: this Mac and what needs a look first */
+  @State private var showAll = false
 
   var body: some View {
     let a = account
@@ -433,11 +435,16 @@ struct AccountStorageView: View {
         Text(StorageOverview.hiddenDevices).font(Typo.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
       } else if !a.devices.isEmpty {
         if !compact { Text("Devices").font(Typo.label).padding(.top, 4) }
+        let fold = StorageOverview.fold(a.devices, open: showAll)
         VStack(alignment: .leading, spacing: 0) {
-          ForEach(a.devices) { d in
+          ForEach(fold.shown) { d in
             DeviceBackupRow(device: d)
-            if d.id != a.devices.last?.id { Divider() }
+            if d.id != fold.shown.last?.id { Divider() }
           }
+        }
+        if a.devices.count > StorageOverview.devicesShown {
+          Button(showAll ? "Show fewer devices" : "Show \(fold.hidden) more device\(fold.hidden == 1 ? "" : "s")") { showAll.toggle() }
+            .buttonStyle(.link).font(Typo.caption)
         }
       }
     }

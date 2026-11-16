@@ -55,6 +55,11 @@ public enum Recaps {
     }
     let perDay = order.map { d -> Item in let l = byDay[d]!; return l[(l.count - 1) / 2] }
     picks += Memories.sample(perDay, n - picks.count)
+    // a month whose photos are from fewer days than places: the rest of them, spread over the month
+    if picks.count < n {
+      let taken = Set(picks.map(\.id))
+      picks += Memories.sample(pool.filter { !taken.contains($0.id) }, n - picks.count)
+    }
     return picks.sorted(by: older)
   }
 

@@ -106,7 +106,7 @@ export default function SearchSettingsScreen() {
   // (the settings are read once per start, then kept in memory: this shows only for a moment, if at all)
   if (!s) return <View style={{ flex: 1, backgroundColor: th.colors.background }}>{header}<View style={st.waiting}><Loader /></View></View>;
   const current = CLIP;
-  const size = downloadSize(s.faces, current, here);
+  const size = downloadSize(s.faces, current, here, !!s.ocr); // with the text model when that is on, as the question before says
   const onPhone = modelsOnPhone();
   const moveHere = () => withConsent({ faces: s.faces, clip: current, indexes: true, ocr: s.ocr }, moveHereNow);
   // text in photos: its own files, asked for like the others; off deletes them (search and people go on either way)

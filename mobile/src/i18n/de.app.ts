@@ -30,7 +30,7 @@ export const deApp: Record<string, string> = {
   "Unfavorite": "Kein Favorit",
   "Favorite": "Favorit",
   "Add to album": "Zu Album",
-  "Save to phone": "Auf dem Handy speichern",
+  "Save to phone": "Aufs Handy",
   "Trash": "Papierkorb",
   "Photos are decrypted on this phone. Shared and saved copies are not encrypted.": "Fotos werden auf diesem Handy entschlüsselt. Geteilte und gespeicherte Kopien sind nicht verschlüsselt.",
   "Cancel": "Abbrechen",

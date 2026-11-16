@@ -24,4 +24,6 @@ export const deMemories: Record<string, string> = {
   "{n} more": "{n} weitere",
   "Trip, {when}": "Reise, {when}",
   "Show photos from this day in earlier years, a look back at each year, and trips suggested in Albums. Found on this phone; the server learns nothing unless you save a trip as an album.": "Zeigt, was an diesem Tag in früheren Jahren entstand, einen Rückblick auf jedes Jahr und vorgeschlagene Reisen unter Alben. Wird auf dem Handy ermittelt; der Server erfährt nichts davon, außer Sie speichern eine Reise als Album.",
+  "{n} day with photos": "{n} Tag mit Fotos",
+  "{n} days with photos": "{n} Tage mit Fotos",
 };

@@ -1,13 +1,14 @@
 // One account's storage and backup (storage.ts): used against the limit with a bar, what it is taken by, and per
 // signed-in device when it last uploaded, with a warning for a phone whose automatic backup seems to have stopped.
 // Shown in Account (compact: the person's own) and in Administration › Storage and backup (every account).
+import { useState } from "react";
 import { StyleSheet, View } from "react-native";
-import { ProgressBar, Text } from "react-native-paper";
+import { Button, ProgressBar, Text } from "react-native-paper";
 import { useAppTheme } from "./ui";
 import { Icon } from "./icons";
 import { lastActive } from "./notices";
-import { t } from "./i18n";
-import { type AccountStorage, deviceName, lastUploadText, splitParts, staleText, storageLine, usedShare } from "./storage";
+import { t, tn } from "./i18n";
+import { type AccountStorage, deviceName, foldDevices, lastUploadText, splitParts, staleText, storageLine, usedShare } from "./storage";
 
 /** A thin bar as the app's other ones (Account, Administration › Server); red from 90 %. */
 export function UsageBar({ share }: { share: number }) {
@@ -20,6 +21,9 @@ export function StorageView({ a, compact = false }: { a: AccountStorage; compact
   const share = usedShare(a);
   const parts = splitParts(a.split);
   const muted = { color: th.colors.onSurfaceVariant };
+  // a long list of devices (every browser that ever signed in) stays folded: this phone and what needs a look first
+  const [open, setOpen] = useState(false);
+  const fold = foldDevices(a.devices, open);
   return (
     <View>
       <Text variant="bodyMedium" style={{ marginBottom: 8 }}>{storageLine(a)}</Text>
@@ -36,7 +40,7 @@ export function StorageView({ a, compact = false }: { a: AccountStorage; compact
         </View>) : null}
       {a.devices_hidden ? (
         <Text variant="bodySmall" style={[muted, { marginTop: 8 }]}>{t("The devices of a shared demo account aren't listed.")}</Text>
-      ) : a.devices.map((d) => {
+      ) : fold.shown.map((d) => {
         const stale = staleText(d);
         return (
           <View key={d.id} style={st.device}>
@@ -49,6 +53,11 @@ export function StorageView({ a, compact = false }: { a: AccountStorage; compact
           </View>
         );
       })}
+      {!a.devices_hidden && (fold.hidden > 0 || open) && a.devices.length > 3 ? (
+        <Button compact mode="text" onPress={() => setOpen(!open)} style={{ alignSelf: "flex-start", marginTop: 6, marginLeft: 20 }}>
+          {open ? t("Show fewer devices") : tn(fold.hidden, "Show {n} more device", "Show {n} more devices")}
+        </Button>
+      ) : null}
     </View>
   );
 }

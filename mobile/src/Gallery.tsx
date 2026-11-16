@@ -346,10 +346,10 @@ export function Gallery({ items, error, loading, onRefresh, header, top, empty, 
               <List.Item title={t("Unarchive")} description={t("Back to the photos grid.")} onPress={() => move("library")}
                 left={() => <View style={st.moreIcon}><Icon name="unarchive" color={th.colors.primary} /></View>} style={{ minHeight: 56 }} />
             ) : (
-              <List.Item title={t("Archive")} description={t("Out of the photos grid and On this day; still in albums, search and the map.")} descriptionNumberOfLines={3} onPress={() => move("archive")}
+              <List.Item title={t("Archive")} description={t("Out of the photos grid and On this day; still in albums, search and the map.")} descriptionNumberOfLines={5} onPress={() => move("archive")}
                 left={() => <View style={st.moreIcon}><Icon name="archive" color={th.colors.primary} /></View>} style={{ minHeight: 56 }} />
             )}
-            <List.Item title={t("Move to locked folder")} description={t("Shown only in the locked folder, after your fingerprint or screen lock. Nothing of it is kept on this phone.")} descriptionNumberOfLines={3} onPress={() => move("locked")}
+            <List.Item title={t("Move to locked folder")} description={t("Shown only in the locked folder, after your fingerprint or screen lock. Nothing of it is kept on this phone.")} descriptionNumberOfLines={5} onPress={() => move("locked")}
               left={() => <View style={st.moreIcon}><Icon name="lock" color={th.colors.primary} /></View>} style={{ minHeight: 56 }} />
           </Dialog.Content>
           <Dialog.Actions><Button onPress={() => setMore(false)}>{t("Cancel")}</Button></Dialog.Actions>

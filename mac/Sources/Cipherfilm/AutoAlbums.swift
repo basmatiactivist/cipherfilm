@@ -153,7 +153,7 @@ struct TripView: View {
     VStack(spacing: 0) {
       if let trip {
         let saved = Trips.savedAs(trip, in: model.albums)
-        let days = "\(trip.start.day) – \(trip.end.day) · \(trip.days) day\(trip.days == 1 ? "" : "s") · \(trip.items.count) item\(trip.items.count == 1 ? "" : "s")"
+        let days = "\(trip.start.day) – \(trip.end.day) · \(trip.items.count) item\(trip.items.count == 1 ? "" : "s")"
         HStack(alignment: .bottom) {
           PageTitle(title: Trips.title(trip), subtitle: days)
           if let saved {

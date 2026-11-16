@@ -50,7 +50,7 @@ const usable = (i: RecapItem) => i.kind === "image" && i.has_thumb !== false && 
 
 /**
  * A month's highlights, oldest first: favorites first (spread over the month), then one photo from the middle of each
- * day, spread over the days. Images with a thumbnail that aren't screenshots; when a month has none, whatever has a
+ * day, spread over the days, then (a month of few days) the others, spread too. Images with a thumbnail that aren't screenshots; when a month has none, whatever has a
  * thumbnail.
  */
 export function highlights<T extends RecapItem>(list: readonly T[], n = RECAP_PER_MONTH): T[] {
@@ -63,6 +63,11 @@ export function highlights<T extends RecapItem>(list: readonly T[], n = RECAP_PE
   for (const i of pool) if (!chosen.has(i.id)) { const d = dayOf(captured(i)); (byDay.get(d) ?? byDay.set(d, []).get(d)!).push(i); }
   const perDay = [...byDay.values()].map((l) => l[Math.floor((l.length - 1) / 2)]);
   picks.push(...sample(perDay, n - picks.length));
+  // a month whose photos are from fewer days than places: the rest of them, spread over the month
+  if (picks.length < n) {
+    const taken = new Set(picks.map((i) => i.id));
+    picks.push(...sample(pool.filter((i) => !taken.has(i.id)), n - picks.length));
+  }
   return picks.sort((a, b) => captured(a) - captured(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 

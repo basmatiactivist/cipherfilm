@@ -1,8 +1,11 @@
 package main
 
 import (
+	"io"
+	"net/http"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // After a photo is turned or cropped, the apps replace its encrypted thumbnail and preview (docs/EDITING.md). Only a
@@ -225,5 +228,131 @@ func TestReplacingAtTheLimitStagesNothingOnDiskFirst(t *testing.T) {
 		if staged() != 0 {
 			t.Fatal("staged file left behind")
 		}
+	}
+}
+
+// holdPut starts a PUT whose body is sent only in part (first) and then held until the returned writer gets the rest
+// or is closed; done gets the status (0 if the request failed).
+func (c *client) holdPut(path string, first []byte, total int64) (*io.PipeWriter, chan int) {
+	c.e.t.Helper()
+	pr, pw := io.Pipe()
+	c.e.t.Cleanup(func() { pw.CloseWithError(io.ErrUnexpectedEOF) }) // before the test server closes
+	req, _ := http.NewRequest("PUT", c.e.srv.URL+path, pr)
+	req.ContentLength = total
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("X-CSRF-Token", c.csrf)
+	done := make(chan int, 1)
+	go func() {
+		resp, err := c.c.Do(req)
+		if err != nil {
+			done <- 0
+			return
+		}
+		resp.Body.Close()
+		done <- resp.StatusCode
+	}()
+	go pw.Write(first)
+	return pw, done
+}
+
+// A replacement's whole body is reserved while it is staged next to the picture it replaces, so held replacements
+// never put more on the disk than the account has room for. Past that room, one replacement at a time per account is
+// read into memory (and may be taken if it fits the old picture's place); others wait for it and are turned away.
+func TestHeldReplacementsAreReservedOrOneAtATime(t *testing.T) {
+	defer func(w time.Duration) { atLimitWait = w }(atLimitWait)
+	atLimitWait = 300 * time.Millisecond
+	e := newEnv(t)
+	admin, _ := e.setupAdmin("admin@x.org")
+	bob, _ := e.acceptInvite(e.invite(admin, "bob@x.org"))
+	uid := e.userID("bob@x.org")
+	id := e.newItem(bob, 10)
+	bob.put("/api/items/"+id+"/segments/0", randBytes(int(cipherLen(10))))
+	bob.put("/api/items/"+id+"/preview", randBytes(maxPreviewBytes))
+	if code, _ := bob.do("POST", "/api/items/"+id+"/finalize", finalizeBody(), true); code != 200 {
+		t.Fatalf("finalize: %d", code)
+	}
+	staged := func() int {
+		m, _ := filepath.Glob(filepath.Join(e.app.itemDir(id), ".tmp-*"))
+		return len(m)
+	}
+	path := "/api/items/" + id + "/replace/preview"
+	full := int64(maxPreviewBytes + blockSlack(maxPreviewBytes))
+
+	// room for two whole bodies: two are staged, each reserved in full; a third is read into memory, a fourth waits
+	// for it and is turned away
+	e.app.db.Exec(`UPDATE users SET quota_bytes=used_bytes+? WHERE id=?`, 2*full, uid)
+	var held []*io.PipeWriter
+	var dones []chan int
+	for i := 0; i < 2; i++ {
+		pw, done := bob.holdPut(path, randBytes(1000), 40000)
+		held, dones = append(held, pw), append(dones, done)
+	}
+	time.Sleep(500 * time.Millisecond)
+	if n, room := staged(), e.app.roomLeft(uid); n != 2 || room != 0 {
+		t.Fatalf("two held with room for both: %d staged, %d room left", n, room)
+	}
+	pw3, done3 := bob.holdPut(path, randBytes(1000), 40000)
+	time.Sleep(200 * time.Millisecond)
+	_, done4 := bob.holdPut(path, randBytes(1000), 40000)
+	select {
+	case code := <-done4:
+		if code != 429 {
+			t.Fatalf("a second replacement without room: %d, want 429", code)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("a second replacement without room was held")
+	}
+	if n := staged(); n != 2 {
+		t.Fatalf("the replacement without room was staged before it was read: %d staged", n)
+	}
+	// the one in memory fits the old picture's place and is taken; the staged ones finish too
+	go pw3.Write(randBytes(39000))
+	if code := <-done3; code != 200 {
+		t.Fatalf("the replacement read into memory: %d", code)
+	}
+	for i, pw := range held {
+		go pw.Write(randBytes(39000))
+		if code := <-dones[i]; code != 200 {
+			t.Fatalf("staged replacement %d: %d", i, code)
+		}
+	}
+
+	// a completely full account with a picture of the largest size: nothing is reserved, so nothing is staged while
+	// the body is read, and only one replacement at a time
+	e.app.db.Exec(`UPDATE users SET quota_bytes=used_bytes WHERE id=?`, uid)
+	bob.put(path, randBytes(maxPreviewBytes)) // back to the largest size, which fits its own place
+	var hold []*io.PipeWriter
+	var codes []chan int
+	for i := 0; i < 4; i++ {
+		pw, done := bob.holdPut(path, randBytes(1000), maxPreviewBytes)
+		hold, codes = append(hold, pw), append(codes, done)
+	}
+	time.Sleep(time.Second)
+	if n := staged(); n != 0 {
+		t.Fatalf("held replacements at a full quota staged %d file(s)", n)
+	}
+	refused := 0
+	for _, c := range codes {
+		select {
+		case code := <-c:
+			if code != 429 {
+				t.Fatalf("held replacement at a full quota: %d", code)
+			}
+			refused++
+		default:
+		}
+	}
+	if refused != 3 {
+		t.Fatalf("%d of 4 held replacements turned away, want 3", refused)
+	}
+	for _, pw := range hold {
+		pw.CloseWithError(io.ErrUnexpectedEOF)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if n := staged(); n != 0 {
+		t.Fatalf("%d staged file(s) left", n)
+	}
+	if code, _ := bob.put(path, randBytes(40000)); code != 200 {
+		t.Fatalf("a replacement after the held ones ended: %d", code)
 	}
 }

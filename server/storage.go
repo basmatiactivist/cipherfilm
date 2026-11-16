@@ -43,13 +43,15 @@ type storageSplit struct {
 }
 
 type storageDevice struct {
-	ID           string `json:"id"`
-	Device       string `json:"device"`
-	LastSeen     int64  `json:"last_seen"`
-	LastUploadAt int64  `json:"last_upload_at"` // 0: none recorded (the server notes it since the overview came)
-	AutoBackup   bool   `json:"auto_backup"`
-	Stale        bool   `json:"backup_stale"`
-	Current      bool   `json:"current,omitempty"`
+	ID       string `json:"id"`
+	Device   string `json:"device"`
+	LastSeen int64  `json:"last_seen"`
+	// last_seen is only the day (its UTC midnight): what an admin sees of another person's devices
+	SeenDayOnly  bool  `json:"last_seen_day_only,omitempty"`
+	LastUploadAt int64 `json:"last_upload_at"` // 0: none recorded (the server notes it since the overview came)
+	AutoBackup   bool  `json:"auto_backup"`
+	Stale        bool  `json:"backup_stale"`
+	Current      bool  `json:"current,omitempty"`
 }
 
 type accountStorage struct {
@@ -71,35 +73,10 @@ type accountStorage struct {
 // account looking at itself); hideDevices leaves it empty.
 func (a *App) storageOf(u *user, current, onlyDevice string, hideDevices bool) accountStorage {
 	out := accountStorage{ID: u.ID, Email: u.Email, Role: u.Role, Status: u.Status, Devices: []storageDevice{}, DevicesHidden: hideDevices}
-	a.db.QueryRow(`SELECT quota_bytes, used_bytes FROM users WHERE id=?`, u.ID).Scan(&out.QuotaBytes, &out.UsedBytes)
+	// all counters kept up to date by triggers (usage.go): one row, whatever the size of the library
+	a.db.QueryRow(`SELECT quota_bytes, used_bytes, split_photos, split_videos, split_other, split_aux, ready_items FROM users WHERE id=?`, u.ID).
+		Scan(&out.QuotaBytes, &out.UsedBytes, &out.Split.Photos, &out.Split.Videos, &out.Split.Other, &out.Split.Thumbs, &out.ItemCount)
 	out.Unlimited = out.QuotaBytes == 0
-	a.db.QueryRow(`SELECT COUNT(*) FROM items WHERE user_id=? AND state='ready'`, u.ID).Scan(&out.ItemCount)
-	// stored_bytes holds an item's files including its thumbnail and preview (thumb_bytes, preview_bytes): the rest is
-	// the original. Items finished before those two columns existed have 0 there, so their small files count as the
-	// original: the split is close, the total exact (it is the same counter the limit uses).
-	// A finished item's charge also has the disk blocks its files fill up (blockSlack), so the thumbnail and preview
-	// count with theirs.
-	aux := `MIN(stored_bytes, thumb_bytes+(?1-thumb_bytes%?1)%?1 + preview_bytes+(?1-preview_bytes%?1)%?1)`
-	if rows, err := a.db.Query(`SELECT kind, COALESCE(SUM(stored_bytes-`+aux+`),0), COALESCE(SUM(`+aux+`),0)
-		FROM items WHERE user_id=?2 GROUP BY kind`, diskBlock, u.ID); err == nil {
-		for rows.Next() {
-			var kind string
-			var orig, aux int64
-			if rows.Scan(&kind, &orig, &aux) != nil {
-				continue
-			}
-			switch kind {
-			case "image":
-				out.Split.Photos += orig
-			case "video":
-				out.Split.Videos += orig
-			default:
-				out.Split.Other += orig
-			}
-			out.Split.Thumbs += aux
-		}
-		rows.Close()
-	}
 	out.Split.Index = max(0, out.UsedBytes-out.Split.Photos-out.Split.Videos-out.Split.Other-out.Split.Thumbs)
 	if hideDevices {
 		return out
@@ -170,6 +147,14 @@ func (a *App) adminStorage(w http.ResponseWriter, r *http.Request, u *user, s *s
 			continue
 		}
 		acc := a.storageOf(x, s.Pub, "", a.isDemo(x))
+		if x.ID != u.ID {
+			// of another person's devices an admin learns on which day each was last used, not when: enough to see
+			// one that is no longer used. backup_stale is already worked out from the exact time.
+			for i := range acc.Devices {
+				acc.Devices[i].LastSeen -= acc.Devices[i].LastSeen % 86400
+				acc.Devices[i].SeenDayOnly = true
+			}
+		}
 		used += acc.UsedBytes
 		items += acc.ItemCount
 		for _, d := range acc.Devices {

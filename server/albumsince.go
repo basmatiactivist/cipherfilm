@@ -169,8 +169,14 @@ func (a *App) albumsOf(userID string, changed bool, since, upto int64) ([]*album
 	return list, mem.Err()
 }
 
+// maxAlbumRemovals bounds the deletions one ?since answer carries and the tombstones an account keeps. Deleting
+// frees an album's place, so deletions are not bounded by maxAlbumsPerUser; past this many the whole list, which is,
+// is the smaller answer.
+const maxAlbumRemovals = 2 * maxAlbumsPerUser
+
 // albumsSince answers ?since: the albums changed after the cursor, whole, and those deleted. An account has at most
-// maxAlbumsPerUser albums, so it all fits one answer ("more" is always false).
+// maxAlbumsPerUser albums and an answer at most maxAlbumRemovals deletions (more answer "reset"), so it all fits one
+// answer ("more" is always false).
 func (a *App) albumsSince(w http.ResponseWriter, r *http.Request, u *user) {
 	epoch, since, _, ok := sinceParam(r)
 	if !ok {
@@ -184,6 +190,17 @@ func (a *App) albumsSince(w http.ResponseWriter, r *http.Request, u *user) {
 	}
 	out := map[string]any{"albums": []*albumOut{}, "removed": []string{}, "cursor": st.cursor(st.rev), "more": false, "reset": false}
 	if epoch != st.epoch || since > st.rev || since < st.floor {
+		out["reset"] = true
+		writeJSON(w, 200, out)
+		return
+	}
+	var nt int
+	if err := a.db.QueryRow(`SELECT COUNT(*) FROM (SELECT 1 FROM album_tombstones WHERE user_id=? AND rev>? AND rev<=? LIMIT ?)`,
+		u.ID, since, st.rev, maxAlbumRemovals+1).Scan(&nt); err != nil {
+		fail(w, 500, "server error")
+		return
+	}
+	if nt > maxAlbumRemovals {
 		out["reset"] = true
 		writeJSON(w, 200, out)
 		return
@@ -215,7 +232,8 @@ func (a *App) albumsSince(w http.ResponseWriter, r *http.Request, u *user) {
 	writeJSON(w, 200, out)
 }
 
-// pruneAlbumTombstones drops album tombstones older than tombRetention, like pruneTombstones for items.
+// pruneAlbumTombstones drops album tombstones older than tombRetention, like pruneTombstones for items, and of an
+// account with more than maxAlbumRemovals the older ones: a cursor from before them gets "reset" either way.
 func (a *App) pruneAlbumTombstones() {
 	cutoff := a.now().Add(-tombRetention).Unix()
 	tx, err := a.db.Begin()
@@ -228,6 +246,14 @@ func (a *App) pruneAlbumTombstones() {
 		return
 	}
 	if _, err := tx.Exec(`DELETE FROM album_tombstones WHERE at<?`, cutoff); err != nil {
+		return
+	}
+	if _, err := tx.Exec(`UPDATE users SET album_tomb_floor=MAX(album_tomb_floor,
+			(SELECT rev FROM album_tombstones t WHERE t.user_id=users.id ORDER BY rev DESC LIMIT 1 OFFSET ?))
+		WHERE id IN (SELECT user_id FROM album_tombstones GROUP BY user_id HAVING COUNT(*) > ?)`, maxAlbumRemovals, maxAlbumRemovals); err != nil {
+		return
+	}
+	if _, err := tx.Exec(`DELETE FROM album_tombstones WHERE rev<=(SELECT album_tomb_floor FROM users WHERE id=album_tombstones.user_id)`); err != nil {
 		return
 	}
 	tx.Commit()

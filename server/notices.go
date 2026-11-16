@@ -40,15 +40,20 @@ const (
 	noticesKept          = 50
 	noticesAge           = 90 * 24 * time.Hour
 	passwordUsedEvery    = time.Hour // at most one such notice an hour per account
+
+	// the person made a new recovery key: shown like the changes to two-step sign-in (a recovery key planted with a
+	// stolen session and password would outlast a password change)
+	noticeRecoveryKey = "recovery_key"
 )
 
 // the kinds a notice can have (checked here; the table has no CHECK, so a new kind needs no table rebuild)
 var noticeKinds = map[string]bool{noticeSignIn: true, noticeTwoFactorReset: true, noticePasswordUsed: true,
 	noticeTOTPAdded: true, noticeTOTPRemoved: true, noticePasskeyAdded: true, noticePasskeyRemoved: true,
-	noticeRecoveryCodes: true, noticeTwoFactorOff: true}
+	noticeRecoveryCodes: true, noticeTwoFactorOff: true, noticeRecoveryKey: true}
 
-// factorKinds are the notices about the person's own changes to two-step sign-in (SQL list for shownTo).
-const factorKinds = `'totp_added','totp_removed','passkey_added','passkey_removed','recovery_codes','2fa_off'`
+// factorKinds are the notices about the person's own changes to two-step sign-in and the recovery key (SQL list for
+// shownTo).
+const factorKinds = `'totp_added','totp_removed','passkey_added','passkey_removed','recovery_codes','2fa_off','recovery_key'`
 
 func (a *App) noticeRoutes(m *http.ServeMux) {
 	m.HandleFunc("GET /api/me/notices", a.auth(false, a.listNotices))

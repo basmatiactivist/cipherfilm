@@ -491,6 +491,10 @@ func (a *App) newRecoveryKey(w http.ResponseWriter, r *http.Request, u *user, s 
 	}
 	at.success()
 	a.revokeTickets(u.ID)
+	// the account's other devices are told, and it is in the activity log: the old key no longer works, and a new one
+	// made by someone else would outlast a password change
+	a.audit(u.Email, "made a new recovery key", u.Email, "")
+	a.factorNotice(u, s, r, noticeRecoveryKey)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 

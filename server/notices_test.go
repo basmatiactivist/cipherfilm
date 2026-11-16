@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -178,5 +179,40 @@ func TestResetNoticeGoesWhenTwoStepIsBackOn(t *testing.T) {
 				t.Fatalf("the reset notice is still shown: %v", shownKinds(t, c))
 			}
 		}
+	}
+}
+
+// A new recovery key is shown on the account's other devices that were signed in at the time, like a change to
+// two-step sign-in, and is in the activity log: the old key stops working, and a key made by someone else would outlast
+// a password change.
+func TestNewRecoveryKeyIsNoticedElsewhere(t *testing.T) {
+	e := newEnv(t)
+	clk := e.pinClock()
+	admin, ab := e.setupAdmin("admin@x.org")
+	other := e.login("admin@x.org", ab)
+	for _, c := range []*client{admin, other} {
+		_, out := c.do("GET", "/api/me/notices", nil, false)
+		for _, n := range out["notices"].([]any) {
+			c.do("POST", "/api/me/notices/"+itoa(int64(n.(map[string]any)["id"].(float64)))+"/dismiss", nil, true)
+		}
+	}
+	clk.tick(time.Second)
+	if code, out := admin.do("POST", "/api/auth/recovery-key", map[string]any{"current_auth": ab["auth"],
+		"wrapped_master_recovery": rb(wrappedLen), "recovery_verifier": rb(32)}, true); code != 200 {
+		t.Fatalf("new recovery key: %d %v", code, out)
+	}
+	if k := shownKinds(t, other); len(k) != 1 || k[0] != noticeRecoveryKey {
+		t.Fatalf("other device: %v", k)
+	}
+	if k := shownKinds(t, admin); len(k) != 0 {
+		t.Fatalf("the device that made it: %v", k)
+	}
+	clk.tick(time.Second)
+	if k := shownKinds(t, e.login("admin@x.org", ab)); len(k) != 0 {
+		t.Fatalf("a device signed in afterwards: %v", k)
+	}
+	_, audit := admin.do("GET", "/api/admin/audit", nil, false)
+	if !strings.Contains(mustJSON(audit), "made a new recovery key") {
+		t.Fatalf("not in the activity log: %v", audit)
 	}
 }

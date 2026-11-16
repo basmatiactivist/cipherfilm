@@ -37,7 +37,9 @@ export const localInput = (ts: number) => {
 const placeLine = (p: Place) => [p.name, p.region !== p.name ? p.region : "", p.country].filter(Boolean).join(", ");
 
 export function Editor(p: { item: Item; onClose: () => void; onSaved: () => void }) {
-  const it = p.item;
+  // the item as it was when the editor opened: the changes are made from this copy and saved as made from it (a list
+  // loaded meanwhile doesn't swap in a newer copy underneath them; the server refuses the save then: MetaChanged)
+  const [it] = useState(p.item);
   const meta = it.meta!;
   const pictureTools = canEditPicture(it);
   const dlg = useRef<HTMLDialogElement>(null);

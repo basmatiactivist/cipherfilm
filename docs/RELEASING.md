@@ -149,7 +149,8 @@ track in Play Console once.
 
 **To production** (or closed/open testing), once the internal build looks right: Actions › **Google Play promote** ›
 Run workflow, *Use workflow from* the tag `vX.Y.Z`, `to` = production, `rollout` = 1 (everyone) or e.g. 0.2 for a
-staged rollout to 20 %. It gives the same release, with its notes, to that track; Play reviews it there. Or promote in
+staged rollout to 20 %. It gives the same release, with its notes, to that track; Play reviews it there. It refuses a
+tag that is not on `master` or has no published GitHub release. Or promote in
 Play Console as before. A personal account's first production release needs the closed test and the
 production-access application first ([docs/play/REQUIREMENTS.md](play/REQUIREMENTS.md) §3).
 

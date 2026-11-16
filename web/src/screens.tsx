@@ -379,10 +379,10 @@ function TwoFactorPanel({ open }: { open?: boolean }) {
             {/* on a phone the app is on the same device: the otpauth: address opens it (or a password manager) directly */}
             {tf.totpUri(secret.uri) && <a class="btn touch-only" href={secret.uri}>Open in authenticator app</a>}
             {/* drawn here from the key: the key never goes to a QR service */}
-            <svg class="qr" viewBox={`0 0 ${qr.size} ${qr.size}`} role="img" aria-label="QR code for your authenticator app" shape-rendering="crispEdges">
+            {qr && <svg class="qr" viewBox={`0 0 ${qr.size} ${qr.size}`} role="img" aria-label="QR code for your authenticator app" shape-rendering="crispEdges">
               <rect width={qr.size} height={qr.size} fill="#fff" />
               <path d={qr.d} fill="#000" />
-            </svg>
+            </svg>}
             <p class="secret"><span class="small">Key</span> <code>{tf.groupSecret(secret.secret)}</code> <button type="button" class="link" onClick={() => copy("key", secret.secret)}>{copied === "key" ? "Copied" : "Copy"}</button></p>
             <Field label="Code from the app" id="tf-code" value={code} onInput={setCode} autocomplete="one-time-code" inputmode="numeric" pattern="[0-9 ]*" maxLength={7} autofocus={!tf.touchDevice()} />
             <ErrorLine text={error} />

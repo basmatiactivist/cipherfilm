@@ -18,8 +18,11 @@ describe("two-step sign-in helpers", () => {
   });
   it("draws the QR code locally, with a quiet zone", () => {
     const q = qrFor("otpauth://totp/Cipherfilm:a%40b.org?secret=JBSWY3DPEHPK3PXP&issuer=Cipherfilm");
-    expect(q.size).toBeGreaterThanOrEqual(21 + 8);
-    expect(q.d.startsWith("M4 4h1v1h-1z")).toBe(true);
+    expect(q!.size).toBeGreaterThanOrEqual(21 + 8);
+    expect(q!.d.startsWith("M4 4h1v1h-1z")).toBe(true);
+  });
+  it("draws no QR code for a setup address too long for one, instead of failing", () => {
+    expect(qrFor("otpauth://totp/x?secret=" + "A".repeat(4000))).toBeNull();
   });
   it("writes the codes file", () => {
     const f = codesFile("a@x.org", ["aaaa-bbbb-cccc-dddd", "eeee-ffff-gggg-hhhh"]);

@@ -110,7 +110,9 @@ const selfService = `action IN ('signed out a device','signed out other devices'
 func (a *App) audit(actor, action, target, detail string) {
 	a.db.Exec(`INSERT INTO audit_log(at,actor,action,target,detail) VALUES (?,?,?,?,?)`, a.now().Unix(), actor, action, target, detail)
 	for _, cond := range []string{selfService, "NOT " + selfService} {
-		a.db.Exec(`DELETE FROM audit_log WHERE `+cond+` AND id <= (SELECT MAX(id) FROM audit_log WHERE `+cond+`) - ?`, auditKeep)
+		// keep this part's newest auditKeep rows. Both parts share one id counter, so a distance in ids is not a row
+		// count: rows written to the other part must never move this part's cutoff.
+		a.db.Exec(`DELETE FROM audit_log WHERE `+cond+` AND id <= (SELECT id FROM audit_log WHERE `+cond+` ORDER BY id DESC LIMIT 1 OFFSET ?)`, auditKeep)
 	}
 }
 

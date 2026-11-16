@@ -134,7 +134,7 @@ export const deBackup: Record<string, string> = {
   "Moved {n} ({size}) to the phone's trash. You can restore it in your gallery app for 30 days.": "{n} ({size}) in den Papierkorb des Handys verschoben. Sie können es 30 Tage lang in Ihrer Galerie-App wiederherstellen.",
   "Moved {n} ({size}) to the phone's trash. You can restore them in your gallery app for 30 days.": "{n} ({size}) in den Papierkorb des Handys verschoben. Sie können sie 30 Tage lang in Ihrer Galerie-App wiederherstellen.",
   "Which ones": "Welche",
-  "Only photos and videos this phone fully uploaded to your library itself (same name and size) are offered. They stay in Cipherfilm. Android asks you to confirm, then keeps them in its trash for 30 days.": "Angeboten werden nur Fotos und Videos, die dieses Handy selbst vollständig in Ihre Bibliothek hochgeladen hat (gleicher Name und gleiche Größe). Sie bleiben in Cipherfilm. Android fragt nach einer Bestätigung und behält sie dann 30 Tage im Papierkorb.",
+  "Only photos and videos fully uploaded to your library (same name and size) are offered. They stay in Cipherfilm. Android asks you to confirm, then keeps them in its trash for 30 days.": "Angeboten werden nur Fotos und Videos, die vollständig in Ihre Bibliothek hochgeladen sind (gleicher Name und gleiche Größe). Sie bleiben in Cipherfilm. Android fragt nach einer Bestätigung und behält sie dann 30 Tage im Papierkorb.",
   "Remove {n} from this phone?": "{n} von diesem Handy entfernen?",
   "They stay in Cipherfilm. Android asks you to confirm, then moves them to the phone's trash.": "Sie bleiben in Cipherfilm. Android fragt nach einer Bestätigung und verschiebt sie dann in den Papierkorb des Handys.",
   "Remove {size}": "{size} entfernen",

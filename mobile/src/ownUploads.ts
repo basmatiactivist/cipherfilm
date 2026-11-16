@@ -11,6 +11,7 @@ import { onSignOut } from "./session";
 
 const DIR = () => new Directory(Paths.document, "own-uploads");
 const SAFE = /^[0-9A-Za-z_-]{1,64}$/;
+const SEALED = 2; // the first byte of an item key sealed to the public key (@crypto/item sealItemKey)
 const fileFor = (userId: string) => new File(DIR(), `${userId}.json`);
 
 /** A short hash of the wrapped item key as base64 (what the server stores and hands out). */
@@ -64,12 +65,20 @@ export async function provablyOwn(userId: string, items: { id: string; wrapped?:
   return out;
 }
 
-/** Of `items`, those this phone uploaded itself (provablyOwn), in their order: the only ones that may be matched to a
- *  phone file by name and size (Free up space, the background search). Nothing without an account. */
-export async function onlyOwn<T extends { id: string; wrapped?: string }>(userId: string | undefined, items: T[]): Promise<T[]> {
+/** Of `items`, those that may be matched to a phone file by name and size (Free up space, the background search), in
+ *  their order: this phone's own uploads (provablyOwn), and items whose key is wrapped with the account's master key,
+ *  which only the owner's own devices can make (the library opened it with that key). An item whose key is only sealed
+ *  to the public key could have been added by anyone holding that key, with any name and size: never, unless this
+ *  phone uploaded it. Nothing without an account. */
+export async function matchable<T extends { id: string; wrapped?: string; itemKey?: Uint8Array; broken?: boolean }>(userId: string | undefined, items: T[]): Promise<T[]> {
   if (!userId) return [];
+  const s = await getSodium();
   const own = await provablyOwn(userId, items);
-  return items.filter((it) => own.has(it.id));
+  return items.filter((it) => {
+    if (own.has(it.id)) return true;
+    if (!it.wrapped || !it.itemKey || it.broken) return false;
+    try { return unb64(s, it.wrapped)[0] !== SEALED; } catch { return false; }
+  });
 }
 
 onSignOut(() => { try { const d = DIR(); if (d.exists) d.delete(); } catch { /* best effort */ } });

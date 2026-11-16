@@ -2,14 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Background indexing sends to the server its settings were made for, never moves the app's own server or token,
 // and does nothing for a server the app no longer uses. The server and native modules are stand-ins.
-const st = vi.hoisted(() => ({ settings: {} as Record<string, unknown>, local: {} as unknown, saved: "", sent: [] as string[], models: [] as string[][], own: new Map<string, string>() }));
-// what this phone uploaded itself (ownUploads.ts)
-vi.mock("../ownUploads", () => ({ ownUploads: async (userId: string) => (userId === "alice" ? st.own : new Map()) }));
+const st = vi.hoisted(() => ({ settings: {} as Record<string, unknown>, local: {} as unknown, saved: "", sent: [] as string[], models: [] as string[][] }));
 vi.mock("react-native", () => ({ Platform: { constants: { Model: "Test" } }, AppState: { currentState: "active" } }));
 vi.mock("../session", () => ({ savedServer: async () => st.saved }));
 vi.mock("./settings", () => ({ loadSettings: async () => st.settings, saveSettings: async () => st.settings }));
 vi.mock("./models", () => ({ haveModels: async () => true, modelPath: () => "/models", CLIP: "clip-b32" }));
 vi.mock("./engine", () => ({
+  LOCAL_V: 2,
   localFile: () => ({ exists: true, text: async () => JSON.stringify(st.local), write: async (v: string) => { st.local = JSON.parse(v); } }),
   analyzeBytes: async (_b: Uint8Array, _f: boolean, models: string[]) => { st.models.push(models); return models.map((m) => ({ m })); },
 }));
@@ -41,9 +40,8 @@ describe("background indexing", () => {
     const { fingerprint } = await import("../prints");
     const s = await getSodium();
     st.settings = { enabled: true, background: true, chargingOnly: false, faces: false, server: "https://a.test", userId: "alice", pubkey: b64(s, s.crypto_box_keypair().publicKey) };
-    st.local = { userId: "alice", prints: { [await fingerprint("IMG_1.jpg", 10)]: ID }, done: [] };
+    st.local = { v: 2, userId: "alice", prints: { [await fingerprint("IMG_1.jpg", 10)]: ID }, done: [] };
     st.sent = []; st.models = [];
-    st.own = new Map([[ID, "wrap-print"]]);
   });
 
   it("uses its own server and token and leaves the app's as they are", async () => {
@@ -78,10 +76,10 @@ describe("background indexing", () => {
     expect(api.server()).toBe("https://new.test");
   });
 
-  it("never indexes a phone file for an item this phone didn't upload itself, even when name and size match", async () => {
+  it("never uses a list written before it named only items the owner's devices made", async () => {
     st.saved = "https://a.test";
-    // a list written by an earlier version, naming an item someone else added under the phone file's name and size
-    st.own = new Map();
+    // an earlier version's list could name an item someone else added under the phone file's name and size
+    st.local = { ...(st.local as object), v: undefined };
     const { runBackgroundIndex } = await import("./background");
     expect(await runBackgroundIndex()).toBe(0);
     expect(st.models).toEqual([]);
@@ -106,8 +104,8 @@ describe("background indexing after one model", () => {
     const { fingerprint } = await import("../prints");
     const s = await getSodium();
     st.settings = { enabled: true, background: true, chargingOnly: false, faces: true, clip: "mobileclip-s2", server: "https://a.test", userId: "alice", pubkey: b64(s, s.crypto_box_keypair().publicKey) };
-    st.local = { userId: "alice", prints: { [await fingerprint("IMG_1.jpg", 10)]: ID }, done: [] };
-    st.sent = []; st.models = []; st.saved = "https://a.test"; st.own = new Map([[ID, "wrap-print"]]);
+    st.local = { v: 2, userId: "alice", prints: { [await fingerprint("IMG_1.jpg", 10)]: ID }, done: [] };
+    st.sent = []; st.models = []; st.saved = "https://a.test";
     const { runBackgroundIndex } = await import("./background");
     expect(await runBackgroundIndex()).toBe(1);
     expect(st.models).toEqual([["clip-b32"]]);

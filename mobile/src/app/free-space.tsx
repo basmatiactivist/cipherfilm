@@ -56,7 +56,7 @@ export default function FreeSpace() {
     return () => sub.remove();
   }, [scan]);
 
-  // what is safely in the library: same name and size as a finished, verified item this phone uploaded itself
+  // what is safely in the library: same name and size as a finished, verified item made by the owner's devices
   useEffect(() => {
     if (!media || !items || !fresh) return;
     let live = true;
@@ -159,7 +159,7 @@ export default function FreeSpace() {
             ) : null}
             <Divider style={{ marginTop: 8 }} />
             <Text variant="bodySmall" style={[st.hint, { color: theme.colors.onSurfaceVariant, marginTop: 12 }]}>
-              {t("Only photos and videos this phone fully uploaded to your library itself (same name and size) are offered. They stay in Cipherfilm. Android asks you to confirm, then keeps them in its trash for 30 days.")}
+              {t("Only photos and videos fully uploaded to your library (same name and size) are offered. They stay in Cipherfilm. Android asks you to confirm, then keeps them in its trash for 30 days.")}
             </Text>
           </>
         )}

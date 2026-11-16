@@ -100,9 +100,7 @@ async function load() {
   await backup.saveConfig({ enabled: true, server: SERVER, userId: "alice", email: "alice@x.test", pubkey, wifiOnly: false, chargingOnly: false, includeExisting: true, folders: { cam: { name: "Camera", after: 0 } } });
   await backup.rememberLibrary("alice", [{ meta: { name: "IMG_1.jpg", size: 10 } }]);
   files.set("/doc/search/settings.json", JSON.stringify({ enabled: true, background: true, chargingOnly: false, faces: false, asked: true, server: SERVER, userId: "alice", pubkey, clip: "mobileclip-s2", indexes: true }));
-  files.set("/doc/search/local.json", JSON.stringify({ userId: "alice", prints: { [await fingerprint("IMG_1.jpg", 10)]: INDEXED }, done: [] }));
-  // backed up from this phone before (ownUploads.ts): only such an item is matched to a phone file
-  files.set("/doc/own-uploads/alice.json", JSON.stringify({ userId: "alice", wraps: { [INDEXED]: "00" } }));
+  files.set("/doc/search/local.json", JSON.stringify({ v: 2, userId: "alice", prints: { [await fingerprint("IMG_1.jpg", 10)]: INDEXED }, done: [] }));
   await session.start();
   await session.login("alice@x.test", "pw");
   expect(session.session().phase).toBe("unlocked");

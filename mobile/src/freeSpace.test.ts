@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-// "Free up space" offers a phone original for the phone's trash only when this phone uploaded it itself: an item
-// someone else added to the account under the same name and size never makes it look safe to remove.
+// "Free up space" offers a phone original for the phone's trash only for an item the owner's own devices made: this
+// phone's own upload, or an item whose key is wrapped with the master key (another device, or this phone before 2.7.0).
+// An item whose key is only sealed to the public key (anyone holding it can add one, with any name and size) never
+// makes a phone original look safe to remove.
 const files = vi.hoisted(() => new Map<string, string>());
 vi.mock("expo-file-system", () => {
   const pathOf = (p: unknown) => (typeof p === "string" ? p : (p as { uri: string }).uri);
@@ -26,7 +28,7 @@ vi.mock("./session", () => ({ onSignOut: () => {} }));
 const { alreadyIn } = await import("./freeSpace");
 const { noteOwnUpload } = await import("./ownUploads");
 const { getSodium, b64 } = await import("@crypto/sodium");
-const { newItemKey, sealItemKey } = await import("@crypto/item");
+const { newItemKey, sealItemKey, wrapItemKey } = await import("@crypto/item");
 type Item = Parameters<typeof alreadyIn>[1][number];
 
 const id = (n: number) => n.toString(16).padStart(32, "0");
@@ -54,5 +56,23 @@ describe("free up space", () => {
     // another account on this phone, or none: nothing is offered
     expect(await alreadyIn("u2", [mine], phone)).toEqual([]);
     expect(await alreadyIn(undefined, [mine], phone)).toEqual([]);
+  });
+
+  it("also offers phone files that match an item under the master key, made before own uploads were recorded", async () => {
+    const s = await getSodium();
+    const pk = s.crypto_box_keypair().publicKey;
+    const master = s.randombytes_buf(32);
+    const item = (n: number, name: string, size: number, wrapped: string, extra: Partial<Item> = {}): Item => ({
+      id: id(n), kind: "image", size, segment_count: 1, created_at: 1, has_thumb: true, has_preview: true, wrapped, itemKey: new Uint8Array(32),
+      meta: { name, mime: "image/jpeg", size, lastModified: 1, capture_ts: 1 }, ...extra,
+    });
+    const old = item(11, "IMG_11.jpg", 110, b64(s, wrapItemKey(s, newItemKey(s), master, id(11)))); // backed up before 2.7.0, or from the Mac
+    const forged = item(12, "IMG_12.jpg", 120, b64(s, sealItemKey(s, newItemKey(s), pk, id(12)))); // sealed only, not recorded here
+    const unopened = item(13, "IMG_13.jpg", 130, b64(s, wrapItemKey(s, newItemKey(s), master, id(13))), { itemKey: undefined }); // not opened
+    const failed = item(14, "IMG_14.jpg", 140, b64(s, wrapItemKey(s, newItemKey(s), master, id(14))), { broken: true });
+    const phone = [media(11, "IMG_11.jpg", 110), media(12, "IMG_12.jpg", 120), media(13, "IMG_13.jpg", 130), media(14, "IMG_14.jpg", 140)];
+    expect((await alreadyIn("u1", [old, forged, unopened, failed], phone)).map((m) => m.id)).toEqual([11]);
+    expect((await alreadyIn("u3", [old, forged], phone)).map((m) => m.id)).toEqual([11]); // no own uploads recorded at all
+    expect(await alreadyIn(undefined, [old], phone)).toEqual([]);
   });
 });

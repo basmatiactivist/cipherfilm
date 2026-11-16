@@ -98,7 +98,7 @@ vi.mock("../api", () => ({
   ApiError: class extends Error {},
   server: () => "https://a.test",
 }));
-vi.mock("../ownUploads", () => ({ onlyOwn: async () => [] }));
+vi.mock("../ownUploads", () => ({ matchable: async () => [] }));
 vi.mock("../session", () => ({
   onWipe: () => {},
   refreshMe: async () => null,

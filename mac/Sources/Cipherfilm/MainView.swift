@@ -9,6 +9,10 @@ enum Screen: Hashable {
   case album(String)
   case person(String)
   case similar(String)
+  /** a suggested trip (AutoAlbums.swift), by its key */
+  case trip(String)
+  /** a year in review */
+  case recap(Int)
 }
 
 @MainActor @Observable
@@ -449,6 +453,8 @@ struct Detail: View {
         case .map: if model.me?.hasMap == true { MapTab(selection: selection) } else { Spacer(); EmptyState(icon: "map", title: "The map is turned off", text: "This server doesn't offer a map."); Spacer() }
         case .trash: TrashView(selection: selection)
         case .similar(let id): SimilarView(id: id, selection: selection)
+        case .trip(let key): TripView(key: key, selection: selection)
+        case .recap(let year): RecapView(year: year)
         }
       }
     }
@@ -461,7 +467,7 @@ struct Detail: View {
     } else if items.isEmpty {
       Spacer(); EmptyState(icon: empty.0, title: empty.1, text: empty.2); Spacer()
     } else {
-      if title == "Photos" { MemoriesRow(items: items) }
+      if title == "Photos" { MemoriesRow(items: items); YearsRow(items: items) }
       PhotoGrid(items: items, selection: selection) { it, list in nav.viewer = ViewerState(ids: list.map(\.id), index: list.firstIndex(of: it) ?? 0) }
     }
   }

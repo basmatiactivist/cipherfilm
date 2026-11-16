@@ -152,7 +152,7 @@ export default function Account() {
         {me?.map ? <SwitchItem title={t("Map")} description={t("Your photos on a map. Map images from {who}.", { who: mapProviderLong() })}
           left={() => <View style={st.icon}><Icon name="map" color={th.colors.primary} /></View>}
           value={mapOn} onValueChange={(v) => setMapOn(v)} style={st.item} /> : null}
-        <SwitchItem title={t("Memories")} description={t("Show photos from this day in earlier years above Photos. Found on this phone; the server learns nothing.")}
+        <SwitchItem title={t("Memories")} description={t("Show photos from this day in earlier years, a look back at each year, and trips suggested in Albums. Found on this phone; the server learns nothing unless you save a trip as an album.")}
           left={() => <View style={st.icon}><Icon name="photos" color={th.colors.primary} /></View>}
           value={memoriesOn} onValueChange={setMemoriesOn} style={st.item} />
         <SwitchItem title={t("Unlock with fingerprint or face")}

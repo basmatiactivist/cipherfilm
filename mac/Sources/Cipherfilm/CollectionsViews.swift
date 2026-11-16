@@ -15,17 +15,21 @@ struct AlbumsView: View {
       }
       if model.albums.isEmpty && model.loading {
         Loading(label: "Opening your albums…")
-      } else if model.albums.isEmpty {
-        Spacer(); EmptyState(icon: "rectangle.stack", title: "No albums yet", text: "Create an album, then right-click photos or drag them onto it."); Spacer()
       } else {
         ScrollView {
-          LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 20)], spacing: 22) {
-            ForEach(model.albums) { a in
-              Button { nav.go(.album(a.id)) } label: { AlbumCover(album: a) }.buttonStyle(TileButton())
-                .dropDestination(for: String.self) { ids, _ in model.perform { try await $0.addToAlbum(a.id, ids) }; return true }
+          if model.albums.isEmpty {
+            EmptyState(icon: "rectangle.stack", title: "No albums yet", text: "Create an album, then right-click photos or drag them onto it.").padding(.vertical, 40)
+          } else {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 20)], spacing: 22) {
+              ForEach(model.albums) { a in
+                Button { nav.go(.album(a.id)) } label: { AlbumCover(album: a) }.buttonStyle(TileButton())
+                  .dropDestination(for: String.self) { ids, _ in model.perform { try await $0.addToAlbum(a.id, ids) }; return true }
+              }
             }
+            .padding(.horizontal, 28).padding(.vertical, 12)
           }
-          .padding(.horizontal, 28).padding(.vertical, 12)
+          // suggested albums: trips found on this Mac (AutoAlbums.swift)
+          TripsSection()
         }
       }
     }

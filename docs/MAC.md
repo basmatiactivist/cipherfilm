@@ -28,6 +28,10 @@ build notes: `mac/README.md`.
   (`CipherfilmCore/Memories.swift`, the same rules as the web and Android apps in `web/src/memories/memories.ts`); a
   click opens that year's photos in the viewer. Picked on the Mac from the decrypted dates; Settings › General ›
   Memories turns it off on this Mac.
+- **Trips and year recaps:** suggested trips under Albums, saved as an album with "Save as Album"; "Your years" under
+  On this day opens a year in review (`CipherfilmCore/Trips.swift` and `Recap.swift`, the same rules as
+  `web/src/memories/trips.ts` and `recap.ts`, checked against the same fixture; [MEMORIES.md](MEMORIES.md)). Kept in
+  memory only and forgotten at a lock; the same Memories setting turns them off.
 - **Map:** photos where they were taken, clustered on a base map, opening on the region with the most photos, with
   "Photos in This Area" listing those in view; a photo's details name its place and, after "Show Map", show a small map
   of its spot. Off until turned on; Settings › General › Map turns it off. What the map server sees: docs/MAP.md.

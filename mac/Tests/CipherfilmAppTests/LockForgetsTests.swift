@@ -26,6 +26,15 @@ import Testing
     #expect(!e.holdsLibrary)
     #expect(e.phase == .off)
   }
+
+  @Test func theTripsLetGoOfTheDecryptedLibrary() async {
+    let it = Item(id: "0123456789abcdef0123456789abcdef", kind: .image, size: 1, segmentCount: 1, createdAt: 1, hasThumb: true, hasPreview: true,
+                  favorite: false, trashedAt: nil, purgeAt: nil, meta: ItemMeta(name: "a.jpg", mime: "image/jpeg", size: 1, lastModified: 0, capture_ts: 0, gps: GPS(lat: 47.4, lon: 8.5)), itemKey: nil, broken: false)
+    await TripBook.shared.update([it])
+    #expect(TripBook.shared.trips != nil)
+    TripBook.shared.forget()
+    #expect(TripBook.shared.trips == nil)
+  }
 }
 
 /** A photo's small map loads only for the photo the person asked it for, not because the details column is open. */

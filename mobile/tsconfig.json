@@ -36,6 +36,8 @@
     "../web/src/places/places.ts",
     "../web/src/places/videoLocation.ts",
     "../web/src/memories/memories.ts",
+    "../web/src/memories/trips.ts",
+    "../web/src/memories/recap.ts",
     "../web/src/cleanup/duplicates.ts",
     "../web/src/edit/edit.ts",
     "../web/src/edit/exif.ts",

@@ -77,3 +77,20 @@ describe("segment count from the server", () => {
     expect(srv.fetched).toBe(0);
   });
 });
+
+describe("list records", () => {
+  it("an item id that isn't one marks the item broken", async () => {
+    const items = await import("./items");
+    srv.list = [{ ...record(3), id: 'x"]' }];
+    expect((await items.loadItems()).items[0].broken).toBe(true);
+  });
+
+  it("a date no Date can hold falls back to one that can", async () => {
+    const items = await import("./items");
+    const far = { ...meta, capture_ts: 1e300, lastModified: 5000 };
+    srv.list = [{ ...record(3), meta_enc: b64(s, encryptMeta(s, far, itemKey, id)) }];
+    const it = (await items.loadItems()).items[0];
+    expect(it.broken).toBeFalsy();
+    expect(it.meta?.capture_ts).toBe(5000);
+  });
+});

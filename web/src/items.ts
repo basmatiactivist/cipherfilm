@@ -66,7 +66,9 @@ function wellFormed(m: ItemMeta, createdAt: number): ItemMeta {
   if (!m || typeof m !== "object" || Array.isArray(m)) throw new Error("bad metadata");
   if (typeof m.name !== "string") m.name = "item";
   if (typeof m.mime !== "string") m.mime = "";
-  if (!Number.isFinite(m.capture_ts)) m.capture_ts = Number.isFinite(m.lastModified) ? m.lastModified : createdAt * 1000;
+  // a date must also be one a Date can hold (±8.64e15 ms), or formatting it throws and takes the timeline with it
+  const isTime = (t: unknown): t is number => Number.isFinite(t) && Math.abs(t as number) <= 8.64e15;
+  if (!isTime(m.capture_ts)) m.capture_ts = isTime(m.lastModified) ? m.lastModified : createdAt * 1000;
   // what an edit says is checked like the rest (edit/edit.ts); what doesn't make sense is dropped, not trusted
   const edit = normEdit(m.edit), orig = normOrig(m.orig);
   if (edit) m.edit = edit; else delete m.edit;
@@ -95,6 +97,7 @@ function decryptRecords(s: Sodium, raw: any[]): Item[] {
       return next;
     }
     try {
+      if (!isItemId(x.id)) throw new Error("bad item id");
       it.itemKey = unwrapAnyItemKey(s, unb64(s, x.wrapped_item_key), master, keyPair, x.id);
       it.meta = wellFormed(decryptMeta<ItemMeta>(s, unb64(s, x.meta_enc), it.itemKey, x.id), x.created_at);
       // the size and the number of segments are the server's plain record: both must match what the metadata says

@@ -84,7 +84,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const [announce, setAnnounce] = useState("");
   const avatarBtn = useRef<HTMLButtonElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [adminSection, setAdminSection] = useState<"users" | "defaults" | "server" | "activity">("users");
+  const [adminSection, setAdminSection] = useState<"users" | "storage" | "defaults" | "server" | "activity">("users");
   const [ctx, setCtx] = useState<{ x: number; y: number; kind: "item" | "album"; id: string } | null>(null);
   const [help, setHelp] = useState(false);
   const [report, setReport] = useState(false);
@@ -333,7 +333,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   useEffect(() => { if (!uploading) setUnfinished(unfinishedUploads().filter((n) => !active.some((j) => j.name === n))); }, [uploading]);
   const empty = items && items.length === 0 && active.length === 0;
   const libraryView = page.n === "timeline" || page.n === "favorites" || page.n === "albums" || page.n === "album" || page.n === "people" || page.n === "person" || page.n === "map" || page.n === "trash";
-  const title = page.n === "timeline" ? "Timeline" : page.n === "favorites" ? "Favorites" : page.n === "albums" ? "Albums" : page.n === "trash" ? "Trash" : page.n === "people" ? "People" : page.n === "map" ? "Map" : page.n === "person" ? person?.person?.name || "Not named yet" : page.n === "account" ? "Account" : page.n === "duplicates" ? "Duplicates and similar photos" : page.n === "admin" ? { users: "Users", defaults: "Defaults", server: "Server", activity: "Activity" }[adminSection] : album?.name ?? "Album";
+  const title = page.n === "timeline" ? "Timeline" : page.n === "favorites" ? "Favorites" : page.n === "albums" ? "Albums" : page.n === "trash" ? "Trash" : page.n === "people" ? "People" : page.n === "map" ? "Map" : page.n === "person" ? person?.person?.name || "Not named yet" : page.n === "account" ? "Account" : page.n === "duplicates" ? "Duplicates and similar photos" : page.n === "admin" ? { users: "Users", storage: "Storage", defaults: "Defaults", server: "Server", activity: "Activity" }[adminSection] : album?.name ?? "Album";
   const pct = usage && !usage.unlimited && usage.quota_bytes ? Math.min(100, Math.round((usage.used_bytes / usage.quota_bytes) * 100)) : 0;
 
   // the library is filtered 150 ms after typing stops, not on every key: matching a big library takes a moment.
@@ -602,6 +602,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
             <>
               <div class="sidehead">Administration</div>
               <NavItem icon="users" label="Users" current={adminSection === "users"} onClick={() => setAdminSection("users")} />
+              <NavItem icon="upload" label="Storage" current={adminSection === "storage"} onClick={() => setAdminSection("storage")} />
               <NavItem icon="cloud" label="Defaults" current={adminSection === "defaults"} onClick={() => setAdminSection("defaults")} />
               <NavItem icon="home" label="Server" current={adminSection === "server"} onClick={() => setAdminSection("server")} />
               <NavItem icon="restore" label="Activity" current={adminSection === "activity"} onClick={() => setAdminSection("activity")} />

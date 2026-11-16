@@ -7,6 +7,14 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+### Added
+- Storage and backup overview: Admin › Storage (web, Android, Mac) shows the server's total and free disk space and,
+  per account, use against the limit split into photos, videos, other files, thumbnails and previews and search data,
+  the number of items, and per signed-in device when it last uploaded, with a warning when a phone in use seems to have
+  stopped backing up for more than 7 days. Everyone sees the same for their own account under Account. Only sizes,
+  counts, device labels and times; the server now also keeps the time of each device's newest upload
+  (docs/THREAT_MODEL.md). A public demo account's devices are never listed.
+
 ### Security
 - A password change, an account turned off by an admin and a recovery now count as signed out from another device:
   the other devices delete their copy of the library and keys instead of only asking to sign in again.

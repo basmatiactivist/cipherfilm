@@ -17,8 +17,9 @@ import { text } from "../../tokens";
 import { t } from "../../i18n";
 import {
   type Accounts, type AdminInvite, backupState, badges, createInvite, dateText, isAdmin, lastSeen, limitText, loadAccounts,
-  loadStatus, noAccess, revokeInvite, summaryLine, usageLine,
+  loadStatus, loadStorage, noAccess, revokeInvite, summaryLine, usageLine,
 } from "../../admin";
+import { staleSummary } from "../../storage";
 
 export default function Admin() {
   const th = useAppTheme();
@@ -27,10 +28,13 @@ export default function Admin() {
   const [data, setData] = useState<Accounts | null>(null);
   const [refused, setRefused] = useState(!isAdmin(me));
   const [backupProblem, setBackupProblem] = useState<string>();
+  const [staleProblem, setStaleProblem] = useState<string>();
   const page = useAction();
   const load = () => page.run(async () => {
     try { setData(await loadAccounts()); } catch (e) { if (noAccess(e)) { setRefused(true); return; } throw e; }
     loadStatus().then((s) => setBackupProblem(backupState(s).problem), () => {});
+    // an older server has no storage overview: then nothing is said
+    loadStorage().then((s) => setStaleProblem(staleSummary(s.stale_devices)), () => {});
   });
   // again whenever it shows: a person's page may have changed or deleted them
   useFocusEffect(useCallback(() => { if (isAdmin(me)) load(); }, [me]));
@@ -67,6 +71,7 @@ export default function Admin() {
             </Text>
             <Problem>{page.error}</Problem>
             <Problem>{backupProblem ? backupProblem + " " + t("Details under Server.") : undefined}</Problem>
+            <Problem>{staleProblem ? staleProblem + " " + t("Details under Storage and backup.") : undefined}</Problem>
             <Button mode="contained" icon={() => <Icon name="plus" color={th.colors.onPrimary} size={20} />} onPress={() => setInviting(true)} style={{ marginTop: 8, alignSelf: "flex-start" }}>{t("Invite someone")}</Button>
           </View>
           {data && data.invites.length > 0 ? (<>
@@ -90,6 +95,8 @@ export default function Admin() {
           <Divider />
           <List.Item title={t("Server")} description={t("Disk, backup, version, and the default storage limit ({limit})", { limit: data ? limitText(data.default_quota_bytes) : "…" })}
             descriptionNumberOfLines={3} left={icon("cloud")} onPress={() => router.push("/admin/server")} style={st.item} />
+          <List.Item title={t("Storage and backup")} description={t("What each account takes, and when each phone last uploaded")}
+            descriptionNumberOfLines={3} left={icon("upload")} onPress={() => router.push("/admin/storage")} style={st.item} />
           <List.Item title={t("Activity")} description={t("Invites, role and limit changes, and removals")}
             descriptionNumberOfLines={3} left={icon("restore")} onPress={() => router.push("/admin/activity")} style={st.item} />
         </>)}

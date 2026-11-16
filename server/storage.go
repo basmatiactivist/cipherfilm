@@ -46,7 +46,7 @@ type storageDevice struct {
 	ID           string `json:"id"`
 	Device       string `json:"device"`
 	LastSeen     int64  `json:"last_seen"`
-	LastUploadAt int64  `json:"last_upload_at"` // 0: none recorded (none since 2.8, when the server began to note it)
+	LastUploadAt int64  `json:"last_upload_at"` // 0: none recorded (the server notes it since the overview came)
 	AutoBackup   bool   `json:"auto_backup"`
 	Stale        bool   `json:"backup_stale"`
 	Current      bool   `json:"current,omitempty"`

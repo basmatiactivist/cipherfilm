@@ -909,8 +909,10 @@ func (a *App) twoFactorNewCodes(w http.ResponseWriter, r *http.Request, u *user,
 	}
 	defer tx.Rollback()
 	var n int
-	// only while two-step sign-in is still on with the same secret
-	if tx.QueryRow(`SELECT COUNT(*) FROM users WHERE id=? AND totp_secret=? AND totp_secret<>''`, u.ID, u.TOTPSecret).Scan(&n) != nil || n != 1 {
+	// only while two-step sign-in is still on with the same authenticator secret (or none, with a passkey: an account
+	// whose second steps are passkeys alone has recovery codes too)
+	if tx.QueryRow(`SELECT COUNT(*) FROM users WHERE id=? AND totp_secret=? AND (totp_secret<>'' OR EXISTS (SELECT 1 FROM passkeys WHERE user_id=users.id))`,
+		u.ID, u.TOTPSecret).Scan(&n) != nil || n != 1 {
 		fail(w, http.StatusConflict, "two-step sign-in changed meanwhile; try again")
 		return
 	}

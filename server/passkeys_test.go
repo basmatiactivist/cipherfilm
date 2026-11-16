@@ -622,3 +622,25 @@ func TestRestoreKeepsLaterPasskeyChanges(t *testing.T) {
 		t.Fatalf("readable after the restore: %v %v", l, err)
 	}
 }
+
+// An account whose second steps are passkeys alone can make new recovery codes: the old ones stop working.
+func TestPasskeyOnlyAccountMakesNewRecoveryCodes(t *testing.T) {
+	e := newEnv(t)
+	e.pinClock()
+	admin, ab, k, codes := e.adminWithPasskey()
+	code, out := admin.do("POST", "/api/me/2fa/recovery-codes", map[string]any{"current_auth": ab["auth"], "code": codes[0]}, true)
+	if code != 200 || len(out["recovery_codes"].([]any)) != recoveryN {
+		t.Fatalf("new codes with a recovery code: %d %v", code, out)
+	}
+	fresh := out["recovery_codes"].([]any)
+	code, out = admin.do("POST", "/api/me/2fa/recovery-codes", map[string]any{"current_auth": ab["auth"], "passkey": e.proofPasskey(admin, k)}, true)
+	if code != 200 || len(out["recovery_codes"].([]any)) != recoveryN {
+		t.Fatalf("new codes with a passkey: %d %v", code, out)
+	}
+	// the first set and the one before it are gone
+	for _, old := range []string{codes[1], fresh[0].(string)} {
+		if code, _ := admin.do("POST", "/api/me/2fa/recovery-codes", map[string]any{"current_auth": ab["auth"], "code": old}, true); code != 403 {
+			t.Fatalf("an old recovery code still works: %d", code)
+		}
+	}
+}

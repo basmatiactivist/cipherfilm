@@ -19,6 +19,7 @@ import { ListSync, type Page } from "./sync";
 import { normEdit, normOrig, pictureKey, type Edit, type Orig } from "@edit/edit";
 import { SHA256_HEX } from "@crypto/sha256";
 import { HighWater, metaVersion } from "@crypto/metaVersion";
+import { isLocked, normFolders, splitLocked } from "@edit/folders";
 
 export interface ItemMeta {
   name: string; mime: string; size: number; lastModified: number; capture_ts: number;
@@ -31,6 +32,9 @@ export interface ItemMeta {
   sha256?: string;
   /** the metadata's version, raised by every change of it (@crypto/metaVersion); none: 0 */
   mv?: number;
+  /** in the archive or the locked folder (@edit/folders); only `true` counts, written inside the encrypted metadata */
+  archived?: true;
+  locked?: true;
 }
 
 /** What an edit says is checked like the rest: what doesn't make sense is dropped, not trusted. */
@@ -41,6 +45,7 @@ export function checkedMeta(m: ItemMeta): ItemMeta {
   if (Number.isFinite(m.capture_ts)) m.capture_ts = Math.round(m.capture_ts);
   if (m.sha256 !== undefined && !(typeof m.sha256 === "string" && SHA256_HEX.test(m.sha256))) delete m.sha256;
   if (m.mv !== undefined && metaVersion(m) !== m.mv) delete m.mv;
+  normFolders(m);
   return m;
 }
 
@@ -110,8 +115,9 @@ function decrypt(s: Sodium, master: Uint8Array, pair: () => KeyPair, x: any, hw?
       else it.stale = true;
       return it;
     }
-    // turned or cropped on some device since: the pictures kept here are the old ones
-    if (k?.meta && pictureKey(x.id, k.meta) !== pictureKey(x.id, it.meta)) forgetPictures(x.id);
+    // turned or cropped on some device since: the pictures kept here are the old ones; moved into the locked folder
+    // (here or on another device): nothing of it stays on this phone (lockedFolder.ts)
+    if (k?.meta && (pictureKey(x.id, k.meta) !== pictureKey(x.id, it.meta) || (isLocked(it.meta) && !isLocked(k.meta)))) forgetPictures(x.id);
     known.set(x.id, { w: x.wrapped_item_key, m: x.meta_enc, master, key: it.itemKey, meta: it.meta });
   } catch {
     it.broken = true;
@@ -161,11 +167,14 @@ async function decryptAll(raw: any[]): Promise<Item[]> {
 
 const newest = (a: Item, b: Item) => when(b) - when(a);
 
-/** The native thumbnails get the keys of what has one (it keeps only their thumbnail subkeys, until the next lock). */
+/** The native thumbnails get the keys of what has one (it keeps only their thumbnail subkeys, until the next lock).
+ *  Never those of locked items: without a key the native side can't fetch, decrypt, prefetch or keep their thumbnails
+ *  (Thumbs.kt keeps only verified ciphertext, which it can't verify then); the locked folder decrypts its own thumbnails
+ *  in JavaScript, into memory only (lockedFolder.ts). */
 function giveThumbKeys(items: Item[]) {
   const dir = userDir();
   N.thumbsSetup(server(), csrfToken(), dir?.uri ?? null);
-  const withThumb = items.filter((it) => it.itemKey?.length === 32 && it.has_thumb && ID.test(it.id));
+  const withThumb = items.filter((it) => it.itemKey?.length === 32 && it.has_thumb && ID.test(it.id) && !isLocked(it.meta));
   const keys = new Uint8Array(withThumb.length * 32);
   withThumb.forEach((it, i) => keys.set(it.itemKey!, i * 32));
   N.thumbKeys(withThumb.map((it) => it.id), keys);
@@ -220,11 +229,12 @@ function saveList(now: boolean) {
   if (now) write(); else saveTimer = setTimeout(write, 5000);
 }
 
-/** The trash, newest first; the server deletes each item permanently at its purge_at. */
+/** The trash, newest first; the server deletes each item permanently at its purge_at. Never with locked items: the
+ *  locked folder deletes them permanently itself (lockedFolder.ts), the trash screen doesn't show them. */
 export async function loadTrash(): Promise<{ items: Item[]; retentionDays: number }> {
   sodium = await getSodium();
   const r = await trash.load();
-  return { items: r.items, retentionDays: (r.extra.retention_days as number) ?? 30 };
+  return { items: splitLocked(r.items).open, retentionDays: (r.extra.retention_days as number) ?? 30 };
 }
 
 /** The whole library, newest capture first; after the first load only what changed. The same array comes back when
@@ -324,7 +334,8 @@ async function limited<T>(fn: () => Promise<T>, wanted: () => boolean): Promise<
 // thumbnails for search go out many to a request; one at a time against an older server (the grid's: Thumbs.kt)
 const batcher = new ThumbBatcher((ids) => postForBytes("/api/items/thumbs", { item_ids: ids }), (id, wanted) => limited(() => getBytes(`/api/items/${id}/thumb`), wanted));
 
-/** The decrypted JPEG of a thumbnail or preview (the caller zeroes it); the verified ciphertext is kept in the cache. */
+/** The decrypted JPEG of a thumbnail or preview (the caller zeroes it); the verified ciphertext is kept in the cache,
+ *  except for locked items: theirs is neither read from nor written to it (nothing of the locked folder on disk). */
 async function plainBytes(kind: "thumb" | "preview", it: Item, wanted: () => boolean): Promise<Uint8Array> {
   const s = await getSodium();
   const open = (ct: Uint8Array) => {
@@ -332,7 +343,7 @@ async function plainBytes(kind: "thumb" | "preview", it: Item, wanted: () => boo
     return (kind === "thumb" ? decryptThumb : decryptPreview)(s, ct, it.itemKey!, it.id);
   };
   const dir = userDir();
-  const f = dir && ID.test(it.id) ? new File(dir, `${kind}-${it.id}`) : null;
+  const f = dir && ID.test(it.id) && !isLocked(it.meta) ? new File(dir, `${kind}-${it.id}`) : null;
   if (f?.exists) {
     try { return open(await f.bytes()); } catch { if (session().masterKey) try { f.delete(); } catch { /* damaged copy, fetched again */ } }
   }
@@ -349,10 +360,12 @@ export function imageBytes(it: Item): Promise<Uint8Array> {
 }
 export const thumbBytes = (it: Item) => (it.itemKey && it.has_thumb ? plainBytes("thumb", it, () => true) : Promise.reject(new Error("no thumbnail")));
 
-/** The viewer's sharp picture, as a data: URI; the newest dozen stay in memory. */
+/** The viewer's sharp picture, as a data: URI; the newest dozen stay in memory (not those of locked items: the viewer
+ *  page that shows one holds the only copy, gone with it). */
 export function previewUri(it: Item): Promise<string> {
   const key = pictureKey(it.id, it.meta); // a new version after an edit
-  const hit = previews.get(key);
+  const keep = !isLocked(it.meta);
+  const hit = keep ? previews.get(key) : undefined;
   if (hit) return Promise.resolve(hit);
   let p = inflight.get(key);
   if (!p) {
@@ -361,7 +374,7 @@ export function previewUri(it: Item): Promise<string> {
       const uri = "data:image/jpeg;base64," + N.base64(plain);
       plain.fill(0);
       if (!session().masterKey) throw new Error(t("Unlock your library first.")); // locked while this was loading
-      previews.set(key, uri);
+      if (keep) previews.set(key, uri);
       return uri;
     })().finally(() => inflight.delete(key));
     inflight.set(key, p);
@@ -372,7 +385,7 @@ export function previewUri(it: Item): Promise<string> {
 /** The newest thumbnails not yet on this phone, fetched ahead after the library loads (natively, into the encrypted
  *  cache only; after what is on screen). */
 export function prefetchThumbs(items: Item[]) {
-  N.thumbsPrefetch(items.filter((it) => it.has_thumb && !it.broken && it.itemKey && ID.test(it.id)).slice(0, 400).map((it) => it.id));
+  N.thumbsPrefetch(items.filter((it) => it.has_thumb && !it.broken && it.itemKey && ID.test(it.id) && !isLocked(it.meta)).slice(0, 400).map((it) => it.id));
 }
 export function clearImages() { previews.clear(); inflight.clear(); N.thumbsClearImages(); }
 

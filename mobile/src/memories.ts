@@ -5,6 +5,7 @@
 import { useMemo, useSyncExternalStore } from "react";
 import { File, Paths } from "expo-file-system";
 import { findMemories, todayKey, type Memory } from "@memories/memories";
+import { mainGrid } from "@edit/folders";
 import type { Item } from "./library";
 import { t } from "./i18n";
 
@@ -25,11 +26,14 @@ export function setMemoriesOn(v: boolean) {
   subs.forEach((f) => f());
 }
 
+/** What On this day looks at: the main grid's items only (not archived, never locked: @edit/folders). */
+export const memoriesFrom = <T extends Item>(items: readonly T[]): Memory<T>[] => findMemories(mainGrid(items));
+
 /** The memories for today, worked out again when the library, the setting or the day changes. */
 export function useMemories(items: Item[] | null): Memory<Item>[] {
   const enabled = useMemoriesOn();
   const day = todayKey();
-  return useMemo(() => (enabled && items ? findMemories(items) : []), [items, enabled, day]);
+  return useMemo(() => (enabled && items ? memoriesFrom(items) : []), [items, enabled, day]);
 }
 
 /** "3 years ago", "1 year ago" in the app's language. */

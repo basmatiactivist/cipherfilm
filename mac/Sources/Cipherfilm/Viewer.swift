@@ -14,7 +14,7 @@ struct Viewer: View {
   @FocusState private var focused: Bool
 
   var body: some View {
-    let item = model.item(state.id) ?? model.trash.first { $0.id == state.id }
+    let item = model.anyItem(state.id) ?? model.trash.first { $0.id == state.id }
     HStack(spacing: 0) {
       VStack(spacing: 0) {
         topBar(item)
@@ -43,10 +43,13 @@ struct Viewer: View {
     .onKeyPress(.leftArrow) { move(-1); return .handled }
     .onKeyPress(.rightArrow) { move(1); return .handled }
     .onKeyPress(.escape) { nav.viewer = nil; return .handled }
-    .onKeyPress(.delete) { if let item, item.trashedAt == nil { trash(item) }; return .handled }
+    .onKeyPress(.delete) {
+      if let item, item.isLocked { model.confirmLockedDelete = [item.id] } else if let item, item.trashedAt == nil { trash(item) }
+      return .handled
+    }
     .onKeyPress(characters: .init(charactersIn: "iIfF")) { k in
       if k.characters.lowercased() == "i" { withAnimation(.easeOut(duration: Motion.fast)) { info.toggle() } }
-      else if let item, item.trashedAt == nil { model.setFavorite([item.id], !item.favorite) }
+      else if let item, item.trashedAt == nil, !item.isLocked { model.setFavorite([item.id], !item.favorite) }
       return .handled
     }
   }
@@ -59,6 +62,11 @@ struct Viewer: View {
 
   private func trash(_ item: Item) {
     model.moveToTrash([item.id])
+    dropFromViewer(item)
+  }
+
+  /** The item left the list being shown (trashed, moved out of the locked folder): on to the next one. */
+  private func dropFromViewer(_ item: Item) {
     if state.ids.count > 1 {
       var ids = state.ids; ids.remove(at: state.index)
       nav.viewer = ViewerState(ids: ids, index: min(state.index, ids.count - 1))
@@ -77,7 +85,13 @@ struct Viewer: View {
           Text(item.date.formatted(date: .long, time: .shortened) + "  ·  \(state.index + 1) of \(state.ids.count)").font(Typo.small).opacity(0.7)
         }.foregroundStyle(Ink.onStage).padding(.leading, 4)
         Spacer(minLength: 12)
-        if item.trashedAt == nil {
+        if item.isLocked {
+          // the locked folder: share and save (Outbox's rules), move it out, or delete it for good
+          LightboxButton(icon: "square.and.arrow.up", help: "Share (⇧⌘S)") { Outbox.share([item], model) }
+          LightboxButton(icon: "arrow.down.to.line", help: "Save Original (⇧⌘E)") { Saver.save([item], model) }
+          if model.canMove { LightboxButton(icon: "lock.open", help: "Move Out of Locked Folder") { model.move([item.id], to: .library); dropFromViewer(item) } }
+          LightboxButton(icon: "trash", help: "Delete Forever (⌘⌫)") { model.confirmLockedDelete = [item.id] }
+        } else if item.trashedAt == nil {
           LightboxButton(icon: item.favorite ? "heart.fill" : "heart", help: item.favorite ? "Remove from Favorites (F, ⇧⌘F)" : "Add to Favorites (F, ⇧⌘F)") { model.setFavorite([item.id], !item.favorite) }
           Menu {
             ForEach(model.albums.filter { !$0.broken }) { a in Button(a.name) { model.perform { try await $0.addToAlbum(a.id, [item.id]) } } }
@@ -171,7 +185,7 @@ struct Filmstrip: View {
       ScrollView(.horizontal, showsIndicators: false) {
         LazyHStack(spacing: 4) {
           ForEach(lo..<hi, id: \.self) { i in
-            if let it = model.item(state.ids[i]) ?? model.trash.first(where: { $0.id == state.ids[i] }) {
+            if let it = model.anyItem(state.ids[i]) ?? model.trash.first(where: { $0.id == state.ids[i] }) {
               StripThumb(item: it, current: i == state.index)
                 .id(i)
                 .onTapGesture { nav.viewer = ViewerState(ids: state.ids, index: i) }
@@ -308,7 +322,7 @@ struct InfoPanel: View {
     ScrollView {
       VStack(alignment: .leading, spacing: 18) {
         Text("Info").font(Typo.dialog).padding(.top, 14)
-        if model.settings.search && model.settings.faces {
+        if model.settings.search && model.settings.faces && !item.isLocked {
           VStack(alignment: .leading, spacing: 10) {
             Text("People").font(Typo.caption.weight(.semibold)).foregroundStyle(Ink.muted)
             if faces.isEmpty {
@@ -384,8 +398,8 @@ struct InfoPanel: View {
       if let placeName { Text(placeName).font(Typo.body).textSelection(.enabled) }
       Text(String(format: "%.5f, %.5f", g.lat, g.lon)).font(placeName == nil ? Typo.body : Typo.caption)
         .foregroundStyle(placeName == nil ? Ink.ink : Ink.muted).textSelection(.enabled)
-      // only once the person turned the map on (its images come from a third party)
-      let gate = MiniMapGate.state(mapOn: model.mapOn, serverMap: model.me?.hasMap == true, located: item.location != nil, asked: mapAsked, item: item.id)
+      // only once the person turned the map on (its images come from a third party); never for the locked folder's
+      let gate = item.isLocked ? .none : MiniMapGate.state(mapOn: model.mapOn, serverMap: model.me?.hasMap == true, located: item.location != nil, asked: mapAsked, item: item.id)
       if gate == .show, let at = item.location, let styles = model.me?.map {
         MiniMap(at: at, styles: styles).padding(.top, 6)
       } else if gate == .offer {

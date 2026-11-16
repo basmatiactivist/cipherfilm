@@ -2,12 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Animated, AppState, Easing, FlatList, PanResponder, Pressable, StatusBar, StyleSheet, useColorScheme, useWindowDimensions, View, type GestureResponderEvent } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Image } from "expo-image";
-import { Button, Dialog, IconButton, Modal, Portal, ProgressBar, Snackbar, Text } from "react-native-paper";
+import { Button, Dialog, IconButton, Menu, Modal, Portal, ProgressBar, Snackbar, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { previewUri, when, type Item } from "../../library";
 import { libraryItems, refreshLibrary, setFavorite, useLibrary } from "../../libraryStore";
 import { canEdit } from "../../edit";
 import { normEdit, pictureKey } from "@edit/edit";
+import { folderOf, isLocked, mainGrid, type Folder } from "@edit/folders";
+import { canMove, movable, moveTo } from "../../moveFolder";
+import { deleteForever, lockedFolderItems, lockedThumbUri, useLockedFolder } from "../../lockedFolder";
 import { viewerList } from "../../viewerList";
 import { faceUri, facesIn, nameFace, type FaceInPhoto } from "../../search/people";
 import { NameDialog } from "../albums";
@@ -49,22 +52,26 @@ export default function Viewer() {
   if (turned.current !== width > height) { turned.current = width > height; kept.current = safe; }
   kept.current = largestInsets(kept.current, safe);
   const inset = kept.current;
+  // the locked folder: only its items, only while it is open (lockedFolder.ts); never the library's
+  const inLocked = within === "locked";
   // opened from an album: swiping stays inside it
   const [list, setList] = useState(() => {
-    const all = libraryItems().filter((i) => !i.broken);
+    const all = (inLocked ? lockedFolderItems() : libraryItems()).filter((i) => !i.broken);
     if (within) { // search results, a person or a memory: in that order
       const byId = new Map(all.map((i) => [i.id, i]));
       const l = viewerList().map((x) => byId.get(x)).filter((i): i is Item => !!i);
       if (l.length) return l;
     }
     const a = album ? albums?.find((x) => x.id === album) : undefined;
-    if (!a) return all;
+    if (!a) return inLocked || within ? all : mainGrid(all); // from the photos grid: what it shows (not the archive)
     const ids = new Set(a.itemIds);
     return all.filter((i) => ids.has(i.id));
   });
   const [start] = useState(() => Math.max(0, list.findIndex((i) => i.id === id)));
   // the library changed (an edit here or on another device): the pages show the items as they are now, in place
-  const { items: libNow } = useLibrary();
+  const { items: libOpen } = useLibrary();
+  const { items: lockedNow } = useLockedFolder();
+  const libNow = inLocked ? lockedNow : libOpen;
   useEffect(() => {
     if (!libNow) return;
     const byId = new Map(libNow.map((i) => [i.id, i]));
@@ -158,6 +165,36 @@ export default function Viewer() {
       setNote({ text: e instanceof Error ? e.message : t("That didn't work.") });
     }
   };
+  // archive, unarchive, the locked folder (moveFolder.ts): the item leaves this list when the list is one it no longer
+  // belongs to (the photos grid, the archive, the locked folder; an album or search keeps archived items)
+  const [menu, setMenu] = useState(false);
+  const leaves = (to: Folder) => to === "locked" || inLocked || (to === "archive" && !within && !album) || (to === "library" && within === "archive");
+  const dropCurrent = (it: Item) => {
+    const at = list.indexOf(it);
+    const rest = list.filter((i) => i !== it);
+    if (!rest.length) { router.back(); return; }
+    setList(rest);
+    setIndex(Math.min(at, rest.length - 1));
+  };
+  const move = (to: Folder) => run(to === "locked" ? t("Moving to the locked folder") : to === "archive" ? t("Archiving") : t("Moving back to Photos"), async () => {
+    setMenu(false);
+    const it = current;
+    const r = await moveTo([it], to);
+    if (r.failed) return t("That didn't work.");
+    if (leaves(to)) dropCurrent(it);
+    refreshLibrary();
+    return to === "locked" ? t("Moved to the locked folder.") : to === "archive" ? t("Archived.") : t("Moved back to Photos.");
+  });
+  const [askDelete, setAskDelete] = useState(false);
+  const removeForever = () => run(t("Deleting"), async () => {
+    setAskDelete(false);
+    const it = current;
+    await deleteForever([it.id]);
+    dropCurrent(it);
+    refreshLibrary(); refreshAlbums();
+    return t("Deleted permanently.");
+  });
+
   const trash = () => run(t("Moving to the trash"), async () => {
     const it = current, at = list.indexOf(it);
     await api("POST", "/api/items/trash", { item_ids: [it.id] });
@@ -212,17 +249,34 @@ export default function Viewer() {
         <Text variant="titleSmall" numberOfLines={1} style={st.name}>{current?.meta?.name}</Text>
         <Text variant="labelMedium" style={st.count}>{t("{n} of {total}", { n: (Math.min(index, list.length - 1) + 1).toLocaleString(locale()), total: list.length.toLocaleString(locale()) })}</Text>
         <IconButton icon="info" iconColor={stage.onStage} size={24} accessibilityLabel={t("Details")} onPress={() => setInfo(true)} />
+        {current && canMove() && movable(current) && !inLocked ? (
+          <Menu visible={menu} onDismiss={() => setMenu(false)}
+            anchor={<IconButton icon="more" iconColor={stage.onStage} size={24} accessibilityLabel={t("More")} onPress={() => setMenu(true)} />}>
+            {folderOf(current.meta) === "archive"
+              ? <Menu.Item leadingIcon="unarchive" title={t("Unarchive")} onPress={() => move("library")} />
+              : <Menu.Item leadingIcon="archive" title={t("Archive")} onPress={() => move("archive")} />}
+            <Menu.Item leadingIcon="lock" title={t("Move to locked folder")} onPress={() => move("locked")} />
+          </Menu>
+        ) : null}
       </Animated.View>
       {current ? (
         <Animated.View pointerEvents={chrome ? "auto" : "none"} importantForAccessibility={chrome ? "auto" : "no-hide-descendants"}
           onLayout={(e) => setBarHeight(e.nativeEvent.layout.height)}
           style={[st.actions, { opacity: shown, paddingBottom: inset.bottom + 8, paddingLeft: inset.left, paddingRight: inset.right }]}>
           <Action icon="share" label={t("Share")} onPress={() => share()} />
+          {inLocked ? (
+            <>
+              <Action icon="download" label={t("Save")} onPress={() => save()} />
+              {canMove() && movable(current) ? <Action icon="unlock" label={t("Move out")} onPress={() => move("library")} /> : null}
+              {canMove() ? <Action icon="trash" label={t("Delete forever")} onPress={() => setAskDelete(true)} /> : null}
+            </>
+          ) : <>
           <Action icon={isFav ? "heartOn" : "heart"} label={t("Favorite")} onPress={toggleFav} on={isFav} />
           {canEdit(current) ? <Action icon="edit" label={t("Edit")} onPress={() => router.push({ pathname: "/edit/[id]", params: { id: current.id } })} /> : null}
           <Action icon="folderPlus" label={t("Add to album")} onPress={() => setPicker(true)} />
           <Action icon="download" label={t("Save")} onPress={() => save()} />
           <Action icon="trash" label={t("action|Trash")} onPress={trash} />
+          </>}
         </Animated.View>
       ) : null}
       {current ? <Info item={current} visible={info} onClose={() => setInfo(false)} onOriginal={(how) => { setInfo(false); if (how === "share") share(true); else save(true); }} /> : null}
@@ -235,6 +289,14 @@ export default function Viewer() {
           </Dialog.Content>
         </Dialog>
         <AlbumPicker visible={picker} onDismiss={() => setPicker(false)} onPick={intoAlbum} />
+        <Dialog visible={askDelete} onDismiss={() => setAskDelete(false)}>
+          <Dialog.Title>{t("Delete this item forever?")}</Dialog.Title>
+          <Dialog.Content><Text variant="bodyMedium">{t("Items in the locked folder don't go to the trash. It is deleted from the server now and can't be restored, not even from a backup made after today.")}</Text></Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setAskDelete(false)}>{t("Cancel")}</Button>
+            <Button onPress={removeForever}>{t("Delete forever")}</Button>
+          </Dialog.Actions>
+        </Dialog>
       </Portal>
       <Snackbar visible={!!note} onDismiss={() => setNote(null)} duration={5000} style={{ marginBottom: inset.bottom + 88 }}
         action={note?.undo ? { label: t("Undo"), onPress: () => { const u = note.undo!; setNote(null); u(); } } : undefined}>
@@ -290,12 +352,16 @@ function Page({ item, width, height, inset, active, onZoom, chrome, onTap, onChr
           may still become two. Neither holds the video: a tap on it is the player's (it would count twice) */}
       {!uri ? (
         <Pressable onPress={onTap} accessible={false} style={{ width, height }}>
-          {item.has_thumb ? <ThumbView item={item.id} fit="contain" style={{ width, height }} accessibilityLabel={item.meta?.name} /> : null}
+          {item.has_thumb ? (isLocked(item.meta)
+            ? <MemoryStill item={item} width={width} height={height} />
+            : <ThumbView item={item.id} fit="contain" style={{ width, height }} accessibilityLabel={item.meta?.name} />) : null}
         </Pressable>
       ) : null}
       {uri ? (
         <Zoomable width={width} height={height} active={active && !ready} onZoom={onZoom} onTap={onTap}>
-          <Image source={{ uri }} style={{ width, height }} contentFit="contain" cachePolicy="memory" accessibilityLabel={item.meta?.name} />
+          {isLocked(item.meta)
+            ? <Image source={{ uri }} style={{ width, height }} contentFit="contain" cachePolicy="none" accessibilityLabel={item.meta?.name} />
+            : <Image source={{ uri }} style={{ width, height }} contentFit="contain" cachePolicy="memory" accessibilityLabel={item.meta?.name} />}
         </Zoomable>
       ) : null}
       {ready ? (
@@ -307,6 +373,13 @@ function Page({ item, width, height, inset, active, onZoom, chrome, onTap, onChr
       ) : null}
     </View>
   );
+}
+
+/** A locked item's thumbnail while its preview loads: decrypted into memory only (lockedFolder.ts), no image cache. */
+function MemoryStill({ item, width, height }: { item: Item; width: number; height: number }) {
+  const [uri, setUri] = useState<string | null>(null);
+  useEffect(() => { let live = true; lockedThumbUri(item).then((u) => { if (live) setUri(u); }, () => {}); return () => { live = false; }; }, [item.id]);
+  return uri ? <Image source={{ uri }} style={{ width, height }} contentFit="contain" cachePolicy="none" accessibilityLabel={item.meta?.name} /> : null;
 }
 
 const MAX_ZOOM = 5;
@@ -406,7 +479,7 @@ function Info({ item, visible, onClose, onOriginal }: { item: Item; visible: boo
           </View>
         ) : null}
         {visible && at ? <MiniMap lat={at.lat} lon={at.lon} /> : null}
-        {visible ? <InPhoto item={item} onClose={onClose} /> : null}
+        {visible && !isLocked(item.meta) ? <InPhoto item={item} onClose={onClose} /> : null}
         <Text variant="bodySmall" style={{ color: th.colors.onSurfaceVariant, marginTop: 12 }}>{t("Only you can read these details. The server stores them encrypted.")}</Text>
       </Modal>
     </Portal>

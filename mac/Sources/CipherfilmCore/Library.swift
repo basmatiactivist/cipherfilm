@@ -19,6 +19,9 @@ public struct ItemMeta: Codable, Sendable, Hashable {
   public var gps: GPS?
   /** turned and cropped in another app (PictureEdit.swift); nil when it isn't */
   public var edit: PictureEdit?
+  /** the archive and the locked folder (Folders.swift): only a literal `true` counts, any other value is "not set" */
+  public var archived: JSONTrue?
+  public var locked: JSONTrue?
 
   public init(name: String, mime: String, size: Int64, lastModified: Double, capture_ts: Double, width: Double? = nil, height: Double? = nil,
               duration: Double? = nil, make: String? = nil, model: String? = nil, gps: GPS? = nil) {
@@ -316,13 +319,17 @@ public final class Vault: @unchecked Sendable {
       _ = try self.masterKey()
       return kind == .thumb ? try Crypto.decryptThumb(ct, itemKey: key, itemId: it.id) : try Crypto.decryptPreview(ct, itemKey: key, itemId: it.id)
     }
-    if Self.okId(it.id), let ct = cached(name) {
+    // an item in the locked folder leaves nothing on disk: never read from or written to the cache (a copy from
+    // before it was moved there goes)
+    let disk = Self.okId(it.id) && !it.isLocked
+    if !disk && Self.okId(it.id) { dropCached(name) }
+    if disk, let ct = cached(name) {
       if let p = try? open(ct) { return p }
       if isOpen { dropCached(name) }
     }
     let ct = try await api.getBytes("/api/items/\(it.id)/\(kind.rawValue)")
     let p = try open(ct) // only verified ciphertext is kept
-    if Self.okId(it.id) { keep(name, ct) }
+    if disk { keep(name, ct) }
     return p
   }
 
@@ -333,7 +340,7 @@ public final class Vault: @unchecked Sendable {
     var missing: [Item] = []
     for it in items {
       guard let key = it.itemKey else { continue }
-      if Self.okId(it.id), let ct = cached("thumb-\(it.id)"), let p = try? Crypto.decryptThumb(ct, itemKey: key, itemId: it.id) { out[it.id] = p }
+      if Self.okId(it.id), !it.isLocked, let ct = cached("thumb-\(it.id)"), let p = try? Crypto.decryptThumb(ct, itemKey: key, itemId: it.id) { out[it.id] = p }
       else if it.hasThumb { missing.append(it) }
     }
     for chunk in missing.chunked(100) {
@@ -350,7 +357,7 @@ public final class Vault: @unchecked Sendable {
         o += n
         if let key = it.itemKey, let p = try? Crypto.decryptThumb(ct, itemKey: key, itemId: it.id) { // only verified ciphertext is kept
           out[it.id] = p
-          if Self.okId(it.id) { keep("thumb-\(it.id)", ct) }
+          if Self.okId(it.id) && !it.isLocked { keep("thumb-\(it.id)", ct) } // the locked folder: memory only
         }
       }
     }
@@ -407,6 +414,32 @@ public final class Vault: @unchecked Sendable {
   public func trash(_ ids: [String]) async throws { for c in ids.chunked(500) { try await api.json("POST", "/api/items/trash", body: ["item_ids": c]) } }
   public func restore(_ ids: [String]) async throws { for c in ids.chunked(500) { try await api.json("POST", "/api/items/restore", body: ["item_ids": c]) } }
   public func purge(_ ids: [String]) async throws { for c in ids.chunked(500) { try await api.json("POST", "/api/trash/purge", body: ["item_ids": c]) } }
+  /** Moves items to the archive, the locked folder or back to the library: each item's metadata as the server has it
+   *  (every field kept, also ones this app doesn't know), with the folder's flag set and its version raised, sealed
+   *  again (Folders.resealed). Into the locked folder, its cached pictures go from disk at once. */
+  public func move(_ items: [Item], to folder: Folder) async throws {
+    if me.isDemo { throw APIError(status: -1, message: "This is the public demo: changes are turned off.") }
+    for it in items {
+      guard ServerId.valid(it.id), !it.broken, let key = it.itemKey else { throw CryptoError.failed("This item can't be read.") }
+      var rec = await librarySync.record(it.id)
+      if rec == nil { rec = await trashSync.record(it.id) }
+      guard let rec else { throw APIError(status: -1, message: "The library is still loading. Try again in a moment.") }
+      let sealed = try Folders.resealed(B64.decode(rec.meta_enc), itemKey: key, itemId: it.id, to: folder)
+      _ = try masterKey() // locked meanwhile: nothing more is sent
+      try await api.json("PUT", "/api/items/\(it.id)/meta", body: ["meta_enc": B64.encode(sealed)])
+      if folder == .locked { dropPictures(it.id) }
+    }
+  }
+
+  /** Removes an item's cached thumbnail and preview (ciphertext) from disk. */
+  public func dropPictures(_ id: String) {
+    guard Self.okId(id) else { return }
+    dropCached("thumb-\(id)"); dropCached("preview-\(id)")
+  }
+
+  /** The library as last loaded, unsplit (the locked folder takes its items from it once its check passed). */
+  public func currentLibrary() async -> [Item] { await librarySync.current() }
+
   public func setFavorite(_ ids: [String], _ on: Bool) async throws {
     for c in ids.chunked(500) { try await api.json("POST", "/api/items/favorite", body: ["item_ids": c, "favorite": on] as [String: Any]) }
   }

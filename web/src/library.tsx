@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { useMapOn } from "./map/consent";
-import { Cancelled, discardUpload, forgetUnfinished, Item, SignedOut, loadItems, loadTrash, purgeTrash, restoreItems, setFavorite, trashItems, unfinishedUploads, uploadFile } from "./items";
+import { Cancelled, discardUpload, forgetUnfinished, Item, SignedOut, loadItems, loadTrash, moveToFolder, purgeTrash, restoreItems, setFavorite, trashItems, unfinishedUploads, uploadFile } from "./items";
+import { archived, mainGrid, splitLocked, type Folder } from "./edit/folders";
+import { LockedGate } from "./lockedgate";
+import { clearPlayer } from "./player";
 import { ApiError } from "./api";
 import { mem } from "./state";
 import { uploadQueue } from "./upqueue";
@@ -10,7 +13,7 @@ import { agreeModels, askedLater, askLater, NeedsConsent, useModelConsent } from
 import { ModelConsent, ModelProgress } from "./search/consentui";
 import { FAMILY as family, TEXT_MODELS, type Family } from "./search/rank";
 import { downloadItems, downloadOriginal } from "./downloads";
-import { prefetchThumbs } from "./cache";
+import { dropStored, forgetLocked, prefetchThumbs } from "./cache";
 import { Album, addToAlbum, createAlbum, deleteAlbum, loadAlbums, removeFromAlbum, renameAlbum } from "./albums";
 import { DRAG_TYPE, Mods, Timeline, Tile } from "./grid";
 import { ContextMenu, MenuItem } from "./ctxmenu";
@@ -42,7 +45,7 @@ const Admin = lazy(() => import("./screens").then((m) => m.Admin));
 const Duplicates = lazy(() => import("./cleanup/ui").then((m) => m.Duplicates));
 
 interface Job { key: number; owner: string; name: string; file: File; done: number; total: number; state: "queued" | "working" | "done" | "error"; error?: string; retryable?: boolean; stop: { cancelled: boolean } }
-type View = { n: "timeline" } | { n: "favorites" } | { n: "albums" } | { n: "album"; id: string } | { n: "people" } | { n: "person"; key: string; cover?: string } | { n: "map" } | { n: "trash" } | { n: "trip"; key: string } | { n: "recap"; year: number };
+type View = { n: "timeline" } | { n: "favorites" } | { n: "archive" } | { n: "locked" } | { n: "albums" } | { n: "album"; id: string } | { n: "people" } | { n: "person"; key: string; cover?: string } | { n: "map" } | { n: "trash" } | { n: "trip"; key: string } | { n: "recap"; year: number };
 type Page = View | { n: "account"; open?: string } | { n: "admin" } | { n: "duplicates" };
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : "Something went wrong.");
@@ -64,7 +67,13 @@ function NavItem(p: { icon: IconName; label: string; current: boolean; onClick: 
 }
 
 export function Library(props: { email: string; admin: boolean; onSignOut: () => void; onLock: () => void }) {
-  const [items, setItems] = useState<Item[] | null>(null);
+  // everything the server lists, decrypted; split at once (edit/folders.ts): `items` is all that any view outside the
+  // locked folder may show, the locked folder's items are read only by that folder, after its check
+  const [allItems, setItems] = useState<Item[] | null>(null);
+  const folders = useMemo(() => (allItems ? splitLocked(allItems) : null), [allItems]);
+  const items = folders?.open ?? null;
+  // the locked folder is open only after its check (lockedgate.tsx), and closes when it is left
+  const [lockedOpen, setLockedOpen] = useState(false);
   const [albums, setAlbums] = useState<Album[]>([]);
   const [albumsLoaded, setAlbumsLoaded] = useState(false);
   const [page, setPage] = useState<Page>({ n: "timeline" });
@@ -76,7 +85,11 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [picker, setPicker] = useState(false);
   const [lb, setLb] = useState<number | null>(null);
-  const [trash, setTrash] = useState<Item[] | null>(null);
+  const [trashAll, setTrash] = useState<Item[] | null>(null);
+  // the trash never shows locked items (an app that doesn't know the locked folder may have trashed one); the locked
+  // folder lists them apart
+  const trashSplit = useMemo(() => (trashAll ? splitLocked(trashAll) : null), [trashAll]);
+  const trash = trashSplit?.open ?? null;
   const [retention, setRetention] = useState(30);
   const [confirmPurge, setConfirmPurge] = useState<"selected" | "all" | null>(null);
   const [note, setNote] = useState<{ text: string; undo?: () => void } | null>(null);
@@ -102,7 +115,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const [narrow, setNarrow] = useState(() => matchMedia("(max-width: 600px)").matches);
   useEffect(() => { const m = matchMedia("(max-width: 600px)"); const f = () => setNarrow(m.matches); m.addEventListener("change", f); return () => m.removeEventListener("change", f); }, []);
 
-  const refreshItems = () => loadItems().then((r) => { setItems(r.items); setError(""); prefetchThumbs(r.items); }, (e) => setError(msg(e)));
+  const refreshItems = () => loadItems().then((r) => { setItems(r.items); setError(""); prefetchThumbs(splitLocked(r.items).open); }, (e) => setError(msg(e)));
   const refreshAlbums = () => loadAlbums().then(setAlbums, (e) => setError(msg(e))).finally(() => setAlbumsLoaded(true));
   const refreshTrash = () => loadTrash().then((r) => { setTrash(r.items); setRetention(r.retentionDays); }, (e) => setError(msg(e)));
   const refreshUsage = () => loadUsage().then(setUsage, () => {});
@@ -177,13 +190,15 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
     if (view.n === "trash") return trash ?? [];
     if (!items) return [];
     if (view.n === "favorites") return items.filter((i) => i.favorite);
+    if (view.n === "archive") return archived(items);
+    if (view.n === "locked") return lockedOpen && folders ? folders.locked : [];
     if (view.n === "person") { const ids = new Set(person?.items ?? []); return items.filter((i) => ids.has(i.id)); }
     if (view.n === "trip") return trip?.items ?? [];
     if (view.n === "recap") return [];
     if (!album) return items;
     const ids = new Set(album.itemIds);
     return items.filter((i) => ids.has(i.id));
-  }, [items, album, person, trip, trash, view.n]);
+  }, [items, album, person, trip, trash, view.n, lockedOpen, folders]);
 
   const patch = (key: number, p: Partial<Job>) => setJobs((js) => js.map((j) => (j.key === key ? { ...j, ...p } : j)));
   // Several files at once: a single stream is limited by round trips, not by bandwidth or CPU.
@@ -240,10 +255,57 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const openPerson = (key: string) => { const g = people.all.find((x) => x.key === key); go({ n: "person", key, cover: g?.cover?.key }); };
 
   const pickedItems = () => shown.filter((i) => selected.has(i.id));
+  // the locked folder closes when it is left, and when this tab is hidden: its pictures (and a video's decrypted parts)
+  // leave memory, and the next visit asks for the password again
+  const closeLocked = () => { setLockedOpen(false); forgetLocked(); clearPlayer(); setLb(null); };
+  useEffect(() => { if (page.n !== "locked" && lockedOpen) closeLocked(); }, [page.n]);
+  useEffect(() => {
+    if (!lockedOpen) return;
+    const hide = () => { if (document.visibilityState === "hidden") closeLocked(); };
+    document.addEventListener("visibilitychange", hide);
+    return () => document.removeEventListener("visibilitychange", hide);
+  }, [lockedOpen]);
+  useEffect(() => () => forgetLocked(), []);
   const guard = async (fn: () => Promise<void>) => { setError(""); setNote(null); try { await fn(); } catch (e) { setError(msg(e)); } };
   const moveToTrash = (ids: string[]) => guard(async () => { await trashItems(ids); await Promise.all([refreshItems(), refreshAlbums(), refreshTrash()]); endSelect(); setNote({ text: `${ids.length} moved to the trash. Restore within ${retention} days.`, undo: () => { restore(ids); } }); });
   const restore = (ids: string[]) => guard(async () => { await restoreItems(ids); await Promise.all([refreshItems(), refreshAlbums(), refreshTrash()]); endSelect(); setNote({ text: `${ids.length} restored.` }); });
   const purge = (ids: string[]) => guard(async () => { await purgeTrash(ids); await refreshTrash(); await refreshItems(); refreshUsage(); endSelect(); setConfirmPurge(null); });
+  // archive and locked folder (edit/folders.ts): the folder is written into each item's encrypted metadata
+  const hiddenIds = useMemo(() => new Set([...(folders?.locked ?? []), ...(trashSplit?.locked ?? [])].map((i) => i.id)), [folders, trashSplit]);
+  const allById = useMemo(() => new Map((allItems ?? []).map((i) => [i.id, i])), [allItems]);
+  const [moving, setMoving] = useState("");
+  // the selection bar's further actions (archive, locked folder): a menu, so the bar stays one row on a phone
+  const [selMore, setSelMore] = useState<{ x: number; y: number } | null>(null);
+  const move = (ids: string[], to: Folder, undo = true) => guard(async () => {
+    const list = ids.map((id) => allById.get(id)).filter((i): i is Item => !!i);
+    if (!list.length) return;
+    const from = new Map(list.map((i) => [i.id, (i.meta?.locked ? "locked" : i.meta?.archived ? "archive" : "library") as Folder]));
+    setMoving(to === "locked" ? "Moving to the locked folder…" : to === "archive" ? "Archiving…" : "Moving…");
+    try {
+      const { moved, failed } = await moveToFolder(list, to);
+      // nothing of an item that went into the locked folder stays in this tab's caches
+      if (to === "locked") await dropStored(list.filter((i) => moved.includes(i.id)));
+      await refreshItems();
+      endSelect(); setConfirmPurge(null);
+      const n = moved.length, one = n === 1;
+      const text = to === "archive" ? (one ? "Archived." : `${n} archived.`)
+        : to === "locked" ? (one ? "Moved to the locked folder." : `${n} moved to the locked folder.`)
+        : [...from.values()].includes("locked") ? (one ? "Moved out of the locked folder." : `${n} moved out of the locked folder.`)
+        : (one ? "Back in the timeline." : `${n} back in the timeline.`);
+      const more = failed ? ` ${failed === 1 ? "1 item couldn't" : `${failed} items couldn't`} be moved; try again.` : "";
+      // undo puts each back where it was; nothing goes back into the locked folder without its check
+      const back = (f: Folder) => moved.filter((id) => from.get(id) === f);
+      setNote({ text: text + more, undo: undo && n && to !== "locked" && ![...from.values()].includes("locked") ? () => { for (const f of ["library", "archive"] as Folder[]) if (back(f).length) move(back(f), f, false); } : undefined });
+    } finally { setMoving(""); }
+  });
+  /** Deletes items of the locked folder for good (the trash never shows them): to the trash and out of it at once. */
+  const deleteLocked = (ids: string[]) => guard(async () => {
+    await trashItems(ids);
+    await purgeTrash(ids);
+    await Promise.all([refreshItems(), refreshTrash(), refreshAlbums()]); refreshUsage();
+    endSelect(); setConfirmPurge(null);
+    setNote({ text: ids.length === 1 ? "Deleted." : `${ids.length} deleted.` });
+  });
   /** Marks or unmarks as favorites; on screen at once, put back if the server says no. */
   const favorite = (ids: string[], on: boolean) => {
     const set = new Set(ids);
@@ -354,8 +416,8 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const [unfinished, setUnfinished] = useState<string[]>(() => unfinishedUploads());
   useEffect(() => { if (!uploading) setUnfinished(unfinishedUploads().filter((n) => !active.some((j) => j.name === n))); }, [uploading]);
   const empty = items && items.length === 0 && active.length === 0;
-  const libraryView = page.n === "timeline" || page.n === "favorites" || page.n === "albums" || page.n === "album" || page.n === "people" || page.n === "person" || page.n === "map" || page.n === "trash" || page.n === "trip";
-  const title = page.n === "trip" ? (trip ? tripTitle(trip) : "Trip") : page.n === "recap" ? `${page.year} in review` : page.n === "timeline" ? "Timeline" : page.n === "favorites" ? "Favorites" : page.n === "albums" ? "Albums" : page.n === "trash" ? "Trash" : page.n === "people" ? "People" : page.n === "map" ? "Map" : page.n === "person" ? person?.person?.name || "Not named yet" : page.n === "account" ? "Account" : page.n === "duplicates" ? "Duplicates and similar photos" : page.n === "admin" ? { users: "Users", storage: "Storage", defaults: "Defaults", server: "Server", activity: "Activity" }[adminSection] : album?.name ?? "Album";
+  const libraryView = page.n === "timeline" || page.n === "favorites" || page.n === "archive" || page.n === "locked" || page.n === "albums" || page.n === "album" || page.n === "people" || page.n === "person" || page.n === "map" || page.n === "trash" || page.n === "trip";
+  const title = page.n === "trip" ? (trip ? tripTitle(trip) : "Trip") : page.n === "recap" ? `${page.year} in review` : page.n === "timeline" ? "Timeline" : page.n === "favorites" ? "Favorites" : page.n === "archive" ? "Archive" : page.n === "locked" ? "Locked folder" : page.n === "albums" ? "Albums" : page.n === "trash" ? "Trash" : page.n === "people" ? "People" : page.n === "map" ? "Map" : page.n === "person" ? person?.person?.name || "Not named yet" : page.n === "account" ? "Account" : page.n === "duplicates" ? "Duplicates and similar photos" : page.n === "admin" ? { users: "Users", storage: "Storage", defaults: "Defaults", server: "Server", activity: "Activity" }[adminSection] : album?.name ?? "Album";
   const pct = usage && !usage.unlimited && usage.quota_bytes ? Math.min(100, Math.round((usage.used_bytes / usage.quota_bytes) * 100)) : 0;
 
   // the library is filtered 150 ms after typing stops, not on every key: matching a big library takes a moment.
@@ -433,8 +495,10 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
     }
     return out;
   };
-  const timelineAll = useMemo(() => match(items ?? []), [items, q, showBroken, hay, ranked]);
-  const shownAll = useMemo(() => match(shown), [shown, q, showBroken, hay, ranked]);
+  // the timeline leaves archived items out; a search finds them (edit/folders.ts)
+  const timelineAll = useMemo(() => match(q ? items ?? [] : mainGrid(items ?? [])), [items, q, showBroken, hay, ranked]);
+  // the locked folder isn't searched (its items have no place in the search words): typing a search leaves it
+  const shownAll = useMemo(() => (view.n === "locked" ? shown : match(shown)), [shown, q, showBroken, hay, ranked, view.n]);
   const timelineItems = useMemo(() => (ranked ? timelineAll.slice(0, limit) : timelineAll), [timelineAll, ranked, limit]);
   const shownItems = useMemo(() => (ranked ? shownAll.slice(0, limit) : shownAll), [shownAll, ranked, limit]);
   const trashItemsShown = useMemo(() => match(trash ?? [], false), [trash, q]);
@@ -442,7 +506,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const [mapList, setMapList] = useState<Item[]>([]);
   // "On this day" (memories/): worked out here from the capture dates, again when the library or the day changes
   const today = todayKey();
-  const memories = useMemo(() => (memOn && items ? findMemories(items) : []), [items, memOn, today]);
+  const memories = useMemo(() => (memOn && items ? findMemories(mainGrid(items)) : []), [items, memOn, today]);
   // a memory's photos while the viewer shows them; dropped when it closes
   const [memList, setMemList] = useState<Item[] | null>(null);
   useEffect(() => { if (lb === null) setMemList(null); }, [lb]);
@@ -458,7 +522,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
     else if (i < 0) { follow.current = null; if (lb >= lbList.length) closeLb(); }
   }, [lbList]);
   /** The photos on screen, in order: what select all, a range and the selection work on. */
-  function listed() { return view.n === "trash" ? trashItemsShown : view.n === "album" || view.n === "person" || view.n === "favorites" || view.n === "trip" ? shownItems : view.n === "timeline" ? timelineItems : []; }
+  function listed() { return view.n === "trash" ? trashItemsShown : view.n === "album" || view.n === "person" || view.n === "favorites" || view.n === "trip" || view.n === "archive" || view.n === "locked" ? shownItems : view.n === "timeline" ? timelineItems : []; }
   const selectAll = () => { setSelectMode(true); setSelected(new Set(listed().map((i) => i.id))); };
 
   // what is selected must be what is on screen: narrowing the search or changing the view drops the rest
@@ -522,13 +586,24 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
         { label: lbl("Restore"), icon: "restore", run: () => restore(ids) },
         { label: lbl("Delete forever…"), icon: "trash", danger: true, run: () => { setSelectMode(true); setSelected(new Set(ids)); setConfirmPurge("selected"); } }];
     }
+    if (view.n === "locked") {
+      return [...open, select,
+        { label: many ? `Download as ZIP (${ids.length})` : "Download original", icon: "download", run: () => (many ? zip(list.filter((i) => ids.includes(i.id)), "Cipherfilm") : guard(async () => { if (it) await downloadOriginal(it); })) },
+        ...(demo ? [] : [{ label: lbl("Move out of locked folder"), icon: "lock", run: () => move(ids, "library") } as MenuItem,
+          { label: lbl("Delete forever…"), icon: "trash", danger: true, run: () => { setSelectMode(true); setSelected(new Set(ids)); setConfirmPurge("selected"); } } as MenuItem])];
+    }
     const albumSub: MenuItem[] = albums.map((a) => ({ label: a.name, icon: "albums", run: () => addIdsToAlbum(a, ids) }));
+    const folderItems: MenuItem[] = demo ? [] : [
+      view.n === "archive" ? { label: lbl("Unarchive"), icon: "archive", run: () => move(ids, "library") } : { label: lbl("Archive"), icon: "archive", run: () => move(ids, "archive") },
+      { label: lbl("Move to locked folder"), icon: "lock", run: () => move(ids, "locked") },
+    ];
     return [...open, select,
       ...(albums.length ? [{ label: lbl("Add to album"), icon: "folderPlus", sub: albumSub } as MenuItem] : []),
       (ids.every((id) => byId.get(id)?.favorite)
         ? { label: lbl("Remove from favorites"), icon: "heart", run: () => favorite(ids, false) }
         : { label: lbl("Add to favorites"), icon: "heart", run: () => favorite(ids.filter((id) => !byId.get(id)?.favorite), true) }),
       ...(view.n === "album" && album ? [{ label: lbl("Remove from album"), icon: "x", run: () => removeIds(album, ids) } as MenuItem] : []),
+      ...folderItems,
       { label: many ? `Download as ZIP (${ids.length})` : "Download original", icon: "download", run: () => (many ? zip(list.filter((i) => ids.includes(i.id)), "Cipherfilm") : guard(async () => { if (it) await downloadOriginal(it); })) },
       { label: lbl("Move to trash"), icon: "trash", danger: true, run: () => moveToTrash(ids) }];
   };
@@ -561,7 +636,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
       case "Escape": if (menuOpen) setMenuOpen(false); else if (selectMode) endSelect(); break;
       case "Delete": case "Backspace":
         if (e.repeat) break; // a held key must not trash twice
-        if (selectMode && selected.size > 0) { e.preventDefault(); if (view.n === "trash") setConfirmPurge("selected"); else moveToTrash([...selected]); }
+        if (selectMode && selected.size > 0) { e.preventDefault(); if (view.n === "trash" || view.n === "locked") setConfirmPurge("selected"); else moveToTrash([...selected]); }
         break;
     }
   };
@@ -573,10 +648,10 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
 
   const picks = (
     <div class="actions">
-      {(page.n === "timeline" ? items && items.length > 0 : page.n === "trash" ? trash && trash.length > 0 : (page.n === "album" || page.n === "person" || page.n === "favorites" || page.n === "trip") && shown.length > 0) && !selectMode && (
+      {(page.n === "timeline" ? items && items.length > 0 : page.n === "trash" ? trash && trash.length > 0 : (page.n === "album" || page.n === "person" || page.n === "favorites" || page.n === "trip" || page.n === "archive" || page.n === "locked") && shown.length > 0) && !selectMode && (
         <button class="btn secondary" aria-label="Select" onClick={() => setSelectMode(true)}><Icon name="select" /><span class="lbl">Select</span></button>
       )}
-      {(page.n === "album" || page.n === "person" || page.n === "favorites") && shownItems.length > 1 && !selectMode && (
+      {(page.n === "album" || page.n === "person" || page.n === "favorites" || page.n === "archive" || page.n === "locked") && shownItems.length > 1 && !selectMode && (
         <button class="btn secondary" aria-label="Select all" onClick={selectAll}><Icon name="check" /><span class="lbl">Select all</span></button>
       )}
     </div>
@@ -589,7 +664,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
         {adminPage ? <div /> : <div class="search">
           <Icon name="search" size={18} />
           <input type="text" aria-label="Search your photos" placeholder={narrow ? "Search" : "Search name, date, camera, album"} autocomplete="off" value={query}
-            onInput={(e) => { setQuery((e.target as HTMLInputElement).value); if (!libraryView) go({ n: "timeline" }); }} />
+            onInput={(e) => { setQuery((e.target as HTMLInputElement).value); if (!libraryView || page.n === "locked") go({ n: "timeline" }); }} />
         </div>}
         <div class="topactions">
           {!adminPage && !demo && <button class="btn" aria-label="Upload photos and videos" onClick={() => input.current?.click()}><Icon name="upload" /><span class="lbl">Upload</span></button>}
@@ -637,6 +712,8 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
               <NavItem icon="albums" label="Albums" current={page.n === "albums" || page.n === "album" || page.n === "trip"} onClick={() => go({ n: "albums" })} />
               {(hasIndex() || page.n === "people" || page.n === "person") && <NavItem icon="users" label="People" current={page.n === "people" || page.n === "person"} onClick={() => go({ n: "people" })} />}
               {mem.me?.map && <NavItem icon="map" label="Map" current={page.n === "map"} onClick={() => go({ n: "map" })} />}
+              <NavItem icon="archive" label="Archive" current={page.n === "archive"} onClick={() => go({ n: "archive" })} />
+              <NavItem icon="lock" label="Locked folder" current={page.n === "locked"} onClick={() => go({ n: "locked" })} />
               <NavItem icon="trash" label="Trash" badge={trash && trash.length > 0 ? trash.length : undefined} current={page.n === "trash"} onClick={() => { go({ n: "trash" }); refreshTrash(); }} />
             </>
           )}
@@ -660,14 +737,15 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
             {libraryView && picks}
           </div>
 
-          {(error || note) && (
+          {(error || note || moving) && (
             // fixed under the top bar, so the result of an action (and its Undo) is seen however far down the page is
             <div class="toasts">
               {error && <p class="error toast" role="alert"><span>{error}</span><button class="iconbtn tiny" aria-label="Dismiss" onClick={() => setError("")}><Icon name="x" size={16} /></button></p>}
+              {moving && !note && <p class="note toast" role="status"><span>{moving}</span></p>}
               {note && <p class="note toast" role="status"><span>{note.text}</span>{note.undo && <button class="link" onClick={() => { const u = note.undo!; setNote(null); u(); }}>Undo</button>}</p>}
             </div>
           )}
-          {libraryView && view.n !== "trash" && (items ?? []).some((i) => i.broken) && (() => {
+          {libraryView && view.n !== "trash" && view.n !== "locked" && (items ?? []).some((i) => i.broken) && (() => {
             const n = (items ?? []).filter((i) => i.broken).length;
             return (
               <p class="warning small" role="status">
@@ -722,6 +800,33 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
             </>
           ))}
 
+          {view.n === "archive" && (!items ? <Loading label="Opening your library…" /> : shown.length === 0 ? (
+            <section class="panel empty"><span class="emptyicon"><Icon name="archive" size={32} /></span><h2>Nothing archived</h2><p>Archive photos you want to keep but not see in the timeline, like screenshots or receipts: select them and choose Archive. They stay in search, albums and the map.</p></section>
+          ) : (
+            <>
+              <p class="small trashnote">Not shown in the timeline or in On this day. Search, albums and the map still find them.</p>
+              {q && shownItems.length === 0 && <p class="small">Nothing archived matches “{searched.trim()}”.</p>}
+              <Timeline items={shownItems} flat={!!ranked} selectMode={selectMode} selected={selected} onToggle={pick} onContext={(id, e) => setCtx({ x: e.clientX, y: e.clientY, kind: "item", id })} dragIds={dragIds} onOpen={(id) => openLb(shownItems.findIndex((i) => i.id === id))} />
+            </>
+          ))}
+
+          {view.n === "locked" && (!lockedOpen ? <LockedGate onOpen={() => setLockedOpen(true)} /> : !items ? <Loading label="Opening the locked folder…" /> : (
+            <>
+              <p class="small trashnote">Only here: not in the timeline, albums, search, people, the map or On this day. The folder closes when you leave it.</p>
+              {trashSplit && trashSplit.locked.length > 0 && (
+                <p class="warning small" role="status">
+                  {trashSplit.locked.length === 1 ? "1 item of this folder is" : `${trashSplit.locked.length} items of this folder are`} in the trash (moved there by another app).{" "}
+                  {!demo && <><button class="link" onClick={() => restore(trashSplit.locked.map((i) => i.id))}>Restore</button>{" · "}<button class="link" onClick={() => purge(trashSplit.locked.map((i) => i.id))}>Delete forever</button></>}
+                </p>
+              )}
+              {shown.length === 0 ? (
+                <section class="panel empty"><span class="emptyicon"><Icon name="lock" size={32} /></span><h2>The locked folder is empty</h2><p>Select photos and choose Move to locked folder. They then show only here, after your password.</p></section>
+              ) : (
+                <Timeline items={shownItems} selectMode={selectMode} selected={selected} onToggle={pick} onContext={(id, e) => setCtx({ x: e.clientX, y: e.clientY, kind: "item", id })} onOpen={(id) => openLb(shownItems.findIndex((i) => i.id === id))} />
+              )}
+            </>
+          ))}
+
           {view.n === "trash" && (
             <>
               <p class="small trashnote">Items are permanently deleted after {retention} days. Until then they count toward your storage.</p>
@@ -746,7 +851,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
           )}
 
           {view.n === "albums" && !albumsLoaded && <Loading label="Opening your albums…" />}
-          {view.n === "albums" && albumsLoaded && <AlbumList onContext={(id, e) => setCtx({ x: e.clientX, y: e.clientY, kind: "album", id })} albums={albums} items={items ?? []} dropTarget={(a) => dropTarget((ids) => addIdsToAlbum(a, ids))} onOpen={(id) => go({ n: "album", id })} onCreated={(a) => { setAlbums((x) => [...x, a]); go({ n: "album", id: a.id }); }} setError={setError} />}
+          {view.n === "albums" && albumsLoaded && <AlbumList onContext={(id, e) => setCtx({ x: e.clientX, y: e.clientY, kind: "album", id })} albums={albums} items={items ?? []} hidden={hiddenIds} dropTarget={(a) => dropTarget((ids) => addIdsToAlbum(a, ids))} onOpen={(id) => go({ n: "album", id })} onCreated={(a) => { setAlbums((x) => [...x, a]); go({ n: "album", id: a.id }); }} setError={setError} />}
           {view.n === "albums" && albumsLoaded && memOn && <TripCards trips={trips} albums={albums} onOpen={(key) => go({ n: "trip", key })} />}
 
           {view.n === "trip" && !trip && (trips === null || !items ? <Loading label="Opening the trip…" /> : <p>This trip is no longer in your library. <button class="link" onClick={() => go({ n: "albums" })}>Back to albums</button></p>)}
@@ -789,7 +894,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
         </main>
       </div>
 
-      {tileDrag && libraryView && (
+      {tileDrag && libraryView && view.n !== "locked" && (
         <div class="droptray" role="region" aria-label="Drop to file these photos">
           <span class="small">Drop on an album</span>
           {albums.filter((a) => !(album && a.id === album.id)).map((a) => <span key={a.id} class="chip" {...dropTarget((ids) => addIdsToAlbum(a, ids))}><Icon name="albums" size={18} />{a.name}</span>)}
@@ -812,16 +917,25 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
           {listed().length > 1 && !narrow && (selected.size < listed().length
             ? <button class="btn secondary small selall" aria-label="Select all" onClick={selectAll}><Icon name="check" size={18} /><span class="lbl">Select all</span></button>
             : <button class="btn secondary small selall" aria-label="Select none" onClick={() => setSelected(new Set())}><Icon name="x" size={18} /><span class="lbl">Select none</span></button>)}
-          {view.n !== "trash" && (() => {
+          {view.n !== "trash" && view.n !== "locked" && (() => {
             const picked = pickedItems();
             const allFav = picked.length > 0 && picked.every((i) => i.favorite);
             return <button class="btn secondary small" aria-label="Favorite" aria-pressed={allFav} title={allFav ? "Remove from favorites" : "Add to favorites"} disabled={picked.length === 0}
               onClick={() => favorite(picked.filter((i) => !!i.favorite === allFav).map((i) => i.id), !allFav)}><Icon name="heart" size={18} filled={allFav} /><span class="lbl">Favorite</span><span class="lbls">Favorite</span></button>;
           })()}
-          {view.n !== "trash" && <button class="btn small" aria-label="Add to album" disabled={selected.size === 0} onClick={() => setPicker((v) => !v)} aria-expanded={picker}><Icon name="folderPlus" size={18} /><span class="lbl">Add to album</span><span class="lbls">Album</span></button>}
+          {view.n !== "trash" && view.n !== "locked" && <button class="btn small" aria-label="Add to album" disabled={selected.size === 0} onClick={() => setPicker((v) => !v)} aria-expanded={picker}><Icon name="folderPlus" size={18} /><span class="lbl">Add to album</span><span class="lbls">Album</span></button>}
           {view.n === "album" && <button class="btn secondary small" aria-label="Remove from album" disabled={selected.size === 0} onClick={removeSelected}><Icon name="x" size={18} /><span class="lbl">Remove from album</span><span class="lbls">Remove</span></button>}
-          {view.n !== "trash" && <button class="btn secondary small" aria-label="Download as ZIP" disabled={selected.size === 0} onClick={() => zip(pickedItems(), "Cipherfilm")}><Icon name="download" size={18} /><span class="lbl">Download</span><span class="lbls">ZIP</span></button>}
-          {view.n !== "trash" && <button class="btn secondary small warn" aria-label="Move to trash" disabled={selected.size === 0} onClick={() => moveToTrash([...selected])}><Icon name="trash" size={18} /><span class="lbl">Move to trash</span><span class="lbls">Trash</span></button>}
+          {view.n !== "trash" && view.n !== "locked" && !(narrow && !demo) && <button class="btn secondary small" aria-label="Download as ZIP" disabled={selected.size === 0} onClick={() => zip(pickedItems(), "Cipherfilm")}><Icon name="download" size={18} /><span class="lbl">Download</span><span class="lbls">ZIP</span></button>}
+          {!demo && view.n !== "trash" && view.n !== "locked" && <button class="btn secondary small" aria-label="More" aria-haspopup="menu" disabled={selected.size === 0 || !!moving}
+            onClick={(e) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setSelMore({ x: r.left, y: r.top - 8 }); }}><Icon name="more" size={18} /><span class="lbl">More</span><span class="lbls">More</span></button>}
+          {!demo && view.n === "locked" && <button class="btn small" aria-label="Move out of locked folder" disabled={selected.size === 0 || !!moving} onClick={() => move([...selected], "library")}><Icon name="lock" size={18} /><span class="lbl">Move out of locked folder</span><span class="lbls">Move out</span></button>}
+          {view.n === "locked" && <button class="btn secondary small" aria-label="Download as ZIP" disabled={selected.size === 0} onClick={() => zip(pickedItems(), "Cipherfilm")}><Icon name="download" size={18} /><span class="lbl">Download</span><span class="lbls">ZIP</span></button>}
+          {!demo && view.n === "locked" && (confirmPurge === "selected" && selected.size > 0 ? (
+            <span class="moremenu"><span class="small">Delete {selected.size} forever?</span><button class="btn danger small" onClick={() => deleteLocked([...selected])}>Delete forever</button><KeepButton label="Keep" onClick={() => setConfirmPurge(null)} /></span>
+          ) : (
+            <button class="btn secondary small warn" aria-label="Delete forever…" disabled={selected.size === 0} onClick={() => setConfirmPurge("selected")}><Icon name="trash" size={18} /><span class="lbl">Delete forever…</span><span class="lbls">Delete</span></button>
+          ))}
+          {view.n !== "trash" && view.n !== "locked" && <button class="btn secondary small warn" aria-label="Move to trash" disabled={selected.size === 0} onClick={() => moveToTrash([...selected])}><Icon name="trash" size={18} /><span class="lbl">Move to trash</span><span class="lbls">Trash</span></button>}
           {view.n === "trash" && <button class="btn small" aria-label="Restore" disabled={selected.size === 0} onClick={() => restore([...selected])}><Icon name="restore" size={18} /><span class="lbl">Restore</span><span class="lbls">Restore</span></button>}
           {view.n === "trash" && (confirmPurge === "selected" && selected.size > 0 ? (
             <span class="moremenu"><span class="small">Delete {selected.size} forever?</span><button class="btn danger small" onClick={() => purge([...selected])}>Delete forever</button><KeepButton label="Keep" onClick={() => setConfirmPurge(null)} /></span>
@@ -835,15 +949,25 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
         </div>
       )}
 
+      {selMore && selectMode && libraryView && <ContextMenu x={selMore.x} y={selMore.y} title="More actions" onClose={() => setSelMore(null)} items={[
+        view.n === "archive" ? { label: "Unarchive", icon: "archive", run: () => move([...selected], "library") } : { label: "Archive", icon: "archive", run: () => move([...selected], "archive") },
+        { label: "Move to locked folder", icon: "lock", run: () => move([...selected], "locked") },
+        // on a phone the bar has no room for Download as well: it is here then
+        ...(narrow ? [{ label: "Download as ZIP", icon: "download", run: () => zip(pickedItems(), "Cipherfilm") } as MenuItem] : []),
+      ]} />}
       {ctx && libraryView && <ContextMenu x={ctx.x} y={ctx.y} title={ctx.kind === "album" ? "Album actions" : "Photo actions"} items={ctxItems()} onClose={() => setCtx(null)} />}
       {help && <ShortcutsHelp onClose={() => setHelp(false)} />}
       {report && <ReportDialog serverVersion={mem.me?.server_version} onClose={() => setReport(false)} />}
 
       {lb !== null && libraryView && lbList[lb] && (
-        <Lightbox items={lbList} index={lb} onIndex={setLb} onClose={closeLb} people={people} onPerson={(key) => { closeLb(); openPerson(key); }} onMap={() => { closeLb(); go({ n: "map" }); }}
-          onEdited={view.n === "trash" ? undefined : (id) => { follow.current = { id, old: lbList.find((x) => x.id === id) }; refreshItems(); }}
-          onFavorite={view.n === "trash" ? undefined : (it) => favorite([it.id], !it.favorite)}
-          action={view.n === "trash"
+        <Lightbox items={lbList} index={lb} onIndex={setLb} onClose={closeLb} onPerson={(key) => { closeLb(); openPerson(key); }}
+          onEdited={view.n === "trash" || view.n === "locked" ? undefined : (id) => { follow.current = { id, old: lbList.find((x) => x.id === id) }; refreshItems(); }}
+          onFavorite={view.n === "trash" || view.n === "locked" ? undefined : (it) => favorite([it.id], !it.favorite)}
+          onMap={view.n === "locked" ? undefined : () => { closeLb(); go({ n: "map" }); }}
+          people={view.n === "locked" ? undefined : people}
+          action={view.n === "locked"
+            ? (demo ? undefined : { label: "Move out of locked folder", icon: "lock", run: async (it) => { await move([it.id], "library"); closeLb(); } })
+            : view.n === "trash"
             ? { label: "Restore", run: async (it) => { await restore([it.id]); closeLb(); setTimeout(() => document.getElementById("main")?.focus(), 60); } }
             : { label: "Move to trash", run: async (it) => { await moveToTrash([it.id]); closeLb(); setTimeout(() => document.getElementById("main")?.focus(), 60); } }} />
       )}
@@ -963,7 +1087,7 @@ function NewAlbumForm(p: { onCreated: (a: Album) => void; setError: (m: string) 
   );
 }
 
-function AlbumList(p: { onContext: (id: string, e: MouseEvent) => void; albums: Album[]; items: Item[]; dropTarget: (a: Album) => Record<string, unknown>; onOpen: (id: string) => void; onCreated: (a: Album) => void; setError: (m: string) => void }) {
+function AlbumList(p: { onContext: (id: string, e: MouseEvent) => void; albums: Album[]; items: Item[]; hidden: Set<string>; dropTarget: (a: Album) => Record<string, unknown>; onOpen: (id: string) => void; onCreated: (a: Album) => void; setError: (m: string) => void }) {
   const byId = useMemo(() => new Map(p.items.map((i) => [i.id, i])), [p.items]);
   return (
     <div>
@@ -973,12 +1097,14 @@ function AlbumList(p: { onContext: (id: string, e: MouseEvent) => void; albums: 
         <ul class="albums" aria-label="Albums">
           {p.albums.map((a) => {
             const cover = a.itemIds.map((id) => byId.get(id)).find((i) => i && !i.broken);
+            // the locked folder's items stay in the album but aren't shown, nor counted
+            const n = a.itemIds.filter((id) => !p.hidden.has(id)).length;
             return (
               <li key={a.id}>
                 <button class="albumcard" onClick={() => p.onOpen(a.id)} onContextMenu={(e) => { e.preventDefault(); p.onContext(a.id, e); }} {...(p.dropTarget(a) as object)}>
                   <span class="cover">{cover ? <Tile plain item={cover} selectMode={false} selected={false} onOpen={() => {}} onToggle={() => {}} /> : <span class="ph" aria-hidden="true" />}</span>
                   <span class="aname" dir="auto">{a.name}</span>
-                  <span class="small">{a.itemIds.length} {a.itemIds.length === 1 ? "item" : "items"}</span>
+                  <span class="small">{n} {n === 1 ? "item" : "items"}</span>
                 </button>
               </li>
             );

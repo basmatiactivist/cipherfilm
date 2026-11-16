@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { archived } from "@edit/folders";
 import { NoticesButton } from "../NoticesButton";
 import { FlatList, Pressable, RefreshControl, StyleSheet, useWindowDimensions, View } from "react-native";
 import { router } from "expo-router";
@@ -23,6 +24,9 @@ import { savedAs } from "@memories/trips";
 const GAP = 12;
 // Favorites sits first in the grid, like an album
 const FAVORITES: Album = { id: "favorites", name: "Favorites", itemIds: [] };
+// then the archive and the locked folder (no cover and no count: nothing of it shows outside it)
+const ARCHIVE: Album = { id: "archive", name: "Archive", itemIds: [] };
+const LOCKED: Album = { id: "locked", name: "Locked folder", itemIds: [] };
 
 /** All albums as a grid of covers (the newest photo in each); names are decrypted on the phone. */
 export default function Albums() {
@@ -53,7 +57,7 @@ export default function Albums() {
               <Appbar.Action icon="user" accessibilityLabel={t("Account")} onPress={() => router.push("/account")} />
       </Appbar.Header>
       <FlatList
-        data={albums ? [FAVORITES, ...albums] : []}
+        data={albums ? [FAVORITES, ARCHIVE, LOCKED, ...albums] : []}
         key={cols}
         numColumns={cols}
         keyExtractor={(a) => a.id}
@@ -72,6 +76,8 @@ export default function Albums() {
         ListEmptyComponent={!albums && !error ? <Loading label={t("Opening your albums…")} /> : undefined}
         renderItem={({ item: a }) => {
           if (a === FAVORITES) return <Special title={t("Favorites")} icon="heart" size={size} items={(items ?? []).filter((i) => i.favorite && !i.broken)} onPress={() => router.push("/favorites")} />;
+          if (a === ARCHIVE) return <Special title={t("Archive")} icon="archive" size={size} items={archived(items ?? [])} onPress={() => router.push("/archive")} />;
+          if (a === LOCKED) return <Special title={t("Locked folder")} icon="lock" size={size} onPress={() => router.push("/locked")} />;
           const shown = a.itemIds.map((id) => byId.get(id)).filter((i): i is Item => !!i && !i.broken);
           return <Cover album={a} cover={shown[shown.length - 1]} count={shown.length} size={size} />;
         }}
@@ -104,12 +110,12 @@ function Cover({ album, cover, count, size }: { album: Album; cover?: Item; coun
 }
 
 /** A built-in collection above the albums (Favorites), with its newest photo as the cover. */
-function Special({ title, icon, size, items, onPress }: { title: string; icon: "heart"; size: number; items: Item[]; onPress: () => void }) {
+function Special({ title, icon, size, items, onPress }: { title: string; icon: "heart" | "archive" | "lock"; size: number; items?: Item[]; onPress: () => void }) {
   const th = useAppTheme();
-  const cover = items[0];
+  const cover = items?.[0];
   const thumb = cover?.has_thumb && !cover.broken ? cover.id : undefined;
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={tn(items.length, "{name}, {n} item", "{name}, {n} items", { name: title })} style={{ width: size }}>
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={items ? tn(items.length, "{name}, {n} item", "{name}, {n} items", { name: title }) : title} style={{ width: size }}>
       {({ pressed }) => (
         <>
           <View style={[st.cover, { width: size, height: size, backgroundColor: th.colors.primaryContainer, opacity: pressed ? 0.85 : 1 }]}>
@@ -117,7 +123,7 @@ function Special({ title, icon, size, items, onPress }: { title: string; icon: "
             <View style={[st.badge, { backgroundColor: th.colors.background }]}><Icon name={icon === "heart" ? "heartOn" : icon} size={18} color={th.colors.primary} /></View>
           </View>
           <Text numberOfLines={1} style={[text.name, { marginTop: 8 }]}>{title}</Text>
-          <Text variant="bodySmall" style={{ color: th.colors.onSurfaceVariant }}>{tn(items.length, "{n} item", "{n} items")}</Text>
+          <Text variant="bodySmall" style={{ color: th.colors.onSurfaceVariant }}>{items ? tn(items.length, "{n} item", "{n} items") : t("Asks for your fingerprint or screen lock")}</Text>
         </>
       )}
     </Pressable>

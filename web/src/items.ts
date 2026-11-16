@@ -8,7 +8,8 @@ import { mem } from "./state";
 import { ListSync, type Page } from "./sync";
 import { normEdit, normOrig } from "./edit/edit";
 import { Sha256, SHA256_HEX } from "./crypto/sha256";
-import { HighWater, metaVersion } from "./crypto/metaVersion";
+import { HighWater, metaVersion, nextVersion } from "./crypto/metaVersion";
+import { normFolders, withFolder, type Folder } from "./edit/folders";
 
 export interface Item {
   id: string;
@@ -72,6 +73,7 @@ function wellFormed(m: ItemMeta, createdAt: number): ItemMeta {
   if (orig) m.orig = orig; else delete m.orig;
   if (m.sha256 !== undefined && !(typeof m.sha256 === "string" && SHA256_HEX.test(m.sha256))) delete m.sha256;
   if (m.mv !== undefined && metaVersion(m) !== m.mv) delete m.mv;
+  normFolders(m); // archived / locked: only `true` counts (edit/folders.ts)
   return m;
 }
 
@@ -144,6 +146,32 @@ export async function inBatches(ids: string[], send: (part: string[]) => Promise
 export const trashItems = (ids: string[]) => inBatches(ids, (part) => api("POST", "/api/items/trash", { item_ids: part }));
 export const restoreItems = (ids: string[]) => inBatches(ids, (part) => api("POST", "/api/items/restore", { item_ids: part }));
 export const setFavorite = (ids: string[], favorite: boolean) => inBatches(ids, (part) => api("POST", "/api/items/favorite", { item_ids: part, favorite }));
+/**
+ * Moves items to the library, the archive or the locked folder (edit/folders.ts). The folder is written inside the
+ * encrypted metadata, as the next version of it, through the same request as any other change: the server sees that
+ * the metadata of these items changed, not what. An unreadable or stale item (its newest metadata isn't known here) is
+ * left alone: writing on top of an older copy would undo a change. Resolves with the ids that moved.
+ */
+export async function moveToFolder(items: Item[], to: Folder, onProgress?: (done: number, total: number) => void): Promise<{ moved: string[]; failed: number }> {
+  if (mem.me?.demo) throw new Error("This is the public demo: changes are turned off.");
+  const s = await getSodium();
+  const todo = items.filter((it) => !it.broken && !it.stale && it.meta && it.itemKey);
+  const moved: string[] = [];
+  let failed = items.length - todo.length, done = 0, next = 0, last: unknown;
+  const worker = async () => {
+    while (next < todo.length) {
+      const it = todo[next++];
+      try {
+        await api("PUT", `/api/items/${it.id}/meta`, { meta_enc: b64(s, encryptMeta(s, nextVersion(withFolder(it.meta!, to)), it.itemKey!, it.id)) });
+        moved.push(it.id);
+      } catch (e) { failed++; last = e; }
+      onProgress?.(++done, todo.length);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(4, todo.length) }, worker));
+  if (!moved.length && last) throw last;
+  return { moved, failed };
+}
 /** Deletes exactly these trashed items permanently, in batches the server accepts. Emptying the trash passes the ids
  *  that are on screen, so an item trashed on another device in the meantime is not deleted unseen. */
 export async function purgeTrash(ids: string[]): Promise<number> {

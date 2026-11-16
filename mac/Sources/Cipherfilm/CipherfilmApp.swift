@@ -51,19 +51,29 @@ struct Commands: SwiftUI.Commands {
       let ids = model.targets
       let one = ids.count == 1 ? model.item(ids[0]) : nil
       let fav = !ids.isEmpty && ids.allSatisfy { model.item($0)?.favorite == true }
+      let its = ids.compactMap { model.anyItem($0) }
+      let locked = !its.isEmpty && its.allSatisfy(\.isLocked)
+      let archived = !its.isEmpty && its.allSatisfy(\.isArchived)
       Button(fav ? "Remove from Favorites" : "Add to Favorites") { model.setFavorite(ids, !fav) }
-        .keyboardShortcut("f", modifiers: [.command, .shift]).disabled(ids.isEmpty)
+        .keyboardShortcut("f", modifiers: [.command, .shift]).disabled(ids.isEmpty || locked)
       Button("Add to Album…") { model.nav?.albumPickFor = ids }
-        .keyboardShortcut("a", modifiers: [.command, .control]).disabled(ids.isEmpty)
+        .keyboardShortcut("a", modifiers: [.command, .control]).disabled(ids.isEmpty || locked)
       Button("New Album with Selection…") { model.nav?.newAlbumFor = ids }
-        .keyboardShortcut("n", modifiers: [.command, .shift]).disabled(ids.isEmpty)
+        .keyboardShortcut("n", modifiers: [.command, .shift]).disabled(ids.isEmpty || locked)
       Divider()
-      Button("Share…") { Outbox.share(ids.compactMap { model.item($0) }, model) }
+      Button("Share…") { Outbox.share(its, model) }
         .keyboardShortcut("s", modifiers: [.command, .shift]).disabled(ids.isEmpty)
-      Button(ids.count > 1 ? "Save Originals…" : "Save Original…") { Saver.save(ids.compactMap { model.item($0) }, model) }
+      Button(ids.count > 1 ? "Save Originals…" : "Save Original…") { Saver.save(its, model) }
         .keyboardShortcut("e", modifiers: [.command, .shift]).disabled(ids.isEmpty)
       Button("Photos Like This One") { if let one { model.nav?.showSimilar(one.id) } }
         .keyboardShortcut("k", modifiers: .command).disabled(one == nil || !model.search.ready)
+      Divider()
+      // the archive and the locked folder (CipherfilmCore/Folders.swift)
+      Button(archived ? "Unarchive" : "Archive") { model.move(ids, to: archived ? .library : .archive); model.selection?.clear() }
+        .disabled(ids.isEmpty || locked || !model.canMove)
+      Button(locked ? "Move Out of Locked Folder" : "Move to Locked Folder") {
+        model.move(ids, to: locked ? .library : .locked); model.selection?.clear(); model.nav?.viewer = nil
+      }.disabled(ids.isEmpty || !model.canMove)
       Divider()
       Button("Go to Date…") { model.nav?.jumpPicker = true }
         .keyboardShortcut("j", modifiers: .command)

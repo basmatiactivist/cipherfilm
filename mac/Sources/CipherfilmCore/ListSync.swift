@@ -59,6 +59,12 @@ public actor ListSync {
   /** The records and the cursor they are current to, taken together. */
   func kept() -> (records: [RawItem], cursor: String?, wholeAt: TimeInterval) { (Array(records.values), cursor, wholeAt) }
 
+  /** One record as the server sent it (its sealed metadata), if it is in the list. */
+  func record(_ id: String) -> RawItem? { records[id] }
+
+  /** The list as last loaded. */
+  func current() -> [Item] { list ?? [] }
+
   func forget() { list = nil; records = [:]; cursor = nil; seeded = false; wholeAt = 0; gen += 1 }
 
   /** Brings the list up to date; loads run one after another (a load during another may have missed its change). */

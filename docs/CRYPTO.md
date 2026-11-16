@@ -81,6 +81,8 @@ ad for every chunk = "seg" || itemId || u32(i) || u32(segment_count) || u64(tota
   `content_hash` that no client ever wrote; `sha256` is that field.)
   Edits (docs/EDITING.md) add the optional `edit` (turn, crop, picture version) and `orig` (date and place before the
   person changed them); the thumbnail and preview made for an edit replace the old ones under the same subkeys and `ad`.
+  The archive and the locked folder (docs/EDITING.md) add the optional `archived: true` and `locked: true`; only
+  `true` counts, anything else is dropped after decrypting. Like an edit, a move writes the next version.
   **Metadata version** `mv` (optional integer, `web/src/crypto/metaVersion.ts`): every change of the metadata (an edit,
   a new date or place, a place added afterwards) writes it one higher than the metadata it changes; an upload writes
   none (version 0). The `ad` binds the metadata to its item but not to a point in time, so a server could hand out an

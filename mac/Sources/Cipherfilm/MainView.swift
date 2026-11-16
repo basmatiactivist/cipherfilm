@@ -1,11 +1,11 @@
-// The unlocked window: a paper sidebar (Photos, Favorites, Videos, People, Albums, Map, Trash), the screen, one search box,
+// The unlocked window: a paper sidebar (Photos, Favorites, Videos, People, Albums, Map, Archive, Locked Folder, Trash), the screen, one search box,
 // Upload, and a drop veil for files dragged in from the Finder.
 import CipherfilmCore
 import UniformTypeIdentifiers
 import SwiftUI
 
 enum Screen: Hashable {
-  case photos, favorites, videos, people, albums, map, trash
+  case photos, favorites, videos, people, albums, map, archive, locked, trash
   case album(String)
   case person(String)
   case similar(String)
@@ -29,6 +29,8 @@ final class Navigator {
   var jumpPicker = false
 
   func go(_ s: Screen) {
+    // leaving the locked folder: its items go from memory before the next screen draws (it asks again next time)
+    if screen == .locked && s != .locked { AppModel.shared.leaveLocked() }
     if s != screen { back.append(screen) }
     screen = s; viewer = nil
   }
@@ -72,6 +74,15 @@ struct MainView: View {
       Button("Delete Forever", role: .destructive) { if let ids = nav.confirmPurge { model.purge(ids); selection.clear() } }
       Button("Cancel", role: .cancel) {}
     } message: { Text("This can't be undone.") }
+    .alert("Delete from the locked folder?", isPresented: Binding(get: { model.confirmLockedDelete != nil }, set: { if !$0 { model.confirmLockedDelete = nil } })) {
+      Button("Delete Forever", role: .destructive) {
+        if let ids = model.confirmLockedDelete {
+          model.deleteLocked(ids); selection.clear()
+          if let v = nav.viewer, ids.contains(v.id) { nav.viewer = nil }
+        }
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: { Text(model.confirmLockedDelete?.count ?? 0 > 1 ? "These \(model.confirmLockedDelete?.count ?? 0) items are deleted for good, not moved to the trash. This can't be undone." : "This item is deleted for good, not moved to the trash. This can't be undone.") }
     .sheet(isPresented: Binding(get: { nav.newAlbumFor != nil }, set: { if !$0 { nav.newAlbumFor = nil } })) {
       NameSheet(title: "New album", placeholder: "Album name", action: "Create") { name in
         let ids = nav.newAlbumFor ?? []
@@ -156,7 +167,7 @@ struct JumpPicker: View {
       HStack {
         Spacer()
         Button("Go") {
-          if case .photos = nav.screen {} else if nav.screen != .favorites && nav.screen != .videos { nav.go(.photos) }
+          if case .photos = nav.screen {} else if ![.favorites, .videos, .archive].contains(nav.screen) { nav.go(.photos) }
           nav.query = ""; nav.jump = date; nav.jumpPicker = false
         }.buttonStyle(PrimaryButton()).keyboardShortcut(.defaultAction)
       }
@@ -237,6 +248,8 @@ struct Sidebar: View {
           }
           // the server sends the base map's styles; none when its operator turned the map off
           if model.me?.hasMap == true { NavItem(title: "Map", icon: "map", screen: .map, nav: nav) }
+          NavItem(title: "Archive", icon: "archivebox", screen: .archive, nav: nav)
+          NavItem(title: "Locked Folder", icon: "lock.square", screen: .locked, nav: nav)
           NavItem(title: "Trash", icon: "trash", screen: .trash, nav: nav)
         }
         .padding(.horizontal, 10)
@@ -443,9 +456,11 @@ struct Detail: View {
         SearchResults(query: nav.query, selection: selection)
       } else {
         switch nav.screen {
-        case .photos: library(title: "Photos", items: model.items, empty: ("photo.on.rectangle", "Nothing here yet", "Drop photos and videos here, or choose Upload. They are encrypted on this Mac before upload."))
+        case .photos: library(title: "Photos", items: model.mainItems, empty: ("photo.on.rectangle", "Nothing here yet", "Drop photos and videos here, or choose Upload. They are encrypted on this Mac before upload."))
         case .favorites: library(title: "Favorites", items: model.items.filter(\.favorite), empty: ("heart", "No favorites yet", "Right-click a photo and choose Add to Favorites, or click the heart in the viewer."))
-        case .videos: library(title: "Videos", items: model.items.filter { $0.kind == .video }, empty: ("film", "No videos", "Videos you upload show up here."))
+        case .videos: library(title: "Videos", items: model.mainItems.filter { $0.kind == .video }, empty: ("film", "No videos", "Videos you upload show up here."))
+        case .archive: library(title: "Archive", items: model.archivedItems, empty: ("archivebox", "Nothing archived", "Archive photos and videos to take them out of Photos without deleting them. They stay in search, albums, people, the map and favorites."))
+        case .locked: LockedFolderView(selection: selection)
         case .people: PeopleView(selection: selection)
         case .person(let key): PersonView(key: key, selection: selection)
         case .albums: AlbumsView()

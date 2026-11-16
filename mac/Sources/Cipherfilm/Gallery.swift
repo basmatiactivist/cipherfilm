@@ -294,9 +294,21 @@ struct ItemMenu: View {
   var open: (() -> Void)?
 
   var body: some View {
+    let its = ids.compactMap { model.anyItem($0) }
     if trashMode {
       Button("Restore") { model.restore(ids) }
       Button("Delete Forever…") { nav.confirmPurge = ids }
+    } else if !its.isEmpty && its.allSatisfy(\.isLocked) {
+      // the locked folder: no favorites, albums or similar photos; share and save follow Outbox's rules
+      if let open, ids.count == 1 { Button("Open") { open() } }
+      Button("Share…") { Outbox.share(its, model) }
+      Button(ids.count == 1 ? "Save Original…" : "Save Originals…") { Saver.save(its, model) }
+      if model.canMove {
+        Divider()
+        Button("Move Out of Locked Folder") { model.move(ids, to: .library) }
+      }
+      Divider()
+      Button("Delete Forever…") { model.confirmLockedDelete = ids }
     } else {
       if let open, ids.count == 1 { Button("Open") { open() } }
       let fav = ids.allSatisfy { model.item($0)?.favorite == true }
@@ -311,6 +323,12 @@ struct ItemMenu: View {
       Divider()
       Button("Share…") { Outbox.share(ids.compactMap { model.item($0) }, model) }
       Button(ids.count == 1 ? "Save Original…" : "Save Originals…") { Saver.save(ids.compactMap { model.item($0) }, model) }
+      if model.canMove {
+        Divider()
+        let archived = !its.isEmpty && its.allSatisfy(\.isArchived)
+        Button(archived ? "Unarchive" : "Archive") { model.move(ids, to: archived ? .library : .archive) }
+        Button("Move to Locked Folder") { model.move(ids, to: .locked) }
+      }
       Divider()
       Button("Move to Trash") { model.moveToTrash(ids) }
     }

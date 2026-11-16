@@ -21,6 +21,17 @@ version into the GitHub release notes, so a release cannot be published without 
 - Year recaps: "Your years" under On this day opens a year in review with the number of photos and videos, the places
   and named people seen most, the year's trips and a few photos of every month (favorites first). Every earlier year,
   and the current one from December. Both follow the Memories setting.
+- Archive (web, Android, Mac): select photos or videos and choose Archive to take them out of the timeline and On this
+  day without deleting them; they stay in search, albums, people, the map and favorites. The Archive view lists them,
+  Unarchive brings them back.
+- Locked folder (web, Android, Mac): "Move to locked folder" hides photos and videos everywhere else (timeline, albums,
+  search, people, map, On this day, duplicates, Free up space, trash). The folder asks every time it opens, also while
+  the app is unlocked: the password on the web, the fingerprint (or the phone's screen lock, or the password) on
+  Android, Touch ID or the password on the Mac. Its pictures are never kept in a cache on disk and leave memory when
+  the folder closes. Albums keep such items but don't show or count them.
+- Whether an item is archived or locked is written inside its encrypted metadata (as a new metadata version), so the
+  server can't tell which items are in which folder (docs/EDITING.md, docs/CRYPTO.md). Older app versions don't know
+  the folders and show such items as usual: update every app before using the locked folder.
 
 ### Security
 - A password change, an account turned off by an admin and a recovery now count as signed out from another device:

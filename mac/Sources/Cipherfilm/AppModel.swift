@@ -67,6 +67,7 @@ final class AppModel {
   let search = SearchEngine()
   let exporter = Exporter()
   let watcher = Watcher()
+  let webdav = WebDAVImporter()
   let agent = Agent()
 
   private var refreshTimer: Timer?
@@ -325,6 +326,7 @@ final class AppModel {
     touchID = TouchID.enabled(me.user.id)
     notice = nil
     watcher.configure(api: api!, userId: me.user.id, settings: settings)
+    webdav.configure(api: api!, userId: me.user.id, settings: settings, unlocked: master != nil)
     if let master, let api {
       vault = Vault(api: api, me: me, masterKey: master)
       phase = .unlocked
@@ -386,6 +388,7 @@ final class AppModel {
   private func forget(account userId: String) {
     guard ServerId.valid(userId) else { return }
     TouchID.disable(userId) // its keychain item lives outside the account's folder
+    WebDAVPasswords.deleteAll(userId: userId) // so do the WebDAV import's passwords
     for k in UserDefaults.standard.dictionaryRepresentation().keys where k.hasPrefix("noticesSeen.") && k.hasSuffix(".\(userId)") {
       UserDefaults.standard.removeObject(forKey: k)
     }
@@ -453,6 +456,7 @@ final class AppModel {
     PlaceBook.forget()
     TripBook.shared.forget() // the trips hold decrypted items
     Outbox.clear()
+    webdav.stop(forget: ended) // a lock stops the import too: it reads nothing more until the next unlock
     items = []; byId = [:]; albums = []; trash = []; notices = []; noticesSeen = 0
     lockedItems = []; lockedById = [:]; lockedOpen = false; confirmLockedDelete = nil
     if ended { watcher.stop(forget: true); uploads = []; uploadsOwner = nil; uploadsPaused = false; Inbox.clear() }
@@ -734,6 +738,7 @@ final class AppModel {
   private func libraryChanged(all: [Item]) {
     guard let vault else { return }
     watcher.remember(library: all)
+    webdav.libraryChanged(all)
     search.libraryChanged(vault: vault, items: items, settings: settings)
     exporter.libraryChanged(vault: vault, items: items, albums: albums, settings: settings,
                             locked: Set(Folders.splitLocked(all).locked.map(\.id)))
@@ -764,6 +769,7 @@ final class AppModel {
 
   private func settingsChanged(from old: AccountSettings) {
     watcher.configure(api: api!, userId: me!.user.id, settings: settings)
+    webdav.configure(api: api!, userId: me!.user.id, settings: settings, unlocked: phase == .unlocked)
     if settings.watchOn && !old.watchOn && phase == .unlocked, let vault { // before its first pass
       watcher.remember(library: items)
       Task { let all = await vault.currentLibrary(); if self.vault === vault { watcher.remember(library: all.isEmpty ? items : all) } }
@@ -924,7 +930,7 @@ final class AppModel {
 
   /** Something runs in the background: the menu-bar icon shows a dot. */
   var busy: Bool {
-    uploadProgress != nil || exporter.phase == .working || watcher.running || [.download, .indexing].contains(search.phase)
+    uploadProgress != nil || exporter.phase == .working || watcher.running || webdav.running || [.download, .indexing].contains(search.phase)
   }
 
   var uploadProgress: (done: Int, total: Int, fraction: Double)? {

@@ -64,6 +64,7 @@ func TestE2ECheckLibrary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	keys := newKeyRing(master, c.wrappedPrivkey, c.email)
 	var p listPage
 	if err := c.do(ctx, "GET", "/api/items", nil, &p); err != nil {
 		t.Fatal(err)
@@ -83,7 +84,7 @@ func TestE2ECheckLibrary(t *testing.T) {
 		t.Fatalf("library holds %d items, want %d", len(p.Items), want)
 	}
 	for i, it := range p.Items {
-		ik, err := unwrapItemKey(mustB64(t, it.WrappedItemKey), master, it.ID)
+		ik, err := keys.itemKey(mustB64(t, it.WrappedItemKey), it.ID) // also sealed ones (the Mac's watched folders and WebDAV import)
 		if err != nil {
 			t.Fatal(err)
 		}

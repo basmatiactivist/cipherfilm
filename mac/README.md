@@ -6,14 +6,16 @@ What the app does and how export, watched folders and search behave: [docs/MAC.m
 
 - `Sources/CipherfilmCore`: everything that must match the other clients byte for byte: libsodium wrappers and the
   formats of docs/CRYPTO.md (`Sodium.swift`, `Crypto.swift`), the API and sign-in (`API.swift`), the library and
-  uploads (`Library.swift`, `Upload.swift`), and search: ONNX Runtime (`ORT.swift`), the vision pipeline ported from
+  uploads (`Library.swift`, `Upload.swift`), the WebDAV import's client, bookkeeping and ranged video reads
+  (`WebDAV.swift`, `WebDAVImport.swift`, `RangedAsset.swift`), and search: ONNX Runtime (`ORT.swift`), the vision pipeline ported from
   Android's `Vision.kt` (`Vision.swift`), the CLIP tokenizer (`Tokenizer.swift`), the in-memory index and face
   grouping (`SearchIndex.swift`), models, index entries, the people document and the query words (`Search.swift`).
 - `Sources/Cipherfilm`: the SwiftUI app (window, menu bar, Settings), the background work (`SearchEngine.swift`,
-  `Exporter.swift`, `Watcher.swift`), video streaming (`VideoLoader.swift`) and a debug-only test driver
+  `Exporter.swift`, `Watcher.swift`, `WebDAVImporter.swift`), video streaming (`VideoLoader.swift`) and a debug-only test driver
   (`DebugDriver.swift`, compiled out of release builds).
 - `Tests/CipherfilmCoreTests`: the web client's test vectors, segment round trips, sealed formats, tokenizer ids,
-  the index, the models, and a parity test against Android's entries on the test server.
+  the index, the models, and a parity test against Android's entries on the test server. `scripts/webdav-e2e.sh`
+  runs the WebDAV import end to end against a throwaway server and reports disk, memory and throughput.
 
 Dependencies, newest stable versions, pinned: libsodium 1.0.22 (swift-sodium 0.11.0) and ONNX Runtime 1.31.1 (the
 official macOS release, fetched by `scripts/fetch-onnxruntime.sh` and checked against its SHA-256; Microsoft's Swift

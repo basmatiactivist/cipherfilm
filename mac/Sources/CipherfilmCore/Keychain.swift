@@ -1,7 +1,8 @@
 // A small secret in the login keychain that only this app can read: the item's access list trusts exactly the app
 // that wrote it (its code signature), so another program of the same user gets macOS's own prompt for the Mac's
 // password instead of the data. With the app's ad-hoc signature each new version is a new signature, so after an
-// update macOS asks once ("Always Allow" then trusts the new version). Used for the Touch ID key's handle (TouchID.swift).
+// update macOS asks once ("Always Allow" then trusts the new version). Used for the Touch ID key's handle (TouchID.swift)
+// and the WebDAV import's passwords (WebDAVImporter.swift).
 import Foundation
 import Security
 
@@ -50,5 +51,12 @@ public enum Keychain {
 
   public static func delete(service: String, account: String) {
     SecItemDelete(base(service: service, account: account) as CFDictionary)
+  }
+
+  /** Every item of the service (all its accounts). */
+  public static func deleteAll(service: String) {
+    let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service]
+    // SecItemDelete removes every match; looped in case macOS stops after one
+    for _ in 0..<1000 where SecItemDelete(q as CFDictionary) == errSecSuccess {}
   }
 }

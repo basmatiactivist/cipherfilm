@@ -237,6 +237,33 @@ public enum Passkeys {
     return d
   }
 
+  /** The answer, accepted only when the browser made it for this server and this request: its client data names the
+   *  configured server's own https address, the step asked for, and the challenge in the options. The /passkey page is
+   *  the server's own, so a server could send the browser on to another server's page; that answer is refused here. */
+  public static func answer(from callback: URL, server: URL, op: String, options: Data) throws -> Data {
+    let d = try answer(from: callback)
+    guard let a = try? JSONSerialization.jsonObject(with: d) as? [String: Any], let r = a["response"] as? [String: Any],
+          let cd = (r["clientDataJSON"] as? String).flatMap(unb64url),
+          let c = try? JSONSerialization.jsonObject(with: cd) as? [String: Any],
+          let o = try? JSONSerialization.jsonObject(with: options) as? [String: Any],
+          let want = (o["challenge"] as? String).flatMap(unb64url), !want.isEmpty,
+          let got = (c["challenge"] as? String).flatMap(unb64url),
+          let origin = c["origin"] as? String, let mine = Self.origin(server) else { throw noAnswer }
+    guard c["type"] as? String == (op == "create" ? "webauthn.create" : "webauthn.get"), got == want,
+          origin.lowercased() == mine, c["crossOrigin"] as? Bool != true else {
+      throw APIError(status: -1, message: "The passkey answer wasn't made for this server. Nothing was sent.")
+    }
+    return d
+  }
+
+  /** "https://host" or "https://host:port", as a browser writes a page's origin into a passkey's client data. */
+  static func origin(_ server: URL) -> String? {
+    guard server.scheme?.lowercased() == "https", let h = server.host?.lowercased(), !h.isEmpty else { return nil }
+    let host = h.contains(":") && !h.hasPrefix("[") ? "[\(h)]" : h
+    if let p = server.port, p != 443 { return "https://\(host):\(p)" }
+    return "https://\(host)"
+  }
+
   static func b64url(_ d: Data) -> String {
     d.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
   }

@@ -178,6 +178,32 @@ import Testing
     #expect(throws: (any Error).self) { try Passkeys.answer(from: URL(string: "cipherfilm-mac://other#" + Passkeys.b64url(answer))!) }
   }
 
+  /** An answer counts only when the browser made it for the configured server and the challenge it asked for: one made
+   *  on another server's /passkey page (a server can send the browser there) is refused. */
+  @Test func passkeyAnswerIsBoundToThisServerAndChallenge() throws {
+    let server = URL(string: "https://photos-a.test/")!
+    let options = Data(#"{"challenge":"QV9DSEFM","rpId":"photos-a.test"}"#.utf8)
+    func back(origin: String, challenge: String = "QV9DSEFM", type: String = "webauthn.get", extra: String = "") -> URL {
+      let cd = Passkeys.b64url(Data(#"{"type":"\#(type)","challenge":"\#(challenge)","origin":"\#(origin)"\#(extra)}"#.utf8))
+      let a = Data(#"{"id":"k","type":"public-key","response":{"clientDataJSON":"\#(cd)"}}"#.utf8)
+      return URL(string: "cipherfilm-mac://passkey#" + Passkeys.b64url(a))!
+    }
+    _ = try Passkeys.answer(from: back(origin: "https://photos-a.test"), server: server, op: "get", options: options)
+    _ = try Passkeys.answer(from: back(origin: "https://PHOTOS-A.test"), server: server, op: "get", options: options)
+    for bad in [back(origin: "https://photos-b.test"), back(origin: "https://photos-b.test", challenge: "Ql9DSEFM"),
+                back(origin: "https://photos-a.test", challenge: "Ql9DSEFM"), back(origin: "https://photos-a.test", type: "webauthn.create"),
+                back(origin: "https://photos-a.test:8443"), back(origin: "http://photos-a.test"),
+                back(origin: "https://photos-a.test", extra: #","crossOrigin":true"#)] {
+      #expect(throws: (any Error).self) { try Passkeys.answer(from: bad, server: server, op: "get", options: options) }
+    }
+    // no client data at all
+    let bare = URL(string: "cipherfilm-mac://passkey#" + Passkeys.b64url(Data(#"{"id":"k","type":"public-key"}"#.utf8)))!
+    #expect(throws: (any Error).self) { try Passkeys.answer(from: bare, server: server, op: "get", options: options) }
+    // creating a passkey, on a server with its own port
+    let s2 = URL(string: "https://photos-a.test:8443")!
+    _ = try Passkeys.answer(from: back(origin: "https://photos-a.test:8443", type: "webauthn.create"), server: s2, op: "create", options: options)
+  }
+
   @Test func passkeysDecode() throws {
     struct L: Decodable { let passkeys: [Passkeys.Item] }
     let l = try JSONDecoder().decode(L.self, from: Data(#"{"passkeys":[{"id":"0123456789abcdef0123456789abcdef","name":"Key","rp_id":"photos.example","here":true,"created_at":1,"last_used_at":0}],"available":true,"max":20}"#.utf8))

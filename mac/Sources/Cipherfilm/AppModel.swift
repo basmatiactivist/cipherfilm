@@ -191,8 +191,10 @@ final class AppModel {
   /** the newest notice id the inbox has shown, for this account (the bell's unread badge) */
   var noticesSeen: Int64 = 0
   var unreadNotices: Int { Notice.unread(notices, seen: noticesSeen) }
-  /** the Settings tab to show (the inbox's "Review Devices" opens Security) */
-  var settingsTab = "general"
+  /** the Settings pane to show (the inbox's "Review Devices" opens Security); the last one chosen is shown again */
+  var settingsTab = UserDefaults.standard.string(forKey: "settingsTab") ?? "general" {
+    didSet { UserDefaults.standard.set(settingsTab, forKey: "settingsTab") }
+  }
 
   /** Per server and account: ids are the server's. */
   private var noticesSeenKey: String? {

@@ -1,4 +1,6 @@
-// Settings: everything the Mac does by itself can be turned on and off here, like search on Android.
+// Settings: everything the Mac does by itself can be turned on and off here, like search on Android. Laid out like
+// the system's own settings windows: a toolbar of panes, each a compact two-column form (a right-aligned label, the
+// controls and their short help to its right) at one width, the window taking each pane's height.
 import CipherfilmCore
 import SwiftUI
 
@@ -9,33 +11,103 @@ struct SettingsView: View {
     @Bindable var model = model
     TabView(selection: $model.settingsTab) {
       GeneralSettings().tabItem { Label("General", systemImage: "gearshape") }.tag("general")
+      AccountPane().tabItem { Label("Account", systemImage: "person.crop.circle") }.tag("account")
       SecuritySettings().tabItem { Label("Security", systemImage: "lock.shield") }.tag("security")
       SearchSettings().tabItem { Label("Search & People", systemImage: "sparkle.magnifyingglass") }.tag("search")
-      ExportSettings().tabItem { Label("Export", systemImage: "folder") }.tag("export")
-      WatchSettings().tabItem { Label("Watched Folders", systemImage: "eye") }.tag("watch")
-      WebDAVSettings().tabItem { Label("Import", systemImage: "square.and.arrow.down.on.square") }.tag("import")
+      ImportPane().tabItem { Label("Import", systemImage: "square.and.arrow.down.on.square") }.tag("import")
+      ExportSettings().tabItem { Label("Export", systemImage: "square.and.arrow.up.on.square") }.tag("export")
+      NotificationsPane().tabItem { Label("Notifications", systemImage: "bell.badge") }.tag("notifications")
       // only for an administrator, never the public demo login; the server checks every request itself
       if Admin.offered(model.me) {
         AdminSettings().tabItem { Label("Administration", systemImage: "person.2.badge.gearshape") }.tag("admin")
       }
+      AboutPane().tabItem { Label("About", systemImage: "info.circle") }.tag("about")
     }
-    .frame(width: 560)
     .tint(Ink.teal)
   }
 }
 
+enum PaneMetrics {
+  static let width: CGFloat = 680
+  static let label: CGFloat = 190
+  /** the tallest a pane gets before it scrolls */
+  static let maxHeight: CGFloat = 560
+}
+
+/** One pane: its rows at the window's width, as tall as they are (scrolls: a fixed height that scrolls, for the panes
+ *  whose lists grow). */
+struct Pane<Content: View>: View {
+  var scrolls = false
+  @ViewBuilder let content: Content
+  @State private var height: CGFloat = 300
+  var body: some View {
+    let inner = VStack(alignment: .leading, spacing: 16) { content }
+      .padding(.horizontal, 28).padding(.vertical, 22)
+      .frame(width: PaneMetrics.width, alignment: .topLeading)
+    if scrolls {
+      // as tall as its rows, up to maxHeight; past that it scrolls
+      ScrollView {
+        inner.fixedSize(horizontal: false, vertical: true)
+          .background(GeometryReader { g in Color.clear.preference(key: PaneHeight.self, value: g.size.height) })
+      }
+      .frame(width: PaneMetrics.width, height: min(height, PaneMetrics.maxHeight))
+      .onPreferenceChange(PaneHeight.self) { h in if h > 0 { height = h } }
+    } else {
+      inner.fixedSize(horizontal: false, vertical: true)
+    }
+  }
+}
+
+private struct PaneHeight: PreferenceKey {
+  static let defaultValue: CGFloat = 0
+  static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+/** A row of a pane: its label right-aligned in the left column ("Map:"), the controls in the right one, the help text
+ *  below them in small grey type. */
 struct Section_<Content: View>: View {
   let title: String
   var subtitle: String?
   @ViewBuilder let content: Content
+  @Environment(\.paneStacked) private var stacked
   var body: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      Text(title).font(Typo.title)
-      if let subtitle { Text(subtitle).font(Typo.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
-      content
+    if stacked {
+      VStack(alignment: .leading, spacing: 8) {
+        Text(title).font(Typo.title).accessibilityAddTraits(.isHeader)
+        if let subtitle { Text(subtitle).font(Typo.small).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+        content
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+    } else {
+      columns
     }
-    .frame(maxWidth: .infinity, alignment: .leading)
   }
+
+  private var columns: some View {
+    HStack(alignment: .firstTextBaseline, spacing: 12) {
+      Text(title.isEmpty ? "" : title + ":")
+        .font(.body)
+        .multilineTextAlignment(.trailing)
+        .frame(width: PaneMetrics.label, alignment: .trailing)
+        .accessibilityAddTraits(.isHeader)
+      VStack(alignment: .leading, spacing: 7) {
+        content
+        if let subtitle { Text(subtitle).font(Typo.small).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .accessibilityElement(children: .contain)
+  }
+}
+
+extension EnvironmentValues {
+  /** a pane of wide lists (Administration): titles above their content instead of in the left column */
+  @Entry var paneStacked = false
+}
+
+/** A thin line between groups of rows, as in the system's settings. */
+struct PaneDivider: View {
+  var body: some View { Divider().padding(.vertical, 2) }
 }
 
 struct NeedsUnlock: View {
@@ -46,84 +118,115 @@ struct NeedsUnlock: View {
 
 struct GeneralSettings: View {
   @Environment(AppModel.self) private var model
-  /** The map's credit when the server offers one: OpenStreetMap and OpenFreeMap for the default, else the map's own. */
-  private var mapCredit: String {
-    guard let m = model.me?.map else { return "" }
-    return m.isDefault ? "Map: © OpenStreetMap contributors, © OpenMapTiles · MapLibre GL JS (BSD-3-Clause)\n" : "Map: MapLibre GL JS (BSD-3-Clause); its data is credited on the map\n"
-  }
-
-  @State private var signOut = false
-  @State private var deleteAccount = false
-  @State private var touchError: String?
   @AppStorage("memoriesOn") private var memoriesOn = true
 
   var body: some View {
     @Bindable var agent = model.agent
-    VStack(alignment: .leading, spacing: 22) {
-      Section_(title: "This Mac", subtitle: "With the window closed, Cipherfilm keeps exporting, uploading watched folders and indexing from the menu bar.") {
+    Pane {
+      Section_(title: "Menu bar", subtitle: "With the window closed, Cipherfilm keeps exporting, uploading watched folders and indexing from the menu bar. To quit, use the power button in the menu-bar panel.") {
         Toggle("Keep running in the menu bar after closing or ⌘Q", isOn: $agent.keepRunning)
-        Text("To quit, use the power button in the menu-bar panel.").font(Typo.caption).foregroundStyle(.secondary)
         Toggle("Open at login", isOn: Binding(get: { model.agent.openAtLogin }, set: { model.agent.setOpenAtLogin($0) }))
-        Toggle("Notify when uploads, exports and indexing finish", isOn: Binding(get: { Notifier.enabled }, set: { Notifier.enabled = $0 }))
         if let p = model.agent.loginProblem { Text(p).font(Typo.caption).foregroundStyle(Ink.danger) }
       }
-      Divider()
+      Section_(title: "Lock") {
+        Toggle("Lock when this Mac sleeps or its screen locks", isOn: Binding(get: { AppModel.lockOnSleep }, set: { AppModel.lockOnSleep = $0 }))
+      }
+      PaneDivider()
       // the map's images come from a third party: off until turned on, per account on this Mac (MapPage.swift)
-      Section_(title: "Map", subtitle: "Your photos on a map. Map images from \(MapConsent.providerLong(model.me?.map)); a photo's small map in its details loads after Show Map.") {
-        Toggle("Map", isOn: Binding(get: { model.mapOn }, set: { model.mapOn = $0 }))
+      Section_(title: "Map", subtitle: "Map images from \(MapConsent.providerLong(model.me?.map)); a photo's small map in its details loads after Show Map.") {
+        Toggle("Show your photos on a map", isOn: Binding(get: { model.mapOn }, set: { model.mapOn = $0 }))
           .disabled(model.me == nil || model.me?.hasMap != true)
         if model.me != nil && model.me?.hasMap != true { Text("This server doesn't offer a map.").font(Typo.caption).foregroundStyle(.secondary) }
       }
-      Divider()
-      Section_(title: "Memories", subtitle: "Photos from around today's date in earlier years, a look back at each year, and trips suggested in Albums. Worked out on this Mac from the encrypted dates and places; the server learns nothing unless you save a trip as an album.") {
+      Section_(title: "Memories", subtitle: "Worked out on this Mac from the encrypted dates and places; the server learns nothing unless you save a trip as an album.") {
         Toggle("Show “On this day”, year recaps and trips", isOn: $memoriesOn)
       }
-      Divider()
-      Section_(title: "Unlock with Your Fingerprint", subtitle: "Your library's key is kept locked in this Mac's security chip. Changing your fingerprints turns it off. Your password always works.") {
-        Toggle("Unlock with your fingerprint", isOn: Binding(get: { model.touchID }, set: { on in
-          touchError = nil
-          if on { Task { do { try await model.enableTouchID() } catch { touchError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription } } }
-          else { model.disableTouchID() }
-        }))
-        .disabled(!TouchID.available || (model.phase != .unlocked && !model.touchID))
-        if !TouchID.available { Text("This Mac has no fingerprint sensor, or no fingerprint is set up.").font(Typo.caption).foregroundStyle(.secondary) }
-        else if model.phase != .unlocked && !model.touchID { NeedsUnlock() }
-        if let touchError { Text(touchError).font(Typo.caption).foregroundStyle(Ink.danger) }
-      }
-      Divider()
-      Section_(title: "Account") {
-        if let me = model.me {
-          LabeledContent("Signed in as", value: me.user.email)
+    }
+  }
+}
+
+/** Account: who is signed in where, lock, sign-out and deletion; the account's storage and devices' last uploads. */
+struct AccountPane: View {
+  @Environment(AppModel.self) private var model
+  @State private var signOut = false
+  @State private var deleteAccount = false
+
+  var body: some View {
+    Pane {
+      if let me = model.me {
+        Section_(title: "Signed in as") {
+          Text(me.user.email).textSelection(.enabled)
           if me.isDemo { Text(Me.demoNote).font(Typo.caption.weight(.semibold)).foregroundStyle(Ink.teal) }
-          if model.server != nil { LabeledContent("Server", value: model.serverName) }
+        }
+        if model.server != nil { Section_(title: "Server") { Text(model.serverName).textSelection(.enabled) } }
+        Section_(title: "This Mac", subtitle: "Signing out deletes this account's data from this Mac. Locking only forgets the keys; watched folders keep uploading.") {
           HStack {
             Button("Lock") { model.lock() }.disabled(model.phase != .unlocked)
             Button("Sign Out…") { signOut = true }
-            Spacer()
-            if !me.isDemo { Button("Delete Account…", role: .destructive) { deleteAccount = true } }
           }
-          Text("Signing out deletes this account's data from this Mac. Locking only forgets the keys; watched folders keep uploading.")
-            .font(Typo.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-          Toggle("Lock when this Mac sleeps or its screen locks", isOn: Binding(get: { AppModel.lockOnSleep }, set: { AppModel.lockOnSleep = $0 }))
-        } else {
-          Text("Not signed in.").foregroundStyle(.secondary)
         }
+        if !me.isDemo {
+          Section_(title: "Delete", subtitle: "Deletes the account and everything in it from the server.") {
+            Button("Delete Account…", role: .destructive) { deleteAccount = true }
+          }
+        }
+        PaneDivider()
+        MyStorageSection()
+      } else {
+        Section_(title: "Account") { Text("Not signed in.").foregroundStyle(.secondary) }
       }
-      Divider()
+    }
+    .sheet(isPresented: $signOut) { SignOutSheet().environment(model) }
+    .sheet(isPresented: $deleteAccount) { DeleteAccountSheet().environment(model) }
+  }
+}
+
+/** Notifications: when background work finishes, and new sign-ins to the account. */
+struct NotificationsPane: View {
+  @Environment(AppModel.self) private var model
+
+  var body: some View {
+    Pane {
+      Section_(title: "Background work", subtitle: "Uploads, watched folders, WebDAV imports, the first export and the first full index.") {
+        Toggle("Notify when uploads, exports and indexing finish", isOn: Binding(get: { Notifier.enabled }, set: { Notifier.enabled = $0 }))
+      }
+      if model.me?.isDemo != true { NoticeNotificationsSection() }
+    }
+  }
+}
+
+/** About: versions, the credits the map, place names and text model ask for, and the problem report. */
+struct AboutPane: View {
+  @Environment(AppModel.self) private var model
+  /** The map's credit when the server offers one: OpenStreetMap and OpenFreeMap for the default, else the map's own. */
+  private var mapCredit: String? {
+    guard let m = model.me?.map else { return nil }
+    return m.isDefault ? "Map: © OpenStreetMap contributors, © OpenMapTiles · MapLibre GL JS (BSD-3-Clause)" : "Map: MapLibre GL JS (BSD-3-Clause); its data is credited on the map"
+  }
+
+  var body: some View {
+    Pane {
+      Section_(title: "Cipherfilm") {
+        Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")").textSelection(.enabled)
+      }
+      if let v = model.me?.server_version { Section_(title: "Server") { Text("Version \(v)").textSelection(.enabled) } }
+      Section_(title: "Components") {
+        Text("libsodium \(Sodium.version) · ONNX Runtime \(Vision.runtimeVersion)").foregroundStyle(.secondary)
+      }
+      // the map's, the place names' and the text model's sources ask to be named (OpenStreetMap: ODbL; GeoNames: CC BY
+      // 4.0; PaddleOCR: Apache 2.0)
+      Section_(title: "Credits") {
+        VStack(alignment: .leading, spacing: 3) {
+          if let mapCredit { Text(mapCredit) }
+          Text("Place names: GeoNames (geonames.org), CC BY 4.0")
+          Text("Text recognition: PaddleOCR models, Apache 2.0")
+        }.font(Typo.small).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+      }
+      PaneDivider()
       Section_(title: "Problems", subtitle: "Opens the issue form in the browser. You see what it fills in first.") {
         Button("Report a Problem…") { ReportProblem.ask(model) }
       }
-      Divider()
-      Text("Cipherfilm \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")\(model.me?.server_version.map { " · server \($0)" } ?? "") · libsodium \(Sodium.version) · ONNX Runtime \(Vision.runtimeVersion)")
-        .font(Typo.small).foregroundStyle(.tertiary)
-      // the map's, the place names' and the text model's sources ask to be named (OpenStreetMap: ODbL; GeoNames: CC BY
-      // 4.0; PaddleOCR: Apache 2.0)
-      Text(mapCredit + "Place names: GeoNames (geonames.org), CC BY 4.0 · Text recognition: PaddleOCR models, Apache 2.0")
-        .font(Typo.small).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
     }
-    .padding(24)
-    .sheet(isPresented: $signOut) { SignOutSheet().environment(model) }
-    .sheet(isPresented: $deleteAccount) { DeleteAccountSheet().environment(model) }
   }
 }
 
@@ -264,8 +367,8 @@ struct SearchSettings: View {
   var body: some View {
     @Bindable var model = model
     let unlocked = model.phase == .unlocked
-    VStack(alignment: .leading, spacing: 20) {
-      Section_(title: "Search and people", subtitle: "Runs on this Mac with open models\(size(.clip).map { ", \($0)" } ?? ", already on this Mac"). Results are encrypted and stored on your server, shared with your other devices.") {
+    Pane(scrolls: true) {
+      Section_(title: "Search", subtitle: "Runs on this Mac with open models\(size(.clip).map { ", \($0)" } ?? ", already on this Mac"). Results are encrypted and stored on your server, shared with your other devices.") {
         Toggle("Search and people", isOn: Binding(get: { model.settings.search }, set: { on in
           if on { withConsent(.clip, faces: model.settings.faces) { model.turnOnSearch() } }
           // off: the models stay unless the person deletes them (asked when there are any)
@@ -355,7 +458,7 @@ struct SearchSettings: View {
           }
         }
       }
-      Divider()
+      PaneDivider()
       Section_(title: "Turn off and delete", subtitle: "Removes the models and index from this Mac; turning search on again asks before downloading them. “Everywhere” also deletes the index and people names from the server.") {
         HStack {
           Button("Turn Off on This Mac") { Task { try? await model.search.forget(clearServer: false, api: model.api); model.settings.search = false } }
@@ -364,7 +467,6 @@ struct SearchSettings: View {
         if let error { Text(error).font(Typo.caption).foregroundStyle(Ink.danger) }
       }
     }
-    .padding(24)
     .alert("Delete the search index and people everywhere?", isPresented: $confirm) {
       Button("Delete", role: .destructive) {
         Task {
@@ -416,10 +518,9 @@ struct ExportSettings: View {
     @Bindable var model = model
     let e = model.exporter
     let unlocked = model.phase == .unlocked
-    ScrollView {
-    VStack(alignment: .leading, spacing: 20) {
+    Pane(scrolls: true) {
       Section_(title: "Export to a folder", subtitle: "A decrypted copy of your library in a folder on this Mac or a drive. Anyone with access to the folder can see the photos.") {
-        Toggle("Export", isOn: Binding(get: { model.settings.exportOn }, set: { on in
+        Toggle("Keep a decrypted copy in a folder", isOn: Binding(get: { model.settings.exportOn }, set: { on in
           if on && model.settings.exportPath == nil { choose(thenEnable: true) } else { model.settings.exportOn = on }
         })).disabled(!unlocked)
         HStack {
@@ -435,19 +536,21 @@ struct ExportSettings: View {
         if let problem { Text(problem).font(Typo.caption).foregroundStyle(Ink.danger) }
         if !unlocked { NeedsUnlock() }
       }
-      Section_(title: "What and how") {
+      Section_(title: "Folders") {
         Picker("Folders", selection: $model.settings.exportLayout) {
           Text("By year and month").tag(Exporter.Layout.month)
           Text("By album").tag(Exporter.Layout.album)
-        }.fixedSize()
+        }.labelsHidden().fixedSize()
         if model.settings.exportLayout == .album {
-          Text("A photo in several albums goes into the first one. Photos in no album go to “Not in an album”.").font(Typo.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+          Text("A photo in several albums goes into the first one. Photos in no album go to “Not in an album”.").font(Typo.small).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
+      }
+      Section_(title: "What", subtitle: "Each photo is written once, even if uploaded twice. Existing files are kept. Changing the layout moves the files.") {
         Picker("Export", selection: $model.settings.exportScope) {
           Text("Everything").tag(Exporter.Scope.all)
           Text("Favorites").tag(Exporter.Scope.favorites)
           Text("Chosen albums").tag(Exporter.Scope.albums)
-        }.fixedSize()
+        }.labelsHidden().fixedSize()
         if model.settings.exportScope == .albums {
           VStack(alignment: .leading, spacing: 4) {
             ForEach(model.albums.filter { !$0.broken }) { a in
@@ -458,10 +561,8 @@ struct ExportSettings: View {
             if model.albums.isEmpty { Text("No albums yet.").font(Typo.caption).foregroundStyle(.secondary) }
           }.padding(.leading, 4)
         }
-        Text("Each photo is written once, even if uploaded twice. Existing files are kept. Changing the layout moves the files.")
-          .font(Typo.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
       }
-      Section_(title: "When something is deleted") {
+      Section_(title: "Deleted photos") {
         Toggle("Move copies of deleted photos to the Trash", isOn: $model.settings.exportTrashRemoved)
         Text("Only unchanged copies. Changes you make in the folder are left alone and never read back into the library.")
           .font(Typo.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -475,9 +576,6 @@ struct ExportSettings: View {
         }
       }
     }
-    .padding(24)
-    }
-    .frame(height: 560)
   }
 
   private func choose(thenEnable: Bool) {
@@ -500,9 +598,9 @@ struct WatchSettings: View {
   var body: some View {
     @Bindable var model = model
     let w = model.watcher
-    VStack(alignment: .leading, spacing: 20) {
-      Section_(title: "Upload new files from folders", subtitle: "New photos and videos here are encrypted and uploaded within seconds, even while locked. Files already in your library (same name and size) are skipped.") {
-        Toggle("Watched folders", isOn: Binding(get: { model.settings.watchOn }, set: { enable($0) }))
+    Group {
+      Section_(title: "Watched folders", subtitle: "New photos and videos here are encrypted and uploaded within seconds, even while locked. Files already in your library (same name and size) are skipped.") {
+        Toggle("Upload new files from folders on this Mac", isOn: Binding(get: { model.settings.watchOn }, set: { enable($0) }))
           .disabled(model.phase != .unlocked && !model.settings.watchOn)
         if model.phase != .unlocked && !model.settings.watchOn { NeedsUnlock() }
         if let error { Text(error).font(Typo.caption).foregroundStyle(Ink.danger) }
@@ -526,7 +624,7 @@ struct WatchSettings: View {
         }
       }
       if model.settings.watchOn {
-        Section_(title: "Status") {
+        Section_(title: "Watching") {
           Text(w.problem ?? (w.running ? (w.current.map { "Uploading \($0) · \(w.waiting) waiting" } ?? "Checking…") : w.lastDone.map { "Up to date, checked \($0.formatted(.relative(presentation: .named)))." } ?? "Waiting."))
             .font(Typo.caption).foregroundStyle(w.problem == nil ? .primary : Ink.danger)
           Text("\(w.uploaded) uploaded from watched folders on this Mac.").font(Typo.caption).foregroundStyle(.secondary)
@@ -535,7 +633,6 @@ struct WatchSettings: View {
         }
       }
     }
-    .padding(24)
   }
 
   /** Turning it on pins the account's public key after checking it against the private key, like the phone's backup. */

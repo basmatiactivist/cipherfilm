@@ -11,9 +11,9 @@ build notes: `mac/README.md`.
   on the sign-in and unlock screens, under the brand in the sidebar, and in the menu bar. The master key lives in
   memory only; after a restart the session stays and only the password (or Touch ID) is asked for again. **Lock**
   (⌃⌘L, the toolbar, the menu bar) forgets the keys and everything decrypted. "Lock when this Mac sleeps or its screen
-  locks" (Settings › General, on by default) does the same on its own. Settings › General also shows the app's and the server's
+  locks" (Settings › General, on by default) does the same on its own. Settings › About shows the app's and the server's
   version.
-- **Unlock with Touch ID** (Settings › General, off by default): a P-256 key in the Mac's Secure Enclave, usable only
+- **Unlock with Touch ID** (Settings › Security, off by default): a P-256 key in the Mac's Secure Enclave, usable only
   after a Touch ID check with the fingerprints enrolled at that moment, locks a copy of the master key (ECDH with a
   one-time key, HKDF-SHA256, ChaCha20-Poly1305 bound to the account). The key never leaves the chip; the account
   folder holds only its wrapped handle and the locked copy (`touchid.json`). Adding a fingerprint makes it unusable
@@ -66,7 +66,7 @@ build notes: `mac/README.md`.
   drag onto another person or use Move to (also "New Person…"). A face given to someone stays with them even where
   the automatic grouping put it with someone else (on the Mac; the phone still follows only the grouping there).
 - **Notifications** when an upload, a watched-folder run, the first export or the first full index finishes: how many,
-  never names. Settings › General turns them off.
+  never names. Settings › Notifications turns them off.
 - **Administration** (Settings › Administration, shown to administrators only, never to a public demo login): the web's
   admin area. People with their usage and last sign-in, invites (copy or share the link, revoke), storage limits and
   the default one, making someone an administrator or a regular user, disabling, enabling and deleting accounts,
@@ -112,7 +112,7 @@ Devices, Two-Step Sign-In); each can be removed, or all at once with Remove All,
 
 While the window isn't in front, a new notice also shows as a macOS notification, each once. The title says only what happened ("New sign-in to
 Cipherfilm"); the text names the device and the time, and macOS hides it where it hides previews. A click opens
-Settings › Security, which also turns them off. There is no push service: nothing arrives while the app isn't running.
+Settings › Security; Settings › Notifications turns them off. There is no push service: nothing arrives while the app isn't running.
 
 After a restart (or Open at Login) the library is locked until you unlock it once. There is deliberately no
 "remember the password"; with Touch ID unlock that is one touch.
@@ -159,7 +159,7 @@ export waits; with Touch ID unlock, one touch after a restart is enough.
 
 ## Watched folders
 
-Settings › Watched Folders: add folders and choose whether files already in them count ("Only files added from now
+Settings › Import › Watched folders: add folders and choose whether files already in them count ("Only files added from now
 on") or are uploaded too. New photos and videos are uploaded seconds after they appear (FSEvents), and every ten
 minutes a full pass catches anything missed. A file that is still being written waits for the next pass.
 
@@ -169,9 +169,19 @@ works while the library is locked, and it can add photos but not read any. Skipp
 (same name and size, refreshed whenever the library is unlocked), files it uploaded before, hidden files, and the
 insides of packages (such as a Photos library). A file that fails three times is skipped and listed in Settings.
 
+## Settings
+
+Laid out like the system's own settings windows: a toolbar of panes (General, Account, Security, Search & People,
+Import, Export, Notifications, Administration for administrators, About), each a compact form with its labels
+right-aligned in a column and the controls and a line of help beside them, at one width; the window takes each pane's
+height (the ones with lists scroll past about 560 points). The last pane chosen opens again. Watched folders and WebDAV
+folders are both under Import; Touch ID, two-step sign-in and devices under Security; the account, storage and backup
+under Account; versions and credits under About. A debug build writes a picture of every pane with
+`CF_AUTOTEST=1 CF_SIGNIN_ONLY=1 CF_SETTINGS_SHOTS=1 CF_SNAPSHOTS=<folder>` (see mac/README.md).
+
 ## Import from a WebDAV folder
 
-Settings › Import › Add Folder…: any WebDAV folder (a network drive, a NAS, a cloud drive that speaks WebDAV) as a
+Settings › Import › Add WebDAV Folder…: any WebDAV folder (a network drive, a NAS, a cloud drive that speaks WebDAV) as a
 source, with its address, user name and password, imported **once** or **kept importing** (new files every 15 minutes,
 hour, 6 hours or day, and at every unlock; "Only files added from now on" counts what is there now as done). Several
 folders can be added; Test Connection lists the folder and says how many files it would import. Each folder shows its
@@ -320,7 +330,7 @@ locked it checks every 5 minutes. Exported copies stay.
 
 ## Deleting the account
 
-Settings › General › Delete Account…: after the password the server deletes the account with all its photos, videos,
+Settings › Account › Delete Account…: after the password the server deletes the account with all its photos, videos,
 albums, people and search data and signs out every device; this Mac then forgets everything it keeps for the account,
 as at sign-out. Exported copies stay. The only active administrator must make someone else an administrator first.
 

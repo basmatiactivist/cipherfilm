@@ -23,7 +23,7 @@ public enum Report {
       appVersion = "\(version?.isEmpty == false ? version! : "unknown") (Mac)"
       let v = os.patchVersion > 0 ? "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)" : "\(os.majorVersion).\(os.minorVersion)"
       device = model.map { $0.isEmpty ? "macOS \(v)" : "macOS \(v) · \($0)" } ?? "macOS \(v)"
-      self.serverVersion = serverVersion?.isEmpty == false ? serverVersion : nil
+      self.serverVersion = Report.serverVersion(serverVersion)
     }
 
     /** The line the dialog shows, built from the same fields the link carries. */
@@ -38,6 +38,14 @@ public enum Report {
     let fields: [(String, String?)] = [("app", d.app), ("app_version", d.appVersion), ("device", d.device), ("server_version", d.serverVersion)]
     let q = fields.compactMap { k, v in v.map(clean).flatMap { $0.isEmpty ? nil : "&\(k)=\(encode($0))" } }.joined()
     return URL(string: issueForm + q)!
+  }
+
+  // The server's version is what the server says, and it lands in a public form: only a plain release number
+  // ("2.8.0"), with at most a short ASCII pre-release suffix ("2.8.0-rc.1"), or "dev" goes in; anything else is left out.
+  private static let versionRe = try! NSRegularExpression(pattern: "^(dev|[0-9]{1,4}\\.[0-9]{1,4}\\.[0-9]{1,4}(-[0-9A-Za-z.]{1,20})?)\\z")
+  static func serverVersion(_ v: String?) -> String? {
+    guard let v, v.unicodeScalars.allSatisfy(\.isASCII), versionRe.firstMatch(in: v, range: NSRange(v.startIndex..., in: v)) != nil else { return nil }
+    return v
   }
 
   // Control characters go, and a length cap keeps an odd value from making the link too long for GitHub (414); the

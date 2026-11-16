@@ -7,6 +7,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -118,6 +120,30 @@ func runAfterRestore(dataDir string) error {
 			return err
 		}
 		revoked, _ = res.RowsAffected()
+		// and the devices the replaced server already owed that answer but had not told yet, because they haven't come
+		// back since: unused for longer than their account allows, or past their end without reaching the year's
+		// (as lookupSession and startSession judge them)
+		var cols int
+		if err := tx.QueryRow(`SELECT (SELECT COUNT(*) FROM pragma_table_info('sessions','prev') WHERE name IN ('id_hash','user_id','created_at','last_seen','expires_at'))
+			+ (SELECT COUNT(*) FROM pragma_table_info('users','prev') WHERE name='device_idle_days')`).Scan(&cols); err != nil {
+			return err
+		}
+		if cols == 6 {
+			now := time.Now().Unix()
+			var in []string
+			for _, d := range idleChoices {
+				in = append(in, strconv.Itoa(d))
+			}
+			days := `CASE WHEN u.device_idle_days IN (` + strings.Join(in, ",") + `) THEN u.device_idle_days ELSE ` + strconv.Itoa(idleDays(0)) + ` END`
+			res, err := tx.Exec(`INSERT OR IGNORE INTO main.revoked_sessions(id_hash,at) SELECT s.id_hash,? FROM prev.sessions s
+				JOIN prev.users u ON u.id=s.user_id WHERE ?-s.last_seen > (`+days+`)*86400 OR (s.expires_at < ? AND s.expires_at < s.created_at + ?)`,
+				now, now, now, int64(sessionAbs.Seconds()))
+			if err != nil {
+				return err
+			}
+			n, _ := res.RowsAffected()
+			revoked += n
+		}
 	}
 	if accounts {
 		if err := carryAccounts(tx); err != nil {
@@ -231,6 +257,15 @@ func carryAccounts(tx *sql.Tx) error {
 	}
 	if cols == 2 {
 		if _, err := tx.Exec(`UPDATE main.users SET quota_bytes=p.quota_bytes, nsfw=p.nsfw FROM prev.users p WHERE p.id=users.id`); err != nil {
+			return err
+		}
+	}
+	// how long the person's devices may go unused (a shorter limit chosen since must not be lengthened again)
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('users','prev') WHERE name='device_idle_days'`).Scan(&cols); err != nil {
+		return err
+	}
+	if cols == 1 {
+		if _, err := tx.Exec(`UPDATE main.users SET device_idle_days=p.device_idle_days FROM prev.users p WHERE p.id=users.id`); err != nil {
 			return err
 		}
 	}

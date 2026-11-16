@@ -68,6 +68,12 @@ func TestRecoveryCodeFormat(t *testing.T) {
 	if _, ok := normRecoveryCode("uuuu-0000-0000-0000"); ok {
 		t.Fatal("u is not in the alphabet")
 	}
+	// letters that only lowercase to one of the alphabet's (Kelvin sign, dotted capital I) are not taken for it
+	for _, c := range []string{"\u212a000-0000-0000-0000", "\u0130000-0000-0000-0000"} {
+		if _, ok := normRecoveryCode(c); ok {
+			t.Fatalf("%q accepted", c)
+		}
+	}
 }
 
 // ---- helpers ----

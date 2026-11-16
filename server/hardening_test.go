@@ -259,3 +259,22 @@ func TestHeicPolicyOnlyForHeicFiles(t *testing.T) {
 		}
 	}
 }
+
+// A secret file of the wrong length is not replaced by a new secret (that would make every account's two-step
+// sign-in and passkeys unusable): the server doesn't start.
+func TestShortSecretFileIsNotReplaced(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "secret")
+	if err := os.WriteFile(p, []byte("short"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadSecret(p); err == nil {
+		t.Fatal("a short secret file was accepted")
+	}
+	if b, _ := os.ReadFile(p); string(b) != "short" {
+		t.Fatal("the secret file was replaced")
+	}
+	if b, err := loadSecret(filepath.Join(dir, "new")); err != nil || len(b) != 32 {
+		t.Fatalf("a missing one is made: %v", err)
+	}
+}

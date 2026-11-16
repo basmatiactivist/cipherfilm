@@ -192,6 +192,11 @@ func newRecoveryCodes() []string {
 // normRecoveryCode accepts a code as typed: any case, with or without dashes and spaces, and the letters people
 // mistake for digits.
 func normRecoveryCode(s string) (string, bool) {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 { // only what the codes are written in: no letter that merely lowercases to one of them
+			return "", false
+		}
+	}
 	s = strings.NewReplacer("-", "", " ", "", "o", "0", "i", "1", "l", "1").Replace(strings.ToLower(s))
 	if len(s) != 16 {
 		return "", false

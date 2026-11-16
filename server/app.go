@@ -216,14 +216,18 @@ func (a *App) fromProxy(remoteAddr string) bool {
 	return false
 }
 
-// loadSecret reads the HMAC secret, or makes one when there is none. A file that exists but cannot be read is an
-// error, not a reason to replace it: a new secret signs out every known browser and changes the fake salts.
+// loadSecret reads the HMAC secret, or makes one when there is none. A file that exists but cannot be read, or isn't
+// 32 bytes long, is an error, not a reason to replace it: a new secret signs out every known browser, changes the fake
+// salts and makes every authenticator secret, recovery code and passkey of the accounts unusable.
 func loadSecret(path string) ([]byte, error) {
 	b, err := os.ReadFile(path)
 	if err == nil && len(b) == 32 {
 		return b, nil
 	}
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err == nil {
+		return nil, fmt.Errorf("%s is %d bytes long, not 32: restore it from a backup (a new one would make every account's two-step sign-in unusable)", path, len(b))
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
 	b = randBytes(32)

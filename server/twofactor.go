@@ -621,13 +621,13 @@ func (a *App) stepUp(w http.ResponseWriter, r *http.Request, u *user, s *session
 }
 
 // checkPassword verifies the password proof sent with a change to two-step sign-in, counted like a password change.
-func (a *App) checkPassword(w http.ResponseWriter, r *http.Request, u *user, what, proof string) bool {
-	at, ok := reserve(slot{a.loginAcct, what + "|" + u.ID, true})
+func (a *App) checkPassword(w http.ResponseWriter, r *http.Request, u *user, s *session, what, proof string) bool {
+	at, ok := reserve(slot{a.loginAcct, what + "|" + s.IDHash, true})
 	if !ok {
 		fail(w, 429, "too many attempts, try later")
 		return false
 	}
-	if !a.proofOK(w, r, u, at, proof) {
+	if !a.proofOK(w, r, u, s, at, proof) {
 		return false
 	}
 	at.success()
@@ -635,19 +635,23 @@ func (a *App) checkPassword(w http.ResponseWriter, r *http.Request, u *user, wha
 }
 
 // proofOK checks the password proof of a signed-in session (to change the password or two-step sign-in, rotate the
-// recovery key, delete the account) and answers the request when it fails. The endpoints' own buckets reset on a
-// right proof, so these checks are bounded besides: proofsPerAccount per proofWindow per account, right or wrong,
-// and at most knownInFlight of the account's credential checks at once. They wait for an Argon2 slot in the known
-// lane, never in the queue that turns unknown browsers away, and leave it when the client has gone. On busy, at (the
-// endpoint's bucket) is refunded.
-func (a *App) proofOK(w http.ResponseWriter, r *http.Request, u *user, at *attempt, proof string) bool {
-	if !a.proofs.take(u.ID) {
+// recovery key, delete the account) and answers the request when it fails. Everything that admits a proof is counted
+// per session, not per account: another session of the account (one that was stolen, say) sending wrong or many
+// proofs must not keep the person's own session from changing the password, also not once it is signed out. The
+// endpoints' own buckets (keyed by the session too) reset on a right proof, so these checks are bounded besides:
+// proofsPerSession per proofWindow, right or wrong, and proofInFlight at once. They wait for an Argon2 slot in the
+// known lane, never in the queue that turns unknown browsers away, and leave it when the client has gone; their place
+// is their own, apart from the known browsers' sign-ins (knownTurn). On busy, at (the endpoint's bucket) and the proof
+// are given back.
+func (a *App) proofOK(w http.ResponseWriter, r *http.Request, u *user, s *session, at *attempt, proof string) bool {
+	if !a.proofs.take(s.IDHash) {
 		at.refund()
 		fail(w, 429, "too many attempts, try later")
 		return false
 	}
-	release, ok := a.knownTurn(u.ID)
+	release, ok := a.proofBusy.take(s.IDHash, proofInFlight)
 	if !ok {
+		a.proofs.give(s.IDHash)
 		at.refund()
 		failBusy(w)
 		return false
@@ -655,6 +659,7 @@ func (a *App) proofOK(w http.ResponseWriter, r *http.Request, u *user, at *attem
 	defer release()
 	good, busy := verifySecretCtx(r.Context(), false, u.AuthHash, proof)
 	if busy != nil {
+		a.proofs.give(s.IDHash)
 		at.refund()
 		failBusy(w)
 		return false
@@ -673,7 +678,7 @@ func (a *App) twoFactorSetup(w http.ResponseWriter, r *http.Request, u *user, s 
 		return
 	}
 	var req proofReq
-	if !readJSON(w, r, &req) || !a.checkPassword(w, r, u, "2fa-setup", req.CurrentAuth) {
+	if !readJSON(w, r, &req) || !a.checkPassword(w, r, u, s, "2fa-setup", req.CurrentAuth) {
 		return
 	}
 	if u.TOTPSecret != "" {
@@ -791,7 +796,7 @@ func (a *App) twoFactorEnable(w http.ResponseWriter, r *http.Request, u *user, s
 // current code (or a recovery code, which is used up, or a passkey).
 func (a *App) proofAndCode(w http.ResponseWriter, r *http.Request, u *user, s *session, what string) bool {
 	var req proofReq
-	if !readJSON(w, r, &req) || !a.checkPassword(w, r, u, what, req.CurrentAuth) {
+	if !readJSON(w, r, &req) || !a.checkPassword(w, r, u, s, what, req.CurrentAuth) {
 		return false
 	}
 	if !u.twoFactor() {

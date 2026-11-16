@@ -893,7 +893,7 @@ func TestTailscaleUserHeaderOnlyWhenTrusted(t *testing.T) {
 }
 
 // A signed-in session sending right password proofs (here: turning two-step sign-in off while it is off, which checks
-// the password and then answers 409) gets at most proofsPerAccount of them per window, at most knownInFlight at once,
+// the password and then answers 409) gets at most proofsPerSession of them per window, at most proofInFlight at once,
 // and none of them waits in the queue that turns unknown browsers away.
 func TestSignedInPasswordProofsAreBounded(t *testing.T) {
 	e := newEnv(t)
@@ -933,7 +933,7 @@ func TestSignedInPasswordProofsAreBounded(t *testing.T) {
 		}()
 	}
 	busy := 0
-	for end := time.Now().Add(5 * time.Second); busy < n-knownInFlight && time.Now().Before(end); {
+	for end := time.Now().Add(5 * time.Second); busy < n-proofInFlight && time.Now().Before(end); {
 		select {
 		case c := <-codes:
 			if c != 503 {
@@ -943,8 +943,8 @@ func TestSignedInPasswordProofsAreBounded(t *testing.T) {
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
-	if busy != n-knownInFlight || argonWaiting.Load() != 0 {
-		t.Fatalf("%d turned away, %d in the unknown browsers' queue; want %d and 0", busy, argonWaiting.Load(), n-knownInFlight)
+	if busy != n-proofInFlight || argonWaiting.Load() != 0 {
+		t.Fatalf("%d turned away, %d in the unknown browsers' queue; want %d and 0", busy, argonWaiting.Load(), n-proofInFlight)
 	}
 	free()
 	wg.Wait()
@@ -955,9 +955,8 @@ func TestSignedInPasswordProofsAreBounded(t *testing.T) {
 		}
 	}
 	// per window, right or wrong: the endpoint's own bucket resets on a right proof, this one doesn't
-	u, _ := e.app.userByEmail("admin@x.org")
-	e.app.proofs.clear(u.ID)
-	for i := 0; i < proofsPerAccount; i++ {
+	e.app.proofs = newLimiter(proofWindow, proofsPerSession)
+	for i := 0; i < proofsPerSession; i++ {
 		if code, _ := admin.do("POST", "/api/me/2fa/disable", proof, true); code != 409 {
 			t.Fatalf("proof %d: %d", i, code)
 		}
@@ -1048,5 +1047,45 @@ func TestOneSourceCantFillTheQueueWithRightCredentials(t *testing.T) {
 		if c != 200 {
 			t.Fatalf("a waiting check: %d", c)
 		}
+	}
+}
+
+// Wrong password proofs from another session of the account (a stolen one, without the password) use up that
+// session's budgets, not the person's: their own session can still change the password, also after signing the other
+// one out. And known browsers' sign-ins in flight don't take the place a signed-in proof waits in.
+func TestAnotherSessionCantUseUpTheOwnersProofs(t *testing.T) {
+	e := newEnv(t)
+	owner, ab := e.setupAdmin("admin@x.org")
+	stolen := e.login("admin@x.org", ab)
+	// the password change's own bucket, then the session's proofs across the routes that check the password first
+	for i := 0; i < 12; i++ {
+		stolen.do("POST", "/api/auth/password", map[string]any{"current_auth": rb(32), "new_auth": rb(32), "new_kdf": ab["kdf"], "new_wrapped_master_pw": rb(wrappedLen)}, true)
+	}
+	for _, path := range []string{"/api/me/2fa/disable", "/api/me/2fa/recovery-codes", "/api/me/2fa/setup"} {
+		for i := 0; i < 10; i++ {
+			stolen.do("POST", path, map[string]any{"current_auth": rb(32)}, true)
+		}
+	}
+	if code, _ := stolen.do("POST", "/api/auth/recovery-key", map[string]any{"current_auth": rb(32), "wrapped_master_recovery": rb(wrappedLen), "recovery_verifier": rb(32)}, true); code != 429 {
+		t.Fatalf("the other session's budget: %d", code)
+	}
+	if code, _ := owner.do("POST", "/api/auth/recovery-key", map[string]any{"current_auth": ab["auth"], "wrapped_master_recovery": rb(wrappedLen), "recovery_verifier": rb(32)}, true); code != 200 {
+		t.Fatalf("the owner's recovery key after another session's wrong proofs: %d", code)
+	}
+	if code, _ := owner.do("POST", "/api/me/sessions/end-others", nil, true); code != 200 {
+		t.Fatal(code)
+	}
+	// the known browsers' lane is full (someone with the password keeps sign-ins waiting): a proof still gets its turn
+	u, _ := e.app.userByEmail("admin@x.org")
+	for i := 0; i < knownInFlight; i++ {
+		release, ok := e.app.knownTurn(u.ID)
+		if !ok {
+			t.Fatal("known lane")
+		}
+		defer release()
+	}
+	nb := bundle()
+	if code, out := owner.do("POST", "/api/auth/password", map[string]any{"current_auth": ab["auth"], "new_auth": nb["auth"], "new_kdf": nb["kdf"], "new_wrapped_master_pw": nb["wrapped_master_pw"]}, true); code != 200 {
+		t.Fatalf("the owner's password change: %d %v", code, out)
 	}
 }

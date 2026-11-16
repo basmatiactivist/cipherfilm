@@ -17,7 +17,7 @@ import { Field, Problem, useAppTheme, Dialog } from "../ui";
 import { Icon } from "../icons";
 import { busyIcon } from "../Loader";
 import { useAction } from "../useAction";
-import { cleanCode, codeReady, groupSecret, stepButtons, stepError, stepNeeded, totpUri, withStep, type Ways } from "../twoStep";
+import { cleanCode, codeReady, groupSecret, setupUri, stepButtons, stepError, stepNeeded, withStep, type Ways } from "../twoStep";
 import { SecondStepFields, stepReady, takeStep, useSecondStep } from "../SecondStep";
 import { text } from "../tokens";
 import { t, tn } from "../i18n";
@@ -210,8 +210,10 @@ export default function TwoStep() {
 
 function SetupView({ setup, code, setCode, busy, onEnable }: { setup: Setup; code: string; setCode: (s: string) => void; busy: boolean; onEnable: () => void }) {
   const th = useAppTheme();
-  const qr = useMemo(() => encodeQR(setup.uri), [setup.uri]);
-  const side = qr.size + 8; // with the quiet zone of four modules each side
+  // the server's address only with the very key shown here in it (twoStep.ts setupUri): else no QR code and no hand-off
+  const uri = useMemo(() => setupUri(setup), [setup.uri, setup.secret]);
+  const qr = useMemo(() => (uri ? encodeQR(uri) : null), [uri]);
+  const side = (qr?.size ?? 0) + 8; // with the quiet zone of four modules each side
   const [note, setNote] = useState<string | undefined>();
   const [copied, setCopied] = useState(false);
   // the authenticator app is on this phone: the otpauth: address hands it the account in one tap (authenticator apps
@@ -219,8 +221,8 @@ function SetupView({ setup, code, setCode, busy, onEnable }: { setup: Setup; cod
   const addToApp = async () => {
     setNote(undefined);
     try {
-      if (!totpUri(setup.uri)) throw new Error("not an otpauth://totp/ address");
-      await Linking.openURL(setup.uri);
+      if (!uri) throw new Error("not an otpauth://totp/ address with this key");
+      await Linking.openURL(uri);
     } catch {
       setNote(t("No app on this phone takes it. Install an authenticator app, or copy the key into one."));
     }
@@ -236,16 +238,20 @@ function SetupView({ setup, code, setCode, busy, onEnable }: { setup: Setup; cod
         {t("Add to authenticator app")}
       </Button>
       <Problem>{note}</Problem>
-      <Text variant="bodyMedium" style={{ marginTop: 16 }}>{t("Or, with an app on another device, scan this code:")}</Text>
-      {/* always dark on white: scanners expect it, also in dark mode */}
-      <View style={st.qr} accessible accessibilityLabel={t("QR code for your authenticator app")}>
-        <Svg width={232} height={232} viewBox={`0 0 ${side} ${side}`}>
-          <Rect x={0} y={0} width={side} height={side} fill="#ffffff" />
-          <Path d={qrPath(qr)} fill="#000000" />
-        </Svg>
-      </View>
+      {qr ? (
+        <>
+          <Text variant="bodyMedium" style={{ marginTop: 16 }}>{t("Or, with an app on another device, scan this code:")}</Text>
+          {/* always dark on white: scanners expect it, also in dark mode */}
+          <View style={st.qr} accessible accessibilityLabel={t("QR code for your authenticator app")}>
+            <Svg width={232} height={232} viewBox={`0 0 ${side} ${side}`}>
+              <Rect x={0} y={0} width={side} height={side} fill="#ffffff" />
+              <Path d={qrPath(qr)} fill="#000000" />
+            </Svg>
+          </View>
+        </>
+      ) : null}
       <Text variant="bodyMedium">{t("Can't scan it? Enter this key instead (time-based):")}</Text>
-      <Text variant="titleMedium" selectable style={[st.secret, { backgroundColor: th.colors.surfaceVariant }]}>{groupSecret(setup.secret)}</Text>
+      <Text variant="titleMedium" selectable={false} style={[st.secret, { backgroundColor: th.colors.surfaceVariant }]}>{groupSecret(setup.secret)}</Text>
       <Button mode="outlined" icon={copied ? "check" : undefined} onPress={copyKey} style={{ marginTop: 8, alignSelf: "center" }}>{copied ? t("Copied for a minute") : t("Copy key")}</Button>
       <Text variant="bodyMedium" style={{ marginTop: 16, marginBottom: 8 }}>{t("2. Enter the 6-digit code the app shows.")}</Text>
       <Field label={t("Code")} value={code} onChangeText={(v) => setCode(cleanCode(v, false))} keyboardType="number-pad" textContentType="oneTimeCode" autoComplete="one-time-code"
@@ -267,7 +273,7 @@ function Codes({ codes, onDone }: { codes: string[]; onDone: () => void }) {
         {t("If you lose your phone, each code signs you in once instead of the authenticator app or a passkey. Keep them somewhere safe, like a password manager. They are shown only now.")}
       </Text>
       <View style={[st.codes, { backgroundColor: th.colors.surfaceVariant }]}>
-        {codes.map((c) => <Text key={c} variant="titleMedium" selectable style={st.code}>{c}</Text>)}
+        {codes.map((c) => <Text key={c} variant="titleMedium" selectable={false} style={st.code}>{c}</Text>)}
       </View>
       <View style={st.row}>
         <Button mode="outlined" icon={copied ? "check" : undefined} onPress={() => { N.copySecret(t("Recovery codes"), all); setCopied(true); }} style={st.half}>

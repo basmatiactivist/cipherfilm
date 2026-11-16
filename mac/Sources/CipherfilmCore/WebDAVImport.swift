@@ -35,15 +35,22 @@ public enum WebDAVImport {
     public var unsupported: [String]
     public var folders: Int
     public var files: Int
+    /** names in todo that are only read, not uploaded: files the locked folder already has (see plan) */
+    public var readOnly: Set<String> = []
   }
 
-  /** What a pass has to do. known: the library's fingerprints (name and size, Crypto.fingerprint). */
-  public static func plan(_ l: WebDAVListing, book: ImportBook, known: Set<String>) -> Plan {
+  /** What a pass has to do. known: the library's fingerprints (name and size, Crypto.fingerprint) without the locked
+   *  folder's; locked: the locked folder's. A file the locked folder has is read like a new one and then dropped (and
+   *  recorded as imported), so which files the Mac reads doesn't tell the WebDAV server what is in the locked folder;
+   *  it isn't uploaded again either. */
+  public static func plan(_ l: WebDAVListing, book: ImportBook, known: Set<String>, locked: Set<String> = []) -> Plan {
     var p = Plan(todo: [], bytes: 0, done: 0, inLibrary: 0, failed: 0, unsupported: [], folders: l.folders, files: l.files.count)
     for e in l.files {
       guard mime(for: e.name) != nil else { p.unsupported.append(e.name); continue }
       if let m = book.mark(e) { if m.skipped != nil { p.failed += 1 } else { p.done += 1 }; continue }
-      if known.contains(Crypto.fingerprint(name: e.name, size: e.size)) { p.inLibrary += 1; continue }
+      let print = Crypto.fingerprint(name: e.name, size: e.size)
+      if known.contains(print) { p.inLibrary += 1; continue }
+      if locked.contains(print) { p.readOnly.insert(e.name) }
       p.todo.append(e)
       // sizes are the server's word: summed without overflowing (a file over Media.maxFile fails on its own in upload)
       let (sum, over) = p.bytes.addingReportingOverflow(max(0, e.size))
@@ -58,6 +65,8 @@ public enum WebDAVImport {
     /** bytes uploaded since the last event of this file */
     case bytes(Int64)
     case uploaded(String, id: String)
+    /** read and dropped: the library has it already (Plan.readOnly) */
+    case alreadyThere(String)
     case failed(String, String, gaveUp: Bool)
   }
 
@@ -72,8 +81,8 @@ public enum WebDAVImport {
   /** Uploads the files, `parallel` at a time, recording each in the book as it is done. Throws what ended the pass
    *  early (Stopped, or a server that can't be reached); a file's own problem is counted against it instead. */
   public static func run(_ todo: [WebDAVEntry], client: WebDAVClient, api: API, wrap: Uploader.Wrap, book: ImportBook,
-                         parallel: Int = defaultParallel, temp: URL, budget: DiskBudget? = nil, live: @escaping @Sendable () throws -> Void,
-                         event: @escaping @Sendable (Event) -> Void) async throws {
+                         parallel: Int = defaultParallel, temp: URL, budget: DiskBudget? = nil, readOnly: Set<String> = [],
+                         live: @escaping @Sendable () throws -> Void, event: @escaping @Sendable (Event) -> Void) async throws {
     let budget = budget ?? DiskBudget(temp: temp)
     try await withThrowingTaskGroup(of: Void.self) { g in
       var running = 0
@@ -84,6 +93,14 @@ public enum WebDAVImport {
           event(.started(e.name, size: e.size))
           let last = Counter()
           do {
+            if readOnly.contains(e.name) {
+              try await readAndDrop(e, client: client, temp: temp, budget: budget, live: live)
+              try live()
+              book.markDone(e)
+              event(.bytes(e.size))
+              event(.alreadyThere(e.name))
+              return
+            }
             let id = try await upload(e, client: client, api: api, wrap: wrap, temp: temp, budget: budget, live: live) { done, _ in
               let before = last.value
               if done > before { last.add(done - before); event(.bytes(done - before)) }
@@ -128,6 +145,28 @@ public enum WebDAVImport {
     try await budget.acquire(e.size, live: live)
     defer { budget.release(e.size) }
     return try await viaFile(e, modified: modified, client: client, api: api, wrap: wrap, temp: temp, live: live, progress: progress)
+  }
+
+  /** Reads a file the way an upload of it would start (by parts, or whole into a temporary file from a server without
+   *  parts) and keeps nothing of it. */
+  static func readAndDrop(_ e: WebDAVEntry, client: WebDAVClient, temp: URL, budget: DiskBudget, live: @escaping @Sendable () throws -> Void) async throws {
+    guard e.size <= Media.maxFile else { return }
+    if e.size > Int64(Segments.plain), try await !client.sendsRanges(e) {
+      try await budget.acquire(e.size, live: live)
+      defer { budget.release(e.size) }
+      let dir = temp.appendingPathComponent(UUID().uuidString, isDirectory: true)
+      try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+      defer { try? FileManager.default.removeItem(at: dir) }
+      try await client.download(e, to: dir.appendingPathComponent(e.name))
+      return
+    }
+    var o: Int64 = 0
+    while o < e.size {
+      try live()
+      let n = Int(min(Int64(Segments.plain), e.size - o))
+      _ = try await client.read(e, offset: o, len: n)
+      o += Int64(n)
+    }
   }
 
   /** A photo: read once into memory, decoded from there for its thumbnails and metadata, encrypted from there. */

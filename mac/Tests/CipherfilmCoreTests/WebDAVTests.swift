@@ -355,6 +355,31 @@ final class StubDAV: URLProtocol, @unchecked Sendable {
     await #expect(throws: WebDAVError.notWebDAV) { try await client(ranges: true).list() }
   }
 
+  /** A file the locked folder has is read like a new one (the server can't tell it apart) and then dropped: not
+   *  uploaded, recorded as imported. */
+  @Test func aLockedFolderFileIsReadAndDropped() async throws {
+    let f = file
+    let reads = Counter()
+    StubDAV.handler = { r in
+      guard let h = r.value(forHTTPHeaderField: "Range"), h.hasPrefix("bytes=") else { return (200, [:], f) }
+      reads.add(1)
+      let p = h.dropFirst(6).split(separator: "-").map { Int($0)! }
+      return (206, ["Content-Range": "bytes \(p[0])-\(p[1])/\(f.count)"], f.subdata(in: p[0]..<p[1] + 1))
+    }
+    let c = WebDAVClient(folder: folder, user: "u", password: "p", protocols: [StubDAV.self])
+    let print = Crypto.fingerprint(name: entry.name, size: entry.size)
+    let book = ImportBook(file: nil)
+    let p = WebDAVImport.plan(WebDAVListing(files: [entry], folders: 0), book: book, known: [], locked: [print])
+    #expect(p.todo == [entry] && p.readOnly == [entry.name] && p.inLibrary == 0)
+    let events = Counter()
+    // the Cipherfilm server isn't reachable: an upload would end the pass with an error
+    try await WebDAVImport.run(p.todo, client: c, api: API(base: URL(string: "https://127.0.0.1:9")!), wrap: .sealed(pk: Data(repeating: 1, count: 32)),
+                               book: book, temp: FileManager.default.temporaryDirectory, readOnly: p.readOnly, live: {}) { ev in
+      if case .alreadyThere = ev { events.add(1) }
+    }
+    #expect(reads.value >= 1 && events.value == 1 && book.isDone(entry))
+  }
+
   /** No answer is taken in beyond what was asked for: a part longer than requested, a whole file longer than listed,
    *  a listing that announces more than the cap. */
   @Test func answersLongerThanAskedForAreRefused() async throws {

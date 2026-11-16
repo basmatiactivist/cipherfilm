@@ -276,7 +276,8 @@ struct TwoFactorSetupSheet: View {
         }.buttonStyle(SecondaryButton())
         if let opened { Text(opened).font(Typo.caption).foregroundStyle(Ink.muted) }
         HStack(alignment: .top, spacing: 16) {
-          QRImage(text: setup.uri)
+          // the same otpauth:// address the button opens, never another kind of link for a phone camera to follow
+          if let u = setup.totpURL { QRImage(text: u.absoluteString) }
           VStack(alignment: .leading, spacing: 8) {
             FieldLabel(text: "Key")
             Text(TwoFactor.grouped(setup.secret)).font(.system(.body, design: .monospaced)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)

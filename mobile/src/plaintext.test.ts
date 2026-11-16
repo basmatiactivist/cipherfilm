@@ -36,6 +36,18 @@ describe("decrypted pictures stay off the disk", () => {
     const calls = [...files.find(({ p }) => p === "./app/two-step.tsx")!.text.matchAll(/copySecret\(t\("([^"]+)"\), ([\w.]+)\)/g)].map((m) => `${m[1]}: ${m[2]}`);
     expect(calls).toEqual(["Authenticator key: setup.secret", "Recovery codes: all"]);
   });
+
+  it("clears exactly its own copy after a minute, with nothing left registered that could keep it there", async () => {
+    // @ts-ignore: runs in Node (vitest), where the app's types have no node:fs
+    const { readFileSync } = await import("node:fs");
+    const kt: string = readFileSync(new URL("../modules/cf-native/android/src/main/java/app/cipherfilm/cfnative/Passkeys.kt", import.meta.url), "utf8");
+    const clip = kt.slice(kt.indexOf("internal object SecretClip"));
+    // whether something was copied since is told by the clip's own random mark, not by a change listener
+    expect(clip).not.toMatch(/PrimaryClipChangedListener/);
+    expect(clip).toContain("putString(MARK, mark)");
+    expect(clip).toContain("d.extras?.getString(MARK) == mark");
+    expect(clip).toContain("main.postDelayed(r, CLEAR_AFTER_MS)");
+  });
 });
 
 describe("Android backup", () => {

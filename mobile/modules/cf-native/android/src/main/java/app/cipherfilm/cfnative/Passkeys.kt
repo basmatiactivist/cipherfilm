@@ -79,42 +79,39 @@ internal object Passkeys {
  */
 internal object SecretClip {
   private const val CLEAR_AFTER_MS = 60_000L
+  /** The copy's own random mark, in its description: what is cleared is only the very clip this app put there. */
+  private const val MARK = "app.cipherfilm.secret-clip"
   private val main = Handler(Looper.getMainLooper())
   private var pending: Runnable? = null
-  private var listener: ClipboardManager.OnPrimaryClipChangedListener? = null
 
   fun copy(ctx: Context, label: String, text: String) {
     main.post {
       val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+      val mark = java.util.UUID.randomUUID().toString()
       val clip = ClipData.newPlainText(label, text)
       // ClipDescription.EXTRA_IS_SENSITIVE from Android 13; the same key is read by earlier keyboards that honour it
       clip.description.extras = PersistableBundle().apply {
         putBoolean(if (Build.VERSION.SDK_INT >= 33) ClipDescription.EXTRA_IS_SENSITIVE else "android.content.extra.IS_SENSITIVE", true)
+        putString(MARK, mark)
       }
-      forget(cm)
+      // one clear at a time, for the newest copy: all on the main thread, nothing registered that could be left behind
+      pending?.let { main.removeCallbacks(it) }
       cm.setPrimaryClip(clip)
-      var replaced = false
-      val l = ClipboardManager.OnPrimaryClipChangedListener { replaced = true }
-      // registered after our own change, so only a later copy counts
-      main.post { cm.addPrimaryClipChangedListener(l) }
-      listener = l
       val r = Runnable {
-        cm.removePrimaryClipChangedListener(l)
-        if (!replaced) {
+        pending = null
+        if (stillThere(cm, mark)) {
           if (Build.VERSION.SDK_INT >= 28) cm.clearPrimaryClip() else cm.setPrimaryClip(ClipData.newPlainText("", ""))
         }
-        pending = null
-        listener = null
       }
       pending = r
       main.postDelayed(r, CLEAR_AFTER_MS)
     }
   }
 
-  private fun forget(cm: ClipboardManager) {
-    pending?.let { main.removeCallbacks(it) }
-    listener?.let { cm.removePrimaryClipChangedListener(it) }
-    pending = null
-    listener = null
+  /** Whether the clipboard still holds this copy: anything copied since has no mark or another one. Where Android
+   *  doesn't let the app look (in the background, from Android 10), it counts as still there: the secret rather goes. */
+  private fun stillThere(cm: ClipboardManager, mark: String): Boolean {
+    val d = runCatching { cm.primaryClipDescription }.getOrNull() ?: return true
+    return d.extras?.getString(MARK) == mark
   }
 }

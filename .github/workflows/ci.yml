@@ -153,6 +153,20 @@ jobs:
       - name: vet and test
         working-directory: tools/decrypt
         run: go vet ./... && go test ./...
+  upload-tool:
+    # the Mac uploader is released next to the decrypt tool and derives the same keys: its tests run on every change
+    needs: changes
+    # see "changes"; runs if that job itself failed
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' && (github.event_name == 'pull_request' || github.ref == 'refs/heads/master') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }  # no token left in .git for later steps
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with: { go-version: "1.27" }
+      - name: vet and test
+        working-directory: tools/upload
+        run: go vet ./... && go test ./...
   e2e:
     # The whole app in a browser: the real image behind HTTPS (Caddy), Playwright, then the leak check
     # that no plaintext reached the server's disk. Same command as on a laptop: make e2e.

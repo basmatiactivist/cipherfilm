@@ -230,7 +230,8 @@ timeline.
   `webdav/<id>.log` in the account's folder, one line per file, so a folder of any size costs one small write per
   file). A file counts as done while its name and size and its ETag or modification time match; a file replaced by
   another of the same name is imported as a new one. Files the library already has (same name and size, like the
-  watched folders) are skipped. A stop (lock, sleep, pause, quit, a server that can't be reached) discards the file in
+  watched folders) are skipped, except ones the locked folder has: those are read like new files and dropped, and Test
+  Connection doesn't count them. A stop (lock, sleep, pause, quit, a server that can't be reached) discards the file in
   progress on the server, and the next pass starts with it.
 - **Metadata as for a local file.** Capture time, size, camera and place from EXIF or the video's own metadata;
   without a date of its own, the server's modification time (`getlastmodified`). The original name and size, the
@@ -247,7 +248,9 @@ timeline.
 
 Security: the password is kept in the login keychain, readable by this app only (Keychain.swift), never logged, and
 answered only to the folder's own server's challenge (Basic or Digest), held in the import's memory while it runs. The
-WebDAV server sees this Mac list the folder and read files, nothing more (no writes, no cookies, no cache). The
+WebDAV server sees this Mac list the folder and read files, nothing more (no writes, no cookies, no cache). Since files
+the library already has are skipped, the files the Mac never reads tell the WebDAV server which of them are already in
+the library; files the locked folder has are read like new ones and then dropped, so it can't tell those. The
 Cipherfilm server sees new encrypted items like any upload; the folder's address, user name and file names never
 reach it (the names only inside the encrypted metadata). Sign-out, and a sign-out from another device, delete the
 account's WebDAV passwords and logs; removing a folder deletes its password and log (what it imported stays).
@@ -274,8 +277,9 @@ photo without EXIF and a server without modification times gets the time of the 
 
 - **Thumbnails** come in batches: the tiles on screen ask within a few milliseconds of each other and get up to 100
   thumbnails in one request (`POST /api/items/thumbs`; 80 took 37 ms on the test server), decoded off the main
-  thread. The newest 400 are fetched ahead as soon as the library opens, and the encrypted thumbnails stay in the cache
-  folder, so a restart shows them without the network. Against a server without the batch endpoint the app falls back
+  thread. The newest 400 are fetched ahead as soon as the library opens, whatever folder they are in (locked ones are
+  dropped, never kept), and the encrypted thumbnails of the others stay in the cache folder, so a restart shows them
+  without the network. Against a server without the batch endpoint the app falls back
   to one request each.
 - **Search indexing:** the models take about 65 ms a photo on an M-series Mac. Six photos are in flight at once, since
   downloading the preview is the slow part; people and open search results are worked out again at most every few

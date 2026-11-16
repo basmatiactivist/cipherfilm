@@ -40,4 +40,12 @@ import Testing
     await m.openLocked(visit: visit)
     #expect(!m.lockedOpen && m.lockedItems.isEmpty)
   }
+
+  /** A tile dragged and let go inside the window (a locked one too) is not uploaded again as a new, unlocked item. */
+  @Test func anOwnTileDroppedOnTheWindowIsNotUploaded() {
+    #expect(Dropper.isItemDrag("0123456789abcdef0123456789abcdef"))
+    #expect(!Dropper.isItemDrag("/Users/me/Pictures/a.jpg"))
+    #expect(Dropper.isOwnCopy(Outbox.dir.appendingPathComponent("0123456789abcdef0123456789abcdef/a.jpg")))
+    #expect(!Dropper.isOwnCopy(FileManager.default.temporaryDirectory.appendingPathComponent("a.jpg")))
+  }
 }

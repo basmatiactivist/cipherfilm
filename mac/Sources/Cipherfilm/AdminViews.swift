@@ -118,8 +118,7 @@ struct AdminPeople: View {
               .background(RoundedRectangle(cornerRadius: Radius.control).fill(Ink.paperDeep))
             HStack {
               Button(copied ? "Copied" : "Copy Link") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(invite.link, forType: .string)
+                copySecret(invite.link)  // concealed, and off the clipboard after a minute (SecurityViews.swift)
                 copied = true
               }
               ShareLink("Share…", item: invite.link)

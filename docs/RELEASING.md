@@ -7,6 +7,16 @@ Versions follow [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`.
 - **MAJOR** (2.0.0): anything that needs action from the operator or changes the encrypted format.
   The crypto format version is part of `docs/CRYPTO.md`; a format change is always a major release.
 
+## The Mac app in pull requests
+
+GitHub's macOS runners were often not handed out for hours, so the Mac workflow no longer runs on pushes and pull
+requests (it still runs for a release tag, and by hand). A change that touches `mac/`, `web/src/places/` or the
+shared test vectors is built and tested on a Mac before it is merged:
+
+```sh
+cd mac && swift build && swift test
+```
+
 ## Cutting a release
 
 1. Move the entries from `## [Unreleased]` in `CHANGELOG.md` into a new `## [X.Y.Z] - YYYY-MM-DD` section.

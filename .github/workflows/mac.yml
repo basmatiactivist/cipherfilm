@@ -1,7 +1,9 @@
 name: Mac
 # Builds the Mac app (mac/) with xcodebuild and runs its core tests (crypto against the web client's test vectors,
-# tokenizer, search index). Runs on pushes that touch mac/, and from the release workflow for a tag, which attaches
-# cipherfilm-mac-<version>.zip. Unsigned until signing secrets exist: the build is signed ad hoc and Gatekeeper
+# tokenizer, search index). Runs from the release workflow for a tag, which attaches cipherfilm-mac-<version>.zip, and
+# by hand. Not on pushes and pull requests: GitHub's macOS runners were often not handed out for hours, so every change
+# to mac/ failed here; the Mac app is built and tested on the developer's Mac before merging instead
+# (cd mac && swift build && swift test; docs/RELEASING.md). Unsigned until signing secrets exist: the build is signed ad hoc and Gatekeeper
 # refuses it at first (System Settings > Privacy & Security > Open Anyway, or sign and notarise it with a Developer ID).
 on:
   workflow_call:
@@ -9,17 +11,12 @@ on:
       version: { type: string, required: true }
     outputs:
       sums: { value: "${{ jobs.build.outputs.sums }}" }  # the release job publishes only the file that matches
-  push:
-    branches: [master]
-    paths: ["mac/**", "tools/decrypt/testdata/**", "web/src/places/**", "web/package-lock.json", ".github/workflows/mac.yml"]
-  pull_request:
-    paths: ["mac/**", "tools/decrypt/testdata/**", "web/src/places/**", "web/package-lock.json", ".github/workflows/mac.yml"]
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   build:
-    runs-on: macos-26
+    runs-on: macos-15 # arm64 with the newest Xcode too (picked below); macos-26 runners were the scarcest
     outputs:
       sums: ${{ steps.sums.outputs.sums }}
     timeout-minutes: 40

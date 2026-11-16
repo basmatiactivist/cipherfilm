@@ -26,6 +26,10 @@ async function signIn(page: Page, email: string, pw: string) {
   await expect(page.getByRole("button", { name: "Timeline" })).toBeVisible({ timeout: 30_000 });
 }
 async function scan(page: Page, where: string) {
+  // Playwright's Firefox build crashes the tab while axe computes the role of a section named by its heading
+  // (aria-labelledby): a browser bug, not the page's (the same markup re-created by hand doesn't crash it). axe judges
+  // the DOM, which is the same in every browser; Chromium and WebKit run the full audit, Firefox the layout checks.
+  if (test.info().project.use.browserName === "firefox") return;
   const r = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();
   const bad = r.violations.map((v) => `${where}: ${v.id} (${v.impact}) ${v.nodes.slice(0, 3).map((n) => n.target.join(" ")).join(" | ")}`);
   expect(bad, bad.join("\n")).toEqual([]);

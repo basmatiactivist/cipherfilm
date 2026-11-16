@@ -105,7 +105,8 @@ test.describe.serial("manage", () => {
     await page.getByRole("button", { name: "Albums" }).click();
     await page.getByRole("button", { name: /Trip/ }).click();
     const [dl] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.getByRole("button", { name: "Download as ZIP" }).click()]);
-    expect(dl.suggestedFilename()).toBe("Trip_ 2026_Summer.zip"); // path characters are neutralised
+    // path characters are neutralised (the app names it "Trip_ 2026_Summer.zip"; WebKit also turns the space into "_")
+    expect(dl.suggestedFilename()).toMatch(/^Trip_[ _]2026_Summer\.zip$/);
     expect(Object.keys(readZip(readFileSync((await dl.path())!)))).toHaveLength(2);
     await ctx.close();
   });

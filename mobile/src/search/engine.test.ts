@@ -6,6 +6,7 @@ vi.mock("expo-file-system", () => ({ Directory: class {}, File: class {}, Paths:
 vi.mock("../../modules/cf-native/src/CfNativeModule", () => ({ default: { visionAnalyze: (...a: unknown[]) => nat.analyze(...a) } }));
 vi.mock("../api", () => ({ api: async () => ({}), ApiError: class extends Error {}, server: () => "" }));
 vi.mock("../prints", () => ({ fingerprint: async () => "" }));
+vi.mock("../ownUploads", () => ({ onlyOwn: async () => [] }));
 vi.mock("../session", () => ({ onWipe: () => {}, refreshMe: async () => null, session: () => ({}) }));
 vi.mock("../library", () => ({ imageBytes: async () => new Uint8Array(0) }));
 vi.mock("../keepAlive", () => ({ keepRunning: () => false, letGo: () => {}, onlyHolder: () => false }));

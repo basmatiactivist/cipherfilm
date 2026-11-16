@@ -1,8 +1,11 @@
 // Archive and locked folder (docs/EDITING.md, "Archive and locked folder"). Which folder an item is in is written
 // INSIDE its encrypted metadata (`archived: true` or `locked: true`, through the same PUT /api/items/{id}/meta and
-// metadata version as every other change), so the server never learns which items are archived or locked: it sees
-// only that an item's metadata changed. Shared by the web app and the Android app (@edit/folders); the Mac mirrors it
-// in mac/Sources/CipherfilmCore/Folders.swift, with tests on the same cases.
+// metadata version as every other change), so the server is never told which items are archived or locked: it sees
+// that an item's metadata changed, and which thumbnails, previews and originals a device fetches. From those requests
+// (opening the locked folder or an item in it, scrolling, what is fetched again after a reload or restart, a trash
+// followed at once by a purge) it can infer much of which items are locked, never what they show (docs/THREAT_MODEL.md,
+// Archive and locked folder). Shared by the web app and the Android app (@edit/folders); the Mac mirrors it in
+// mac/Sources/CipherfilmCore/Folders.swift, with tests on the same cases.
 //
 //   library  the main grid, On this day, search, albums, people, map, duplicates, free up space
 //   archive  out of the main grid and On this day; still in search, albums, people, the map and favorites

@@ -2,7 +2,9 @@
 // with tests on the same cases (FoldersTests). Which folder an item is in is written INSIDE its encrypted metadata
 // (`archived: true` or `locked: true`, through PUT /api/items/{id}/meta with the metadata version raised, as for every
 // other change), so the server is never told which items are archived or locked: it sees that an item's metadata
-// changed, and, when the locked folder or an item in it is opened, which items are fetched together.
+// changed, and which thumbnails, previews and originals this Mac fetches. From those requests (opening the locked
+// folder or an item in it, scrolling, what is fetched again after a restart, a trash followed at once by a purge) it
+// can infer much of which items are locked, never what they show (docs/THREAT_MODEL.md, Archive and locked folder).
 //
 //   library  the main grid, On this day, search, albums, people, map, duplicates
 //   archive  out of the main grid and On this day; still in search, albums, people, the map and favorites

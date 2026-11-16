@@ -161,7 +161,7 @@ func (a *App) listSince(w http.ResponseWriter, r *http.Request, u *user, trash b
 		return
 	}
 	// bounded above by the number read first: a change committed meanwhile comes with the next request
-	rows, err := a.db.Query(`SELECT rev,id,kind,size_bytes,segment_count,wrapped_item_key,meta_enc,has_thumb,has_preview,created_at,favorite,trashed_at
+	rows, err := a.db.QueryContext(r.Context(), `SELECT rev,id,kind,size_bytes,segment_count,wrapped_item_key,meta_enc,has_thumb,has_preview,created_at,favorite,trashed_at
 		FROM items WHERE user_id=? AND state='ready' AND rev>? AND rev<=? ORDER BY rev LIMIT ?`, u.ID, since, st.rev, listPage+1)
 	if err != nil {
 		fail(w, 500, "server error")
@@ -206,7 +206,7 @@ func (a *App) listSince(w http.ResponseWriter, r *http.Request, u *user, trash b
 	if cut >= 0 {
 		upto = cut // removals after the last row read wait for the next page, behind the items read up to there
 	}
-	trows, err := a.db.Query(`SELECT rev,item_id FROM item_tombstones WHERE user_id=? AND rev>? AND rev<=? ORDER BY rev LIMIT ?`, u.ID, since, upto, listPage+1)
+	trows, err := a.db.QueryContext(r.Context(), `SELECT rev,item_id FROM item_tombstones WHERE user_id=? AND rev>? AND rev<=? ORDER BY rev LIMIT ?`, u.ID, since, upto, listPage+1)
 	if err != nil {
 		fail(w, 500, "server error")
 		return

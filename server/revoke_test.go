@@ -90,3 +90,32 @@ func TestConsoleDisableCountsAsSignedOut(t *testing.T) {
 		t.Fatal("device of an account disabled from the console not told")
 	}
 }
+
+// Deleting an account, in the admin area or on the console, signs its devices out on purpose too: they delete what
+// they keep, as after self-deletion or disabling.
+func TestDeletedAccountsDevicesAreTold(t *testing.T) {
+	e := newEnv(t)
+	admin, _ := e.setupAdmin("admin@x.org")
+	bob, bb := e.acceptInvite(e.invite(admin, "bob@x.org"))
+	bobPhone := e.login("bob@x.org", bb)
+	if code, out := admin.do("DELETE", "/api/admin/users/"+mustUserID(e, "bob@x.org"), nil, true); code != 200 {
+		t.Fatalf("delete: %d %v", code, out)
+	}
+	if !told(t, e, bob) || !told(t, e, bobPhone) {
+		t.Fatal("device of an account deleted in the admin area not told")
+	}
+	carol, _ := e.acceptInvite(e.invite(admin, "carol@x.org"))
+	if _, err := e.cli("delete-user", "carol@x.org", "--yes"); err != nil {
+		t.Fatal(err)
+	}
+	if !told(t, e, carol) {
+		t.Fatal("device of an account deleted from the console not told")
+	}
+	// a delete that is refused (the last administrator) marks nothing
+	if _, err := e.cli("delete-user", "admin@x.org", "--yes"); err == nil {
+		t.Fatal("the last administrator was deleted")
+	}
+	if code, _ := admin.do("GET", "/api/me", nil, false); code != 200 {
+		t.Fatalf("the refused delete ended the admin's session: %d", code)
+	}
+}

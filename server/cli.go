@@ -297,10 +297,13 @@ func cliDeleteUser(a *App, out io.Writer, args []string) error {
 		return fmt.Errorf("this permanently deletes %s and its %d photos and videos; nobody can bring them back.\nRun it again with --yes to confirm", u.Email, n)
 	}
 	ids := a.itemIDs(u.ID)
+	// as from the admin area: its devices learn they were signed out on purpose and delete what they keep
+	all := a.toRevoke(`user_id=?`, u.ID)
 	res, err := a.db.Exec(`DELETE FROM users WHERE id=? AND `+keepsAdmin, u.ID)
 	if rowsAffected(res, err) != 1 {
 		return errors.New("couldn't delete the account (it may be the only active administrator)")
 	}
+	a.revokeLater(all)
 	for _, id := range ids {
 		a.removeBlobs(id)
 	}

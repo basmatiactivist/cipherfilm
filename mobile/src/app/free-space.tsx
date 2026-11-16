@@ -6,7 +6,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import N, { type PhoneMedia } from "../../modules/cf-native/src/CfNativeModule";
 import { away } from "../autolock";
 import { refreshLibrary, useLibrary } from "../libraryStore";
-import { fingerprint } from "../prints";
+import { alreadyIn } from "../freeSpace";
+import { useSession } from "../session";
 import { Icon } from "../icons";
 import { Problem, useAppTheme } from "../ui";
 import { radius, text } from "../tokens";
@@ -24,6 +25,7 @@ export default function FreeSpace() {
   const theme = useAppTheme();
   const inset = useSafeAreaInsets();
   const { items, error: libraryError, loadedAt } = useLibrary();
+  const userId = useSession().me?.user.id;
   // decided on the server's list as it is now, never a cached or older one (trashed elsewhere meanwhile)
   const [opened] = useState(Date.now);
   const fresh = loadedAt >= opened && !libraryError;
@@ -54,19 +56,13 @@ export default function FreeSpace() {
     return () => sub.remove();
   }, [scan]);
 
-  // what is safely in the library: same name and size as a finished, verified item
+  // what is safely in the library: same name and size as a finished, verified item made by the owner's devices
   useEffect(() => {
     if (!media || !items || !fresh) return;
     let live = true;
-    (async () => {
-      const prints = new Set<string>();
-      for (const it of items) if (it.meta && !it.broken && it.meta.size > 0) prints.add(await fingerprint(it.meta.name, it.meta.size));
-      const out: PhoneMedia[] = [];
-      for (const m of media) if (m.size > 0 && prints.has(await fingerprint(m.name, m.size))) out.push(m);
-      if (live) setMatched(out);
-    })();
+    alreadyIn(userId, items, media).then((out) => { if (live) setMatched(out); }, (e) => { if (live) setError((e as Error).message); });
     return () => { live = false; };
-  }, [media, items, fresh]);
+  }, [media, items, fresh, userId]);
 
   const days = AGES.find((a) => a.key === age)!.days;
   const folders = useMemo(() => {

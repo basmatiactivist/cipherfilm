@@ -11,7 +11,7 @@ import { savedServer } from "../session";
 import { fingerprint } from "../prints";
 import { CLIP, haveModels, haveOcr, modelPath, type Clip } from "./models";
 import { loadSettings, saveSettings, type SearchSettings } from "./settings";
-import { analyzeBytes, localFile } from "./engine";
+import { analyzeBytes, LOCAL_V, localFile } from "./engine";
 
 const BUDGET = 6 * 60_000;
 
@@ -84,9 +84,11 @@ export async function runBackgroundIndex(): Promise<number> {
   const f = localFile();
   if (!f.exists) return 0;
   // attempt: the item a run was working on; still set at the next run means that run died on it (killed or hung)
-  let local: { userId: string; prints: Record<string, string>; done: string[]; attempt?: string };
+  let local: { v?: number; userId: string; prints: Record<string, string>; done: string[]; attempt?: string };
   try { local = JSON.parse(await f.text()); } catch { return 0; }
   if (!local || typeof local.prints !== "object" || !local.prints || !Array.isArray(local.done)) return 0; // the app writes it again
+  // a list from before it named only items the owner's devices made (engine.ts matchable): the app writes it again
+  if (local.v !== LOCAL_V) return 0;
   const clip = CLIP;
   if (local.userId !== st.userId || !(await haveModels(st.faces, clip))) return 0;
   if (local.attempt) { // not tried here again: the app indexes it from the server's preview when it is opened

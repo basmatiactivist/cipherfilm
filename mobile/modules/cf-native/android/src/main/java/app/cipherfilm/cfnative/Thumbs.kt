@@ -48,6 +48,7 @@ internal object Thumbs {
   @Volatile private var dir: File? = null
   @Volatile private var single = false // an older server without the batch endpoint
   @Volatile private var gen = 0 // goes up at every clear: work started before it is dropped
+  private val ITEM_ID = Regex("^[0-9a-f]{32}$")
   private val keys = ConcurrentHashMap<String, ByteArray>()
 
   private val main = Handler(Looper.getMainLooper())
@@ -88,7 +89,8 @@ internal object Thumbs {
         val ctx = "ITEMTHMB".toByteArray(Charsets.US_ASCII)
         val k = ByteArray(32)
         ids.forEachIndexed { i, id ->
-          if (keys.containsKey(id) || g != gen) return@forEachIndexed
+          // only item ids get a key, and with it everything else here (request, prefetch, the files named after it)
+          if (!ITEM_ID.matches(id) || keys.containsKey(id) || g != gen) return@forEachIndexed
           System.arraycopy(itemKeys, i * 32, k, 0, 32)
           val sub = ByteArray(32)
           if (Sodium.lib.crypto_kdf_derive_from_key(sub, NativeLong(32), 0, ctx, k) == 0) got[id] = sub
@@ -132,7 +134,7 @@ internal object Thumbs {
     for (id in ids) {
       versions.compute(id) { _, v -> (v ?: 0) + 1 }
       bitmaps.remove(id)
-      if (d != null && Regex("^[0-9a-f]{32}$").matches(id)) disk.execute { File(d, "thumb-$id").delete() }
+      if (d != null && ITEM_ID.matches(id)) disk.execute { File(d, "thumb-$id").delete() }
     }
     notifyViews()
   }

@@ -105,6 +105,10 @@ async function dropKeys(userId: string, all: boolean) {
   if (all && (await lastUser()) === userId) await SecureStore.deleteItemAsync(LAST_USER).catch(() => {});
 }
 const prompt = () => t("Unlock Cipherfilm");
+/** A sign-out from elsewhere learned where not every part of the app had registered what it deletes (a background run,
+ *  which loads only the backup): the next start, with the whole app loaded, deletes the rest. */
+const TEARDOWN = "cf.teardown";
+let started = false; // start() ran: the whole app is loaded, every onWipe and onSignOut registered
 
 /** Same bounds as the server and the web client: a server can't talk the app into weak or absurd Argon2 settings. */
 export function assertSaneKdf(k: KdfParams) {
@@ -157,6 +161,8 @@ async function revoked(from: string) {
   if (!origin || (origin !== bare(server()) && origin !== saved)) return; // only this phone's own server
   const me = state.me;
   handedOver(); // a backup still running stops before its next request
+  const whole = started;
+  if (!whole) await SecureStore.setItemAsync(TEARDOWN, "1").catch(() => {});
   await dropKeys(me?.user.id ?? (await lastUser()), true);
   wipe("ended");
   await forgetAccount();
@@ -179,6 +185,14 @@ export async function refreshMe(): Promise<Me | null> {
 }
 
 export async function start() {
+  started = true;
+  // signed out from elsewhere in a background run: what that run hadn't loaded is deleted now (no one can have signed
+  // in since: that needs the app on screen, which starts here)
+  if (await SecureStore.getItemAsync(TEARDOWN).catch(() => null)) {
+    wipe("ended");
+    await forgetAccount();
+    await SecureStore.deleteItemAsync(TEARDOWN).catch(() => {});
+  }
   const server = (await SecureStore.getItemAsync(SERVER)) ?? "";
   if (!server) return set({ phase: "noServer" });
   setServer(server);

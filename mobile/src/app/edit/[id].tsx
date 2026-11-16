@@ -162,7 +162,10 @@ export default function EditScreen() {
   const navigation = useNavigation();
   // Discard: the guard goes first, the screen leaves once that has rendered (else the guard would stop it again)
   const [leaveWith, setLeaveWith] = useState<null | { action: unknown }>(null);
-  usePreventRemove(changed && !saved && !leaveWith, ({ data }) => setDiscard(() => () => setLeaveWith({ action: data.action })));
+  // only while the library is unlocked: a lock (or sign-out) takes the editor away at once, changes or not, so its
+  // picture, date and place never stay on screen (app/_layout.tsx)
+  const unlocked = useSession().phase === "unlocked";
+  usePreventRemove(changed && !saved && !leaveWith && unlocked, ({ data }) => setDiscard(() => () => setLeaveWith({ action: data.action })));
   useEffect(() => { if (leaveWith) navigation.dispatch(leaveWith.action as never); }, [leaveWith]);
 
   // the place search's suggestions come below its field: while typing there, the page shows them above the keyboard
@@ -284,7 +287,7 @@ export default function EditScreen() {
         </View>
       </ScrollView>
       <Portal>
-        <Dialog visible={!!discard} onDismiss={() => setDiscard(null)}>
+        <Dialog visible={!!discard && unlocked} onDismiss={() => setDiscard(null)}>
           <Dialog.Title>{t("Discard your changes?")}</Dialog.Title>
           <Dialog.Content><Text variant="bodyMedium">{t("What you changed here isn't saved.")}</Text></Dialog.Content>
           <Dialog.Actions>

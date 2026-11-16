@@ -299,8 +299,9 @@ export async function runBackup(trigger: "background" | "app" | "manual"): Promi
     const show = (force = false, note?: string) => {
       const now = Date.now();
       if (!force && now - shownAt < 1000) return; // Android drops updates that come faster
+      if (!current()) return; // signed out meanwhile: its notification is gone and stays gone
       const p = progress.get();
-      if (current()) setLive(p);
+      setLive(p);
       const name = going.values().next().value;
       if (!name) return; // between files: the next one shows itself
       const title = t("Backing up {n} of {total}", { n: p.position, total: p.total });

@@ -67,6 +67,19 @@ export function passkeyTrouble(e: unknown): "cancelled" | "none" | "unsupported"
  *  open (any other scheme, a web page or another app's link, from a server that isn't honest, is not). */
 export const totpUri = (uri: unknown): uri is string => typeof uri === "string" && uri.slice(0, 15).toLowerCase() === "otpauth://totp/";
 
+/** The server's otpauth://totp/ address, only when the key in it is the very key shown and copied (setup.secret): the
+ *  QR code and the one-tap hand-off never carry anything else. Null otherwise. */
+export function setupUri(setup: { uri?: unknown; secret?: unknown }): string | null {
+  const { uri, secret } = setup;
+  if (!totpUri(uri) || typeof secret !== "string" || !secret) return null;
+  const norm = (k: string) => k.replace(/[\s=]/g, "").toUpperCase();
+  const q = uri.split("#")[0].split("?")[1] ?? "";
+  const keys = q.split("&").filter((p) => p.split("=")[0].toLowerCase() === "secret").map((p) => {
+    try { return decodeURIComponent(p.slice(p.indexOf("=") + 1)); } catch { return ""; }
+  });
+  return keys.length === 1 && !!norm(keys[0]) && norm(keys[0]) === norm(secret) ? uri : null;
+}
+
 /** The host of the server the app was set up with ("https://photos.example.org:8443/" is "photos.example.org"). */
 export function serverHost(origin: string): string {
   const m = /^https?:\/\/(\[[^\]]+\]|[^/:?#]+)/i.exec(origin.trim());

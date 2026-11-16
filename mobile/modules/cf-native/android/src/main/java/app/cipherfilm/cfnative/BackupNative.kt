@@ -215,12 +215,16 @@ internal object BackupNative {
       nm.createNotificationChannel(NotificationChannel(CHANNEL, name, NotificationManager.IMPORTANCE_LOW).apply {
         description = about
         setShowBadge(false)
+        lockscreenVisibility = NotificationCompat.VISIBILITY_SECRET // (a channel made before keeps the person's setting)
       })
     }
     val open = ctx.packageManager.getLaunchIntentForPackage(ctx.packageName)?.let {
       android.app.PendingIntent.getActivity(ctx, 0, it, android.app.PendingIntent.FLAG_IMMUTABLE)
     }
     val gone = android.app.PendingIntent.getBroadcast(ctx, 1, Intent(ctx, TransferService.Dismissed::class.java), android.app.PendingIntent.FLAG_IMMUTABLE)
+    // the text names the file under way: secret on the lock screen (not private, which shows everything when the
+    // phone's setting shows all notification content); where Android redacts, only the title without any file name
+    val public = NotificationCompat.Builder(ctx, CHANNEL).setSmallIcon(android.R.drawable.stat_sys_upload).setContentTitle(title).setContentIntent(open).build()
     return NotificationCompat.Builder(ctx, CHANNEL)
       .setSmallIcon(android.R.drawable.stat_sys_upload)
       .setContentTitle(title)
@@ -228,7 +232,8 @@ internal object BackupNative {
       .setOnlyAlertOnce(true)
       .setOngoing(ongoing)
       .setSilent(true)
-      .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+      .setVisibility(NotificationCompat.VISIBILITY_SECRET)
+      .setPublicVersion(public)
       .setContentIntent(open)
       .apply { if (ongoing) { setDeleteIntent(gone); setProgress(1000, (progress.coerceIn(0.0, 1.0) * 1000).toInt(), progress < 0) } }
       .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)

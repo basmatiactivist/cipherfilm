@@ -32,6 +32,9 @@ export const useLockedFolder = () => useSyncExternalStore((f) => { subs.add(f); 
 /** The locked items while the folder is open (the viewer, opened from it); empty otherwise. */
 export const lockedFolderItems = (): Item[] => items ?? [];
 export const lockedFolderOpen = () => items !== null;
+/** Whether a screen opened from the folder (the viewer, within "locked") must leave now: the folder closed (the app
+ *  went to the background, a lock), so its photos go off screen with it and the folder asks again. */
+export const mustLeaveFolder = (within: string | undefined, open: boolean) => within === "locked" && !open;
 
 // ---- the check ----
 

@@ -156,6 +156,7 @@ export const deSecurity: Record<string, string> = {
   "New sign-ins and changes to two-step sign-in show up here.": "Neue Anmeldungen und Änderungen an der Anmeldung in zwei Schritten erscheinen hier.",
   "Unread": "Ungelesen",
   "Passkeys need the server's https address. Use a code instead.": "Passkeys brauchen die https-Adresse des Servers. Verwenden Sie stattdessen einen Code.",
+  "its answer was made for another site, not for this server": "seine Antwort wurde für eine andere Website erstellt, nicht für diesen Server",
   "The passkey didn't work ({reason}). Try again, or use a code instead.": "Der Passkey hat nicht funktioniert ({reason}). Versuchen Sie es noch einmal oder verwenden Sie einen Code.",
   "The passkey didn't work. Try again, or use a code instead.": "Der Passkey hat nicht funktioniert. Versuchen Sie es noch einmal oder verwenden Sie einen Code.",
   "{browser} on {os}": "{browser} auf {os}",

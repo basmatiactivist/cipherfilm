@@ -5,6 +5,14 @@ vi.mock("expo-constants", () => ({ default: { expoConfig: { scheme: "cipherfilm"
 
 const h = await import("./passkeyHandoff");
 
+const b64u = (s: string) => btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+/** A passkey's answer as the /passkey page sends it (web/src/passkeys.ts credentialJSON): the browser's client data
+ *  names the page's origin, the kind of request and its challenge. */
+const answer = (origin: string, type: string, challenge: string, extra: object = {}) => ({
+  id: "k", rawId: "k", type: "public-key",
+  response: { clientDataJSON: b64u(JSON.stringify({ type, challenge, origin, crossOrigin: false, ...extra })), authenticatorData: "AA", signature: "AA" },
+});
+
 describe("passkeys through the browser", () => {
   it("takes the browser for a server on a private network, Android's own way for any other", async () => {
     for (const s of ["https://photos.tail3b37f7.ts.net", "https://192.168.1.20:8443", "https://10.0.0.5", "https://nas.local", "https://100.87.149.85", "https://localhost:8443"]) {
@@ -46,9 +54,9 @@ describe("passkeys through the browser", () => {
     const m = h;
     const opened: string[] = [];
     const platform = { openURL: async (u: string) => { opened.push(u); }, onAppState: () => ({ remove() {} }), away() {} };
-    const ans = { id: "k" };
-    const b = btoa(JSON.stringify(ans)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-    const p = m.viaBrowserPasskey("https://nas.local", "get", { challenge: "c" }, platform);
+    const ans = answer("https://nas.local", "webauthn.get", "Y2hhbGxlbmdl");
+    const b = b64u(JSON.stringify(ans));
+    const p = m.viaBrowserPasskey("https://nas.local", "get", { challenge: "Y2hhbGxlbmdl" }, platform);
     await new Promise((r) => setTimeout(r, 50));
     const frag = opened[0].split("#")[1];
     const state = JSON.parse(atob(frag.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((frag.length + 3) % 4))).state as string;
@@ -56,5 +64,46 @@ describe("passkeys through the browser", () => {
     m.passkeyReturned(`cipherfilm://passkey#s=someoneelse&a=${b}`); // ignored
     m.passkeyReturned(`cipherfilm://passkey#s=${state}&a=${b}`);
     await expect(p).resolves.toEqual(ans);
+  });
+
+  it("takes only an answer made on the configured server's own page for this request", () => {
+    const srv = "https://photos-a.test", ch = "QV9DSEFMTEVOR0U";
+    expect(h.answerFor(answer("https://photos-a.test", "webauthn.get", ch), srv, "get", { challenge: ch })).toBe(true);
+    expect(h.answerFor(answer("https://photos-a.test", "webauthn.create", ch), srv + "/", "create", { challenge: ch })).toBe(true);
+    // padding or the other base64 alphabet in the server's options change nothing
+    expect(h.answerFor(answer("https://photos-a.test", "webauthn.get", "-_8"), srv, "get", { challenge: "+/8=" })).toBe(true);
+    // another server's page (the configured one sent the browser on to it), another challenge, another kind of request
+    expect(h.answerFor(answer("https://photos-b.test", "webauthn.get", ch), srv, "get", { challenge: ch })).toBe(false);
+    expect(h.answerFor(answer("https://photos-a.test", "webauthn.get", "Ql9DSEFMTEVOR0U"), srv, "get", { challenge: ch })).toBe(false);
+    expect(h.answerFor(answer("https://photos-a.test", "webauthn.create", ch), srv, "get", { challenge: ch })).toBe(false);
+    expect(h.answerFor(answer("https://photos-a.test", "webauthn.get", ch, { crossOrigin: true }), srv, "get", { challenge: ch })).toBe(false);
+    // another port, plain http, a name that only starts like it
+    expect(h.answerFor(answer("https://photos-a.test:8443", "webauthn.get", ch), srv, "get", { challenge: ch })).toBe(false);
+    expect(h.answerFor(answer("http://photos-a.test", "webauthn.get", ch), srv, "get", { challenge: ch })).toBe(false);
+    expect(h.answerFor(answer("https://photos-a.test.evil.test", "webauthn.get", ch), srv, "get", { challenge: ch })).toBe(false);
+    // nothing to check: never taken
+    expect(h.answerFor({ id: "k" }, srv, "get", { challenge: ch })).toBe(false);
+    expect(h.answerFor({ id: "k", response: { clientDataJSON: "not-json" } }, srv, "get", { challenge: ch })).toBe(false);
+    expect(h.answerFor(answer("https://photos-a.test", "webauthn.get", ch), srv, "get", {})).toBe(false);
+  });
+
+  it("knows the server's origin as the browser writes it", () => {
+    expect(h.originOf("https://Photos.Example.org/")).toBe("https://photos.example.org");
+    expect(h.originOf("https://photos.example.org:443")).toBe("https://photos.example.org");
+    expect(h.originOf("https://192.168.1.20:8443/x")).toBe("https://192.168.1.20:8443");
+    expect(h.originOf("https://[fd00::1]:8443")).toBe("https://[fd00::1]:8443");
+    expect(h.originOf("http://photos.example.org")).toBe("");
+    expect(h.originOf("https://user@photos.example.org")).toBe("");
+  });
+
+  it("refuses an answer for another server even with the right state", async () => {
+    const opened: string[] = [];
+    const platform = { openURL: async (u: string) => { opened.push(u); }, onAppState: () => ({ remove() {} }), away() {} };
+    const p = h.viaBrowserPasskey("https://photos-a.test", "get", { challenge: "QV9DSEFMTEVOR0U" }, platform);
+    await new Promise((r) => setTimeout(r, 50));
+    const frag = opened[0].split("#")[1];
+    const state = JSON.parse(atob(frag.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((frag.length + 3) % 4))).state as string;
+    h.passkeyReturned(`cipherfilm://passkey#s=${state}&a=${b64u(JSON.stringify(answer("https://photos-b.test", "webauthn.get", "Ql9DSEFMTEVOR0U")))}`);
+    await expect(p).rejects.toThrow(/another site/);
   });
 });

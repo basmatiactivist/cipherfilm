@@ -10,7 +10,7 @@ import { canEdit } from "../../edit";
 import { normEdit, pictureKey } from "@edit/edit";
 import { asLocked, folderOf, mainGrid, type Folder } from "@edit/folders";
 import { canMove, movable, moveTo } from "../../moveFolder";
-import { deleteForever, lockedFolderItems, lockedThumbUri, useLockedFolder } from "../../lockedFolder";
+import { deleteForever, lockedFolderItems, lockedThumbUri, mustLeaveFolder, useLockedFolder } from "../../lockedFolder";
 import { viewerList } from "../../viewerList";
 import { faceUri, facesIn, nameFace, type FaceInPhoto } from "../../search/people";
 import { NameDialog } from "../albums";
@@ -70,8 +70,15 @@ export default function Viewer() {
   const [start] = useState(() => Math.max(0, list.findIndex((i) => i.id === id)));
   // the library changed (an edit here or on another device): the pages show the items as they are now, in place
   const { items: libOpen } = useLibrary();
-  const { items: lockedNow } = useLockedFolder();
+  const { open: lockedOpen, items: lockedNow } = useLockedFolder();
   const libNow = inLocked ? lockedNow : libOpen;
+  // opened from the locked folder, which closed meanwhile: nothing of it stays on screen, back to the folder's check
+  const folderGone = mustLeaveFolder(within, lockedOpen);
+  useEffect(() => {
+    if (!folderGone) return;
+    setList([]);
+    if (router.canGoBack()) router.back(); else router.replace("/");
+  }, [folderGone]);
   useEffect(() => {
     if (!libNow) return;
     const byId = new Map(libNow.map((i) => [i.id, i]));

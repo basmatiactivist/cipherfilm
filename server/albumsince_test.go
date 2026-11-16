@@ -225,3 +225,42 @@ func TestAlbumsSinceIsPerAccountAndResets(t *testing.T) {
 		t.Fatalf("a new cursor: %+v", r)
 	}
 }
+
+// Deleting frees an album's place, so deletions are bounded by neither the album limit nor anything else but time:
+// one answer carries at most maxAlbumRemovals of them (more reset), and the janitor keeps at most that many.
+func TestAlbumDeletionsAreBoundedPerAnswer(t *testing.T) {
+	e := newEnv(t)
+	admin, _ := e.setupAdmin("admin@x.org")
+	uid := e.userID("admin@x.org")
+	old := admin.cursorOf("/api/albums")
+	a := albumBody()
+	admin.do("POST", "/api/albums", a, true)
+	admin.do("DELETE", "/api/albums/"+a["id"].(string), nil, true)
+	if r := admin.albumsSince(old); r.reset || !same(r.removed, a["id"].(string)) {
+		t.Fatalf("one deletion: %+v", r)
+	}
+	// more deletions than one answer carries, each album made and deleted again (its place freed)
+	mid := admin.cursorOf("/api/albums")
+	e.app.db.Exec(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i < ?)
+		INSERT INTO albums(id,user_id,name_enc,created_at) SELECT printf('b%031x', i),?,'x',0 FROM n`, maxAlbumRemovals, uid)
+	e.app.db.Exec(`DELETE FROM albums WHERE user_id=?`, uid)
+	if r := admin.albumsSince(mid); r.reset || len(r.removed) != maxAlbumRemovals {
+		t.Fatalf("at the bound: reset=%v removed=%d", r.reset, len(r.removed))
+	}
+	if r := admin.albumsSince(old); !r.reset || len(r.removed) != 0 {
+		t.Fatalf("past the bound: reset=%v removed=%d", r.reset, len(r.removed))
+	}
+	// the janitor keeps the newest maxAlbumRemovals; a cursor older than those resets, a newer one does not
+	e.app.pruneAlbumTombstones()
+	var n int
+	e.app.db.QueryRow(`SELECT COUNT(*) FROM album_tombstones WHERE user_id=?`, uid).Scan(&n)
+	if n != maxAlbumRemovals {
+		t.Fatalf("tombstones kept: %d", n)
+	}
+	if r := admin.albumsSince(old); !r.reset {
+		t.Fatalf("a cursor from before the kept ones must reset: %+v", r)
+	}
+	if r := admin.albumsSince(mid); r.reset || len(r.removed) != maxAlbumRemovals {
+		t.Fatalf("a cursor within the kept ones: reset=%v removed=%d", r.reset, len(r.removed))
+	}
+}

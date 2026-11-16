@@ -13,8 +13,10 @@ import (
 // every device once it can no longer finish), and the person's own changes to two-step sign-in (an authenticator app or
 // a passkey added or removed, new recovery codes, two-step sign-in turned off; shown on the other devices that were
 // signed in at the time). They arrive through the live-update stream ("notices") and GET /api/me/notices. Dismissing one, on any
-// device that is shown it, dismisses it for the account. Only what the session list already shows is stored: the
-// device's own label and the time; never an IP address or a place.
+// device that is shown it, dismisses it for the account; a change to two-step sign-in or a new recovery key only for
+// the device that dismisses it (notice_dismissals): whoever made the change with a stolen password may hold another
+// session that is shown it too, and must not take it down on the person's devices. Only what the session list already
+// shows is stored: the device's own label and the time; never an IP address or a place.
 //
 // Who is shown, and so may dismiss, a notice (shownTo): never the session it is about, and a sign-in only the sessions
 // from before it. "Before" is the order of the sign-in notices themselves (ids), not the second a session started:
@@ -151,8 +153,9 @@ func (a *App) factorNotice(u *user, s *session, r *http.Request, kind string) {
 func (a *App) shownTo(u *user, s *session) (string, []any) {
 	return `dismissed=0 AND session_pub<>? AND (kind<>'sign_in' OR (at>=? AND id > COALESCE((SELECT MAX(o.id) FROM notices o
 		WHERE o.user_id=? AND o.kind='sign_in' AND o.session_pub=? AND o.session_pub<>''), 0)))
-		AND (kind<>'password_used' OR at<=?) AND (kind NOT IN (` + factorKinds + `) OR at>=?) AND at>=?`,
-		[]any{s.Pub, s.Created, u.ID, s.Pub, a.now().Add(-pendingTTL).Unix(), s.Created,
+		AND (kind<>'password_used' OR at<=?) AND (kind NOT IN (` + factorKinds + `) OR (at>=? AND NOT EXISTS (SELECT 1 FROM
+		notice_dismissals d WHERE d.notice_id=notices.id AND d.session_pub=?))) AND at>=?`,
+		[]any{s.Pub, s.Created, u.ID, s.Pub, a.now().Add(-pendingTTL).Unix(), s.Created, s.Pub,
 			a.now().Add(-noticesAge).Unix()} // none older than noticesAge, even before the janitor has pruned it
 }
 
@@ -187,13 +190,18 @@ func (a *App) dismissNotice(w http.ResponseWriter, r *http.Request, u *user, s *
 		fail(w, 404, "not found")
 		return
 	}
-	// only one this session is shown (shownTo)
+	// only one this session is shown (shownTo); a change to two-step sign-in or the recovery key only here
 	cond, args := a.shownTo(u, s)
-	res, err := a.db.Exec(`UPDATE notices SET dismissed=1 WHERE id=? AND user_id=? AND `+cond, append([]any{id, u.ID}, args...)...)
+	q := append([]any{id, u.ID}, args...)
+	res, err := a.db.Exec(`INSERT OR IGNORE INTO notice_dismissals(notice_id,session_pub) SELECT id,? FROM notices
+		WHERE id=? AND user_id=? AND kind IN (`+factorKinds+`) AND `+cond, append([]any{s.Pub}, q...)...)
+	if rowsAffected(res, err) != 1 {
+		res, err = a.db.Exec(`UPDATE notices SET dismissed=1 WHERE id=? AND user_id=? AND kind NOT IN (`+factorKinds+`) AND `+cond, q...)
+	}
 	if rowsAffected(res, err) != 1 {
 		fail(w, 404, "not found")
 		return
 	}
-	a.changed(u.ID, tNotices) // the other devices take it down too
+	a.changed(u.ID, tNotices) // the other devices take a dismissed one down too
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }

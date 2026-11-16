@@ -504,6 +504,19 @@ struct SearchResults: View {
   /** how many of the ranked results are shown: a page of 200, then more as the end comes into view */
   @State private var shown = 200
   @State private var shownFor = ""
+  /** whether the photos ranked below the close matches show ("More similar photos"); closed again for a new query */
+  @State private var similarOpen = false
+
+  /** What the page says above the photos: how many were found (only the close matches count), or that none is close. */
+  private func subtitle(_ r: SearchEngine.Result) -> String {
+    if r.items.isEmpty { return r.similar.isEmpty ? "Nothing found" : "No close matches · the most similar photos" }
+    return "\(r.items.count) found" + (r.how.isEmpty ? "" : " · " + r.how.joined(separator: " · "))
+  }
+
+  /** The grid's photos: the results, and the similar ones when opened (or at once when nothing is a close match). */
+  private func listed(_ r: SearchEngine.Result) -> [Item] {
+    r.items.isEmpty ? r.similar : similarOpen ? r.items + r.similar : r.items
+  }
 
   /** Why nothing was found, and what helps: photos another device hasn't indexed yet are said (docs/SEARCH.md). */
   private var emptyText: String {
@@ -517,7 +530,7 @@ struct SearchResults: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      PageTitle(title: "Search", subtitle: result.map { r in r.items.isEmpty ? "Nothing found" : (r.ranked ? "Best matches first" : "\(r.items.count) found") + (r.how.isEmpty ? "" : " · " + r.how.joined(separator: " · ")) } ?? "Searching…")
+      PageTitle(title: "Search", subtitle: result.map(subtitle) ?? "Searching…")
       // what the query was taken as: each a filter that can be dropped (its words leave the search box)
       if let r = result, !r.chips.isEmpty {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -534,13 +547,16 @@ struct SearchResults: View {
         }
       }
       if let r = result {
-        if r.items.isEmpty {
+        let all = listed(r)
+        if all.isEmpty {
           Spacer()
           EmptyState(icon: "magnifyingglass", title: "Nothing found", text: emptyText)
           Spacer()
         } else {
-          PhotoGrid(items: Array(r.items.prefix(shown)), grouping: .none, selection: selection,
-                    more: r.items.count > shown ? { shown += 200 } : nil, captions: r.found) { it, list in nav.viewer = ViewerState(ids: list.map(\.id), index: list.firstIndex(of: it) ?? 0) }
+          PhotoGrid(items: Array(all.prefix(shown)), grouping: .none, selection: selection,
+                    more: all.count > shown ? { shown += 200 } : nil, captions: r.found,
+                    split: !r.items.isEmpty && similarOpen ? (r.items.count, AnyView(SimilarHeading { similarOpen = false })) : nil,
+                    footer: !r.items.isEmpty && !similarOpen && !r.similar.isEmpty ? AnyView(MoreSimilarButton(count: r.similar.count) { similarOpen = true }) : nil) { it, list in nav.viewer = ViewerState(ids: list.map(\.id), index: list.firstIndex(of: it) ?? 0) }
         }
       } else {
         Loading(label: "Searching…")
@@ -551,9 +567,35 @@ struct SearchResults: View {
       if Task.isCancelled { return }
       let r = await model.search.search(query, library: model.items)
       if Task.isCancelled { return }
-      if shownFor != query { shown = 200; shownFor = query } // a new query starts at the top page
+      if shownFor != query { shown = 200; shownFor = query; similarOpen = false } // a new query starts at the top page
       result = r
     }
+  }
+}
+
+/** Under a search's results: the photos the image model ranks below its close matches (docs/SEARCH.md). */
+struct MoreSimilarButton: View {
+  let count: Int
+  let open: () -> Void
+
+  var body: some View {
+    Button(action: open) { Text("More similar photos (\(count))") }
+      .buttonStyle(.bordered).controlSize(.large)
+      .frame(maxWidth: .infinity).padding(.vertical, 20)
+  }
+}
+
+/** Above the similar photos once they show, with the way to hide them again. */
+struct SimilarHeading: View {
+  let hide: () -> Void
+
+  var body: some View {
+    HStack {
+      Text("Similar photos").font(Typo.heading).foregroundStyle(Ink.ink).accessibilityAddTraits(.isHeader)
+      Spacer()
+      Button("Hide", action: hide).buttonStyle(.link)
+    }
+    .frame(height: 44, alignment: .bottom).padding(.bottom, 2).padding(.top, 12)
   }
 }
 

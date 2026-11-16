@@ -54,6 +54,10 @@ interface Props {
   album?: string;
   /** one grid in the given order (search results, best first), without day headings */
   flat?: boolean;
+  /** with flat: the items from index at on get their own part with this heading (search: the similar photos) */
+  split?: { at: number; heading: ReactNode };
+  /** scrolls with the grid, below it (search: "More similar photos") */
+  footer?: ReactNode;
   /** passed to the viewer: swiping stays inside these items (search results, a person) */
   within?: string;
   /** the archive (its selection offers Unarchive) or the locked folder (Share, Save, Move out, Delete forever; its
@@ -83,7 +87,7 @@ const Row = memo(function Row(p: { row: Item[]; size: number; selecting: boolean
 /** What the first load of each place says. */
 const opening = (within: string): string | undefined => ({ search: t("Searching…"), trash: t("Opening the trash…"), person: t("Loading people…") } as Record<string, string>)[within];
 
-export function Gallery({ items, error, loading, onRefresh, header, top, empty, bottom = 0, fab, nav, extraAction, actions, album, flat, within, folder }: Props) {
+export function Gallery({ items, error, loading, onRefresh, header, top, empty, bottom = 0, fab, nav, extraAction, actions, album, flat, split, footer, within, folder }: Props) {
   const th = useAppTheme();
   const inset = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
@@ -117,12 +121,19 @@ export function Gallery({ items, error, loading, onRefresh, header, top, empty, 
 
   const cols = width >= 900 ? 6 : width >= 600 ? 4 : 3;
   const size = Math.floor((width - inset.left - inset.right - GAP * (cols + 1)) / cols);
-  const sections = useMemo(() => {
+  const sections = useMemo((): { title: string; data: Item[][]; heading?: boolean }[] => {
     if (flat) {
-      const rows: Item[][] = [];
+      const rowsOf = (list: Item[]) => {
+        const rows: Item[][] = [];
+        for (let i = 0; i < list.length; i += cols) rows.push(list.slice(i, i + cols));
+        return rows;
+      };
       const list = items ?? [];
-      for (let i = 0; i < list.length; i += cols) rows.push(list.slice(i, i + cols));
-      return rows.length ? [{ title: "", data: rows }] : [];
+      const at = split ? Math.min(Math.max(split.at, 0), list.length) : list.length;
+      const parts: { title: string; data: Item[][]; heading?: boolean }[] = [];
+      if (at > 0) parts.push({ title: "", data: rowsOf(list.slice(0, at)) });
+      if (at < list.length) parts.push({ title: "", data: rowsOf(list.slice(at)), heading: true });
+      return parts;
     }
     const dayFmt = new Intl.DateTimeFormat(locale(), { weekday: "long", day: "numeric", month: "long", year: "numeric" });
     const days = new Map<string, Item[]>();
@@ -135,7 +146,7 @@ export function Gallery({ items, error, loading, onRefresh, header, top, empty, 
       for (let i = 0; i < list.length; i += cols) rows.push(list.slice(i, i + cols));
       return { title: dayFmt.format(new Date(day)), data: rows };
     });
-  }, [items, cols, flat]);
+  }, [items, cols, flat, split?.at]);
 
   // The first screen appears only once its pictures are decoded, at most VEIL_MAX later (veil.ts)
   const [veiled, setVeiled] = useState(true);
@@ -283,11 +294,12 @@ export function Gallery({ items, error, loading, onRefresh, header, top, empty, 
         extraData={selected}
         contentContainerStyle={{ paddingHorizontal: GAP + inset.left, paddingBottom: inset.bottom + bottom + (selecting ? 160 : 96), flexGrow: 1 }}
         refreshControl={<RefreshControl refreshing={loading && !!items} onRefresh={onRefresh} enabled={!selecting} colors={[th.colors.primary]} progressBackgroundColor={th.colors.elevation.level1} />}
-        renderSectionHeader={({ section }) => (section.title ? <Text style={[st.day, text.heading]}>{section.title}</Text> : <View style={{ height: 8 }} />)}
+        renderSectionHeader={({ section }) => (section.heading ? <>{split?.heading}</> : section.title ?<Text style={[st.day, text.heading]}>{section.title}</Text> : <View style={{ height: 8 }} />)}
         renderItem={({ item: row }) => (
           <Row row={row} size={size} selecting={selecting} sel={row.map((it) => (selected.has(it.id) ? "1" : "0")).join("")} onPress={press} onLongPress={hold} onShown={shown} thumb={locked ? lockedThumbUri : undefined} />
         )}
         ListHeaderComponent={error || top ? <>{error ? <View style={{ paddingTop: 8 }}><Problem>{error}</Problem></View> : null}{top}</> : undefined}
+        ListFooterComponent={footer ? <>{footer}</> : undefined}
         ListEmptyComponent={items && !error ? <>{empty}</> : !items && !error ? <Loading label={opening(within ?? "") ?? (album ? t("Opening the album…") : t("Opening your library…"))} /> : undefined}
         initialNumToRender={12}
         maxToRenderPerBatch={6}

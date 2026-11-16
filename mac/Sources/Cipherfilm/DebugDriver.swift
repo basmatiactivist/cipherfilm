@@ -248,8 +248,8 @@ enum DebugDriver {
     log("indexing took \(Int(Date().timeIntervalSince(tIndex))) s for \(m.search.index.count.items) items (from the server's entries plus new ones)")
     check(m.search.phase == .ready, "search index ready: \(m.search.index.count.items) items, \(m.search.index.count.faces) faces")
     let r = await m.search.search("person", library: m.items)
-    log("search 'person': \(r.items.count) items")
-    check(r.items.count <= m.search.index.count.items && !r.items.isEmpty, "search ranks the indexed photos, no cut-off besides the explicit-content filter (\(r.items.count) of \(m.search.index.count.items))")
+    log("search 'person': \(r.items.count) close matches, \(r.similar.count) similar")
+    check(r.items.count + r.similar.count <= m.search.index.count.items && !(r.items + r.similar).isEmpty, "search ranks the indexed photos: close matches, then the similar ones, nothing left out besides the explicit-content filter (\(r.items.count) + \(r.similar.count) of \(m.search.index.count.items))")
     let r2 = await m.search.search(m.items.first(where: { $0.kind == .video }) != nil ? "videos" : "2026", library: m.items)
     check(!r2.items.isEmpty, "search by kind/date works (\(r2.items.count))")
     if let first = m.items.first(where: { m.search.index.has($0.id) }) {

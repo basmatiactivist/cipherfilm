@@ -1,0 +1,22 @@
+{
+  "note": "Which photos a search by content really finds (docs/SEARCH.md 'Close matches'): the ranked cosines of LAION's ViT-B/32, best first. A photo matches when its score is at least max(min, best - gap); when none does but the best is at least floor, the best few (at most few, within gap of the best) do. The rest are 'More similar photos'. Read by web/src/search/matches.ts (web and Android), the Mac's port (CipherfilmCore/Matches.swift, tested equal) and scripts/content-cut.py. cases: scores best first, and how many of them match.",
+  "min": 0.21,
+  "gap": 0.05,
+  "floor": 0.2,
+  "few": 3,
+  "cases": [
+    { "name": "nothing ranked", "scores": [], "close": 0 },
+    { "name": "one clear match, the rest far below", "scores": [0.315, 0.215, 0.154, 0.149, 0.069], "close": 1 },
+    { "name": "several close to the best", "scores": [0.27, 0.253, 0.25, 0.247, 0.244, 0.229, 0.217, 0.209, 0.13], "close": 6 },
+    { "name": "best minus the gap cuts above the minimum", "scores": [0.282, 0.233, 0.223, 0.208, 0.184], "close": 2 },
+    { "name": "the minimum cuts above best minus the gap", "scores": [0.237, 0.221, 0.217, 0.213, 0.21, 0.207, 0.202], "close": 5 },
+    { "name": "a score at the minimum matches", "scores": [0.23, 0.21, 0.2099], "close": 2 },
+    { "name": "nothing reaches the minimum, best above the floor: the best few", "scores": [0.205, 0.204, 0.2, 0.19, 0.17], "close": 3 },
+    { "name": "the best few stay within the gap of the best", "scores": [0.205, 0.15, 0.149], "close": 1 },
+    { "name": "fewer than few ranked", "scores": [0.202, 0.18], "close": 2 },
+    { "name": "best at the floor", "scores": [0.2, 0.18], "close": 2 },
+    { "name": "best below the floor: no close matches", "scores": [0.193, 0.192, 0.191, 0.164], "close": 0 },
+    { "name": "a vector of the words themselves", "scores": [1, 0.851, 0.45], "close": 1 },
+    { "name": "negative and tied scores", "scores": [0.25, 0.25, 0.25, -0.1], "close": 3 }
+  ]
+}

@@ -11,7 +11,7 @@ import { refreshLibrary, useLibrary } from "../libraryStore";
 import type { Item } from "../library";
 import { similarTo, useSearchProgress, useTextProgress, type Progress } from "../search/engine";
 import { usePeople } from "../search/people";
-import { removeChip, search, SUGGESTIONS, type Result } from "../search/query";
+import { EMPTY, removeChip, search, SUGGESTIONS, type Result } from "../search/query";
 import { loadSettings, onSettingsChange, type SearchSettings } from "../search/settings";
 import { useAppTheme } from "../ui";
 import { radius, text } from "../tokens";
@@ -31,6 +31,9 @@ export default function Search() {
   const [res, setRes] = useState<Result | null>(null);
   const [similar, setSimilar] = useState<Item[] | null>(null);
   const [busy, setBusy] = useState(false);
+  /** whether the photos ranked below the close matches show ("More similar photos"); closed again for a new search */
+  const [moreOpen, setMoreOpen] = useState(false);
+  useEffect(() => setMoreOpen(false), [q]);
   const progress = useSearchProgress();
   const settings = useSettings();
   const { groups } = usePeople();
@@ -53,13 +56,17 @@ export default function Search() {
     setBusy(true);
     const h = setTimeout(() => {
       // one that fails finds nothing, rather than leaving the badge on
-      search(q, (items ?? []).filter((i) => !i.broken)).then((r) => { if (seq.current === mine) setRes(r); }, () => { if (seq.current === mine) setRes({ items: [], people: [], how: [], chips: [], snippets: {} }); })
+      search(q, (items ?? []).filter((i) => !i.broken)).then((r) => { if (seq.current === mine) setRes(r); }, () => { if (seq.current === mine) setRes(EMPTY); })
         .finally(() => { if (seq.current === mine) setBusy(false); });
     }, 250);
     return () => clearTimeout(h);
   }, [q, items, progress.phase === "ready"]);
 
   const people = useMemo(() => (groups ?? []).filter((g) => !g.person?.hidden).sort((a, b) => Number(!!b.person?.name) - Number(!!a.person?.name) || b.items.length - a.items.length), [groups]);
+
+  // the image model ranked photos, but none closely (search/query.ts): they show at once, under "No close matches"
+  const noClose = !similar && !!res && !res.items.length && res.similar.length > 0;
+  const moreSimilar = !similar && !noClose && res ? res.similar.length : 0;
 
   const bar = (
     <View style={{ paddingTop: inset.top + 8, paddingHorizontal: 16 + inset.left, paddingBottom: 8 }}>
@@ -77,7 +84,9 @@ export default function Search() {
           ))}
         </View>
       ) : null}
-      {q.trim() && res?.how.length ? <Text variant="bodySmall" numberOfLines={2} style={{ marginTop: 8, color: th.colors.onSurfaceVariant }}>{tn(res.items.length, "{n} result · {how}", "{n} results · {how}", { how: res.how.join(" · ") })}</Text>
+      {/* nothing is a close match (docs/SEARCH.md "Close matches"): said, and the most similar photos show at once */}
+      {q.trim() && noClose ? <Text variant="bodySmall" style={{ marginTop: 8, color: th.colors.onSurfaceVariant }}>{t("No close matches. These are the most similar photos.")}</Text>
+        : q.trim() && res?.how.length ? <Text variant="bodySmall" numberOfLines={2} style={{ marginTop: 8, color: th.colors.onSurfaceVariant }}>{tn(res.items.length, "{n} result · {how}", "{n} results · {how}", { how: res.how.join(" · ") })}</Text>
         : q.trim() && res?.chips.length ? <Text variant="bodySmall" style={{ marginTop: 8, color: th.colors.onSurfaceVariant }}>{tn(res.items.length, "{n} result", "{n} results")}</Text> : null}
       {similar ? (
         <View style={st.similarRow}>
@@ -91,7 +100,7 @@ export default function Search() {
   // the search box stays mounted while results replace the ideas below it, so typing keeps its focus
   const findingSimilar = !!params.similar && !q.trim();
   if (q.trim() || similar || findingSimilar) {
-    const found = similar ?? (findingSimilar ? null : res?.items ?? null);
+    const found = similar ?? (findingSimilar || !res ? null : noClose ? res.similar : moreOpen ? [...res.items, ...res.similar] : res.items);
     // the badge (null) until there is an answer for this search: the library first (without it nothing would be found),
     // then the search; while the next answer runs the last results stay (the box shows the small badge), but an empty
     // one isn't shown as "Nothing found" before the search is done
@@ -104,6 +113,8 @@ export default function Search() {
             <FlatList horizontal data={res.people} keyExtractor={(g) => g.key} contentContainerStyle={{ paddingHorizontal: 12, gap: 4 }} style={{ flexGrow: 0, marginBottom: 4 }}
               renderItem={({ item: g }) => <FaceAvatar group={g} size={56} onPress={() => router.push({ pathname: "/person/[key]", params: { key: g.key } })} />} />
           ) : null}
+          split={moreSimilar && moreOpen ? { at: res!.items.length, heading: <SimilarHeading onHide={() => setMoreOpen(false)} /> } : undefined}
+          footer={moreSimilar && !moreOpen ? <View style={st.moreSimilar}><Button mode="outlined" onPress={() => setMoreOpen(true)}>{t("More similar photos ({n})", { n: num(moreSimilar) })}</Button></View> : null}
           empty={<NoResults ready={progress.phase === "ready" || progress.phase === "indexing"} on={!!settings?.enabled} />}
           nav={<NavBar current="search" />} />
       </View>
@@ -217,6 +228,16 @@ function NoResults({ ready, on }: { ready: boolean; on: boolean }) {
   );
 }
 
+/** Above the photos ranked below the close matches, once they show. */
+function SimilarHeading({ onHide }: { onHide: () => void }) {
+  return (
+    <View style={[st.heading, { paddingHorizontal: 8 }]}>
+      <Text style={[text.heading, { flex: 1 }]} accessibilityRole="header">{t("Similar photos")}</Text>
+      <Button compact onPress={onHide}>{t("Hide")}</Button>
+    </View>
+  );
+}
+
 function Heading({ title, action }: { title: string; action?: [string, () => void] }) {
   return (
     <View style={st.heading}>
@@ -240,4 +261,5 @@ const st = StyleSheet.create({
   hint: { paddingHorizontal: 16, paddingTop: 16 },
   similarRow: { flexDirection: "row", alignItems: "center", marginTop: 8 },
   queryChips: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 },
+  moreSimilar: { alignItems: "center", paddingVertical: 16 },
 });

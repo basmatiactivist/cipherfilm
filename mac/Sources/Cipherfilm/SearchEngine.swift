@@ -630,17 +630,19 @@ final class SearchEngine {
 
   // ---- queries ----
 
-  /** ranked: the items are ordered by how well they match the words, not by date; chips: what the query was taken as
-   *  (people, places, dates, favorites, videos, screenshots), each removable; found: for photos found by the text in
-   *  them, the piece of it that matched */
+  /** items: what was found (the count says these); ranked: the image model ranked photos for the words, so the items
+   *  are in its order, not by date; similar: the photos it ranks below its close matches, best first ("More similar
+   *  photos", docs/SEARCH.md "Close matches"); chips: what the query was taken as (people, places, dates, favorites,
+   *  videos, screenshots), each removable; found: for photos found by the text in them, the piece of it that matched */
   struct Result {
     var items: [Item]; var people: [Group]; var how: [String]; var ranked = false
+    var similar: [Item] = []
     var chips: [QueryParser.Chip] = []
     var found: [String: String] = [:]
   }
 
-  /** Every photo with an image vector from the model, best match first, with no cut-off (as Immich's smart search
-   *  ranks); the results page shows them a page at a time. Filtered (docs/SEARCH.md "Explicit content"): words close to
+  /** Every photo with an image vector from the model, best match first (search() keeps the close matches as results,
+   *  CipherfilmCore/Matches.swift); the results page shows them a page at a time. Filtered (docs/SEARCH.md "Explicit content"): words close to
    *  explicit content find nothing, and photos that look explicit are left out. */
   func textHits(_ q: String) async -> [Hit] {
     guard ready, let vision else { return [] }
@@ -713,9 +715,14 @@ final class SearchEngine {
     if !near.isEmpty { how.append("taken in “\(text)”") }
     for i in read where seen.insert(i.id).inserted { out.append(i) }
     if !read.isEmpty { how.append("“\(text)” in \(read.count == 1 ? "1 photo" : "\(read.count) photos")") }
-    for h in hits { if let it = inPool[h.id], seen.insert(it.id).inserted { out.append(it) } }
-    if !hits.isEmpty { how.append("showing “\(p.clip)”") }
-    return Result(items: out, people: shown, how: how, ranked: !hits.isEmpty, chips: p.chips, found: found)
+    // what the image model ranks: the close matches among the photos the filters let through are results, the rest
+    // similar photos (Matches, the same cut as the web and the phone)
+    let ranked = hits.filter { inPool[$0.id] != nil && !seen.contains($0.id) }
+    let close = Matches.close(ranked.map(\.score))
+    for h in ranked.prefix(close) { if let it = inPool[h.id], seen.insert(it.id).inserted { out.append(it) } }
+    let similar = ranked.dropFirst(close).compactMap { inPool[$0.id] }
+    if close > 0 { how.append("showing “\(p.clip)”") }
+    return Result(items: out, people: shown, how: how, ranked: !ranked.isEmpty, similar: similar, chips: p.chips, found: found)
   }
 
   // ---- people: faces grouped here, the person's decisions in one document encrypted with the master key ----

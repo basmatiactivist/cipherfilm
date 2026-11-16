@@ -46,13 +46,56 @@ What a device downloads: the indexing device all of it (609 MB, 648 MB with face
   English.
 - Outputs: `embedding` `[1,512]`, already L2-normalised. Stored as fp16.
 - Index entry tag `m`: `laionb32+yunet23+sface21/1` (with faces) or `laionb32/1` (without): the family `laionb32`.
-- Text search ranks like Immich's smart search: every photo with an entry, best match first, no cut-off, shown page
-  by page as you scroll (the first 200, then more). Filters (people, years, months, favorites, videos) narrow the
-  ranked list instead of being separate results. Explicit content is left out unless chosen (below).
+- Text search ranks every photo with an entry, best match first. Only the close matches are results (and counted);
+  the photos ranked below them show under "More similar photos", best first, page by page as you scroll (the first
+  200, then more). See "Close matches" below. Filters (people, years, months, favorites, videos) narrow the ranked
+  list instead of being separate results. Explicit content is left out unless chosen (below).
 - LAION-2B, the training data, tagged explicit images instead of removing them, so the model knows those concepts;
   that is what the filter below uses. Immich ships the same model for its smart search. LAION-5B was withdrawn in
   December 2023 after abusive material was found in it and re-released cleaned in 2024; this checkpoint was trained
   before that. Its weights remain openly distributed (docs/MODELS.md).
+
+## Close matches
+
+The image model gives every photo a score for the words (the cosine of its image vector and the words' text vector),
+so a search used to list the whole library ("131 results" for "city"). Now only the photos that score close to what
+the words describe are results: the count says only these ("12 results"), and the rest wait under a collapsed "More
+similar photos" (a tap or click shows them). When nothing is a close match, the apps say "No close matches" and show
+the most similar photos at once. Filters (people, places, dates, favorites, videos, screenshots), names and text in
+photos stay exact: the cut is only for what the image model ranks, worked out among the photos the filters let through
+("dog Anna" is cut by Anna's best dog photo, not the library's). Explicit content and the locked folder are left out
+before, as always.
+
+- **The rule** (`web/src/search/matches.ts`, shared by the web and Android apps; the Mac's port
+  `mac/Sources/CipherfilmCore/Matches.swift`; numbers and test cases in `web/src/search/matches.json`, run by all
+  three): a photo matches when its score is at least **max(0.21, best − 0.05)**. When none does but the best reaches
+  **0.20**, the best **3** within 0.05 of the best do (a weak but plausible best match isn't hidden).
+- **Why these numbers.** ViT-B/32 cosines between a photo and words are small and bunched: for a single word, real
+  matches score about 0.21–0.32 and everything else about 0.08–0.20 (the bunch differs per word: "screenshot" scores
+  0.18–0.23 on photos of rocks and mountains, "birthday cake" at most 0.16). A cut relative to the best alone keeps
+  half the library for a word nothing matches; an absolute one alone keeps too much for broad words ("sea", "rocks").
+  The minimum of 0.21 is where real matches start; the gap of 0.05 keeps a clear winner alone ("northern lights":
+  0.315, then 0.154) and several near ones together ("beach": 0.270 to 0.229).
+- **Measured** with `scripts/content-cut.py` (the Python reference, onnxruntime 1.31.1, the files of
+  `server/models.json`) on the 18 real photos in the Play screenshots (`docs/play/graphics/screenshots/raw`, each tile
+  cut out: Paris at dusk, Rio, coasts, beaches, snowy mountains, a ski slope, northern lights, a palm tree…) and 37
+  search words. With these numbers: "northern lights", "castle", "palm tree", "kites", "boat", "clouds" find exactly
+  their one photo; "beach" the six beach and coast photos; "skiing" the ski slope and the snow village; "city" Paris,
+  the harbour town and the snow village (not Rio, 0.207; "a photo of a city" finds Rio first). "dog", "cat", "car",
+  "food", "people", "baby", "document", "flowers", "birthday cake" (none of them in these photos): no close matches,
+  best 0.08–0.19. Misses: "church" (the harbour town's church, 0.198), "sunset" leaves Paris at dusk out; extra:
+  "screenshot" finds four landscapes (0.21–0.23), "dog on a beach" the boat and the umbrellas on the beach (no dog).
+  Judged by hand over all 37 words (which photos really show each; with the text-in-photos test picture,
+  `web/src/search/ocr-fixture.jpg`, added), the cut keeps 37 of 53 right photos and 16 others; a minimum of 0.20
+  keeps 39 and 39 others, 0.22 keeps 35 and 11 others; the gap matters less (0.04: 36 and 15, 0.06: 38 and 18).
+  The ranking is what it was; the cut only decides where the results end.
+- A flat colour gradient (`e2e/fixtures/sample.png`) scores 0.18–0.25 for almost every word: pictures with nothing in
+  them crowd the top of CLIP's rankings. Blank or abstract pictures may therefore show up for words they don't show.
+- Like the explicit-content thresholds, **the owner should check these numbers on real photos** before a release
+  (`scripts/content-cut.py <models> <photos>…` prints the scores and what the cut keeps), and change them in
+  `matches.json` and `Matches.swift` together (the tests compare them).
+- The web e2e test (`e2e/zzzzzzzzcontent.spec.ts`) checks the cut in the browser with the image vectors of three of
+  these photos (`e2e/fixtures/clip-images.json`, made by `scripts/content-cut.py --fixture`).
 
 ONNX Runtime for Android ships a usage-telemetry client that starts with the app and reports to Microsoft; the app's
 manifest removes it (`mobile/modules/cf-native/android/src/main/AndroidManifest.xml`) and telemetry is switched off

@@ -100,6 +100,26 @@ describe("combined search", () => {
     expect(ids(named)).toEqual(["v1", "a1"]);
   });
 
+  it("only close matches of the image model are results; the rest are similar photos, cut among the filtered ones", async () => {
+    st.clip = [{ id: "b1", score: 0.3 }, { id: "a1", score: 0.24 }, { id: "a2", score: 0.22 }, { id: "a3", score: 0.12 }];
+    const all = await search("dog", LIB, "2026-11-16");
+    expect(ids(all)).toEqual(["b1"]); // 0.24 is more than the gap below the best
+    expect(all.similar.map((i) => i.id)).toEqual(["a1", "a2", "a3"]);
+    expect(all.how).toEqual(['"dog"']);
+    // Anna's photos: the best of them decides, not Ben's
+    const anna = await search("dog Anna", LIB, "2026-11-16");
+    expect(ids(anna)).toEqual(["a1", "a2"]);
+    expect(anna.similar.map((i) => i.id)).toEqual(["a3"]);
+    // nothing close: no results, every ranked photo is a similar one
+    st.clip = [{ id: "a1", score: 0.19 }, { id: "b1", score: 0.18 }];
+    const none = await search("dog", LIB, "2026-11-16");
+    expect(ids(none)).toEqual([]);
+    expect(none.similar.map((i) => i.id)).toEqual(["a1", "b1"]);
+    expect(none.how).toEqual([]);
+    // names and the text in photos stay results whatever the model says
+    expect(ids(await search("bakery", LIB, "2026-11-16"))).toEqual(["z1"]);
+  });
+
   it("the text in photos is matched folded and by word starts; filters apply to it too", async () => {
     expect(ids(await search("zurich hauptbahn", LIB, "2026-11-16"))).toEqual(["z1"]);
     expect(ids(await search("hauptbahnhof 2025", LIB, "2026-11-16"))).toEqual([]);

@@ -42,6 +42,14 @@ version into the GitHub release notes, so a release cannot be published without 
   index entry. Every app finds photos by that text, the web too without the model; a photo's details show what
   matched. Older photos are read in the background, a few at a time. Turn it off in the search settings.
 
+### Changed
+- Search by what is in a photo (web, Android, Mac) shows only the photos that really match: "city" gives the dozen city
+  photos ("12 results") instead of the whole library ranked ("131 results"). The photos ranked below them wait under
+  "More similar photos", one tap or click away; when nothing matches closely, the search says "No close matches" and
+  shows the most similar photos at once. Filters (people, places, dates, favorites, videos, screenshots), names and
+  text in photos stay exact. The same cut on all three, with numbers measured on real photos (docs/SEARCH.md "Close
+  matches"); the explicit-content filter and the locked folder are unchanged.
+
 ### Security
 - A password change, an account turned off by an admin and a recovery now count as signed out from another device:
   the other devices delete their copy of the library and keys instead of only asking to sign in again.

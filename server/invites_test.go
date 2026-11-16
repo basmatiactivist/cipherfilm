@@ -62,6 +62,44 @@ func TestInvitesEndWithTheirCreatorsAuthority(t *testing.T) {
 		}
 	}
 
+	// and they stay ended when the administrator is enabled or promoted again, in the admin area or on the console
+	for _, how := range []string{"demote", "disable", "console-demote", "console-disable"} {
+		e2 := newEnv(t)
+		admin, _ := e2.setupAdmin("admin@x.org")
+		co, _ := e2.acceptInvite(e2.invite(admin, "co@x.org"))
+		uid := mustUserID(e2, "co@x.org")
+		if code, out := admin.do("PATCH", "/api/admin/users/"+uid, map[string]any{"role": "admin"}, true); code != 200 {
+			t.Fatalf("promote: %d %v", code, out)
+		}
+		tok := e2.invite(co, "guest@x.org")
+		var err error
+		switch how {
+		case "demote":
+			admin.do("PATCH", "/api/admin/users/"+uid, map[string]any{"role": "user"}, true)
+			admin.do("PATCH", "/api/admin/users/"+uid, map[string]any{"role": "admin"}, true)
+		case "disable":
+			admin.do("PATCH", "/api/admin/users/"+uid, map[string]any{"status": "disabled"}, true)
+			admin.do("PATCH", "/api/admin/users/"+uid, map[string]any{"status": "active"}, true)
+		case "console-demote":
+			if _, err = e2.cli("revoke-admin", "co@x.org"); err == nil {
+				_, err = e2.cli("make-admin", "co@x.org")
+			}
+		case "console-disable":
+			if _, err = e2.cli("disable-user", "co@x.org"); err == nil {
+				_, err = e2.cli("enable-user", "co@x.org")
+			}
+		}
+		if err != nil {
+			t.Fatalf("%s: %v", how, err)
+		}
+		if u, _ := e2.app.userByID(uid); u == nil || u.Role != "admin" || u.Status != "active" {
+			t.Fatalf("%s: not back as an active administrator", how)
+		}
+		if e2.inviteWorks(tok) {
+			t.Fatalf("%s and back: the old invite works again", how)
+		}
+	}
+
 	// the server console's invites don't depend on any account
 	out, err := e.cli("invite", "gran@x.org")
 	if err != nil {

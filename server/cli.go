@@ -247,6 +247,9 @@ func cliRole(role string) func(*App, io.Writer, []string) error {
 		if rowsAffected(res, nil) != 1 {
 			return errors.New("this is the only active administrator: make someone else an administrator first")
 		}
+		if role == "user" {
+			a.dropInvitesOf(u.ID, `1`) // as from the admin area: promoting it again must not bring its invites back
+		}
 		a.audit(consoleActor, "role changed", u.Email, role)
 		fmt.Fprintf(out, "%s is now %s\n", u.Email, map[string]string{"admin": "an administrator", "user": "a regular user"}[role])
 		return nil
@@ -273,6 +276,7 @@ func cliStatusTo(status string) func(*App, io.Writer, []string) error {
 			// as from the admin area: its devices learn they were signed out on purpose and delete what they keep
 			a.remember(`user_id=?`, u.ID)
 			a.db.Exec(`DELETE FROM sessions WHERE user_id=?`, u.ID)
+			a.dropInvitesOf(u.ID, `1`)
 			a.audit(consoleActor, "disabled", u.Email, "")
 			fmt.Fprintf(out, "%s is locked and signed out everywhere; its photos stay. Undo with enable-user.\n", u.Email)
 			return nil

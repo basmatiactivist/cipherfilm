@@ -8,6 +8,13 @@ version into the GitHub release notes, so a release cannot be published without 
 ## [Unreleased]
 
 ### Added
+- Unused devices are signed out (web, Android, Mac, under Devices): choose "Sign out devices not used for" 7, 14 or 30
+  days (30 as before). A device unused for longer is now signed out as if from another device, so it deletes what it
+  keeps of the library when it comes back, also with the 30 days. "Sign out unused devices now" shows how many devices
+  that is and, after asking, ends them at once; never this one. Not for the public demo.
+- The storage overview's last upload per device for devices signed in before the server recorded it: Android and the
+  Mac report the newest upload they know once per session (Android from the items it uploaded itself, the Mac from
+  its watched folders). The server keeps it only while it has none for that session, and within the last year.
 - Storage and backup overview: Admin › Storage (web, Android, Mac) shows the server's total and free disk space and,
   per account, use against the limit split into photos, videos, other files, thumbnails and previews and search data,
   the number of items, and per signed-in device when it last uploaded, with a warning when a phone in use seems to have

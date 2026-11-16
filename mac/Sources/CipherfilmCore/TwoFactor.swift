@@ -277,6 +277,72 @@ public struct Device: Decodable, Sendable, Equatable, Identifiable {
   }
 }
 
+/** Devices that go unused are signed out (server/sessions.go idleLimit): after the account's choice of 7, 14 or 30 days
+ *  without a request, as from another device, so such a device deletes what it keeps when it comes back. */
+public enum DeviceIdle {
+  public static let choices = [7, 14, 30]
+  public static let standard = 30
+
+  /** The account's choice as the server sent it, or 30 days for anything else (an older server sends none). */
+  public static func days(_ v: Int?) -> Int { v.flatMap { choices.contains($0) ? $0 : nil } ?? standard }
+
+  /** The other devices unused for longer than the limit: the ones "Sign out unused devices now" ends, never this one. */
+  public static func unused(_ list: [Device], days: Int, now: Date = Date()) -> [Device] {
+    let limit = Int64(days) * 86400, t = Int64(now.timeIntervalSince1970)
+    return list.filter { !$0.current && t - $0.last_seen > limit }
+  }
+
+  /** The devices and the account's choice. */
+  public static func list(api: API) async throws -> (devices: [Device], days: Int) {
+    struct L: Decodable { let sessions: [Device]; let idle_days: Int? }
+    let l = try await api.get(L.self, "/api/me/sessions")
+    return (l.sessions, days(l.idle_days))
+  }
+
+  public static func set(api: API, days d: Int) async throws -> Int {
+    struct R: Decodable { let idle_days: Int }
+    guard choices.contains(d) else { throw APIError(status: -1, message: "Choose 7, 14 or 30 days.") }
+    return days(try JSONDecoder().decode(R.self, from: try await api.json("PUT", "/api/me/device-idle", body: ["days": d])).idle_days)
+  }
+
+  /** Ends the other devices unused for longer than the limit now; how many. */
+  @discardableResult
+  public static func signOutUnused(api: API) async throws -> Int {
+    struct R: Decodable { let ended: Int }
+    return try JSONDecoder().decode(R.self, from: try await api.json("POST", "/api/me/sessions/end-unused")).ended
+  }
+}
+
+/** The time of this Mac's newest upload for its session, which the server records only since the storage overview came
+ *  (before, every device showed "No upload recorded yet"). Sent once per session; the server keeps it only if it has
+ *  none for the session, and never for another one. */
+public enum LastUpload {
+  /** The newest upload time (seconds, the server's) among library items this Mac's watched folders uploaded: items whose
+   *  name and size print the watcher noted as done. Not after `notAfter` (when the watcher last wrote its state), so a
+   *  file that only counted as done (a folder's existing files) can't make it newer than the watcher's last upload.
+   *  0 when there is none. */
+  public static func newest(items: [Item], done: Set<String>, notAfter: Date? = nil) -> Int64 {
+    guard !done.isEmpty else { return 0 }
+    var newest = 0.0
+    for it in items where it.createdAt > newest {
+      guard let m = it.meta, done.contains(Crypto.fingerprint(name: m.name, size: m.size)) else { continue }
+      newest = it.createdAt
+    }
+    if let notAfter, newest > notAfter.timeIntervalSince1970 { newest = notAfter.timeIntervalSince1970 }
+    return Int64(newest)
+  }
+
+  /** Whether to send for this session: not for the demo, not twice for the same session, not without a time. */
+  public static func due(me: Me, sentFor: String?, at: Int64) -> Bool {
+    guard !me.isDemo, let s = me.session_id, !s.isEmpty, s != sentFor else { return false }
+    return at > 0
+  }
+
+  public static func send(api: API, at: Int64) async throws {
+    _ = try await api.json("POST", "/api/me/sessions/current/last-upload", body: ["at": at])
+  }
+}
+
 /** Something the account's devices show once (a new sign-in, two-step sign-in turned off by an admin, the password used
  *  for a sign-in that wasn't finished, a change to two-step sign-in made on another of its devices). Dismissing it
  *  on any device dismisses it everywhere. */

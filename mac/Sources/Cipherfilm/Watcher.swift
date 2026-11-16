@@ -69,6 +69,14 @@ final class Watcher {
     knownFile(userId).write(prints)
   }
 
+  /** What the watched folders uploaded for the account, for its last upload time (AppModel backfillLastUpload): the
+   *  prints of the files done, and when the state was last written. nil when they never uploaded anything. */
+  func uploadRecord(_ userId: String) -> (done: Set<String>, written: Date?)? {
+    let f = stateFile(userId)
+    guard let st = f.read(), st.uploaded > 0 else { return nil }
+    return (st.done, (try? f.url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate)
+  }
+
   /** "Only new files" for a folder just added: what is in it now counts as done. */
   func baseline(_ folder: URL) {
     guard let userId else { return }

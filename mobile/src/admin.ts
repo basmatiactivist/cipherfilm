@@ -196,6 +196,7 @@ export function describe(a: AuditEntry, myEmail: string): { icon: ActIcon; text:
     case "default limit changed": return { icon: "cloud", text: t("{who} set the default storage limit to {limit}", { who, limit: limitText(Number(a.detail)) }) };
     case "signed out a device": return { icon: "logout", text: a.detail ? t("{who} signed out {device}", { who, device: a.detail }) : t("{who} signed out a device", { who }) };
     case "signed out other devices": return { icon: "logout", text: t("{who} signed out all other devices", { who }) };
+    case "signed out unused devices": return { icon: "logout", text: t("{who} signed out unused devices", { who }) };
     case "two-step sign-in turned off": return { icon: "key", text: t("{who} turned off two-step sign-in for {target}", v), warn: true };
     case "turned on two-step sign-in": return { icon: "key", text: t("{who} turned on two-step sign-in", { who }) };
     case "turned off two-step sign-in": return { icon: "key", text: t("{who} turned off two-step sign-in", { who }) };

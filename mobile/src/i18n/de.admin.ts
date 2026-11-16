@@ -136,6 +136,7 @@ export const deAdmin: Record<string, string> = {
   "{who} signed out {device}": "{who}: {device} abgemeldet",
   "{who} signed out a device": "{who}: ein Gerät abgemeldet",
   "{who} signed out all other devices": "{who}: alle anderen Geräte abgemeldet",
+  "{who} signed out unused devices": "{who}: ungenutzte Geräte abgemeldet",
   "{who} turned off two-step sign-in for {target}": "{who}: Anmeldung in zwei Schritten für {target} ausgeschaltet",
   "{who} turned on two-step sign-in": "{who}: Anmeldung in zwei Schritten eingeschaltet",
   "{who} turned off two-step sign-in": "{who}: Anmeldung in zwei Schritten ausgeschaltet",

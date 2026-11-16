@@ -737,6 +737,29 @@ final class AppModel {
     search.libraryChanged(vault: vault, items: items, settings: settings)
     exporter.libraryChanged(vault: vault, items: items, albums: albums, settings: settings,
                             locked: Set(Folders.splitLocked(all).locked.map(\.id)))
+    backfillLastUpload(all: all)
+  }
+
+  /** The session this Mac last sent its newest upload time for (CipherfilmCore LastUpload), in the account's folder. */
+  private struct LastUploadSent: Codable { var session: String }
+  /** once per app start and session: an older server without the route isn't asked at every load */
+  private var lastUploadTried: String?
+
+  /** Sends the newest upload of the watched folders once for this session, after the library loaded: the server only
+   *  records upload times since the storage overview came, so it showed none for this Mac. Nothing when there is none. */
+  private func backfillLastUpload(all: [Item]) {
+    guard let api, let me, let session = me.session_id, lastUploadTried != session else { return }
+    lastUploadTried = session
+    let file = AccountFile<LastUploadSent>(userId: me.user.id, name: "last-upload.json")
+    let mine = watcher.uploadRecord(me.user.id)
+    let at = LastUpload.newest(items: all, done: mine?.done ?? [], notAfter: mine?.written)
+    guard LastUpload.due(me: me, sentFor: file.read()?.session, at: at) else { return }
+    Task {
+      do {
+        try await LastUpload.send(api: api, at: at)
+        file.write(LastUploadSent(session: session))
+      } catch { /* an older server, or offline: tried again at the next start */ }
+    }
   }
 
   private func settingsChanged(from old: AccountSettings) {

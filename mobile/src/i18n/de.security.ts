@@ -117,6 +117,13 @@ export const deSecurity: Record<string, string> = {
   "this device": "dieses Gerät",
   "It must sign in again, and deletes what it keeps of your library the next time it reaches the server.":
     "Es muss sich neu anmelden und löscht, was es von Ihrer Mediathek gespeichert hat, sobald es den Server das nächste Mal erreicht.",
+  "Sign out devices not used for": "Geräte abmelden, die nicht benutzt wurden seit",
+  "Such a device must sign in again, and deletes what it keeps of your library the next time it reaches the server.":
+    "Ein solches Gerät muss sich neu anmelden und löscht, was es von Ihrer Mediathek gespeichert hat, sobald es den Server das nächste Mal erreicht.",
+  "Sign out {n} unused device now": "{n} ungenutztes Gerät jetzt abmelden",
+  "Sign out {n} unused devices now": "{n} ungenutzte Geräte jetzt abmelden",
+  "Sign out {n} device not used for {days} days?": "{n} Gerät abmelden, das seit {days} Tagen nicht benutzt wurde?",
+  "Sign out {n} devices not used for {days} days?": "{n} Geräte abmelden, die seit {days} Tagen nicht benutzt wurden?",
   "Active now": "Gerade aktiv",
   "{n} minutes ago": "vor {n} Minuten",
   "An hour ago": "Vor einer Stunde",

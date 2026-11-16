@@ -470,6 +470,8 @@ struct DevicesSection: View {
   @State private var error: String?
   @State private var ask: Device?
   @State private var askOthers = false
+  @State private var askUnused = false
+  @State private var idle = DeviceIdle.standard
   @State private var busy = false
 
   var body: some View {
@@ -499,6 +501,24 @@ struct DevicesSection: View {
         if list.contains(where: { !$0.current }) {
           Button("Sign Out All Other Devices…") { askOthers = true }.disabled(busy)
         }
+        if model.me?.isDemo != true {
+          VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+              Text("Sign out devices not used for").font(Typo.label)
+              Picker("Sign out devices not used for", selection: Binding(get: { idle }, set: { choose($0) })) {
+                ForEach(DeviceIdle.choices, id: \.self) { Text("\($0) days").tag($0) }
+              }
+              .pickerStyle(.segmented).labelsHidden().fixedSize().disabled(busy)
+            }
+            Text("Such a device must sign in again, and deletes what it keeps of your library the next time it reaches the server.")
+              .font(Typo.caption).foregroundStyle(.secondary)
+            let unused = DeviceIdle.unused(list, days: idle).count
+            if unused > 0 {
+              Button(unused == 1 ? "Sign Out 1 Unused Device Now…" : "Sign Out \(unused) Unused Devices Now…") { askUnused = true }.disabled(busy)
+            }
+          }
+          .padding(.top, 8)
+        }
       } else if error == nil {
         ProgressView().controlSize(.small)
       }
@@ -513,6 +533,26 @@ struct DevicesSection: View {
       Button("Sign Out", role: .destructive) { run { try await Device.signOutOthers(api: $0) } }
       Button("Cancel", role: .cancel) {}
     } message: { Text("Every device except this Mac must sign in again, and deletes what it keeps of your library.") }
+    .alert("Sign out devices not used for \(idle) days?", isPresented: $askUnused) {
+      Button("Sign Out", role: .destructive) { run { _ = try await DeviceIdle.signOutUnused(api: $0) } }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text(unusedCount == 1
+        ? "1 device must sign in again, and deletes what it keeps of your library the next time it reaches the server."
+        : "\(unusedCount) devices must sign in again, and delete what they keep of your library the next time they reach the server.")
+    }
+  }
+
+  private var unusedCount: Int { list.map { DeviceIdle.unused($0, days: idle).count } ?? 0 }
+
+  private func choose(_ days: Int) {
+    guard let api = model.api, days != idle, !busy else { return }
+    let was = idle
+    idle = days; busy = true; error = nil
+    Task {
+      do { idle = try await DeviceIdle.set(api: api, days: days) } catch { idle = was; self.error = say(error) }
+      busy = false
+    }
   }
 
   private func icon(_ d: Device) -> String {
@@ -530,7 +570,7 @@ struct DevicesSection: View {
 
   private func load() async {
     guard let api = model.api else { return }
-    do { list = try await Device.list(api: api); error = nil } catch { self.error = say(error) }
+    do { (list, idle) = try await DeviceIdle.list(api: api); error = nil } catch { self.error = say(error) }
   }
 
   private func run(_ f: @escaping @Sendable (API) async throws -> Void) {

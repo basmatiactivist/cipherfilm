@@ -73,6 +73,7 @@ func (a *App) sessionBundle(u *user, s *session) map[string]any {
 		"pubkey":            u.Pubkey,
 		"server_version":    version, // shown in the apps' settings
 		"two_factor":        u.twoFactor(),
+		"idle_days":         idleDays(u.IdleDays), // devices unused this many days are signed out
 	}
 	if a.mapConf != nil {
 		b["map"] = a.mapConf // the base map's styles; absent when the operator turned the map off

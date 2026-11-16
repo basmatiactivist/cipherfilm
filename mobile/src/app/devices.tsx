@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { router } from "expo-router";
-import { Appbar, Button, Dialog, Divider, List, Portal, Text } from "react-native-paper";
+import { Appbar, Button, Dialog, Divider, List, Portal, RadioButton, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "../api";
 import { Problem, useAppTheme } from "../ui";
@@ -15,6 +15,8 @@ import { deviceLabel, lastActive } from "../notices";
 import { NoticeAlertsHint } from "../NoticeAlertsSetting";
 import { text } from "../tokens";
 import { locale, t, tn } from "../i18n";
+import { useSession } from "../session";
+import { IDLE_CHOICES, IDLE_DEFAULT, idleDaysOf, unusedDevices } from "../deviceIdle";
 
 interface Device { id: string; device: string; created_at: number; last_seen: number; current: boolean; indexer: boolean }
 
@@ -23,16 +25,29 @@ const day = (sec: number) => new Date(sec * 1000).toLocaleDateString(locale(), {
 export default function Devices() {
   const th = useAppTheme();
   const inset = useSafeAreaInsets();
+  const { me } = useSession();
   const [list, setList] = useState<Device[] | null>(null);
-  const [ask, setAsk] = useState<Device | "others" | null>(null);
+  const [idle, setIdle] = useState(IDLE_DEFAULT);
+  const [ask, setAsk] = useState<Device | "others" | "unused" | null>(null);
   const page = useAction();
   const act = useAction();
-  const load = () => page.run(async () => setList((await api<{ sessions: Device[] }>("GET", "/api/me/sessions")).sessions));
+  const choice = useAction();
+  const load = () => page.run(async () => {
+    const r = await api<{ sessions: Device[]; idle_days?: number }>("GET", "/api/me/sessions");
+    setList(r.sessions);
+    setIdle(idleDaysOf(r.idle_days));
+  });
   useEffect(() => { load(); }, []);
   const others = list?.filter((d) => !d.current).length ?? 0;
+  const unused = list ? unusedDevices(list, idle, Date.now() / 1000).length : 0;
+  const choose = (days: number) => choice.run(async () => {
+    const r = await api<{ idle_days: number }>("PUT", "/api/me/device-idle", { days });
+    setIdle(idleDaysOf(r.idle_days));
+  });
   const close = () => { if (!act.busy) { setAsk(null); act.setError(undefined); } };
   const signOut = () => act.run(async () => {
     if (ask === "others") await api("POST", "/api/me/sessions/end-others");
+    else if (ask === "unused") await api("POST", "/api/me/sessions/end-unused");
     else if (ask) await api("DELETE", `/api/me/sessions/${ask.id}`);
     setAsk(null);
     await load();
@@ -62,10 +77,29 @@ export default function Devices() {
             <Button mode="outlined" textColor={th.colors.error} onPress={() => setAsk("others")}>{t("Sign out all other devices")}</Button>
           </View>
         ) : null}
+        {me?.demo || !list ? null : (
+          <>
+            <Divider />
+            <View style={st.block}>
+              <Text variant="titleSmall">{t("Sign out devices not used for")}</Text>
+              <Text variant="bodySmall" style={{ color: th.colors.onSurfaceVariant, marginTop: 4 }}>{t("Such a device must sign in again, and deletes what it keeps of your library the next time it reaches the server.")}</Text>
+            </View>
+            <RadioButton.Group value={String(idle)} onValueChange={(v) => { if (!choice.busy) choose(Number(v)); }}>
+              {IDLE_CHOICES.map((d) => <RadioButton.Item key={d} label={t("{n} days", { n: d })} value={String(d)} disabled={choice.busy} />)}
+            </RadioButton.Group>
+            <View style={{ paddingHorizontal: 16 }}><Problem>{choice.error}</Problem></View>
+            {unused > 0 ? (
+              <View style={st.block}>
+                <Button mode="outlined" textColor={th.colors.error} onPress={() => setAsk("unused")}>{tn(unused, "Sign out {n} unused device now", "Sign out {n} unused devices now")}</Button>
+              </View>
+            ) : null}
+          </>
+        )}
       </ScrollView>
       <Portal>
         <Dialog visible={ask !== null} onDismiss={close}>
-          <Dialog.Title>{ask === "others" ? tn(others, "Sign out {n} other device?", "Sign out {n} other devices?") : t("Sign out {device}?", { device: ask && typeof ask === "object" && ask.device ? deviceLabel(ask.device) : t("this device") })}</Dialog.Title>
+          <Dialog.Title>{ask === "others" ? tn(others, "Sign out {n} other device?", "Sign out {n} other devices?")
+            : ask === "unused" ? tn(unused, "Sign out {n} device not used for {days} days?", "Sign out {n} devices not used for {days} days?", { days: idle }) : t("Sign out {device}?", { device: ask && typeof ask === "object" && ask.device ? deviceLabel(ask.device) : t("this device") })}</Dialog.Title>
           <Dialog.Content>
             <Text variant="bodyMedium">{t("It must sign in again, and deletes what it keeps of your library the next time it reaches the server.")}</Text>
             <Problem>{act.error}</Problem>

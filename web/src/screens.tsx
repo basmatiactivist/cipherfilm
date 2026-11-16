@@ -17,6 +17,7 @@ import { ModelConsent, ModelProgress } from "./search/consentui";
 import { FAMILY as family, TEXT_MODELS, TOKENIZER } from "./search/rank";
 import * as tf from "./twofactor";
 import * as pk from "./passkeys";
+import { IDLE_CHOICES, IDLE_DEFAULT, idleDaysOf, idleLabel, unusedButton, unusedDevices } from "./devices";
 import { Card, ErrorLine, Field, KeepButton, NewPasswordFields, Submit, VersionLine, fmtGB, passwordProblem, useAction } from "./components";
 
 type Nav = (to: string) => void;
@@ -571,11 +572,19 @@ const seenAgo = (sec: number) => {
  *  deletes what it keeps of the library the next time it reaches the server. */
 function DevicesPanel({ open }: { open?: boolean }) {
   const [list, setList] = useState<Device[] | null>(null);
-  const [ask, setAsk] = useState<Device | "others" | null>(null);
+  const [idle, setIdle] = useState(IDLE_DEFAULT);
+  const [ask, setAsk] = useState<Device | "others" | "unused" | null>(null);
   const { busy, error, run } = useAction();
-  const load = () => api<{ sessions: Device[] }>("GET", "/api/me/sessions").then((r) => setList(r.sessions), () => setList([]));
+  const load = () => api<{ sessions: Device[]; idle_days?: number }>("GET", "/api/me/sessions")
+    .then((r) => { setList(r.sessions); setIdle(idleDaysOf(r.idle_days)); }, () => setList([]));
   useEffect(() => { load(); }, []);
   const others = list?.filter((d) => !d.current).length ?? 0;
+  const unused = list ? unusedDevices(list, idle, Date.now() / 1000).length : 0;
+  const choose = (days: number) => run(async () => {
+    const r = await api<{ idle_days: number }>("PUT", "/api/me/device-idle", { days });
+    setIdle(idleDaysOf(r.idle_days));
+    setAsk(null);
+  });
   return (
     <Acc icon="shield" title="Devices" sub="Where you're signed in" open={open}>
       {!list ? <Loading inline label="Checking…" /> : (
@@ -599,13 +608,31 @@ function DevicesPanel({ open }: { open?: boolean }) {
           ))}
         </ul>
       )}
-      {ask && ask !== "others" && <p class="hint">{ask.device || "This device"} must sign in again, and deletes what it keeps of your library (thumbnails, search) the next time it reaches the server.</p>}
+      {ask && ask !== "others" && ask !== "unused" && <p class="hint">{ask.device || "This device"} must sign in again, and deletes what it keeps of your library (thumbnails, search) the next time it reaches the server.</p>}
       {others > 1 && (ask === "others" ? (
         <div class="row">
           <button class="btn danger" disabled={busy} onClick={() => run(async () => { await api("POST", "/api/me/sessions/end-others"); setAsk(null); await load(); })}>Sign out {others} devices</button>
           <button class="btn secondary" onClick={() => setAsk(null)}>Cancel</button>
         </div>
       ) : <button class="btn secondary" onClick={() => setAsk("others")}>Sign out all other devices…</button>)}
+      <fieldset class="idle">
+        <legend>Sign out devices not used for</legend>
+        <div class="row">
+          {IDLE_CHOICES.map((d) => (
+            <label key={d} class="check"><input type="radio" name="device-idle" checked={idle === d} disabled={busy} onChange={() => choose(d)} /> {idleLabel(d)}</label>
+          ))}
+        </div>
+        <p class="hint">A device signed out this way must sign in again, and deletes what it keeps of your library the next time it reaches the server.</p>
+      </fieldset>
+      {unused > 0 && (ask === "unused" ? (
+        <>
+          <p class="hint">{unused === 1 ? "1 device hasn't" : `${unused} devices haven't`} been used for more than {idleLabel(idle)}. They must sign in again, and delete what they keep of your library the next time they reach the server.</p>
+          <div class="row">
+            <button class="btn danger" disabled={busy} onClick={() => run(async () => { await api("POST", "/api/me/sessions/end-unused"); setAsk(null); await load(); })}>{unusedButton(unused)}</button>
+            <button class="btn secondary" onClick={() => setAsk(null)}>Cancel</button>
+          </div>
+        </>
+      ) : <button class="btn secondary" onClick={() => setAsk("unused")}>Sign out unused devices now ({unused})…</button>)}
       <p class="hint">Search: one device indexes your photos and stores the index encrypted; the others use it. To change which one, open Search and people in that app and choose “Index here”.</p>
       <BrowserAlerts />
       <ErrorLine text={error} />
@@ -784,6 +811,7 @@ function describe(a: AuditEntry, myEmail: string): { icon: IconName; text: any; 
     case "default limit changed": return { icon: "cloud", text: <>{who} set the default storage limit to {size(a.detail)}</> };
     case "signed out a device": return { icon: "logout", text: <>{who} signed out {a.detail ? <strong>{a.detail}</strong> : "a device"}</> };
     case "signed out other devices": return { icon: "logout", text: <>{who} signed out all other devices</> };
+    case "signed out unused devices": return { icon: "logout", text: <>{who} signed out unused devices</> };
     case "two-step sign-in turned off": return { icon: "key", text: <>{who} turned off two-step sign-in for {t}</>, warn: true };
     case "turned on two-step sign-in": return { icon: "key", text: <>{who} turned on two-step sign-in</> };
     case "turned off two-step sign-in": return { icon: "key", text: <>{who} turned off two-step sign-in</> };

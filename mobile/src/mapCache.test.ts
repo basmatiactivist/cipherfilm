@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // MapLibre's cache of map images (where the map was looked at) outlives the app's process: a lock, a sign-out or the
 // map turned off clears it also in a run that showed no map, as long as one was shown since it was last cleared.
-const st = vi.hoisted(() => ({ files: new Set<string>(), clears: 0, wipe: [] as ((how: string) => void)[] }));
+const st = vi.hoisted(() => ({ files: new Set<string>(), clears: 0, wipe: [] as ((how: string) => void)[], transforms: [] as { id?: string; match?: string; find: string; replace: string }[] }));
 vi.mock("expo-file-system", () => {
   class File {
     uri: string;
@@ -14,8 +14,11 @@ vi.mock("expo-file-system", () => {
   return { File, Paths: { document: "/doc" } };
 });
 vi.mock("expo-secure-store", () => ({ getItemAsync: async () => null, setItemAsync: async () => {}, deleteItemAsync: async () => {} }));
-vi.mock("@maplibre/maplibre-react-native", () => ({ OfflineManager: { clearAmbientCache: async () => { st.clears++; } } }));
-vi.mock("./session", () => ({ session: () => ({ me: { user: { id: "u1" } } }), onWipe: (f: (how: string) => void) => st.wipe.push(f) }));
+vi.mock("@maplibre/maplibre-react-native", () => ({
+  OfflineManager: { clearAmbientCache: async () => { st.clears++; } },
+  TransformRequestManager: { addUrlTransform: (o: { id?: string; match?: string; find: string; replace: string }) => { st.transforms.push(o); return o.id; } },
+}));
+vi.mock("./session", () => ({ session: () => ({ me: { user: { id: "u1" }, map: { light: ["https://maps.example.test/light.json"], dark: ["https://maps.example.test:8443/dark.json"] } } }), onWipe: (f: (how: string) => void) => st.wipe.push(f) }));
 vi.mock("./store", () => ({ privacyUrl: () => "https://example.test/privacy" }));
 
 const fresh = async () => { vi.resetModules(); st.wipe = []; st.clears = 0; return import("./mapConsent"); };
@@ -61,5 +64,36 @@ describe("the map's cache", () => {
     await flush();
     expect(st.clears).toBe(2);
     expect(st.files.has("/doc/map-cache-used")).toBe(true);
+  });
+});
+
+describe("the hosts the map loads from", () => {
+  it("only those the question before the map named; everything else goes nowhere", async () => {
+    const m = await fresh();
+    st.transforms = [];
+    await m.mapCacheReady();
+    expect(st.transforms).toHaveLength(1);
+    const [tr] = st.transforms;
+    expect(tr).toMatchObject({ id: "cf-map-hosts", find: "^.+$", replace: "https://127.0.0.1:9/" });
+    const blocked = (u: string) => new RegExp(tr.match!).test(u);
+    expect(blocked("https://maps.example.test/light.json")).toBe(false);
+    expect(blocked("https://maps.example.test/tiles/5/16/11.pbf")).toBe(false);
+    expect(blocked("https://maps.example.test:8443/dark.json")).toBe(false);
+    expect(blocked("https://maps.example.test:8443")).toBe(false);
+    // a style naming tiles, fonts or icons on another host, a look-alike, another port, plain http
+    expect(blocked("https://other.example.test/tiles/5/16/11.pbf")).toBe(true);
+    expect(blocked("https://maps.example.test.other.test/x")).toBe(true);
+    expect(blocked("https://maps.example.test@other.test/x")).toBe(true);
+    expect(blocked("https://maps.example.test:9999/x")).toBe(true);
+    expect(blocked("https://mapsXexample.test/x")).toBe(true);
+    expect(blocked("http://maps.example.test/x")).toBe(true);
+    // the replacement itself is never let through to anywhere but this phone
+    expect(blocked("https://127.0.0.1:9/")).toBe(true);
+  });
+
+  it("with no map hosts (or none that is a plain host name) nothing is allowed", async () => {
+    const m = await fresh();
+    for (const hosts of [[], ["bad host"], ["a.test/x"]]) expect(new RegExp(m.outsideHosts(hosts)).test("https://a.test/x"), hosts.join()).toBe(true);
+    expect(new RegExp(m.outsideHosts(["A.test:443"])).test("https://a.test/x")).toBe(false);
   });
 });

@@ -5,7 +5,7 @@ import * as SecureStore from "expo-secure-store";
 import { File, Paths } from "expo-file-system";
 import { privacyUrl } from "./store";
 import { onWipe, session } from "./session";
-import { OfflineManager } from "@maplibre/maplibre-react-native";
+import { OfflineManager, TransformRequestManager } from "@maplibre/maplibre-react-native";
 import { t } from "./i18n";
 import { mapHosts, mapProviderOf } from "@places/mapHosts";
 
@@ -75,8 +75,26 @@ const clearCache = () => OfflineManager.clearAmbientCache().then(
   () => {},
 );
 
-/** Before a map shows: the cache from an earlier run is gone. */
+// Only the hosts the question before the map named (the styles' own hosts, mapHosts) are asked for anything: a style
+// that names tiles, a TileJSON, fonts or icons elsewhere gets them from nowhere, as the web app's and the Mac app's
+// Content-Security-Policy do (docs/MAP.md). MapLibre's requests to any other address are sent to this phone's own
+// closed port instead, so they fail without leaving it.
+const NOWHERE = "https://127.0.0.1:9/";
+const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+/** The requests to refuse: everything that isn't https to one of `hosts` (host or host:port, as mapHosts names them). */
+export function outsideHosts(hosts: string[]): string {
+  const allowed = hosts.map((h) => h.toLowerCase().replace(/:443$/, "")).filter((h) => /^[a-z0-9.-]+(:\d{1,5})?$/.test(h)).map(escape);
+  return allowed.length ? `^(?!https://(?:${allowed.join("|")})(?:[/?#]|$))` : "^";
+}
+function onlyMapHosts() {
+  try {
+    TransformRequestManager.addUrlTransform({ id: "cf-map-hosts", match: outsideHosts(mapHosts(session().me?.map)), find: "^.+$", replace: NOWHERE });
+  } catch { /* an older map module: the styles' own hosts are all an honest server's styles use */ }
+}
+
+/** Before a map shows: the cache from an earlier run is gone, and only the agreed hosts are asked. */
 export function mapCacheReady(): Promise<void> {
+  onlyMapHosts();
   shown = true;
   try { if (!USED().exists) USED().write("1"); } catch { /* this run still clears it */ }
   cacheChecked ??= clearCache();

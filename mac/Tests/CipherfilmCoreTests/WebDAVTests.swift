@@ -327,6 +327,42 @@ final class StubDAV: URLProtocol, @unchecked Sendable {
   @Test func notAWebDAVFolder() async throws {
     await #expect(throws: WebDAVError.notWebDAV) { try await client(ranges: true).list() }
   }
+
+  /** No answer is taken in beyond what was asked for: a part longer than requested, a whole file longer than listed,
+   *  a listing that announces more than the cap. */
+  @Test func answersLongerThanAskedForAreRefused() async throws {
+    let big = Data(count: 50_000)
+    StubDAV.handler = { r in
+      if r.httpMethod == "PROPFIND" { return (207, ["Content-Length": "\(WebDAVClient.listingCap + 1)"], Data()) }
+      if let h = r.value(forHTTPHeaderField: "Range") { return (206, ["Content-Range": "\(h.replacingOccurrences(of: "=", with: " "))/10000"], big) }
+      return (200, [:], big)
+    }
+    let c = WebDAVClient(folder: folder, user: "u", password: "p", protocols: [StubDAV.self])
+    await #expect(throws: WebDAVError.changed) { try await c.read(entry, offset: 0, len: 50) }
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cf-dl-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let dest = dir.appendingPathComponent("a.jpg")
+    await #expect(throws: WebDAVError.changed) { try await c.download(entry, to: dest) }
+    #expect(!FileManager.default.fileExists(atPath: dest.path))
+    #expect(c.received.value <= 2 << 20)
+    await #expect(throws: WebDAVError.malformed) { try await c.list() }
+  }
+
+  /** A server without ranges answers a part with the whole file: found out without taking the file in, and the
+   *  temporary copy then comes in one piece of exactly the listed size. */
+  @Test func aWholeFileIsNotReadForAPart() async throws {
+    let c = client(ranges: false)
+    await #expect(throws: WebDAVError.noRanges) { try await c.read(entry, offset: 100, len: 50) }
+    #expect(c.knownToSendRanges == false)
+    #expect(c.received.value == 0)
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cf-dl-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let dest = dir.appendingPathComponent("a.jpg")
+    try await c.download(entry, to: dest)
+    #expect(try Data(contentsOf: dest) == file)
+  }
 }
 
 /** The temporary copies' disk budget: files take turns only when together they'd pass the limit, one always may,

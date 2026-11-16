@@ -174,6 +174,12 @@ public enum WebDAVImport {
     defer { try? fm.removeItem(at: dir) }
     let f = dir.appendingPathComponent(e.name) // a single path component (PropFind.parse)
     try live()
+    // a server known to send only whole files isn't asked for a part first (its answer would be the whole file)
+    if client.knownToSendRanges == false {
+      try await client.download(e, to: f)
+      try fm.setAttributes([.modificationDate: modified], ofItemAtPath: f.path)
+      return try await Uploader.upload(f, api: api, wrap: wrap, live: live, progress: progress)
+    }
     do {
       guard fm.createFile(atPath: f.path, contents: nil, attributes: [.posixPermissions: 0o600]), let h = try? FileHandle(forWritingTo: f) else {
         throw APIError(status: -1, message: "No room for a temporary copy.")

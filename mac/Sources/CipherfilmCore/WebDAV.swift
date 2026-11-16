@@ -274,13 +274,18 @@ public final class WebDAVClient: NSObject, URLSessionTaskDelegate, @unchecked Se
     r.setValue("1", forHTTPHeaderField: "Depth")
     r.setValue("application/xml; charset=utf-8", forHTTPHeaderField: "Content-Type")
     r.httpBody = PropFind.body
-    let (d, h) = try await send(r)
+    let (bytes, h) = try await open(r)
     switch h.statusCode {
-    case 207: return try PropFind.parse(d, folder: h.url.map { Self.sameFolder($0, folder) } ?? folder)
-    case 200, 405, 501: throw WebDAVError.notWebDAV
-    default: throw Self.failure(h.statusCode)
+    case 207:
+      let d = try await body(bytes, h, cap: Self.listingCap, tooLong: .malformed)
+      return try PropFind.parse(d, folder: h.url.map { Self.sameFolder($0, folder) } ?? folder)
+    case 200, 405, 501: bytes.task.cancel(); throw WebDAVError.notWebDAV
+    default: bytes.task.cancel(); throw Self.failure(h.statusCode)
     }
   }
+
+  /** A folder listing larger than this is refused (one of 100,000 files takes far less). */
+  public static let listingCap = 64 << 20
 
   /** A redirect may have added the slash; the listing is still read against the folder that was asked for. */
   static func sameFolder(_ u: URL, _ folder: URL) -> URL { u.host == folder.host && u.port == folder.port && u.scheme == folder.scheme ? u : folder }
@@ -300,22 +305,32 @@ public final class WebDAVClient: NSObject, URLSessionTaskDelegate, @unchecked Se
       r.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
       if let et = e.etag, !et.hasPrefix("W/") { r.setValue(et, forHTTPHeaderField: "If-Range") }
       do {
-        let (d, h) = try await send(r)
+        // never more than was asked for is taken in: a longer answer stops the transfer
+        let (bytes, h) = try await open(r)
         switch h.statusCode {
         case 206:
           // Content-Range: bytes a-b/total
           if let cr = h.value(forHTTPHeaderField: "Content-Range"), let total = cr.split(separator: "/").last.flatMap({ Int64($0) }), total != e.size {
+            bytes.task.cancel()
             throw WebDAVError.changed
           }
+          let d = try await body(bytes, h, cap: len, tooLong: .changed)
           guard d.count == len else { throw WebDAVError.changed }
           return d
         case 200:
-          // the whole file: fine when that is what was asked for, otherwise the server ignores ranges (or the file changed)
-          if offset == 0, Int64(len) == e.size, d.count == len { return d }
-          if Int64(d.count) != e.size { throw WebDAVError.changed }
+          // the whole file: fine when that is what was asked for, otherwise the server ignores ranges (or the file
+          // changed), found out without reading it
+          if offset == 0, Int64(len) == e.size {
+            let d = try await body(bytes, h, cap: len, tooLong: .changed)
+            guard d.count == len else { throw WebDAVError.changed }
+            return d
+          }
+          bytes.task.cancel()
+          if h.expectedContentLength >= 0, h.expectedContentLength != e.size { throw WebDAVError.changed }
+          rangeLock.withLock { rangesKnown = false }
           throw WebDAVError.noRanges
-        case 412, 416: throw WebDAVError.changed
-        default: throw Self.failure(h.statusCode)
+        case 412, 416: bytes.task.cancel(); throw WebDAVError.changed
+        default: bytes.task.cancel(); throw Self.failure(h.statusCode)
         }
       } catch let w as WebDAVError where w.transient && w != .unauthorized && w != .certificate {
         last = w
@@ -326,6 +341,9 @@ public final class WebDAVClient: NSObject, URLSessionTaskDelegate, @unchecked Se
 
   private let rangeLock = NSLock()
   private var rangesKnown: Bool?
+
+  /** What sendsRanges found out, nil before. */
+  public var knownToSendRanges: Bool? { rangeLock.withLock { rangesKnown } }
 
   /** Whether the server sends parts of files: asked once, with a small Range request whose answer is dropped unread if
    *  it is the whole file. */
@@ -350,34 +368,64 @@ public final class WebDAVClient: NSObject, URLSessionTaskDelegate, @unchecked Se
     return ok
   }
 
-  /** The whole file into a file of this Mac's own (only for a server that sends no parts). */
+  /** The whole file into a file of this Mac's own (only for a server that sends no parts), written straight there.
+   *  Never more than the listed size is written: a longer answer stops the transfer and leaves no file. */
   public func download(_ e: WebDAVEntry, to dest: URL) async throws {
     var r = URLRequest(url: e.url, timeoutInterval: 120)
     r.httpMethod = "GET"
     r.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
-    let (tmp, resp): (URL, URLResponse)
-    do { (tmp, resp) = try await session.download(for: r) } catch { throw Self.mapped(error) }
-    defer { try? FileManager.default.removeItem(at: tmp) }
-    guard let h = resp as? HTTPURLResponse else { throw WebDAVError.malformed }
-    guard h.statusCode == 200 else { throw Self.failure(h.statusCode) }
-    let got = (try? FileManager.default.attributesOfItem(atPath: tmp.path)[.size] as? NSNumber)?.int64Value ?? -1
+    let (bytes, h) = try await open(r)
+    guard h.statusCode == 200 else { bytes.task.cancel(); throw Self.failure(h.statusCode) }
+    if h.expectedContentLength >= 0, h.expectedContentLength != e.size { bytes.task.cancel(); throw WebDAVError.changed }
+    let fm = FileManager.default
+    try? fm.removeItem(at: dest)
+    guard fm.createFile(atPath: dest.path, contents: nil, attributes: [.posixPermissions: 0o600]), let fh = try? FileHandle(forWritingTo: dest) else {
+      bytes.task.cancel()
+      throw APIError(status: -1, message: "No room for a temporary copy.")
+    }
+    var done = false
+    defer { try? fh.close(); if !done { try? fm.removeItem(at: dest) } }
+    let chunk = 1 << 20
+    var buf = [UInt8](), got: Int64 = 0
+    buf.reserveCapacity(chunk)
+    func flush() throws {
+      guard got + Int64(buf.count) <= e.size else { bytes.task.cancel(); throw WebDAVError.changed }
+      try fh.write(contentsOf: buf)
+      got += Int64(buf.count)
+      _ = received.add(Int64(buf.count))
+      buf.removeAll(keepingCapacity: true)
+    }
+    do {
+      for try await b in bytes {
+        buf.append(b)
+        if buf.count >= chunk || got + Int64(buf.count) > e.size { try flush() }
+      }
+      try flush()
+    } catch let w as WebDAVError { throw w } catch let a as APIError { throw a } catch { throw Self.mapped(error) }
     guard got == e.size else { throw WebDAVError.changed }
-    _ = received.add(got)
-    try? FileManager.default.removeItem(at: dest)
-    try FileManager.default.moveItem(at: tmp, to: dest)
+    done = true
   }
 
-  private func send(_ r: URLRequest) async throws -> (Data, HTTPURLResponse) {
+  private func open(_ r: URLRequest) async throws -> (URLSession.AsyncBytes, HTTPURLResponse) {
+    let (bytes, resp): (URLSession.AsyncBytes, URLResponse)
+    do { (bytes, resp) = try await session.bytes(for: r) } catch { throw Self.mapped(error) }
+    guard let h = resp as? HTTPURLResponse else { bytes.task.cancel(); throw WebDAVError.malformed }
+    return (bytes, h)
+  }
+
+  /** An answer's body, refused (and the transfer stopped) as soon as it would pass `cap` bytes. */
+  private func body(_ bytes: URLSession.AsyncBytes, _ h: HTTPURLResponse, cap: Int, tooLong: WebDAVError) async throws -> Data {
+    if h.expectedContentLength > Int64(cap) { bytes.task.cancel(); throw tooLong }
+    var d = [UInt8]()
+    d.reserveCapacity(h.expectedContentLength > 0 ? Int(h.expectedContentLength) : min(cap, 1 << 20))
     do {
-      let (d, resp) = try await session.data(for: r)
-      guard let h = resp as? HTTPURLResponse else { throw WebDAVError.malformed }
-      _ = received.add(Int64(d.count))
-      return (d, h)
-    } catch let e as WebDAVError {
-      throw e
-    } catch {
-      throw Self.mapped(error)
-    }
+      for try await b in bytes {
+        guard d.count < cap else { bytes.task.cancel(); throw tooLong }
+        d.append(b)
+      }
+    } catch let w as WebDAVError { throw w } catch { throw Self.mapped(error) }
+    _ = received.add(Int64(d.count))
+    return Data(d)
   }
 
   static func mapped(_ error: Error) -> Error {

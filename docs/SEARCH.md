@@ -305,8 +305,15 @@ off in the search settings deletes them; declining them never stops search by co
   opening the entries: each word must start a word of the text, accents and case ignored ("zurich" finds "Zürich",
   "bake" finds "Bakery"); "the", "and", "der", "und" and the like needn't be there. The web never downloads the text
   model. A photo's details show the text that matched (web) or the text found.
-- **Speed** (measured, per photo, detector and recogniser, warm): Mac MAC_MS; Android ANDROID_MS. The CLIP image model
-  takes longer than that per photo, so reading text adds a modest share to indexing.
+- **Speed** (measured per photo, detector and recogniser, warm, 2 threads; 2026-11-16): Mac (Apple silicon, Release
+  build, a busy machine) about 70 ms for a photo with little text, 130 ms for the test picture (3 lines), 250–370 ms
+  for screenshots with 28–37 lines: the detector takes about 70 ms, each line 15–20 ms. Android: 257–300 ms for the test
+  picture (decoding included) in the arm64 emulator on that Mac; not measured on a phone yet (expect a few hundred ms
+  on a mid-range one). At most 40 lines are read per photo. The image model takes longer than that per photo, so
+  reading text adds a modest share to indexing; older photos are read only after new ones are indexed.
+- **Limits:** Latin script only; small, rotated or curved text and handwriting are read poorly or not at all; matching
+  is by word starts, without spelling tolerance; about the first 1000 characters of a photo are kept. The Mac app's
+  texts are English only, as the rest of it.
 
 ## Free up space
 

@@ -893,7 +893,7 @@ func TestTailscaleUserHeaderOnlyWhenTrusted(t *testing.T) {
 }
 
 // A signed-in session sending right password proofs (here: turning two-step sign-in off while it is off, which checks
-// the password and then answers 409) gets at most proofsPerAccount of them per window, at most knownInFlight at once,
+// the password and then answers 409) gets at most proofsPerSession of them per window, at most proofInFlight at once,
 // and none of them waits in the queue that turns unknown browsers away.
 func TestSignedInPasswordProofsAreBounded(t *testing.T) {
 	e := newEnv(t)
@@ -933,7 +933,7 @@ func TestSignedInPasswordProofsAreBounded(t *testing.T) {
 		}()
 	}
 	busy := 0
-	for end := time.Now().Add(5 * time.Second); busy < n-knownInFlight && time.Now().Before(end); {
+	for end := time.Now().Add(5 * time.Second); busy < n-proofInFlight && time.Now().Before(end); {
 		select {
 		case c := <-codes:
 			if c != 503 {
@@ -943,8 +943,8 @@ func TestSignedInPasswordProofsAreBounded(t *testing.T) {
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
-	if busy != n-knownInFlight || argonWaiting.Load() != 0 {
-		t.Fatalf("%d turned away, %d in the unknown browsers' queue; want %d and 0", busy, argonWaiting.Load(), n-knownInFlight)
+	if busy != n-proofInFlight || argonWaiting.Load() != 0 {
+		t.Fatalf("%d turned away, %d in the unknown browsers' queue; want %d and 0", busy, argonWaiting.Load(), n-proofInFlight)
 	}
 	free()
 	wg.Wait()
@@ -955,9 +955,8 @@ func TestSignedInPasswordProofsAreBounded(t *testing.T) {
 		}
 	}
 	// per window, right or wrong: the endpoint's own bucket resets on a right proof, this one doesn't
-	u, _ := e.app.userByEmail("admin@x.org")
-	e.app.proofs.clear(u.ID)
-	for i := 0; i < proofsPerAccount; i++ {
+	e.app.proofs = newLimiter(proofWindow, proofsPerSession)
+	for i := 0; i < proofsPerSession; i++ {
 		if code, _ := admin.do("POST", "/api/me/2fa/disable", proof, true); code != 409 {
 			t.Fatalf("proof %d: %d", i, code)
 		}
@@ -967,5 +966,156 @@ func TestSignedInPasswordProofsAreBounded(t *testing.T) {
 	}
 	if code, _ := admin.do("POST", "/api/auth/recovery-key", with(proof, "wrapped_master_recovery", rb(wrappedLen), "recovery_verifier", rb(32)), true); code != 429 {
 		t.Fatalf("another proof endpoint over the limit: %d", code)
+	}
+}
+
+// Right sign-ins and recovery starts from unknown browsers count too: one source has at most sourceInFlight of them
+// running or waiting at once (the rest get 503 at once), so whoever knows an account's password and recovery key can't
+// fill the queue from one address and keep everyone else's sign-ins on new browsers out.
+func TestOneSourceCantFillTheQueueWithRightCredentials(t *testing.T) {
+	e := newEnv(t)
+	_, ab := e.setupAdmin("admin@x.org")
+	e.app.trustProxy = true // the test server is reached from loopback: X-Forwarded-For names the source
+	for i := 0; i < cap(argonSlots); i++ {
+		argonSlots <- struct{}{}
+	}
+	held := true
+	free := func() {
+		if held {
+			held = false
+			for i := 0; i < cap(argonSlots); i++ {
+				<-argonSlots
+			}
+		}
+	}
+	t.Cleanup(free)
+	send := func(path, source string, body map[string]any) int {
+		bb, _ := json.Marshal(body)
+		req, _ := http.NewRequest("POST", e.srv.URL+path, bytes.NewReader(bb))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Forwarded-For", source)
+		resp, err := e.client().c.Do(req)
+		if err != nil {
+			return 0
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	const n = 12
+	codes := make(chan int, n+1)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if i%2 == 0 {
+				codes <- send("/api/auth/login", "203.0.113.7", map[string]any{"email": "admin@x.org", "auth": ab["auth"]})
+			} else {
+				codes <- send("/api/auth/recover/start", "203.0.113.7", map[string]any{"email": "admin@x.org", "recovery_auth": ab["recovery_verifier"]})
+			}
+		}()
+	}
+	busy := 0
+	for end := time.Now().Add(5 * time.Second); busy < n-sourceInFlight && time.Now().Before(end); {
+		select {
+		case c := <-codes:
+			if c != 503 {
+				t.Fatalf("answered while every slot was taken: %d", c)
+			}
+			busy++
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	if busy != n-sourceInFlight || argonWaiting.Load() != sourceInFlight {
+		t.Fatalf("%d turned away, %d waiting; want %d and %d", busy, argonWaiting.Load(), n-sourceInFlight, sourceInFlight)
+	}
+	// another source still gets in line
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		codes <- send("/api/auth/login", "198.51.100.9", map[string]any{"email": "admin@x.org", "auth": ab["auth"]})
+	}()
+	for end := time.Now().Add(3 * time.Second); argonWaiting.Load() != sourceInFlight+1; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(end) {
+			t.Fatalf("another source was not let in: %d waiting", argonWaiting.Load())
+		}
+	}
+	free()
+	wg.Wait()
+	close(codes)
+	for c := range codes {
+		if c != 200 {
+			t.Fatalf("a waiting check: %d", c)
+		}
+	}
+}
+
+// Wrong password proofs from another session of the account (a stolen one, without the password) use up that
+// session's budgets, not the person's: their own session can still change the password, also after signing the other
+// one out. And known browsers' sign-ins in flight don't take the place a signed-in proof waits in.
+func TestAnotherSessionCantUseUpTheOwnersProofs(t *testing.T) {
+	e := newEnv(t)
+	owner, ab := e.setupAdmin("admin@x.org")
+	stolen := e.login("admin@x.org", ab)
+	// the password change's own bucket, then the session's proofs across the routes that check the password first
+	for i := 0; i < 12; i++ {
+		stolen.do("POST", "/api/auth/password", map[string]any{"current_auth": rb(32), "new_auth": rb(32), "new_kdf": ab["kdf"], "new_wrapped_master_pw": rb(wrappedLen)}, true)
+	}
+	for _, path := range []string{"/api/me/2fa/disable", "/api/me/2fa/recovery-codes", "/api/me/2fa/setup"} {
+		for i := 0; i < 10; i++ {
+			stolen.do("POST", path, map[string]any{"current_auth": rb(32)}, true)
+		}
+	}
+	if code, _ := stolen.do("POST", "/api/auth/recovery-key", map[string]any{"current_auth": rb(32), "wrapped_master_recovery": rb(wrappedLen), "recovery_verifier": rb(32)}, true); code != 429 {
+		t.Fatalf("the other session's budget: %d", code)
+	}
+	if code, _ := owner.do("POST", "/api/auth/recovery-key", map[string]any{"current_auth": ab["auth"], "wrapped_master_recovery": rb(wrappedLen), "recovery_verifier": rb(32)}, true); code != 200 {
+		t.Fatalf("the owner's recovery key after another session's wrong proofs: %d", code)
+	}
+	if code, _ := owner.do("POST", "/api/me/sessions/end-others", nil, true); code != 200 {
+		t.Fatal(code)
+	}
+	// the known browsers' lane is full (someone with the password keeps sign-ins waiting): a proof still gets its turn
+	u, _ := e.app.userByEmail("admin@x.org")
+	for i := 0; i < knownInFlight; i++ {
+		release, ok := e.app.knownTurn(u.ID)
+		if !ok {
+			t.Fatal("known lane")
+		}
+		defer release()
+	}
+	nb := bundle()
+	if code, out := owner.do("POST", "/api/auth/password", map[string]any{"current_auth": ab["auth"], "new_auth": nb["auth"], "new_kdf": nb["kdf"], "new_wrapped_master_pw": nb["wrapped_master_pw"]}, true); code != 200 {
+		t.Fatalf("the owner's password change: %d %v", code, out)
+	}
+}
+
+// Behind the tailnet domain overlay's Caddy (TRUST_PROXY=1, TRUSTED_PROXIES=127.0.0.1/32, each tailnet device's address
+// in X-Forwarded-For from Serve's PROXY header) one device's wrong sign-ins fill only its own per-source bucket.
+func TestTailnetDevicesBehindCaddyHaveTheirOwnBuckets(t *testing.T) {
+	e := newEnv(t)
+	_, ab := e.setupAdmin("admin@x.org")
+	e.app.trustProxy = true
+	e.app.proxies, _ = trustedProxies("127.0.0.1/32")
+	login := func(from, auth string) int {
+		bb, _ := json.Marshal(map[string]any{"email": "admin@x.org", "auth": auth})
+		req, _ := http.NewRequest("POST", e.srv.URL+"/api/auth/login", bytes.NewReader(bb))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Forwarded-For", from)
+		resp, err := e.client().c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	for i := 0; i < 30; i++ {
+		login("100.64.0.2", rb(32))
+	}
+	if code := login("100.64.0.2", ab["auth"].(string)); code != 429 {
+		t.Fatalf("the guessing device: %d", code)
+	}
+	if code := login("100.64.0.3", ab["auth"].(string)); code != 200 {
+		t.Fatalf("another tailnet device: %d", code)
 	}
 }

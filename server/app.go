@@ -29,9 +29,12 @@ const (
 	// as if from another device, so it deletes what it keeps.
 	sessionAbs  = 365 * 24 * time.Hour
 	sessionIdle = 30 * 24 * time.Hour
-	sessionsMax = 50 // live sessions per account; a new sign-in beyond it ends the one idle longest
+	sessionsMax = 50 // live sessions per account; a new sign-in beyond it ends another (startSession)
 	inviteTTL   = 7 * 24 * time.Hour
 	ticketTTL   = 10 * time.Minute
+
+	// a session younger than this is the first to go when the account has too many: see startSession
+	sessionSettle = 24 * time.Hour
 )
 
 type App struct {
@@ -42,6 +45,7 @@ type App struct {
 	tsHeaders  bool              // TRUST_TAILSCALE_HEADERS: key per-source limits by Tailscale Serve's user header
 	proxies    []netip.Prefix    // TRUSTED_PROXIES: the peers whose X-Forwarded-For counts; empty: loopback and private
 	hosts      map[string]bool   // PUBLIC_HOSTS; empty: any
+	ports      hostPorts         // ports other than 443 PUBLIC_HOSTS publishes its names on (name:port)
 	mapConf    *mapConfig        // MAP_STYLE; nil: no map (mapconf.go)
 	demo       map[string]bool   // DEMO_ACCOUNTS: read-only public logins (demo.go)
 	demoLogin  map[string]string // DEMO_LOGIN: the one the sign-in page offers (email, password), or nil
@@ -49,8 +53,10 @@ type App struct {
 	loginIP    *limiter
 	loginAcct  *limiter         // per (account, source)
 	loginDev   *limiter         // per account, for browsers carrying a valid device cookie
-	knownBusy  inFlight         // credential checks of known browsers and signed-in sessions per account (device.go)
-	proofs     *limiter         // password proofs of signed-in sessions per account, right or wrong (proofOK)
+	knownBusy  inFlight         // credential checks of known browsers per account (device.go)
+	sourceBusy inFlight         // credential checks of unknown browsers per source (device.go)
+	proofBusy  inFlight         // password proofs of signed-in sessions per session (proofOK)
+	proofs     *limiter         // password proofs of signed-in sessions per session, right or wrong (proofOK)
 	demoReqs   *demoBuckets     // requests of demo accounts, per source (demo.go)
 	demoSignIn *limiter         // sign-ins to demo accounts, per source (demo.go)
 	tickets    sync.Map         // recovery tickets: token hash -> ticket
@@ -141,13 +147,14 @@ func newApp(dataDir string) (*App, error) {
 		tsHeaders:  os.Getenv("TRUST_TAILSCALE_HEADERS") == "1",
 		proxies:    proxies,
 		hosts:      publicHosts(os.Getenv("PUBLIC_HOSTS")),
+		ports:      publicPorts(os.Getenv("PUBLIC_HOSTS")),
 		demo:       demo,
 		demoLogin:  demoLogin,
 		mapConf:    mapConf,
 		loginIP:    newLimiter(15*time.Minute, 30),
 		loginAcct:  newLimiter(15*time.Minute, 10),
 		loginDev:   newLimiter(15*time.Minute, 20),
-		proofs:     newLimiter(proofWindow, proofsPerAccount),
+		proofs:     newLimiter(proofWindow, proofsPerSession),
 		demoReqs:   newDemoBuckets(),
 		demoSignIn: newLimiter(demoSignInWin, demoSignIns),
 		pending:    newPendingStore(),
@@ -209,14 +216,18 @@ func (a *App) fromProxy(remoteAddr string) bool {
 	return false
 }
 
-// loadSecret reads the HMAC secret, or makes one when there is none. A file that exists but cannot be read is an
-// error, not a reason to replace it: a new secret signs out every known browser and changes the fake salts.
+// loadSecret reads the HMAC secret, or makes one when there is none. A file that exists but cannot be read, or isn't
+// 32 bytes long, is an error, not a reason to replace it: a new secret signs out every known browser, changes the fake
+// salts and makes every authenticator secret, recovery code and passkey of the accounts unusable.
 func loadSecret(path string) ([]byte, error) {
 	b, err := os.ReadFile(path)
 	if err == nil && len(b) == 32 {
 		return b, nil
 	}
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err == nil {
+		return nil, fmt.Errorf("%s is %d bytes long, not 32: restore it from a backup (a new one would make every account's two-step sign-in unusable)", path, len(b))
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
 	b = randBytes(32)
@@ -350,7 +361,7 @@ func (a *App) auth(admin bool, next func(http.ResponseWriter, *http.Request, *us
 			}
 		}
 		if s.renewed {
-			setSessionCookie(w, c.Value)
+			setSessionCookie(w, c.Value, s.Created+int64(sessionAbs.Seconds())-a.now().Unix())
 		}
 		if a.isDemo(u) && !a.demoReqs.take(limiterIP(a.clientIP(r))) {
 			w.Header().Set("Retry-After", "10")
@@ -399,7 +410,7 @@ func (a *App) lookupSession(token string, touch bool) (*user, *session, error) {
 		return nil, nil, errors.New("expired")
 	}
 	if now > exp {
-		a.db.Exec(`DELETE FROM sessions WHERE id_hash=?`, h)
+		a.deleteSessions(`id_hash=?`, h)
 		return nil, nil, errors.New("expired")
 	}
 	u, err := a.userByID(s.UserID)
@@ -437,7 +448,7 @@ func (a *App) startSession(w http.ResponseWriter, r *http.Request, userID, authH
 	// ended sessions go; one that ended because its device went unused (not at the year's end) as signed out on
 	// purpose, as lookupSession does when such a device comes back first
 	a.remember(`expires_at < ? AND expires_at < created_at + ?`, now.Unix(), int64(sessionAbs.Seconds()))
-	if _, err = a.db.Exec(`DELETE FROM sessions WHERE expires_at < ?`, now.Unix()); err != nil {
+	if _, err = a.deleteSessions(`expires_at < ?`, now.Unix()); err != nil {
 		return
 	}
 	// with authHash, the session is only created if the password that was just checked is still the account's: a
@@ -451,17 +462,26 @@ func (a *App) startSession(w http.ResponseWriter, r *http.Request, userID, authH
 	if rowsAffected(res, nil) != 1 {
 		return nil, errCredentialsChanged
 	}
-	// at most sessionsMax per account (each is a row, and a device-list entry, for up to a year): the one idle longest
-	// goes, never this new one. That device is asked to sign in again; nothing is wiped.
-	if res, err := a.db.Exec(`DELETE FROM sessions WHERE user_id=? AND id_hash NOT IN (SELECT id_hash FROM sessions WHERE user_id=?
-		ORDER BY last_seen DESC, created_at DESC LIMIT ?)`, userID, userID, sessionsMax); rowsAffected(res, err) > 0 {
+	// at most sessionsMax per account (each is a row, and a device-list entry, for up to a year), never this new one.
+	// Which go first: those unused for longer than the account allows (signed out on purpose, as when they come back),
+	// then the ones that signed in within sessionSettle, then the one idle longest. So a burst of sign-ins (someone with
+	// the password) pushes out its own sessions, not the devices that are shown the notices about it. A device pushed
+	// out otherwise is asked to sign in again; nothing is wiped.
+	var idle int
+	a.db.QueryRow(`SELECT device_idle_days FROM users WHERE id=?`, userID).Scan(&idle)
+	limit := idleLimit(idle)
+	over := `user_id=? AND id_hash NOT IN (SELECT id_hash FROM sessions WHERE user_id=?
+		ORDER BY id_hash=? DESC, ?-last_seen > ? ASC, created_at > ? ASC, last_seen DESC, created_at DESC LIMIT ?)`
+	args := []any{userID, userID, sha256hex(tok), now.Unix(), limit, now.Add(-sessionSettle).Unix(), sessionsMax}
+	a.remember(over+` AND ?-last_seen > ?`, append(args, now.Unix(), limit)...)
+	if n, _ := a.deleteSessions(over, args...); n > 0 {
 		a.live.recheck(userID)
 	}
 	// the browser's previous session, if it had one, is replaced by this one: end it rather than leave it valid
 	if c, err := r.Cookie(cookieName); err == nil {
-		a.db.Exec(`DELETE FROM sessions WHERE id_hash=?`, sha256hex(c.Value))
+		a.deleteSessions(`id_hash=?`, sha256hex(c.Value))
 	}
-	setSessionCookie(w, tok)
+	setSessionCookie(w, tok, int64(sessionAbs.Seconds()))
 	a.db.Exec(`UPDATE users SET last_login_at=? WHERE id=?`, now.Unix(), userID)
 	if u, uerr := a.userByID(userID); uerr == nil {
 		a.setDevice(w, u)
@@ -469,8 +489,36 @@ func (a *App) startSession(w http.ResponseWriter, r *http.Request, userID, authH
 	return &session{IDHash: sha256hex(tok), UserID: userID, CSRF: csrf, Pub: pub, Created: now.Unix()}, nil
 }
 
-func setSessionCookie(w http.ResponseWriter, tok string) {
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: tok, Path: "/", MaxAge: int(sessionIdle.Seconds()),
+// deleteSessions ends the sessions where selects (a fixed condition, values in args) and the open invites made from
+// them: an invite does not outlive the session that made it, however that session ends.
+func (a *App) deleteSessions(where string, args ...any) (int64, error) {
+	type ended struct{ user, pub string }
+	var gone []ended
+	if rows, err := a.db.Query(`SELECT user_id,pub FROM sessions WHERE `+where, args...); err == nil {
+		for rows.Next() {
+			var x ended
+			if rows.Scan(&x.user, &x.pub) == nil {
+				gone = append(gone, x)
+			}
+		}
+		rows.Close()
+	}
+	res, err := a.db.Exec(`DELETE FROM sessions WHERE `+where, args...)
+	if err != nil {
+		return 0, err
+	}
+	for _, x := range gone {
+		a.dropInvitesOf(x.user, `created_session=?`, x.pub)
+	}
+	return res.RowsAffected()
+}
+
+// setSessionCookie sends the session's cookie, kept by the browser for the session's whole remaining lifetime (maxAge
+// seconds, up to the year's end), not only for the time it may go unused: a device that comes back after it was signed
+// out (also because it went unused) must still present it, or it can't be told it was signed out on purpose and only
+// asks to sign in again, keeping its copy. The server ends an unused session itself.
+func setSessionCookie(w http.ResponseWriter, tok string, maxAge int64) {
+	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: tok, Path: "/", MaxAge: int(max(maxAge, 1)),
 		HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode})
 }
 
@@ -530,11 +578,34 @@ func (a *App) hostGuard(next http.Handler) http.Handler {
 	})
 }
 
-// publicHosts reads PUBLIC_HOSTS: names (without port) separated by commas or spaces.
+// publicHosts reads PUBLIC_HOSTS: names separated by commas or spaces, each optionally with the port the app is
+// published on when that isn't 443 (name:port; see publicPorts).
 func publicHosts(v string) map[string]bool {
 	out := map[string]bool{}
 	for _, h := range strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ' ' }) {
+		if name, _, err := net.SplitHostPort(h); err == nil {
+			h = name
+		}
 		out[strings.ToLower(h)] = true
+	}
+	return out
+}
+
+// hostPorts: per name, the ports it is published on besides 443.
+type hostPorts map[string]map[string]bool
+
+// publicPorts reads the ports PUBLIC_HOSTS gives with its names (name:port): the https origins besides
+// https://name that passkeys of that name are accepted from (passkeys.go rpName).
+func publicPorts(v string) hostPorts {
+	out := hostPorts{}
+	for _, h := range strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ' ' }) {
+		if name, port, err := net.SplitHostPort(h); err == nil && port != "" && port != "443" {
+			name = strings.ToLower(name)
+			if out[name] == nil {
+				out[name] = map[string]bool{}
+			}
+			out[name][port] = true
+		}
 	}
 	return out
 }

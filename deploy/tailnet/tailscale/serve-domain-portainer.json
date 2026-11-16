@@ -1,7 +1,8 @@
 {
   "TCP": {
     "443": {
-      "TCPForward": "127.0.0.1:4443"
+      "TCPForward": "127.0.0.1:4443",
+      "ProxyProtocol": 2
     },
     "8443": {
       "HTTPS": true

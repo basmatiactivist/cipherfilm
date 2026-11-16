@@ -247,6 +247,9 @@ func cliRole(role string) func(*App, io.Writer, []string) error {
 		if rowsAffected(res, nil) != 1 {
 			return errors.New("this is the only active administrator: make someone else an administrator first")
 		}
+		if role == "user" {
+			a.dropInvitesOf(u.ID, `1`) // as from the admin area: promoting it again must not bring its invites back
+		}
 		a.audit(consoleActor, "role changed", u.Email, role)
 		fmt.Fprintf(out, "%s is now %s\n", u.Email, map[string]string{"admin": "an administrator", "user": "a regular user"}[role])
 		return nil
@@ -273,6 +276,7 @@ func cliStatusTo(status string) func(*App, io.Writer, []string) error {
 			// as from the admin area: its devices learn they were signed out on purpose and delete what they keep
 			a.remember(`user_id=?`, u.ID)
 			a.db.Exec(`DELETE FROM sessions WHERE user_id=?`, u.ID)
+			a.dropInvitesOf(u.ID, `1`)
 			a.audit(consoleActor, "disabled", u.Email, "")
 			fmt.Fprintf(out, "%s is locked and signed out everywhere; its photos stay. Undo with enable-user.\n", u.Email)
 			return nil
@@ -297,10 +301,13 @@ func cliDeleteUser(a *App, out io.Writer, args []string) error {
 		return fmt.Errorf("this permanently deletes %s and its %d photos and videos; nobody can bring them back.\nRun it again with --yes to confirm", u.Email, n)
 	}
 	ids := a.itemIDs(u.ID)
+	// as from the admin area: its devices learn they were signed out on purpose and delete what they keep
+	all := a.toRevoke(`user_id=?`, u.ID)
 	res, err := a.db.Exec(`DELETE FROM users WHERE id=? AND `+keepsAdmin, u.ID)
 	if rowsAffected(res, err) != 1 {
 		return errors.New("couldn't delete the account (it may be the only active administrator)")
 	}
+	a.revokeLater(all)
 	for _, id := range ids {
 		a.removeBlobs(id)
 	}
@@ -433,6 +440,10 @@ func cliInvite(a *App, out io.Writer, args []string) error {
 	if !ok {
 		for h := range a.hosts { // PUBLIC_HOSTS, if set
 			base = "https://" + h
+			for p := range a.ports[h] { // published on another port than 443
+				base += ":" + p
+				break
+			}
 			break
 		}
 	}

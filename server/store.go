@@ -152,6 +152,13 @@ CREATE TABLE IF NOT EXISTS notices (
   dismissed INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS notices_user ON notices(user_id, id);
+-- a change to two-step sign-in or a new recovery key is dismissed per device: the sessions that dismissed it
+-- (notices.go), so one held by whoever made the change can't take it down on the person's other devices
+CREATE TABLE IF NOT EXISTS notice_dismissals (
+  notice_id INTEGER NOT NULL REFERENCES notices(id) ON DELETE CASCADE,
+  session_pub TEXT NOT NULL,
+  PRIMARY KEY (notice_id, session_pub)
+);
 `
 
 func openDB(path string) (*sql.DB, error) {

@@ -133,6 +133,10 @@ struct WebDAVE2ETests {
       #expect((v.duration ?? 0) > 1 && v.width == 1920 && v.height == 1080)
       report += "big.mov: \(v.size / 1_000_000) MB, \(String(describing: v.duration)) s, date and place kept\n"
     } else { Issue.record("big.mov missing") }
+    if let h = byName["huge.png"] {
+      #expect(h.size > WebDAVImport.memoryLimit && h.width == 7000)
+      report += "huge.png: \(h.size / 1_000_000) MB, through a temporary copy\n"
+    } else { Issue.record("huge.png missing") }
     if let p = byName["IMG_0001.JPG"] {
       #expect(p.make == "TestCam" && p.gps != nil, "\(p)")
     } else { Issue.record("IMG_0001.JPG missing") }

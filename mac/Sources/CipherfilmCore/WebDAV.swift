@@ -18,6 +18,8 @@ public enum WebDAVError: Error, LocalizedError, Equatable, Sendable {
   /** the file changed (size or ETag) since it was listed */
   case changed
   case malformed
+  /** not enough free space on this Mac for a temporary copy (DiskBudget) */
+  case diskFull
 
   public var errorDescription: String? {
     switch self {
@@ -31,13 +33,14 @@ public enum WebDAVError: Error, LocalizedError, Equatable, Sendable {
     case .noRanges: return "The WebDAV server doesn't send parts of files."
     case .changed: return "The file changed on the server while it was being read."
     case .malformed: return "The WebDAV server's answer couldn't be read."
+    case .diskFull: return "Not enough free space on this Mac for the next large file. Free up some space; the import goes on by itself."
     }
   }
 
   /** The server or the way to it rather than one file: the pass ends and is tried again later, no file counts as failed. */
   public var transient: Bool {
     switch self {
-    case .offline, .unauthorized, .certificate: return true
+    case .offline, .unauthorized, .certificate, .diskFull: return true
     case .status(let s): return s == 408 || s == 429 || s >= 500
     default: return false
     }

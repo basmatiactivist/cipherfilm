@@ -23,6 +23,9 @@ version into the GitHub release notes, so a release cannot be published without 
   place, camera, original name and thumbnails as for a local file (the server's modification time when a file has no
   date). Progress, pause, retry; stops at lock, sleep and sign-out. The password is kept in the keychain for this app
   only and deleted at sign-out.
+- Mac WebDAV import: temporary copies (photos over 48 MB, or servers that send no parts of files) stay within a disk
+  budget (4 GB or a tenth of the free space) and always leave 2 GB free; large files then take turns, one always
+  goes through, streamed files are unaffected.
 - Unused devices are signed out (web, Android, Mac, under Devices): choose "Sign out devices not used for" 7, 14 or 30
   days (30 as before). A device unused for longer is now signed out as if from another device, so it deletes what it
   keeps of the library when it comes back, also with the 30 days. "Sign out unused devices now" shows how many devices

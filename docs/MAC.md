@@ -199,7 +199,11 @@ timeline.
   the same Range requests (its moov box, at the start or the end, and one frame; at most 64 MB), the place also from
   the moov box directly like a local file. Only a photo over 48 MB, or any file from a server that sends no parts of
   files, goes through a temporary file in the app's private caches (`~/Library/Caches/app.cipherfilm.mac/webdav/`),
-  one folder per file, deleted as soon as it is uploaded or fails; the folder is emptied at every stop.
+  one folder per file, deleted as soon as it is uploaded or fails; the folder is emptied at every stop. These copies
+  together stay within a budget (4 GB, or a tenth of the free space when that is less): past it, large files take
+  turns, but one file always may, so a video of any size (up to the server's 8 GB per file) still imports. Before each
+  copy at least 2 GB must stay free; otherwise the import stops with "Not enough free space on this Mac" and goes on
+  by itself a few minutes later. Streamed files take nothing from the budget, so the usual case runs as before.
 - **Fast.** Three files at a time by default (like the upload tool; Settings › Import, 1 to 6), each with its parts
   in flight while the next is read. Measured with `mac/scripts/webdav-e2e.sh` (below).
 - **Resumes, never twice.** Each folder keeps a log of the files it imported (name, size, ETag, modification time;

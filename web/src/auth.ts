@@ -9,7 +9,7 @@ import { dropMasterKey, mem, Me } from "./state";
 import { clearCaches } from "./cache";
 import { clearPeople } from "./people/people";
 import { clearPlayer } from "./player";
-import { clearUploadMemory, forgetDecrypted } from "./items";
+import { clearUploadMemory, forgetDecrypted, forgetVersions } from "./items";
 import { forgetAlbums } from "./albums";
 import { forgetKeptForGood, keepKey, keptKey } from "./keep";
 import { open, LABEL } from "./crypto/wrap";
@@ -318,6 +318,7 @@ export function logout(): Promise<void> {
   const told = api("POST", "/api/auth/logout", undefined, { timeout: 10_000, keepalive: true }).then(() => {});
   if (mem.me) announce({ t: "signed-out", user: mem.me.user.id, session: mem.me.session_id });
   forgetLocal();
+  forgetVersions(); // the person's own sign-out: not when the server ends the session (items.ts)
   return told;
 }
 
@@ -404,6 +405,7 @@ export async function deleteAccount(password: string, second?: SecondStep): Prom
   await api("DELETE", "/api/me", { current_auth: auth, ...stepFields(second) });
   announce({ t: "signed-out", user: me.user.id }); // every session of the account
   forgetLocal();
+  forgetVersions();
 }
 
 export interface RecoveryHandle {

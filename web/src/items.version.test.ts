@@ -58,7 +58,7 @@ describe("older metadata from the server", () => {
     let items = await import("./items");
     pages.list = [record(removed)];
     await items.loadItems();
-    expect(JSON.parse(store.get("cf-mv:u1")!)).toEqual([[id, 1]]); // ids and numbers only
+    expect(JSON.parse(store.get("cf-mv:u1")!)).toEqual([[id, 1, expect.stringMatching(/^[0-9a-f]{16}$/)]]); // ids, numbers, digests only
     vi.resetModules();
     items = await import("./items"); // a reload of the tab: nothing decrypted is left
     const { mem } = await import("./state");
@@ -69,17 +69,77 @@ describe("older metadata from the server", () => {
     expect(it.stale).toBe(true);
     const { leavesAs } = await import("./edit/edit");
     expect(leavesAs(it.kind, it.meta, it.stale)).toBe("retag"); // its own pixels, no place
+    const { splitLocked } = await import("./edit/folders");
+    expect(splitLocked([it]).open).toEqual([]); // handled as locked: no open view shows it
     // a newer version is taken as usual
     pages.list = [record({ ...uploaded, mv: 2 })];
     items.forgetDecrypted();
     expect((await items.loadItems()).items[0].stale).toBeFalsy();
   });
 
-  it("sign-out forgets the versions", async () => {
-    const items = await import("./items");
+  it("a lock and a session the server ended keep the versions; only the person's own sign-out forgets them", async () => {
+    let items = await import("./items");
     pages.list = [record(removed)];
     await items.loadItems();
+    // what a lock and every session end run (main.tsx forgetKeys, auth.forgetLocal)
+    items.forgetDecrypted();
     items.clearUploadMemory();
+    expect(store.has("cf-mv:u1")).toBe(true);
+    vi.resetModules();
+    items = await import("./items");
+    const { mem } = await import("./state");
+    mem.me = { user: { id: "u1", email: "a@x.org", role: "user" } } as never;
+    mem.masterKey = master.slice();
+    pages.list = [record(uploaded)]; // replayed after signing in again
+    expect((await items.loadItems()).items[0].stale).toBe(true);
+    items.forgetVersions(); // auth.logout, auth.deleteAccount
     expect(store.has("cf-mv:u1")).toBe(false);
+  });
+
+  it("another copy at the version seen is stale (made from an older copy), the one seen in this session stays", async () => {
+    let items = await import("./items");
+    const locked = { ...base, locked: true, mv: 1 };
+    const seen = record(locked);
+    pages.list = [seen];
+    await items.loadItems();
+    pages.list = [record({ ...uploaded, archived: true, mv: 1 })]; // a second device's change from version 0
+    let it = (await items.loadItems()).items[0];
+    expect(it.stale).toBeFalsy();
+    expect(it.meta?.locked).toBe(true); // the copy seen here stays
+    vi.resetModules();
+    items = await import("./items");
+    const { mem } = await import("./state");
+    mem.me = { user: { id: "u1", email: "a@x.org", role: "user" } } as never;
+    mem.masterKey = master.slice();
+    it = (await items.loadItems()).items[0];
+    expect(it.stale).toBe(true);
+    const { splitLocked } = await import("./edit/folders");
+    expect(splitLocked([it]).locked).toEqual([it]);
+    pages.list = [seen];
+    items.forgetDecrypted();
+    expect((await items.loadItems()).items[0].stale).toBeFalsy();
+  });
+
+  it("a stale item is never changed here: not editable, not written, no location added", async () => {
+    let items = await import("./items");
+    pages.list = [record(removed)];
+    await items.loadItems();
+    vi.resetModules();
+    items = await import("./items");
+    const { mem } = await import("./state");
+    mem.me = { user: { id: "u1", email: "a@x.org", role: "user" } } as never;
+    mem.masterKey = master.slice();
+    pages.list = [{ ...record(uploaded), kind: "video" }];
+    const it = (await items.loadItems()).items[0];
+    expect(it.stale).toBe(true);
+    const { canEdit, storeMeta, saveEdit } = await import("./edit/apply");
+    expect(canEdit(it)).toBe(false);
+    await expect(storeMeta(it, it.meta!)).rejects.toThrow(/newest details/);
+    await expect(saveEdit(it, it.meta!)).rejects.toThrow(/newest details/);
+    await expect(items.writeMeta(it, it.meta!)).rejects.toThrow(/newest details/);
+    const { lackingVideos } = await import("./map/relocate");
+    const video = { ...it, kind: "video" as const, meta: { ...it.meta!, gps: undefined } };
+    expect(lackingVideos([video], new Set())).toEqual([]);
+    expect(lackingVideos([{ ...video, stale: false }], new Set())).toHaveLength(1);
   });
 });

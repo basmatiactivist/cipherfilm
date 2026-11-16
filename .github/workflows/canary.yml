@@ -319,6 +319,7 @@ jobs:
         run: |
           xcodebuild -project Cipherfilm.xcodeproj -scheme CipherfilmApp -configuration Release \
             -destination 'platform=macOS,arch=arm64' -derivedDataPath build/dd \
+            -onlyUsePackageVersionsFromResolvedFile -disableAutomaticPackageResolution \
             CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO build
           APP="build/dd/Build/Products/Release/Cipherfilm.app"
           ("$APP/Contents/MacOS/Cipherfilm" > launch.log 2>&1 &); sleep 8

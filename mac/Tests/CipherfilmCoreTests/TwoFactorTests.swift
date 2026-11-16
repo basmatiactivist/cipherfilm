@@ -117,6 +117,14 @@ import Testing
     #expect(Notice(id: 9, kind: "2fa_off", device: "", at: 0).text(time: "t") == "Two-step sign-in was turned off on an unknown device, t. Not you?")
   }
 
+  @Test func newRecoveryKeyWorded() {
+    let n = Notice(id: 1, kind: "recovery_key", device: "Pixel 8 (Android app)", at: 100)
+    #expect(Notice.shown([n]) == [n])
+    #expect(n.text(time: "Nov 11, 10:00") == "A new recovery key was made on Pixel 8 (Android app), Nov 11, 10:00; the old one no longer works. Not you? Make a new one in Cipherfilm in the browser.")
+    // the recovery key is made in the browser: nothing to open in the app
+    #expect(n.action == nil && !n.reviewDevices)
+  }
+
   @Test func secondStepBodies() throws {
     #expect(try TwoFactor.Second.none.body("p") as NSDictionary == ["current_auth": "p"] as NSDictionary)
     #expect(try TwoFactor.Second.code(" 123 456 ").body("p") as NSDictionary == ["current_auth": "p", "code": "123456"] as NSDictionary)
@@ -259,6 +267,7 @@ import Testing
     #expect(NoticeAlerts.title(n(5, kind: "passkey_removed")) == "Two-step sign-in changed")
     #expect(NoticeAlerts.title(n(6, kind: "recovery_codes")) == "New recovery codes made")
     #expect(NoticeAlerts.title(n(7, kind: "2fa_off")) == "Two-step sign-in turned off")
+    #expect(NoticeAlerts.title(n(9, kind: "recovery_key")) == "New recovery key made")
     for k in Notice.kinds { #expect(!NoticeAlerts.title(n(8, kind: k)).contains("Pixel")) }
   }
 }

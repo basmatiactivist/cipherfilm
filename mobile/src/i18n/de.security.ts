@@ -146,6 +146,8 @@ export const deSecurity: Record<string, string> = {
     "Ein Passkey wurde aus der Anmeldung in zwei Schritten entfernt: {device}, {time}. Nicht Sie?",
   "New recovery codes were made on {device}, {time}; the old ones no longer work. Not you?":
     "Neue Wiederherstellungscodes wurden erstellt: {device}, {time}. Die alten gelten nicht mehr. Nicht Sie?",
+  "A new recovery key was made on {device}, {time}; the old one no longer works. Not you? Make a new one in Cipherfilm in the browser.":
+    "Ein neuer Wiederherstellungsschlüssel wurde erstellt: {device}, {time}. Der alte gilt nicht mehr. Nicht Sie? Einen neuen erstellen Sie in Cipherfilm im Browser.",
   "Two-step sign-in was turned off on {device}, {time}. Not you?":
     "Die Anmeldung in zwei Schritten wurde ausgeschaltet: {device}, {time}. Nicht Sie?",
   "Review devices": "Geräte prüfen",
@@ -153,7 +155,7 @@ export const deSecurity: Record<string, string> = {
   "Notifications, {n} unread": "Mitteilungen, {n} ungelesen",
   "Remove all": "Alle entfernen",
   "No notifications": "Keine Mitteilungen",
-  "New sign-ins and changes to two-step sign-in show up here.": "Neue Anmeldungen und Änderungen an der Anmeldung in zwei Schritten erscheinen hier.",
+  "New sign-ins, changes to two-step sign-in and new recovery keys show up here.": "Neue Anmeldungen, Änderungen an der Anmeldung in zwei Schritten und neue Wiederherstellungsschlüssel erscheinen hier.",
   "Unread": "Ungelesen",
   "Passkeys need the server's https address. Use a code instead.": "Passkeys brauchen die https-Adresse des Servers. Verwenden Sie stattdessen einen Code.",
   "its answer was made for another site, not for this server": "seine Antwort wurde für eine andere Website erstellt, nicht für diesen Server",
@@ -182,6 +184,7 @@ export const deSecurity: Record<string, string> = {
   "Two-step sign-in turned off": "Anmeldung in zwei Schritten ausgeschaltet",
   "Unfinished sign-in": "Nicht abgeschlossene Anmeldung",
   "Two-step sign-in changed": "Anmeldung in zwei Schritten geändert",
+  "New recovery key made": "Neuer Wiederherstellungsschlüssel erstellt",
   "New sign-in to Cipherfilm": "Neue Anmeldung bei Cipherfilm",
   "Security notice from Cipherfilm": "Sicherheitshinweis von Cipherfilm",
 };

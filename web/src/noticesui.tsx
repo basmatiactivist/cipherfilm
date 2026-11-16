@@ -1,6 +1,6 @@
 // The notices (notices.ts) under a bell in the top bar, next to the account button: a count of the unread ones on the
-// bell, and a panel that lists every notice with what it implies ("Review devices") and a way to remove it (dismissed
-// on every device). Unread are the ones newer than the newest this browser already showed in the open panel
+// bell, and a panel that lists every notice with what it implies ("Review devices") and a way to remove it (a sign-in
+// notice is dismissed on every device, a two-step or recovery key change only on this one). Unread are the ones newer than the newest this browser already showed in the open panel
 // (notices.ts readUpTo); opening the panel marks them read. Escape or a click outside closes it.
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Icon } from "./icons";
@@ -70,7 +70,7 @@ export function NoticesButton(p: {
             {p.notices.length > 0 && <button class="link small" onClick={() => { p.onRemoveAll(); head.current?.focus(); }}>Remove all</button>}
           </div>
           {p.notices.length === 0 ? (
-            <p class="small noticeempty">Nothing new. A sign-in on another device or a change to two-step sign-in shows up here.</p>
+            <p class="small noticeempty">Nothing new. A sign-in on another device, a change to two-step sign-in or a new recovery key shows up here.</p>
           ) : (
             <ul class="noticelist">
               {p.notices.map((n) => {

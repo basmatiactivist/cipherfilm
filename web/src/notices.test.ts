@@ -53,6 +53,12 @@ describe("notices", () => {
     expect(noticeAction({ id: 2, kind: "2fa_reset", device: "", at: 1 })).toEqual({ open: "2fa", label: "Open Account" });
     expect(noticeAction({ id: 3, kind: "password_used", device: "", at: 1 })).toEqual({ open: "password", label: "Change your password" });
   });
+  it("tells of a new recovery key made on another device", () => {
+    const n = { id: 4, kind: "recovery_key" as const, device: "Pixel 8 (Android app)", at: 1_700_000_000 };
+    expect(usable({ notices: [n] })).toHaveLength(1);
+    expect(noticeText(n)).toMatch(/^A new recovery key was made on Pixel 8 \(Android app\), .+; the old one no longer works\. Not you\?$/);
+    expect(noticeAction(n)).toEqual({ open: "recovery", label: "Open recovery key" });
+  });
   it("sends a dismissal again that didn't reach the server", async () => {
     sent.list = [{ id: 7, kind: "sign_in", device: "x", at: 1 }, { id: 8, kind: "sign_in", device: "y", at: 2 }];
     const shown = await loadNotices(new Set([7]));

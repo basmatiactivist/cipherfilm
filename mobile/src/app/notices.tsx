@@ -39,7 +39,7 @@ export default function Notices() {
             <View style={[st.disc, { backgroundColor: th.colors.primaryContainer }]}><Icon name="bell" size={28} color={th.colors.primary} /></View>
             <Text variant="titleMedium" style={{ marginTop: 16 }}>{t("No notifications")}</Text>
             <Text variant="bodyMedium" style={{ color: th.colors.onSurfaceVariant, textAlign: "center", marginTop: 6 }}>
-              {t("New sign-ins and changes to two-step sign-in show up here.")}
+              {t("New sign-ins, changes to two-step sign-in and new recovery keys show up here.")}
             </Text>
           </View>
         )}

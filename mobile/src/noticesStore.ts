@@ -1,5 +1,6 @@
 // The notices this phone shows (notices.ts): loaded after unlocking and whenever the live stream says "notices".
-// Dismissing one tells the server, which takes it down on every device; it is gone here at once, and stays gone even
+// Dismissing one tells the server, which takes a sign-in notice down on every device (a two-step change or a new
+// recovery key only for this one); it is gone here at once, and stays gone even
 // if that request fails (it is tried again at the next load). Which ones were read is this phone's own: the highest
 // id seen in the notifications list, per account (the bell's badge counts those after it).
 import { useSyncExternalStore } from "react";

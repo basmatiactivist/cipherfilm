@@ -158,7 +158,7 @@ export function Recover({ nav, onKeys }: { nav: Nav; onKeys: (k: auth.PendingKey
   );
 }
 
-/** open: the panel a notice led to ("devices" or "2fa"). */
+/** open: the panel a notice led to ("devices", "2fa", "password" or "recovery"). */
 export function Account({ open }: { open?: string }) {
   const [kit, setKit] = useState<auth.PendingKey | null>(null);
   if (kit) return <RecoveryKey pending={kit} title="Save your new recovery key" replacing onDone={() => setKit(null)} />;
@@ -169,7 +169,7 @@ export function Account({ open }: { open?: string }) {
         <div><strong class="email">{mem.me!.user.email}</strong><p class="small">{mem.me!.user.role === "admin" ? "Administrator" : "Member"}. Only you can see your photos.</p></div>
       </section>
       {/* the public demo login: one stranger must not lock out the next (the server refuses these anyway) */}
-      {!mem.me!.demo && <RecoveryKeyPanel onNew={setKit} />}
+      {!mem.me!.demo && <RecoveryKeyPanel onNew={setKit} open={open === "recovery"} />}
       {!mem.me!.demo && <ChangePassword open={open === "password"} />}
       {!mem.me!.demo && <TwoFactorPanel open={open === "2fa"} />}
       {!mem.me!.demo && <DevicesPanel open={open === "devices"} />}
@@ -526,12 +526,12 @@ function RenamePasskey(p: { k: pk.Passkey; onDone: () => void; onCancel: () => v
   );
 }
 
-function RecoveryKeyPanel({ onNew }: { onNew: (k: auth.PendingKey) => void }) {
+function RecoveryKeyPanel({ onNew, open: shown }: { onNew: (k: auth.PendingKey) => void; open?: boolean }) {
   const [open, setOpen] = useState(false);
   const [cur, setCur] = useState("");
   const { busy, error, run } = useAction();
   return (
-    <Acc icon="key" title="Recovery key" sub="The only way back in if you forget your password">
+    <Acc icon="key" title="Recovery key" sub="The only way back in if you forget your password" open={shown || undefined}>
       <p>Keep it somewhere safe, like a password manager or a printed copy. It can't be shown again, but you can make a new one. <strong>The old key stops working once you save the new one.</strong></p>
       {!open ? (
         <button class="btn secondary" onClick={() => setOpen(true)}>Make a new recovery key…</button>
@@ -817,6 +817,7 @@ function describe(a: AuditEntry, myEmail: string): { icon: IconName; text: any; 
     case "turned on two-step sign-in": return { icon: "key", text: <>{who} turned on two-step sign-in</> };
     case "turned off two-step sign-in": return { icon: "key", text: <>{who} turned off two-step sign-in</> };
     case "made new recovery codes": return { icon: "key", text: <>{who} made new recovery codes for two-step sign-in</> };
+    case "made a new recovery key": return { icon: "key", text: <>{who} made a new recovery key</> };
     case "signed out every device": return { icon: "logout", text: <>{who} signed out every device of {t}{a.detail ? ", and they delete what they keep" : ""}</>, warn: !!a.detail };
   }
   return { icon: "info", text: <>{who} {a.action}{a.target ? <> · {t}</> : null}{a.detail ? <span class="small"> ({a.detail})</span> : null}</> };

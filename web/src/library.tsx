@@ -124,7 +124,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const refreshTrash = () => loadTrash().then((r) => { setTrash(r.items); setRetention(r.retentionDays); }, (e) => setError(msg(e)));
   const refreshUsage = () => loadUsage().then(setUsage, () => {});
   // a new sign-in elsewhere, or an admin turning off two-step sign-in (notices.ts): listed under the bell in the top bar
-  // (noticesui.tsx) until removed, which removes it on every device
+  // (noticesui.tsx) until removed (a sign-in notice on every device, a two-step or recovery key change only here)
   const [notices, setNotices] = useState<Notice[]>([]);
   const dismissed = useRef(new Set<number>());
   // and, while this tab is hidden, as the browser's notifications if turned on (noticeAlerts.ts)

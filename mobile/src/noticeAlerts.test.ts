@@ -69,6 +69,8 @@ describe("which notices become notifications", () => {
     expect(alertText(n(4, NOW, "passkey_added", "x")).title).toBe("Two-step sign-in changed");
     expect(alertText(n(4, NOW, "recovery_codes", "x")).text).toMatch(/^New recovery codes were made on x, /);
     expect(alertText(n(5, NOW, "2fa_off", "x")).title).toBe("Two-step sign-in turned off");
+    expect(alertText(n(6, NOW, "recovery_key", "x")).title).toBe("New recovery key made");
+    expect(alertText(n(6, NOW, "recovery_key", "x")).publicTitle).toBe("Security notice from Cipherfilm");
     setLang("de");
     expect(alertText(n(1)).publicTitle).toBe("Neue Anmeldung bei Cipherfilm");
     expect(alertText(n(4, NOW, "totp_removed", "x")).title).toBe("Anmeldung in zwei Schritten geändert");

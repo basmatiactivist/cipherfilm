@@ -364,8 +364,9 @@ public enum LastUpload {
 }
 
 /** Something the account's devices show once (a new sign-in, two-step sign-in turned off by an admin, the password used
- *  for a sign-in that wasn't finished, a change to two-step sign-in made on another of its devices). Dismissing it
- *  on any device dismisses it everywhere. */
+ *  for a sign-in that wasn't finished, a change to two-step sign-in or a new recovery key made on another of its
+ *  devices). Dismissing a sign-in, unfinished-password or admin-reset notice dismisses it everywhere; a two-step
+ *  change or a new recovery key only on the device that dismisses it. */
 public struct Notice: Decodable, Sendable, Equatable, Identifiable {
   public let id: Int64
   public let kind: String
@@ -375,12 +376,13 @@ public struct Notice: Decodable, Sendable, Equatable, Identifiable {
   public init(id: Int64, kind: String, device: String, at: Int64) { self.id = id; self.kind = kind; self.device = device; self.at = at }
 
   public static let kinds: Set<String> = ["sign_in", "2fa_reset", "password_used", "totp_added", "totp_removed",
-                                           "passkey_added", "passkey_removed", "recovery_codes", "2fa_off"]
+                                           "passkey_added", "passkey_removed", "recovery_codes", "2fa_off", "recovery_key"]
   public var date: Date { Date(timeIntervalSince1970: TimeInterval(at)) }
   /** a sign-in notice leads to the device list */
   public var reviewDevices: Bool { kind == "sign_in" }
-  /** the inbox has a button to Settings (the devices, or two-step sign-in); the password is changed in the browser */
-  public var opensSettings: Bool { kind != "password_used" }
+  /** the inbox has a button to Settings (the devices, or two-step sign-in); the password and the recovery key are
+   *  changed in the browser */
+  public var opensSettings: Bool { kind != "password_used" && kind != "recovery_key" }
   /** What that button says: what the notice asks to look at. nil: nothing to open in the app. */
   public var action: String? { reviewDevices ? "Review Devices" : opensSettings ? "Two-Step Sign-In" : nil }
 
@@ -399,6 +401,7 @@ public struct Notice: Decodable, Sendable, Equatable, Identifiable {
     case "passkey_removed": return "A passkey was removed from two-step sign-in on \(on), \(time). Not you?"
     case "recovery_codes": return "New recovery codes were made on \(on), \(time); the old ones no longer work. Not you?"
     case "2fa_off": return "Two-step sign-in was turned off on \(on), \(time). Not you?"
+    case "recovery_key": return "A new recovery key was made on \(on), \(time); the old one no longer works. Not you? Make a new one in Cipherfilm in the browser."
     default: return "An administrator turned off two-step sign-in for your account (\(time)). Turn it on again in Settings."
     }
   }
@@ -449,6 +452,7 @@ public struct NoticeAlerts: Codable, Equatable, Sendable {
     case "2fa_reset", "2fa_off": return "Two-step sign-in turned off"
     case "totp_added", "totp_removed", "passkey_added", "passkey_removed": return "Two-step sign-in changed"
     case "recovery_codes": return "New recovery codes made"
+    case "recovery_key": return "New recovery key made"
     default: return "Unfinished sign-in to Cipherfilm"
     }
   }

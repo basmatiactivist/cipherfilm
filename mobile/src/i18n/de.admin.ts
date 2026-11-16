@@ -141,6 +141,7 @@ export const deAdmin: Record<string, string> = {
   "{who} turned on two-step sign-in": "{who}: Anmeldung in zwei Schritten eingeschaltet",
   "{who} turned off two-step sign-in": "{who}: Anmeldung in zwei Schritten ausgeschaltet",
   "{who} made new recovery codes": "{who}: neue Wiederherstellungscodes erstellt",
+  "{who} made a new recovery key": "{who}: neuen Wiederherstellungsschlüssel erstellt",
   "{who} signed out every device of {target}, and they delete what they keep": "{who}: alle Geräte von {target} abgemeldet, sie löschen, was sie gespeichert haben",
   "{who} signed out every device of {target}": "{who}: alle Geräte von {target} abgemeldet",
   // storage and backup (storage.ts, StorageView.tsx, app/admin/storage.tsx; also in Account)

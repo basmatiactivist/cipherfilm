@@ -1,17 +1,18 @@
 // Notices: what the server asks every other device of the account to show once (server/notices.go): a new sign-in,
 // an administrator turning two-step sign-in off, the password used for a sign-in that wasn't finished (no right
 // code followed), or a change to two-step sign-in made on another device (an authenticator app or a passkey added or
-// removed, new recovery codes, turned off). They are listed behind the bell next to Account (app/notices.tsx), which
-// shows how many are unread. This part has no React Native: it checks what arrived, keeps only kinds it knows, and
+// removed, new recovery codes, turned off), or a new recovery key made on another device. They are listed behind the
+// bell next to Account (app/notices.tsx), which shows how many are unread. Dismissing a sign-in, unfinished-password
+// or admin-reset notice takes it down on every device; a two-step change or a new recovery key only on this one. This part has no React Native: it checks what arrived, keeps only kinds it knows, and
 // words them. The store (noticesStore.ts) fetches, dismisses and remembers what was read.
 import { locale, t } from "./i18n";
 
 /** Changes to two-step sign-in made on one of the account's devices (`device` made them). */
 export type TwoStepChange = "totp_added" | "totp_removed" | "passkey_added" | "passkey_removed" | "recovery_codes" | "2fa_off";
-export type NoticeKind = "sign_in" | "2fa_reset" | "password_used" | TwoStepChange;
+export type NoticeKind = "sign_in" | "2fa_reset" | "password_used" | "recovery_key" | TwoStepChange;
 export interface Notice { id: number; kind: NoticeKind; device: string; at: number }
 const CHANGES = new Set<string>(["totp_added", "totp_removed", "passkey_added", "passkey_removed", "recovery_codes", "2fa_off"]);
-const KINDS = new Set<string>(["sign_in", "2fa_reset", "password_used", ...CHANGES]);
+const KINDS = new Set<string>(["sign_in", "2fa_reset", "password_used", "recovery_key", ...CHANGES]);
 /** Whether the notice is a change to two-step sign-in made on a device of the account. */
 export const isTwoStepChange = (k: NoticeKind): k is TwoStepChange => CHANGES.has(k);
 
@@ -56,6 +57,7 @@ export function noticeText(n: Notice): string {
   }
   // the password is changed in the browser (Account says so)
   if (n.kind === "password_used") return t("Your password was used to start a sign-in that wasn't finished ({time}). Not you? Change your password in Cipherfilm in the browser.", { time });
+  if (n.kind === "recovery_key") return t("A new recovery key was made on {device}, {time}; the old one no longer works. Not you? Make a new one in Cipherfilm in the browser.", { device, time });
   if (n.kind === "2fa_reset") return t("An administrator turned off two-step sign-in for your account ({time}). Turn it on again under Account.", { time });
   return t("New sign-in: {device}, {time}. Not you? Review devices.", { device, time });
 }
@@ -70,8 +72,8 @@ export function lastActive(sec: number, now = Date.now() / 1000): string {
   return new Date(sec * 1000).toLocaleDateString(locale(), { day: "numeric", month: "short", year: "numeric" });
 }
 
-/** Where a notice's button leads in the notifications list (app/notices.tsx); null: no button (the password is
- *  changed in the browser). */
+/** Where a notice's button leads in the notifications list (app/notices.tsx); null: no button (the password and the
+ *  recovery key are changed in the browser). */
 export const noticeOpens = (k: NoticeKind): "devices" | "two-step" | null =>
   (k === "sign_in" ? "devices" : k === "2fa_reset" || isTwoStepChange(k) ? "two-step" : null);
 

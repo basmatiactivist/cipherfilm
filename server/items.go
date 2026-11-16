@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -481,16 +482,27 @@ func (a *App) replaceAux(name string, max int64, col string) func(http.ResponseW
 			fail(w, 409, "this upload isn't finished")
 			return
 		}
-		// Room is reserved before a byte reaches the disk: the most the new picture can add over the one it replaces.
-		// Someone near their limit can still replace a picture with one that fits in the old one's disk blocks plus
-		// what room is left; that body is held in memory, and written only after its growth has been reserved below.
+		// Room is reserved before a byte reaches the disk: the whole body, as it is staged next to the picture it
+		// replaces until it takes its place (and so also whatever the new picture adds). Someone near their limit can
+		// still replace a picture with one that fits in the old one's disk blocks plus what room is left; that body is
+		// held in memory and written only after its growth has been reserved below, one such replacement per account
+		// at a time, so neither memory nor unreserved disk grows with the number of requests.
 		pre, err := a.auxBytes(it.ID, u.ID, name, bytesCol)
 		if err != nil {
 			fail(w, 404, "not found")
 			return
 		}
-		reservedAmt := max + blockSlack(max) - pre - blockSlack(pre)
+		reservedAmt := max + blockSlack(max)
 		release, ok := a.reserveBytes(u.ID, reservedAmt)
+		if !ok {
+			done, free := atLimitTurn(r.Context(), u.ID)
+			if !free {
+				w.Header().Set("Connection", "close") // answer now, without reading the body that was not wanted
+				fail(w, 429, "another replacement is still in progress")
+				return
+			}
+			defer done()
+		}
 		bodyDeadline(w, uploadReadTime)
 		r.Body = http.MaxBytesReader(w, r.Body, max+1)
 		valid := func(n int64) bool { return n >= 1+24+16 && n <= max }
@@ -563,6 +575,27 @@ func (a *App) replaceAux(name string, max int64, col string) func(http.ResponseW
 		a.changed(u.ID, tItems)
 		writeJSON(w, 200, map[string]bool{"ok": true})
 	}
+}
+
+// atLimitTurns: per account, the one replacement at a time whose body is held in memory because there wasn't room to
+// reserve it (replaceAux).
+var atLimitTurns sync.Map // user id -> chan struct{} (capacity 1)
+
+// atLimitWait is how long a second such replacement waits for the first before it is turned away.
+var atLimitWait = 15 * time.Second
+
+func atLimitTurn(ctx context.Context, userID string) (done func(), ok bool) {
+	v, _ := atLimitTurns.LoadOrStore(userID, make(chan struct{}, 1))
+	turn := v.(chan struct{})
+	t := time.NewTimer(atLimitWait)
+	defer t.Stop()
+	select {
+	case turn <- struct{}{}:
+		return func() { <-turn }, true
+	case <-ctx.Done():
+	case <-t.C:
+	}
+	return nil, false
 }
 
 // segmentsOnDisk checks every segment file of an upload before it is marked ready: a row says a part arrived, the file

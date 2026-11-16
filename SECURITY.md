@@ -10,7 +10,8 @@ think the impact is. Expect an answer within a few days; this is a small project
 ## What this project does and does not promise
 
 - Photos, file names, capture dates, EXIF and album names are encrypted on the device (in the browser or the app). The server stores ciphertext and
-  learns what is listed in [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) (sizes, counts, times, e-mail addresses, album structure).
+  learns what is listed in [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) (sizes, counts, times, e-mail addresses, album structure,
+  and what administrators see in the activity log and the storage overview).
 - **A web app cannot protect you from whoever controls the server**: that party can deliver modified JavaScript. See the
   threat model.
 - Two-step sign-in (a code from an authenticator app or a passkey, with one-time recovery codes) is optional and off

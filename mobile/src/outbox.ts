@@ -24,9 +24,15 @@ export function sweepLater() {
   try { N.outboxSweepLater(); } catch { /* the app's own clean-ups still run */ }
 }
 
+/** Where the image editor's library writes its results (edit.ts deletes each one, but not if the app was ended
+ *  while it waited): decrypted pixels too, so it goes with the outbox. */
+const EDITOR = () => new Directory(Paths.cache, "ImageManipulator");
+
 export function clearOutbox() {
   try { N.revokeShared(); } catch { /* nothing shared */ }
-  try { const d = OUT(); if (d.exists) d.delete(); } catch { /* nothing to remove */ }
+  for (const d of [OUT(), EDITOR()]) {
+    try { if (d.exists) d.delete(); } catch { /* nothing to remove */ }
+  }
 }
 
 // decrypted copies don't outlive the unlocked session

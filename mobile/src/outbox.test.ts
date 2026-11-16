@@ -34,7 +34,8 @@ vi.mock("../modules/cf-native/src/CfNativeModule", () => ({
   },
 }));
 const server = vi.hoisted(() => ({ failAt: -1 }));
-vi.mock("./api", () => ({ getBytes: async (p: string) => { if (p.endsWith(`/${server.failAt}`)) throw new Error("offline"); return new Uint8Array(4); } }));
+vi.mock("./api", () => ({
+  newSignIn: () => {}, getBytes: async (p: string) => { if (p.endsWith(`/${server.failAt}`)) throw new Error("offline"); return new Uint8Array(4); } }));
 vi.mock("@crypto/sodium", () => ({ getSodium: async () => ({ to_hex: () => "ab", randombytes_buf: () => new Uint8Array(16) }) }));
 vi.mock("@crypto/file", () => ({ decryptSegment: () => new Uint8Array(4) }));
 const wipes = vi.hoisted(() => [] as ((how: string) => void)[]);

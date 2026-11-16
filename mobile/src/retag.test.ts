@@ -6,7 +6,8 @@ import { withExif } from "@edit/exif";
 vi.mock("expo-file-system", () => ({ File: class {}, Directory: class {}, Paths: {} }));
 vi.mock("expo-image-manipulator", () => ({ ImageManipulator: {}, SaveFormat: { JPEG: "jpeg" } }));
 vi.mock("../modules/cf-native/src/CfNativeModule", () => ({ default: {} }));
-vi.mock("./api", () => ({ api: async () => ({}), putBytes: async () => {}, ApiError: class extends Error {} }));
+vi.mock("./api", () => ({
+  newSignIn: () => {}, api: async () => ({}), putBytes: async () => {}, ApiError: class extends Error {} }));
 vi.mock("./session", () => ({ session: () => ({ me: {} }), onWipe: () => {} }));
 vi.mock("./library", () => ({ forgetPictures: () => {} }));
 vi.mock("./upload", () => ({ THUMB_PX: 640, PREVIEW_PX: 2048 }));

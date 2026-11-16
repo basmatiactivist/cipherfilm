@@ -163,6 +163,8 @@ func (a *App) adminPatchUser(w http.ResponseWriter, r *http.Request, u *user, s 
 		}
 		a.audit(u.Email, map[string]string{"active": "enabled", "disabled": "disabled"}[*req.Status], target.Email, "")
 		if *req.Status == "disabled" {
+			// its devices learn they were signed out on purpose and delete what they keep
+			a.remember(`user_id=?`, id)
 			a.db.Exec(`DELETE FROM sessions WHERE user_id=?`, id)
 			a.revokeTickets(id)
 			a.live.recheck(id)

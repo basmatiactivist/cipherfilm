@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // The uploader only locks a new item's key to an id of the server's own form, and says what a share would upload where.
 const srv = vi.hoisted(() => ({ id: "" as unknown, calls: [] as string[], bodies: new Map<string, any>() }));
 vi.mock("./api", () => ({
+  newSignIn: () => {},
   api: async (method: string, path: string, body?: unknown) => { srv.calls.push(`${method} ${path}`); srv.bodies.set(`${method} ${path}`, body); return method === "POST" && path === "/api/items" ? { id: srv.id } : {}; },
   putBytes: async (path: string) => { srv.calls.push(`PUT ${path}`); },
 }));

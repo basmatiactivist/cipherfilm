@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // The server is a stand-in that records what it was asked.
 const st = vi.hoisted(() => ({ calls: [] as { method: string; path: string; body?: unknown }[], reply: (): unknown => ({ ok: true }) }));
 vi.mock("./api", () => ({
+  newSignIn: () => {},
   api: async (method: string, path: string, body?: unknown) => { st.calls.push({ method, path, body }); const r = st.reply(); if (r instanceof Error) throw r; return r; },
   server: () => "https://photos.example.test/",
 }));

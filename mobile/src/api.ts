@@ -7,7 +7,7 @@ import { t } from "./i18n";
 let base = "";
 let csrf = "";
 let onSessionEnded: () => void = () => {};
-let onRevoked: () => void = () => {};
+let onRevoked: (origin: string) => void = () => {};
 
 /** How this phone shows in the account's device list (web, Account › Devices); only a label. */
 // ASCII only: a header value with any other character makes the request fail before it is sent
@@ -39,13 +39,19 @@ export interface Remote {
   /** a periodic check of the background (noticeCheck.ts): its GETs don't count as using the phone (X-CF-Background),
    *  so they neither keep the session from ending when idle nor show the phone as active in the device list */
   background?: boolean;
+  /** the sign-in it was made under (newSignIn): a "signed out" answer to it ends only that one, never a newer one */
+  epoch?: number;
 }
-export const remote = (origin: string): Remote => ({ base: origin.replace(/\/+$/, ""), csrf: "" });
-const here = (): Remote => ({ base, csrf });
+let epoch = 0;
+/** session.ts, when the phone's session may have changed hands: answers to requests made before don't end the new one. */
+export const newSignIn = () => { epoch++; };
+export const remote = (origin: string): Remote => ({ base: origin.replace(/\/+$/, ""), csrf: "", epoch });
+const here = (): Remote => ({ base, csrf, epoch });
 
 export const whenSessionEnds = (f: () => void) => { onSessionEnded = f; };
-/** The person signed this phone out from another device: everything it keeps for the account goes. */
-export const whenRevoked = (f: () => void) => { onRevoked = f; };
+/** The person signed this phone out from another device: everything it keeps for the account goes. Gets the server
+ *  that said so (session.ts checks it is the app's own, also for a background run, which has its own Remote). */
+export const whenRevoked = (f: (origin: string) => void) => { onRevoked = f; };
 
 // a request that gets no answer fails instead of waiting forever (uploads get longer for a 4 MB part)
 const JSON_TIMEOUT = 20_000;
@@ -70,9 +76,10 @@ const sentence = (s: string): string => friendly(s) ?? (s ? s[0].toUpperCase() +
 
 function ended(res: Response, path: string, to: Remote) {
   // only an answer from the app's own server ends its session
-  if (res.status !== 401 || path.startsWith("/api/auth/") || to.base !== base) return;
-  if (res.headers.get("X-CF-Session") === "revoked") onRevoked();
-  else if (path !== "/api/me") onSessionEnded();
+  if (res.status !== 401 || path.startsWith("/api/auth/")) return;
+  // revoked: also to a background run, whose server session.ts compares with the stored one
+  if (res.headers.get("X-CF-Session") === "revoked") { if ((to.epoch ?? epoch) === epoch) onRevoked(to.base); }
+  else if (to.base === base && path !== "/api/me") onSessionEnded();
 }
 
 export async function api<T = any>(method: string, path: string, body?: unknown, to: Remote = here()): Promise<T> {

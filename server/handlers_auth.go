@@ -305,6 +305,8 @@ func (a *App) changePassword(w http.ResponseWriter, r *http.Request, u *user, s 
 		fail(w, 400, "invalid request")
 		return
 	}
+	// the other devices learn they were signed out on purpose and delete what they keep (as from Account › Devices)
+	others := a.toRevoke(`user_id=? AND id_hash<>?`, u.ID, s.IDHash)
 	tx, err := a.db.BeginTx(r.Context(), nil)
 	if err != nil {
 		fail(w, 500, "server error")
@@ -332,6 +334,7 @@ func (a *App) changePassword(w http.ResponseWriter, r *http.Request, u *user, s 
 		return
 	}
 	at.success()
+	a.revokeLater(others)
 	a.revokeTickets(u.ID)
 	a.dropInvitesOf(u.ID, `created_session<>?`, s.Pub) // the other sessions just ended
 	// the pending sign-ins were issued for the old password. The account's code count stays: the session changing the
@@ -601,6 +604,8 @@ func (a *App) recoverFinish(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "invalid request")
 		return
 	}
+	// every device learns it was signed out on purpose and deletes what it keeps: the account was taken back
+	all := a.toRevoke(`user_id=?`, t.userID)
 	tx, err := a.db.BeginTx(r.Context(), nil)
 	if err != nil {
 		fail(w, 500, "server error")
@@ -625,6 +630,7 @@ func (a *App) recoverFinish(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "server error")
 		return
 	}
+	a.revokeLater(all)
 	a.revokeTickets(t.userID)
 	a.dropInvitesOf(t.userID, `1`) // every session just ended
 	// the pending sign-ins were issued for the old password; the code count stays: the recovery key alone (with no

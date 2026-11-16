@@ -23,6 +23,7 @@ vi.mock("./passkeys", () => ({ getPasskey: async (o: { challenge: string }) => (
 const srv = vi.hoisted(() => ({ calls: [] as { path: string; body: any }[], answers: [] as (() => any)[] }));
 class ApiError extends Error { constructor(public status: number, m: string, public detail = "", public code = "", public body: unknown = null) { super(m); } }
 vi.mock("./api", () => ({
+  newSignIn: () => {},
   ApiError,
   setCsrf: () => {}, setServer: () => {}, whenSessionEnds: () => {}, whenRevoked: () => {}, remote: () => ({}),
   api: async (_m: string, path: string, body: any) => {

@@ -78,4 +78,7 @@ export function clearMapCache() {
   if (shown) clearCache();
 }
 
-onWipe(clearMapCache);
+onWipe((how) => {
+  clearMapCache();
+  if (how === "ended") { on = null; changed(); } // read again for the next account (sign-out deletes the stored yes)
+});

@@ -5,7 +5,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const st = vi.hoisted(() => ({
   calls: [] as string[], uploads: 0, idle: [] as (() => void)[], libraryLoaded: true, albumsLoaded: true, indexes: false,
 }));
-vi.mock("./api", () => ({ api: async () => ({}) }));
+vi.mock("./api", () => ({
+  newSignIn: () => {}, api: async () => ({}) }));
 vi.mock("./live", async () => ({ coalesce: (await vi.importActual<typeof import("./live")>("./live")).coalesce, watchLive: () => {} }));
 vi.mock("./libraryStore", () => ({
   libraryItems: () => [{ id: "a" }], libraryLoaded: () => st.libraryLoaded,

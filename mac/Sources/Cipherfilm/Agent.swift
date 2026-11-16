@@ -140,6 +140,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
+  /** Quitting (the menu-bar panel's Quit, logging out, shutting down): no decrypted copy waits for the next start. */
+  func applicationWillTerminate(_ notification: Notification) {
+    Outbox.clear()
+  }
+
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
     MainActor.assumeIsolated { !AppModel.shared.agent.keepRunning }
   }

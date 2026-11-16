@@ -44,3 +44,32 @@ describe("api", () => {
     expect(e.message).toMatch(/couldn't be found/);
   });
 });
+
+describe("signed out from elsewhere", () => {
+  const revokedAnswer = () => new Response(JSON.stringify({ error: "signed out" }), { status: 401, headers: { "X-CF-Session": "revoked" } });
+
+  it("reports it for the app's server and for a background run's own, with the server that said so", async () => {
+    const m = await import("./api");
+    const told: string[] = [];
+    m.whenRevoked((o) => told.push(o));
+    m.setServer("https://photos.example.test/");
+    st.reply = revokedAnswer;
+    await m.api("GET", "/api/items").catch(() => {});
+    m.setServer("");
+    await m.api("GET", "/api/me/notices", undefined, m.remote("https://photos.example.test")).catch(() => {});
+    expect(told).toEqual(["https://photos.example.test", "https://photos.example.test"]);
+  });
+
+  it("an answer to a request made before a new sign-in doesn't end the new one", async () => {
+    const m = await import("./api");
+    const told: string[] = [];
+    m.whenRevoked((o) => told.push(o));
+    const old = m.remote("https://photos.example.test"); // a background run that started before
+    m.newSignIn();
+    st.reply = revokedAnswer;
+    await m.api("GET", "/api/me/notices", undefined, old).catch(() => {});
+    expect(told).toEqual([]);
+    await m.api("GET", "/api/me/notices", undefined, m.remote("https://photos.example.test")).catch(() => {});
+    expect(told).toEqual(["https://photos.example.test"]);
+  });
+});

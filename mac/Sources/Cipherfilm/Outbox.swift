@@ -1,6 +1,7 @@
 // Decrypted copies for leaving the app: dragging photos into the Finder or Mail, and Share…. They are written to a
-// private folder in the app's caches only when asked for, and deleted at every lock, sign-out and start, and after an
-// hour. (A photo you share has to exist decrypted somewhere; this keeps it as short as macOS allows.)
+// private folder in the app's caches only when asked for, and deleted at every lock, sign-out, start and quit, and 15
+// minutes after they were made, also while the app just runs on. (A photo you share has to exist decrypted somewhere;
+// this keeps it as short as macOS allows. A crash leaves them until the next start.)
 import AppKit
 import CipherfilmCore
 import UniformTypeIdentifiers
@@ -15,12 +16,30 @@ enum Outbox {
 
   static func clear() { try? FileManager.default.removeItem(at: dir) }
 
+  /** How long a copy stays: time for Mail or the Finder to take it (the same as on Android). */
+  static let keepFor: TimeInterval = 15 * 60
+  @MainActor private static var sweeper: Timer?
+  /** From launch on: copies older than keepFor go every minute, not only when the next one is made. */
+  @MainActor static func sweepWhileRunning() {
+    guard sweeper == nil else { return }
+    sweeper = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
+      DispatchQueue.global(qos: .utility).async { sweep() }
+    }
+  }
+
   /** Lock or sign-out: a Share… still preparing stops, and the folder goes (AppModel.wipe). */
   @MainActor static func cancel() { shareTask?.cancel(); shareTask = nil; saveTask?.cancel(); saveTask = nil }
 
+  /** Copies being written now: the sweep leaves them, however long a big video takes to come down. */
+  private static let busyLock = NSLock()
+  nonisolated(unsafe) private static var busy = Set<String>()
+  private static func isBusy(_ name: String) -> Bool { busyLock.lock(); defer { busyLock.unlock() }; return busy.contains(name) }
+  private static func setBusy(_ name: String, _ on: Bool) { busyLock.lock(); if on { busy.insert(name) } else { busy.remove(name) }; busyLock.unlock() }
+
   static func sweep() {
     guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.creationDateKey]) else { return }
-    for f in files where ((try? f.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast) < Date().addingTimeInterval(-3600) {
+    // not Save…'s partial files: a long save writes there for as long as it takes (they go at lock, quit and start)
+    for f in files where f.lastPathComponent != "staging" && !isBusy(f.lastPathComponent) && ((try? f.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast) < Date().addingTimeInterval(-keepFor) {
       try? FileManager.default.removeItem(at: f)
     }
   }
@@ -30,8 +49,12 @@ enum Outbox {
     guard it.openable, let folder = ServerId.folder(in: dir, it.id) else { throw CryptoError.failed("this item can't be read") }
     // only while the library is unlocked: after a lock nothing more is decrypted, and what was being written goes
     guard vault.isOpen else { throw CancellationError() }
+    setBusy(folder.lastPathComponent, true)
+    defer { setBusy(folder.lastPathComponent, false) }
     sweep()
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    // handed out (again) now: its 15 minutes start now, also for a copy made earlier
+    try? FileManager.default.setAttributes([.creationDate: Date()], ofItemAtPath: folder.path)
     guard let url = FileName.inside(folder, FileName.of(it)) else { throw CryptoError.failed("bad file name") }
     if !FileManager.default.fileExists(atPath: url.path) {
       try await vault.saveOriginal(it, to: url)

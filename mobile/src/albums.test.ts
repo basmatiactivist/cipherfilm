@@ -11,6 +11,7 @@ const st = vi.hoisted(() => ({
   wipes: [] as (() => void)[],
 }));
 vi.mock("./api", () => ({
+  newSignIn: () => {},
   api: async (_m: string, p: string) => { st.asked.push(p); if (!(p in st.answers)) throw new Error("unexpected " + p); return structuredClone(st.answers[p]); },
 }));
 vi.mock("./session", () => ({ session: () => ({ masterKey: st.master }), onWipe: (f: () => void) => { st.wipes.push(f); } }));

@@ -183,7 +183,7 @@ lost device, turn off someone's two-step sign-in, make an invite link, status). 
 `DEMO_ACCOUNTS` is only for a server whose login you publish on purpose, such as a demo that is reset from a seed. Never
 list an account with real photos or an administrator: anyone with the password can see everything in it.
 
-Built-in limits: 20 GB per invited user (changeable; thumbnails and previews count too), 50 unfinished uploads per user, 8 GB per file, sessions end 30 days after their last use or a year after signing in, trash empties after 30 days, 10 failed sign-ins per account and source address and 30 per source address overall, per 15 minutes. There is no ceiling across all sources, on purpose: it would let a stranger lock you out. Browsers that signed in before have their own limit of 20 per account. Live-update streams: 8 per session (browser tabs share one), 32 per account, 2000 in all.
+Built-in limits: 20 GB per invited user (changeable; thumbnails and previews count too), 50 unfinished uploads per user, 8 GB per file, sessions end 30 days after their last use (7 or 14 if the person chose that under Devices) or a year after signing in, 50 signed-in devices per account (a new sign-in beyond that ends the one unused longest), trash empties after 30 days, 10 failed sign-ins per account and source address and 30 per source address overall, per 15 minutes. There is no ceiling across all sources, on purpose: it would let a stranger lock you out. Browsers that signed in before have their own limit of 20 per account. Live-update streams: 8 per session (browser tabs share one), 32 per account, 2000 in all.
 
 ## Passkeys
 
@@ -214,7 +214,7 @@ for the name the server is reached by, so:
 ## Deleting your account
 
 Everyone can delete their own account: **Account › Delete account** in the web app, the Android app and the Mac app
-(Settings › General). It asks for the password, then deletes the account with all its photos, videos, albums, people
+(Settings › Account). It asks for the password, then deletes the account with all its photos, videos, albums, people
 and search data from the server at once (`DELETE /api/me` with the current sign-in proof, as for a password change),
 signs out every device, and each device deletes what it keeps. The only active administrator has to make someone
 else an administrator first. Copies of the whole server an administrator made (`scripts/backup.sh`, their own backup tool) follow
@@ -232,8 +232,17 @@ settings (from the sizes and the photo/video/other kind the server stores anyway
 small copies as the original), the number of items and, per signed-in device, its label, when it was last seen and when
 it last finished an upload. A phone app that is still in use but hasn't uploaded for 7 days is flagged: its automatic
 backup may be off or stuck (or there was simply nothing new). Only the newest upload time per device is kept, not which
-items a device uploaded; upload times are recorded from the version that brought this overview on. The devices of a public demo account (`DEMO_ACCOUNTS`) are
-never listed, and each person sees the same overview for their own account under **Account › Storage**.
+items a device uploaded. The server records upload times from 2.8.0 on; for a device signed in before that, the
+Android and Mac apps report the newest upload they know once per session, which the server keeps only while it has
+none for that session and only within the last year. A long device list shows this device, stuck backups and the
+most recent uploaders; the rest are behind "Show N more devices". The devices of a public demo account (`DEMO_ACCOUNTS`) are
+never listed, and each person sees the same overview for their own account under **Account** (web, Android and the
+Mac's Settings › Account).
+
+Devices nobody uses are signed out: after 30 days without a request by default, or 7 or 14 days if the person chooses
+that under Devices ("Sign out devices not used for"). Such a device is signed out as if from another device, so it
+deletes what it keeps of the library when it comes back. "Sign out unused devices now" ends them at once, never the
+device it is chosen on. A public demo account can't change either.
 
 The same is in the apps for administrators: on Android under **Account › Administration** (an invite link goes out
 through the share sheet), on the Mac under **Settings › Administration**. They use the same API; the server checks

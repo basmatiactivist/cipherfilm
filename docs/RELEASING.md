@@ -33,13 +33,15 @@ became 2.7.1). The Google Play versionCode of `X.Y.Z` stays unused.
 
 The `Release` workflow then:
 
-1. refuses to continue if the tagged commit is not on `master` (`git merge-base --is-ancestor`), if
-   `CHANGELOG.md` has no section for the tag, or if any test fails;
+1. refuses to continue if the tag or a commit doesn't use a noreply address (`scripts/check-identity.sh`), if the
+   tagged commit is not on `master` (`git merge-base --is-ancestor`), if `CHANGELOG.md` has no section for the tag,
+   or if any test fails;
 2. builds the image for linux/amd64 and linux/arm64 and pushes it to
    `ghcr.io/<owner>/cipherfilm` as `X.Y.Z`, and as `X.Y`, `X` and `latest` only where it is the highest release
    (a fix for an older line, `v2.0.9` after `v2.3.0`, gets `2.0.9` and `2.0` but leaves `2` and `latest` alone;
    pre-release tags such as `v1.1.0-rc.1` only get their own tag), with provenance and an SBOM;
-3. builds the offline decrypt tool for macOS, Linux and Windows plus `SHA256SUMS`;
+3. builds the offline decrypt tool for macOS, Linux and Windows and the Mac uploader (`cipherfilm-upload`, Apple
+   silicon and Intel) plus `SHA256SUMS`;
 4. builds the Android APK (`cipherfilm-android-X.Y.Z.apk`, signed with the app signing key), the Google Play App
    Bundle (`cipherfilm-play-X.Y.Z.aab`, `CF_STORE=play`, signed with the key Play takes for uploads; see "Google Play" below), checks
    both for 16 KB memory pages (`mobile/scripts/check-page-size.sh`) and the Play manifest
@@ -174,7 +176,7 @@ Insights › Dependency graph › Dependabot: a rejected file stops every update
   alerts; `.github/workflows/image-scan.yml` scans the published server image with Trivy (weekly, after each
   release) and lists what it finds under Security › Code scanning.
 - **The Mac app's Swift packages** (`swift-sodium`, pinned exactly in `mac/Package.swift`): the package needs the
-  ONNX Runtime framework that `scripts/fetch-onnxruntime.sh` downloads, so Dependabot can't resolve it. Check
+  ONNX Runtime framework that `mac/scripts/fetch-onnxruntime.sh` downloads, so Dependabot can't resolve it. Check
   swift-sodium's releases by hand before each release, like ONNX Runtime's version in that script.
 - **Caddy's Cloudflare module** in `deploy/tailnet/domain/Dockerfile` (`xcaddy build --with
   github.com/caddy-dns/cloudflare@…`) is invisible to Dependabot; check its releases by hand.

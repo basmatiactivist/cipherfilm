@@ -13,7 +13,8 @@ on the other fails.
 
 ## On this day
 
-Photos taken within three days of today's date in each earlier year, one card per year (`memories.ts`).
+Photos taken within three days of today's date in each earlier year, one card per year (`memories.ts`); a year with
+more than 200 shows 200, spread over their time.
 
 ## Trips
 
@@ -37,10 +38,13 @@ like the trip, with an encrypted name like every album; that is the only time an
 Every earlier year with photos, and the current year from December. A recap counts the photos, videos, days and
 countries, lists the five places and the five named people (when faces are on) in the most photos, the year's trips,
 and shows four photos for every month: favorites first, spread over the month, then one photo from the middle of each
-day, spread over the days. Screenshots and photos without a thumbnail are left out where there are others.
+day, spread over the days, then (a month with photos on fewer than four days) others of those days, spread too
+(`recap.ts` `highlights`). Videos and screenshots are left out where a month has other photos; nothing without a
+thumbnail is shown.
 
 ## Not included
 
-- Items in the trash or that couldn't be verified never count; an item in a locked folder never counts either.
+- Items in the trash or that couldn't be verified never count; an item in the locked folder never counts either.
+  Archived items are left out of On this day but still count for trips and year recaps (docs/EDITING.md).
 - No aesthetic scoring: the search models don't give one, so highlights are favorites, then spread over the days.
 - The web and Mac apps are in English; town names are those of the place file (English or local), not translated.

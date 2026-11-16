@@ -88,14 +88,14 @@ each upload (`mobile/scripts/play-notes.sh`, docs/RELEASING.md "Google Play from
 | Name | Demo server sign-in |
 | Username | `reviewer@cipherfilm.app` |
 | Password | `<set by owner>` |
-| Any other information required to access your app | see below (≤ 500 characters, this text is 464) |
+| Any other information required to access your app | see below (≤ 500 characters, this text is 470) |
 
 ```text
 Cipherfilm is the app for a self-hosted server, so it first asks for a server address.
 1. Open the app. Address: demo.cipherfilm.app, tap Connect.
 2. E-mail and password above, tap Sign in. No 2FA, no code.
 3. Fingerprint unlock is offered: tap Not now (or Turn on).
-4. The library has sample photos. Search tab: try "beach". Backup tab: choose folders, Back up now.
+4. The library has sample photos. Search tab: try "beach". Account > Backup: choose folders, Back up now.
 The account is reset every night. Photos are encrypted on the device; the server cannot see them.
 ```
 

@@ -5,7 +5,8 @@ a copy and a restore. Nobody needs their password or recovery key for it, and no
 the backup holds only ciphertext and the server's own secret.
 
 `make migration-test` runs this whole procedure automatically (backup with `scripts/backup.sh`, restore into a new,
-empty stack with `scripts/restore.sh`, sign in there, decrypt offline) and runs in CI on every push.
+empty stack with `scripts/restore.sh`, sign in there, decrypt offline) and runs in CI on every pull request and every
+push to `master` that changes code.
 
 ## What moves
 

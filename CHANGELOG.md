@@ -7,12 +7,6 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
-### Changed
-- Mac: Settings laid out like the system's own settings windows: a toolbar of panes (General, Account, Security,
-  Search & People, Import, Export, Notifications, Administration, About), each a compact form with right-aligned labels,
-  the window sized to each pane instead of one long scrolling list. Every setting is still there; the last pane opens
-  again.
-
 ### Added
 - Mac: import from WebDAV folders (Settings › Import). Any WebDAV folder (https; http only for this Mac or a home
   network, with a warning) imported once or kept importing every 15 minutes to a day; several folders; Test Connection.
@@ -71,6 +65,12 @@ version into the GitHub release notes, so a release cannot be published without 
   shows the most similar photos at once. Filters (people, places, dates, favorites, videos, screenshots), names and
   text in photos stay exact. The same cut on all three, with numbers measured on real photos (docs/SEARCH.md "Close
   matches"); the explicit-content filter and the locked folder are unchanged.
+- Mac: Settings laid out like the system's own settings windows: a toolbar of panes (General, Account, Security,
+  Search & People, Import, Export, Notifications, Administration, About), each a compact form with right-aligned labels,
+  the window sized to each pane instead of one long scrolling list. Every setting is still there; the last pane opens
+  again.
+- Docs match 2.8 (storage and backup overview, unused devices, archive and locked folder, trips and recaps, combined
+  search and text in photos, the Mac's settings panes; README, self-hosting, search, threat model, Mac and Play texts).
 
 ### Security
 - A password change, an account turned off by an admin and a recovery now count as signed out from another device:

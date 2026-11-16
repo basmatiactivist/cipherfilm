@@ -16,7 +16,8 @@ list from the server.
 
 ## Models
 
-Open models, downloaded by the phone once (about 650 MB with faces, by default only on Wi-Fi), after the person agreed
+Open models, downloaded by the phone once (about 650 MB with faces, 10 MB more for text in photos; on Android by default
+only on Wi-Fi), after the person agreed
 in a question that says what, how big, where from (the site is named in the privacy policy, not in the app) and what
 that site learns (docs/MODELS.md "Asked first"), directly
 from Hugging Face, where they are published, at URLs pinned to a commit. Each file's URL, SHA-256 and size are in
@@ -48,8 +49,8 @@ What a device downloads: the indexing device all of it (609 MB, 648 MB with face
 - Index entry tag `m`: `laionb32+yunet23+sface21/1` (with faces) or `laionb32/1` (without): the family `laionb32`.
 - Text search ranks every photo with an entry, best match first. Only the close matches are results (and counted);
   the photos ranked below them show under "More similar photos", best first, page by page as you scroll (the first
-  200, then more). See "Close matches" below. Filters (people, years, months, favorites, videos) narrow the ranked
-  list instead of being separate results. Explicit content is left out unless chosen (below).
+  200, then more). See "Close matches" below. Filters (people, places, dates, favorites, videos, screenshots; see
+  "Combined search") narrow the ranked list instead of being separate results. Explicit content is left out unless chosen (below).
 - LAION-2B, the training data, tagged explicit images instead of removing them, so the model knows those concepts;
   that is what the filter below uses. Immich ships the same model for its smart search. LAION-5B was withdrawn in
   December 2023 after abusive material was found in it and re-released cleaned in 2024; this checkpoint was trained
@@ -185,14 +186,15 @@ vector.
   `session_id` (this device) and `indexer` (the indexing device's id, `""` when there is none or its session ended).
 - The first device that writes an entry becomes the indexer. Any other device's `PUT /api/items/{id}/index` gets
   **409 with `"code": "not_indexer"`**: it stops indexing and only reads from then on.
-- `PUT /api/me/indexer` makes this device the indexer (the person chose it: "Index on this device"),
-  `DELETE /api/me/indexer` gives it up (search turned off here). When the indexer signs out, is signed out or expires,
-  the next device that indexes takes over.
-- The apps show it in their search settings: "This device indexes your photos" or "Indexed by <device>, last seen
-  …", with "Index on this device instead". The web's Account › Devices marks the indexing device.
+- `PUT /api/me/indexer` makes this device the indexer (the person chose it: "Index here" on Android, "Index on This
+  Mac Instead" on the Mac), `DELETE /api/me/indexer` gives it up (search turned off here). When the indexer signs out,
+  is signed out or expires, the next device that indexes takes over.
+- The apps show it in their search settings: "This phone indexes your photos" or "Indexed by <device>" on Android,
+  "This Mac indexes your photos." on the Mac. The device lists (web and Android, Account › Devices) mark the indexing
+  device ("indexes your photos for search").
 - Taking over downloads the image (and face) models again: a device that only reads deleted them, and the yes to
-  download them with them (docs/MODELS.md). So "Index on this device instead" asks first; the role moves after the
-  yes. A device that becomes the indexer any other way (the indexer signed out or gave it up) waits in "Waiting for
+  download them with them (docs/MODELS.md). So "Index here" and "Index on This Mac Instead" ask first; the role moves
+  after the yes. A device that becomes the indexer any other way (the indexer signed out or gave it up) waits in "Waiting for
   your OK to download the models" until the person answers.
 - **When the indexing device stops.** It may wait for its own OK to download the models after an update, or be gone
   without signing out; then nobody indexes new photos. The Mac says it where it matters: Settings › Search & People
@@ -206,10 +208,17 @@ vector.
 ## Devices
 
 `GET /api/me/sessions` lists the account's signed-in devices: `id` (a random public id, not the cookie), `device`,
-`created_at`, `last_seen` (updated at most once a minute), `current`, `indexer`. `DELETE /api/me/sessions/{id}`
+`created_at`, `last_seen` (updated at most once a minute), `current`, `indexer`, `unused` (another device not used
+for longer than the account allows), and the account's `idle_days`. `DELETE /api/me/sessions/{id}`
 signs one out (not this one: that is sign-out), `POST /api/me/sessions/end-others` all others; both are in the audit
-log. A signed-out device gets 401 at its next request and forgets the library as at sign-out. The device name is what
-the app sends as `X-CF-Device` at sign-in (Android: "<maker> <model> (Android app)", never the name given to the
+log. A signed-out device gets 401 at its next request and forgets the library as at sign-out.
+
+Unused devices are signed out: "Sign out devices not used for" 7, 14 or 30 days (30 by default; `PUT
+/api/me/device-idle` with `{"days": n}`, `users.device_idle_days`). A device unused for longer is signed out as if
+from another device when it next connects, so it deletes what it keeps of the library. "Sign out unused devices now"
+(`POST /api/me/sessions/end-unused`, in the audit log) ends them at once, never this one, and answers how many.
+
+The device name is what the app sends as `X-CF-Device` at sign-in (Android: "<maker> <model> (Android app)", never the name given to the
 phone in its settings; Mac: "<computer name> (Mac app)"), otherwise a guess from the browser's User-Agent ("Firefox on
 macOS"); it is only a label. Account › Devices on the web and Android, and Settings › Security on the Mac, show the
 list. A new sign-in also leaves a notice for the devices signed in before it (`GET /api/me/notices`,
@@ -315,10 +324,12 @@ holds the cases all of them are tested with.
 - **Kinds:** favorites ("favorites", "Lieblingsfotos"), videos ("videos", "Filme"), screenshots.
 - A word like "in", "with", "aus" or "von" right before a filter belongs to it ("dog in Rome"); "photos", "Bilder"
   and the like are dropped.
-- **Everything left** is what to look for: in file names, cameras and albums, in the text read in the photos (below)
+- **Everything left** is what to look for: in file names and cameras (on the web also album names and the names of
+  the people and places in a photo; on Android also a place named loosely, "zuri"), in the text read in the photos (below)
   and by what the photos show. The image model knows English, so about 170 common German words are given to it in
   English ("Hund" → "dog", "Strand" → "beach", `web/src/search/glossary-de.json`; the Mac has a copy, tested equal).
-- All filters must hold. Results: names first, then photos whose text has the words, then the model's ranking.
+- All filters must hold. Results: photos whose names (above) have the words first, then photos whose text has them,
+  then the model's ranking (cut at the close matches, above).
 - **Chips:** each filter shows as a chip under the search box ("Anna Müller", "May 2025", "Rome") with a button that
   removes its words from the query.
 
@@ -338,7 +349,8 @@ off in the search settings deletes them; declining them never stops search by co
 - **Stored:** in the photo's sealed index entry, as `t`, with `o` naming the text model
   (`ppocr3det+ppocr5latin/1`). The text is cleaned (quotes, slashes, backslashes and control characters become
   spaces) and padded with spaces to exactly 1022 bytes, cut at a word if longer (about the first 1000 characters).
-  Every entry with `o` is the same size, whatever the photo says or whether it has text at all, so the padded entry
+  An entry with `o` has the same size whatever the photo says or whether it has text at all (it still grows with the
+  number of faces, as before), so the padded entry
   (still 512-byte steps, as before) tells the server nothing about the text. The model tag `m` and `v` are
   unchanged: the server sees nothing new, and older apps open these entries as before (they ignore the two fields).
 - **Older photos:** entries without `o` are read again in the background, a few at a time, after new photos are

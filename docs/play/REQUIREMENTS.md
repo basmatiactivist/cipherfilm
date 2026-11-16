@@ -212,7 +212,7 @@ Source: [Data safety section](https://support.google.com/googleplay/android-deve
 | Way to request deletion? | **Yes** (§4.7) |
 | Personal info → **Email address** | Collected, **not shared**, required, purposes: **App functionality, Account management**. Not processed ephemerally. |
 | Photos and videos | **Not declared**: end-to-end encrypted, the server and developer can't read them (E2E exemption). Mention this in the privacy policy. |
-| Location (EXIF GPS) | Not declared: inside the E2E-encrypted metadata only. |
+| Location (EXIF GPS) | Not declared: inside the E2E-encrypted metadata only. Corrected since: the optional map sends viewed areas to the map service, so **Approximate location** is declared (`listing/console-answers.md` §4.8). |
 | Device or other IDs | Not declared (the server stores only a device label, the phone's maker and model followed by "(Android app)"; no identifiers). Declare it if a device ID is ever added. |
 | App activity / app info and performance / diagnostics | **None**: no analytics or crash SDK, ONNX telemetry removed. |
 | Shared with third parties | None |

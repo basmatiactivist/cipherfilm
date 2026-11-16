@@ -24,6 +24,13 @@ build notes: `mac/README.md`.
   usual, ⌘A selects all, Esc ends it). ⌫ moves the selection to the trash. A person's and an album's page have "Select
   All" for acting on all their photos at once (album, share, save, favorite, trash). The list is decrypted on all
   cores, so a large library opens quickly; the encrypted list is cached, so a restart shows it at once.
+- **Archive and locked folder** (menu Photo, or right-click): Archive takes photos and videos out of Photos and On
+  this day without deleting them; they stay in search, albums, people, the map and favorites, and the Archive view in
+  the sidebar lists them with Unarchive. "Move to Locked Folder" hides them everywhere else. The Locked Folder asks
+  every time it opens, also while the library is unlocked: Touch ID where this Mac has a sensor with a finger set up,
+  else the account password, checked on this Mac only. Its pictures are never cached on disk and leave memory when
+  the folder is left or the app locks; deleting there deletes for good. Which folder an item is in is written inside
+  its encrypted metadata (`CipherfilmCore/Folders.swift`, docs/EDITING.md).
 - **On this day:** above Photos, a card for each earlier year with photos from within three days of today's date
   (`CipherfilmCore/Memories.swift`, the same rules as the web and Android apps in `web/src/memories/memories.ts`); a
   click opens that year's photos in the viewer. Picked on the Mac from the decrypted dates; Settings › General ›
@@ -37,17 +44,23 @@ build notes: `mac/README.md`.
   of its spot. Off until turned on; Settings › General › Map turns it off. What the map server sees: docs/MAP.md.
 - **Devices** (Settings › Security): where the account is signed in, with Sign Out for one device and Sign Out All
   Other Devices…; a device signed out this way deletes what it keeps of the library the next time it reaches the
-  server.
+  server. "Sign out devices not used for" 7, 14 or 30 days signs out unused devices the same way; "Sign Out Unused
+  Devices Now…" says how many that is and, after asking, ends them at once (never this Mac).
+- **Storage and backup** (Settings › Account): what the library takes on the server against the limit, split by kind,
+  and when each signed-in device last uploaded, with a warning when a phone seems to have stopped backing up. The
+  device list is folded to this Mac, stuck backups and the latest uploaders, with "Show … more devices" for the
+  rest. The Mac reports the newest upload it knows from its watched folders once per session, for a device signed in
+  before the server recorded upload times.
 - **Shortcuts** (menu Photo; they act on the photo in the viewer, else on the selection): ⇧⌘F favorite, ⌃⌘A add to
   album, ⇧⌘N new album with the selection, ⇧⌘S share, ⇧⌘E save originals, ⌘K photos like this one, ⌘J go to date,
-  ⌘⌫ move to trash, ⌘U upload, ⌃⌘L lock, ⌘, settings (also at the bottom of the sidebar). In the viewer also F, I, ⌫,
-  ← →, Esc.
+  ⌘⌫ move to trash, ⌘U upload, ⌃⌘L lock, ⌘, settings (also at the bottom of the sidebar). Archive and Move to Locked
+  Folder are in the same menu, without a shortcut. In the viewer also F, I, ⌫, ← →, Esc.
 - **Taking photos out:** drag them into the Finder, Mail or any app, or right-click › Share…. The originals are
   decrypted into a private folder in the app's caches only when asked for, and that folder is emptied at every lock,
   sign-out, start and quit, and 15 minutes after a copy was made. "Save Original…" writes them where you choose.
 - **Viewer:** takes the whole window. The preview at once, the original when it has arrived (HEIC, RAW: whatever
   macOS reads); pinch or double click to zoom, drag to pan; ← →, a filmstrip of the neighbours; quick actions for
-  favorite (F), album, share (⌘⇧S), save (⌘S), photos like this one and trash (⌫). The info column (I) lists every
+  favorite (F), album, share (⇧⌘S), save (⇧⌘E), photos like this one and trash (⌫). The info column (I) lists every
   face found in the photo: named people (a click shows all their photos), "Unknown" faces with "Add Name" right there
   (a name someone already has joins them). Videos play while they download: the
   player asks for byte ranges, and the app answers from the 4 MiB segments, decrypted in memory. Nothing decrypted is
@@ -59,8 +72,14 @@ build notes: `mac/README.md`.
   failed, with Retry, Retry Failed, Pause and Resume. The queue (file paths only) is saved in the account folder: after
   a quit, restart or lock it goes on once the library is unlocked; a file cut off midway starts again (the server
   drops the unfinished one). The same file is never queued twice.
-- **Search and people:** one box for what is in a photo ("dog on the beach"), names, years and months (English and
-  German), "videos", "favorites", file names and cameras; "Photos like this one"; people with naming, "same person
+- **Search and people:** one box mixes filters and content, such as "dog beach May 2025 Anna Rome": names, years,
+  months and date ranges (English and German), places where photos were taken, "favorites", "videos" and
+  "screenshots" become chips that can be removed, and the words left are searched for in file names, cameras, the text
+  in photos and what the photos show (`CipherfilmCore/QueryParser.swift`, the port of the web's parser, tested with the
+  same cases; docs/SEARCH.md "Combined search"). Only close matches are results; the rest wait under "More similar
+  photos". "Text in photos" (Settings › Search & People, its own download of about 10 MB, asked first) lets the
+  indexing Mac read the text in photos into their encrypted index entries; older photos are read in the background, a
+  few at a time. "Photos like this one"; people with naming, "same person
   as", "not this person", hiding. The same models, preprocessing, index format and people document as Android
   (docs/SEARCH.md), so the phone and the Mac share one index. A person's page shows their faces: click to pick, then
   drag onto another person or use Move to (also "New Person…"). A face given to someone stays with them even where
@@ -71,7 +90,8 @@ build notes: `mac/README.md`.
   admin area. People with their usage and last sign-in, invites (copy or share the link, revoke), storage limits and
   the default one, making someone an administrator or a regular user, disabling, enabling and deleting accounts,
   turning off someone's two-step sign-in, the explicit-search permission, the server's state with the off-site backup
-  report, and the activity log. Deleting, disabling, role changes and turning off two-step sign-in ask first. The
+  report, storage (the server's total and free disk space and, per account, the same overview as under Account), and
+  the activity log. Deleting, disabling, role changes and turning off two-step sign-in ask first. The
   server checks every request (`CipherfilmCore/Admin.swift` sends exactly the web's).
 
 ## Two-step sign-in
@@ -255,7 +275,8 @@ photo without EXIF and a server without modification times gets the time of the 
   to one request each.
 - **Search indexing:** the models take about 65 ms a photo on an M-series Mac. Six photos are in flight at once, since
   downloading the preview is the slow part; people and open search results are worked out again at most every few
-  seconds while it runs, not after every photo. It runs on battery too (Settings › Search turns that off).
+  seconds while it runs, not after every photo. It runs on battery too ("Also while on battery" in Settings › Search &
+  People turns that off).
 
 ## Search on the Mac
 
@@ -263,7 +284,7 @@ Off until turned on (the question after the first unlock, or Settings › Search
 download (what, how big, where from; docs/MODELS.md "Asked first") the Mac downloads the models once from Hugging Face, at the pinned URLs in `server/models.json` (648 MB with faces, checked against the same sizes and
 SHA-256 values as the phone; no cookie or other app header goes along, docs/MODELS.md), fetches the entries
 other devices made, and indexes every photo and video that has none, six at a time at low priority, also on battery
-(Settings › Search can limit it to power). Entries are sealed to the account's public key and stored on the
+(Settings › Search & People can limit it to power). Entries are sealed to the account's public key and stored on the
 server, so each photo is analysed once for all devices. The download has no overall time limit (a slow tailnet relay
 may bring a few hundred KB/s); a minute without a byte counts as a drop. Each file goes to `<name>.part` first and
 a drop, or quitting, resumes it with HTTP Range; drops and stalls are retried with backoff (2 s up to a minute) until
@@ -298,8 +319,9 @@ image models are downloaded and the library indexed); turning search off gives t
 Entries are read for the model's family (`GET /api/index?model=laionb32`) and cached (`index-laionb32.json`).
 
 Search by what is in a photo ranks every photo with an entry, best match first; only the close matches are results (and counted), the rest show under "More similar photos", or at once after "No close matches" when nothing is close (docs/SEARCH.md "Close matches"), 200 at a time (more as the end of the results comes into view).
-People, years, months, favorites and videos in the query narrow that ranking; a file name or camera containing the
-words comes first.
+People, places, dates, favorites, videos and screenshots in the query narrow that ranking; of the words left, a file
+name or camera containing them comes first, then photos taken at a place of that name, then photos with those words
+in them (text in photos), then what the photos show (`SearchEngine.search`).
 
 **One model, explicit content** (docs/SEARCH.md "One model", "Explicit content"): the Mac indexes and searches with
 LAION's ViT-B/32 only. Files explicit search downloaded before (`nsfw-laion-b32-*`) are moved to the new names, and
@@ -323,7 +345,8 @@ bookkeeping, the WebDAV passwords in the keychain, the encrypted cache (item lis
 hold nothing of anyone. Exported copies stay unless you choose otherwise (see above).
 
 The same happens when the server ends the session (signed out from another device in Account › Devices, a password
-change, recovery or an admin turning the account off, or expired): the first request that gets 401 forgets the account
+change, recovery or an admin turning the account off, or not used for the 7, 14 or 30 days chosen under Devices):
+the first request that gets 401 forgets the account
 here, and so does the next start if it happened while the app was closed. Unlocking asks the server first (at most 4
 seconds; offline it unlocks as before), so a Mac signed out elsewhere never shows its cached library again, and while
 locked it checks every 5 minutes. Exported copies stay.
@@ -338,7 +361,7 @@ as at sign-out. Exported copies stay. The only active administrator must make so
 
 - `~/Library/Application Support/app.cipherfilm.mac/accounts/<user id>/`: settings, `export.json`, `watch.json`,
   `known.json` (name-and-size fingerprints, BLAKE2b, like Android's), `webdav/<id>.log` (what each WebDAV folder
-  imported).
+  imported), `last-upload.json` (the session the last upload time was sent for).
 - Login keychain, service `app.cipherfilm.mac.webdav.<user id>`: the WebDAV passwords, one item per folder.
 - `~/Library/Caches/app.cipherfilm.mac/webdav/`: a WebDAV file in progress, only for photos over 48 MB or servers
   without Range requests; deleted right away.

@@ -69,9 +69,12 @@ and visitors are signed out every hour. To keep your own photos, [run your own s
 - **Automatic backup from Android.** New photos in the folders you choose are encrypted and uploaded in the background.
   The backup never holds your master key: it seals each new photo to your account's public key, so it can add photos
   but never read any.
-- **Search and people, on your device.** Find photos by content, by the text in them and with filters in the same query ("dog beach May 2025 Anna Rome"), and group faces into people, with one open CLIP model
-  (LAION's ViT-B/32, MIT), open face models and a small open text model (PP-OCR, Apache 2.0) that run locally. The models are downloaded once per
-  device, only after the app asked you. Search leaves explicit photos out unless an admin allows otherwise ([docs/SEARCH.md](docs/SEARCH.md), [docs/MODELS.md](docs/MODELS.md)).
+- **Search and people, on your device.** Find photos by content, by the text in them and with filters in the same
+  query ("dog beach May 2025 Anna Rome"), and group faces into people, with one open CLIP model (LAION's ViT-B/32,
+  MIT), open face models and a small open text model (PP-OCR, Apache 2.0) that run locally. A search by content lists
+  the close matches, the rest of the ranking under "More similar photos". The models are downloaded once per device,
+  only after the app asked you. Search leaves explicit photos out unless an admin allows otherwise
+  ([docs/SEARCH.md](docs/SEARCH.md), [docs/MODELS.md](docs/MODELS.md)).
 - **Map and places.** See your photos on a map, find them by town, region or country, and see where each was taken.
   Coordinates stay encrypted and are only read on your devices. Place names come from a file inside the apps, so
   naming a place sends nothing anywhere; the map is off until you turn it on, and what its tile server sees is in
@@ -95,11 +98,15 @@ and visitors are signed out every hour. To keep your own photos, [run your own s
   shake to lock and close. On Android, screenshots and the recent-apps preview are blocked unless you allow them.
 - **Two-step sign-in and your devices.** Optional codes from an authenticator app (added in one tap) or a passkey at
   every new sign-in, with one-time recovery codes; the password is still needed and still unlocks the photos; a list of
-  signed-in devices to sign out one or all others; a notice on your other devices when a new one signs in or two-step
+  signed-in devices to sign out one or all others, and devices not used for 7, 14 or 30 days (your choice) signed out
+  so that they delete what they keep; a notice on your other devices when a new one signs in or two-step
   sign-in changes, collected under a bell with a count of unread ones, also as a notification on Android and the Mac
   while the app is closed (no push service).
 - **Mac app.** Keeps an export folder up to date, uploads watched folders, imports WebDAV folders (streamed, without a
   local copy) and indexes for search in the background ([docs/MAC.md](docs/MAC.md)).
+- **Storage and backup overview.** How much your library takes on the server, split into photos, videos, other files,
+  thumbnails and search data, and when each of your devices last uploaded, with a warning when a phone in use seems to
+  have stopped backing up. Administrators see it for every account, with the server's free disk space.
 - **Made for a small group.** Invite-only, a private library per person, storage limits, an admin area that never
   shows anyone's photos, on the web and in the Android and Mac apps.
 - **Light to run.** One Docker container with SQLite; about 35 MB of RAM when idle, fine on a 1–2 vCPU / 2 GB server.
@@ -155,7 +162,8 @@ search, faces ─► run locally ─► encrypted index ───► stores it, 
 ```
 
 Each item has its own key, wrapped by your master key. The server sees who has an account, how many items they have,
-their sizes and upload times, and nothing of what they contain. The full design is in
+their sizes, whether each is a photo, a video or another file, upload times and when each device last uploaded, and
+nothing of what they contain. The full design is in
 [docs/CRYPTO.md](docs/CRYPTO.md). What the server still learns, and what a web app can't protect you from (whoever
 controls the server could deliver modified JavaScript), is in [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
 
@@ -188,7 +196,8 @@ Don't rely on it where losing or leaking the data would be catastrophic, and kee
 | [CRYPTO.md](docs/CRYPTO.md) · [THREAT_MODEL.md](docs/THREAT_MODEL.md) | the encryption and what it does and doesn't protect |
 | [SEARCH.md](docs/SEARCH.md) · [MODELS.md](docs/MODELS.md) | on-device search and the models it uses |
 | [MAP.md](docs/MAP.md) | the map, place names, and using your own map server |
-| [EDITING.md](docs/EDITING.md) | turning, cropping, and changing a photo's date and place |
+| [EDITING.md](docs/EDITING.md) | turning, cropping, changing a photo's date and place, the archive and the locked folder |
+| [MEMORIES.md](docs/MEMORIES.md) | On this day, trips and year recaps |
 | [MAC.md](docs/MAC.md) | the Mac app |
 | [RELEASING.md](docs/RELEASING.md) | how releases are built and signed |
 
@@ -205,7 +214,7 @@ before posting. Issues are public, so leave out your server address, e-mails and
 
 ```bash
 make up          # build and start at https://cipherfilm.orb.local (OrbStack)
-make test        # Go and web unit tests (in Docker)
+make test        # Go, web and tool tests (in Docker), design tokens and restore script checks
 make e2e         # throwaway stack, Playwright browser tests, then a check that no plaintext reached the server
 make prod-config # validate the production compose files
 ```

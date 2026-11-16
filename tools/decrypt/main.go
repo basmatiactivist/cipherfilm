@@ -19,6 +19,7 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/term"
+	"golang.org/x/text/cases"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -208,6 +209,24 @@ func safeName(n, fallback string) string {
 	return n
 }
 
+// nameKey is a name as a case-insensitive file system (APFS on macOS, NTFS on Windows) compares it: full Unicode case
+// folding over one normalization form, so IMG_1.JPG and img_1.jpg are one name, and so are "ſ" (long s) and "s", or
+// "ς" and "Σ", which plain lowercasing keeps apart.
+func nameKey(rel string) string {
+	return norm.NFC.String(cases.Fold().String(norm.NFD.String(rel)))
+}
+
+// freeName gives rel, or rel with the item id's start before the extension, so that no two items of one run land on
+// the same file there (nor on the other's ".partial" temp name), and marks the result as used.
+func freeName(rel, id string, used map[string]bool) string {
+	for used[nameKey(rel)] || used[nameKey(rel+".partial")] {
+		ext := filepath.Ext(rel)
+		rel = strings.TrimSuffix(rel, ext) + "-" + id[:6] + ext
+	}
+	used[nameKey(rel)] = true
+	return rel
+}
+
 type exported struct {
 	row  itemRow
 	path string // relative to the output folder
@@ -387,12 +406,7 @@ func restoreItem(b *backupDir, it itemRow, keys *keyRing, o options, used map[st
 		base = "Trash"
 	}
 	rel := filepath.Join(base, when.Format("2006"), when.Format("2006-01"), safeName(m.Name, it.ID))
-	// case-insensitive file systems (macOS) treat IMG_1.JPG and img_1.jpg as one file; so does the ".partial" temp name
-	for used[strings.ToLower(norm.NFC.String(rel))] || used[strings.ToLower(norm.NFC.String(rel))+".partial"] {
-		ext := filepath.Ext(rel)
-		rel = strings.TrimSuffix(rel, ext) + "-" + it.ID[:6] + ext
-	}
-	used[strings.ToLower(norm.NFC.String(rel))] = true
+	rel = freeName(rel, it.ID, used)
 	dst := filepath.Join(o.out, rel)
 	if !within(o.out, dst) {
 		return "", 0, errors.New("unexpected output path")

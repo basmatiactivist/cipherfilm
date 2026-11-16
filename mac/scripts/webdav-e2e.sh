@@ -11,9 +11,11 @@ set -eu
 cd "$(dirname "$0")/.."
 mac=$(pwd)
 tools=$(cd ../tools && pwd)
-C="docker compose -p cipherfilm-webdavtest -f $tools/upload/e2e/compose.yaml"
-net="cipherfilm-webdavtest_default"
+port=${PORT:-8473} # not the upload tool's 8463, so it runs next to a test server kept up for trying the app
 work=$(mktemp -d "${TMPDIR:-/tmp}/cf-webdav-e2e.XXXXXX")
+printf 'services:\n  proxy:\n    ports: !override\n      - "127.0.0.1:%s:443"\n' "$port" >"$work/port.yaml"
+C="docker compose -p cipherfilm-webdavtest -f $tools/upload/e2e/compose.yaml -f $work/port.yaml"
+net="cipherfilm-webdavtest_default"
 export CF_EMAIL=webdav@example.org CF_PASSWORD="e2e-only password ü"
 dav_pass=$(openssl rand -hex 16)
 pids=""
@@ -33,7 +35,7 @@ go() {
 
 echo "== test files"
 mkdir -p "$work/dav/Sub" "$work/samples"
-swift scripts/webdav-e2e-samples.swift "$work/dav" "${PHOTOS:-300}"
+swift scripts/webdav-e2e-samples.swift "$work/dav" "${PHOTOS:-300}" big
 swift "$tools/upload/e2e/samples.swift" "$work/samples" 2>/dev/null
 find "$work/samples" -type f -exec mv {} "$work/dav/" \;
 ffmpeg -loglevel error -f lavfi -i "testsrc2=size=1920x1080:rate=30" -t "${VIDEO_SECONDS:-60}" -c:v libx264 -preset ultrafast -b:v 60M \
@@ -44,10 +46,10 @@ cp "$work/dav/gen-0002.jpg" "$work/dav/.hidden.jpg"
 du -sh "$work/dav"; ls "$work/dav" | wc -l
 
 echo "== WebDAV servers"
-rclone serve webdav "$work/dav" --addr 127.0.0.1:8090 --user cfimport --pass "$dav_pass" >"$work/rclone.log" 2>&1 &
+rclone serve webdav "$work/dav" --addr 127.0.0.1:8092 --user cfimport --pass "$dav_pass" >"$work/rclone.log" 2>&1 &
 pids="$pids $!"
 openssl req -x509 -newkey rsa:2048 -nodes -keyout "$work/k.pem" -out "$work/c.pem" -subj /CN=localhost -days 1 2>/dev/null
-rclone serve webdav "$work/dav" --addr 127.0.0.1:8091 --cert "$work/c.pem" --key "$work/k.pem" --user cfimport --pass "$dav_pass" >/dev/null 2>&1 &
+rclone serve webdav "$work/dav" --addr 127.0.0.1:8093 --cert "$work/c.pem" --key "$work/k.pem" --user cfimport --pass "$dav_pass" >/dev/null 2>&1 &
 pids="$pids $!"
 
 echo "== server"
@@ -55,7 +57,7 @@ $C down -v --remove-orphans >/dev/null 2>&1 || true
 $C up -d --build --wait
 token=$($C logs app | grep -o 'token: .*' | tail -1 | cut -c8-)
 for _ in 1 2 3 4 5 6 7 8 9 10; do
-  curl -sk https://localhost:8463/healthz >/dev/null && $C exec -T proxy cat /data/caddy/pki/authorities/local/root.crt >"$work/ca.pem" 2>/dev/null && break
+  curl -sk "https://localhost:$port/healthz" >/dev/null && $C exec -T proxy cat /data/caddy/pki/authorities/local/root.crt >"$work/ca.pem" 2>/dev/null && break
   sleep 1
 done
 go --network "$net" -e CF_URL=https://proxy -e CF_CA=/work/ca.pem -e CF_EMAIL -e CF_PASSWORD -e CF_SETUP_TOKEN="$token" -- \
@@ -63,7 +65,7 @@ go --network "$net" -e CF_URL=https://proxy -e CF_CA=/work/ca.pem -e CF_EMAIL -e
 
 echo "== import"
 expect=$(find "$work/dav" -maxdepth 1 -type f ! -name '.*' ! -name '*.txt' | wc -l | tr -d ' ')
-CF_WEBDAV_E2E=1 CF_URL=https://localhost:8463 CF_TEST_CA="$work/ca.pem" CF_WEBDAV=http://127.0.0.1:8090/ CF_WEBDAV_SELFSIGNED=https://localhost:8091/ \
+CF_WEBDAV_E2E=1 CF_URL="https://localhost:$port" CF_TEST_CA="$work/ca.pem" CF_WEBDAV=http://127.0.0.1:8092/ CF_WEBDAV_SELFSIGNED=https://localhost:8093/ \
   CF_WEBDAV_USER=cfimport CF_WEBDAV_PASS="$dav_pass" CF_TEMP="$work/tmp/webdav" CF_REPORT="$work/report.txt" \
   swift test --filter WebDAVE2ETests >"$work/swift.log" 2>&1 || true
 grep -E "✔|✘|Expectation|recorded|error:" "$work/swift.log" | grep -v "^warning" | head -40
@@ -75,7 +77,7 @@ cat "$work/report.txt"
 
 echo "== check the library like the web app"
 go --network "$net" -e CF_URL=https://proxy -e CF_CA=/work/ca.pem -e CF_EMAIL -e CF_PASSWORD -e CF_EXPECT="$expect" -- \
-  go test -tags e2e -count=1 -v -run TestE2ECheckLibrary . >"$work/check.log" 2>&1 || { grep -v '^=== ' "$work/check.log" | tail -30; echo "FAIL: library check"; exit 1; }
+  go test -tags e2e -count=1 -v -run TestE2ECheckLibrary . >"$work/check.log" 2>&1 || { grep -v -e '^=== ' -e 'e2e_test.go:146:' "$work/check.log" | tail -30; echo "FAIL: library check"; exit 1; }
 grep -E 'big.mov|IMG_0001|clip.mov|screen|gen-0001|^ok|PASS' "$work/check.log"
 
 echo "== restore with cipherfilm-decrypt and compare"

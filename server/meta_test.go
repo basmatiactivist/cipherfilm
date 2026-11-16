@@ -94,3 +94,27 @@ func TestPutMetaRefusesAChangeMadeFromAnOlderCopy(t *testing.T) {
 		t.Fatalf("without a base: %d", code)
 	}
 }
+
+// An item finished by a server before 2.0 has no charge for its metadata in stored_bytes; a smaller metadata
+// afterwards never takes its stored bytes, or the account's counters, below zero.
+func TestSmallerMetaNeverTakesStoredBytesBelowZero(t *testing.T) {
+	e := newEnv(t)
+	admin, _ := e.setupAdmin("admin@x.org")
+	id := e.newItem(admin, 10)
+	admin.put("/api/items/"+id+"/segments/0", randBytes(int(cipherLen(10))))
+	body := finalizeBody()
+	body["meta_enc"] = rb(4000)
+	if code, _ := admin.do("POST", "/api/items/"+id+"/finalize", body, true); code != 200 {
+		t.Fatalf("finalize: %d", code)
+	}
+	e.app.db.Exec(`UPDATE items SET stored_bytes=100 WHERE id=?`, id) // as an older server charged it
+	if code, _ := admin.do("PUT", "/api/items/"+id+"/meta", map[string]any{"meta_enc": rb(100)}, true); code != 200 {
+		t.Fatalf("update: %d", code)
+	}
+	var stored int64
+	e.app.db.QueryRow(`SELECT stored_bytes FROM items WHERE id=?`, id).Scan(&stored)
+	if stored != 0 {
+		t.Fatalf("stored_bytes %d, want 0", stored)
+	}
+	checkCounters(e, "smaller meta")
+}

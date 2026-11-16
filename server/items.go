@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"hash/fnv"
@@ -731,7 +731,8 @@ func (a *App) putMeta(w http.ResponseWriter, r *http.Request, u *user, s *sessio
 		return
 	}
 	defer release()
-	res, err := a.db.Exec(`UPDATE items SET meta_enc=?, stored_bytes=stored_bytes+? WHERE id=? AND user_id=? AND state='ready' AND COALESCE(meta_enc,'')=?`,
+	// never below 0: an item finished by a server before 2.0 has no metadata charge in stored_bytes to give back
+	res, err := a.db.Exec(`UPDATE items SET meta_enc=?, stored_bytes=MAX(0, stored_bytes+?) WHERE id=? AND user_id=? AND state='ready' AND COALESCE(meta_enc,'')=?`,
 		req.MetaEnc, grow, it.ID, u.ID, old)
 	if rowsAffected(res, err) != 1 {
 		fail(w, 409, "the item changed meanwhile")

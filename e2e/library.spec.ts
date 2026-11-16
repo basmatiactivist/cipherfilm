@@ -109,11 +109,8 @@ test.describe.serial("library", () => {
       await expect(page.locator("dialog")).toHaveCount(0);
     }
 
-    // survives a reload
-    await page.reload(); // stays unlocked: the tab keeps the key across a reload (web/src/keep.ts)
-    await expect(page.locator(".tile")).toHaveCount(4, { timeout: 30_000 });
-
-    // the thumbnails and previews the browser keeps in Cache Storage are the server's ciphertext: no JPEG, no marker
+    // the thumbnails and previews the browser keeps in Cache Storage are the server's ciphertext: no JPEG, no marker.
+    // Read before the reload: Playwright's WebKit drops Cache Storage entries of a non-persistent context on a reload.
     const kept = await page.evaluate(async (markers) => {
       const out: { url: string; plain: boolean }[] = [];
       for (const name of await caches.keys()) {
@@ -129,6 +126,11 @@ test.describe.serial("library", () => {
     expect(kept.filter((k) => k.url.startsWith("/ct/preview/")).length).toBeGreaterThanOrEqual(2);
     expect(kept.filter((k) => k.url.startsWith("/ct/thumb/")).length).toBeGreaterThanOrEqual(3);
     expect(kept.filter((k) => k.plain)).toEqual([]);
+
+    // survives a reload
+    await page.reload(); // stays unlocked: the tab keeps the key across a reload (web/src/keep.ts)
+    await expect(page.locator(".tile")).toHaveCount(4, { timeout: 30_000 });
+
     mkdirSync("test-results", { recursive: true });
     writeFileSync("test-results/markers.txt", [MARKER_NAME, MARKER_EXIF].join("\n") + "\n");
     await ctx.close();

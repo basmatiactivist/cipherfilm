@@ -95,9 +95,11 @@ test.describe.serial("hardening", () => {
   test("a slow connection still completes and shows progress", async ({ browser }) => {
     const { ctx, page } = await newPage(browser);
     await signIn(page);
-    const cdp = await ctx.newCDPSession(page);
-    await cdp.send("Network.enable");
-    await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 400, downloadThroughput: (200 * 1024) / 8 * 8, uploadThroughput: 150 * 1024 });
+    // a slow line in every browser (CDP throttling is Chromium's only): each API call waits, an uploaded part longer
+    await page.route("**/api/**", async (route) => {
+      await new Promise((r) => setTimeout(r, /\/segments\//.test(route.request().url()) ? 3000 : 400));
+      await route.continue();
+    });
     const data = Buffer.alloc(450 * 1024);
     for (let i = 0; i < data.length; i++) data[i] = (i * 7) & 255;
     const before = await page.getByRole("button", { name: /^Open slow-/ }).count();
@@ -129,6 +131,8 @@ test.describe.serial("hardening", () => {
     await expect(page.locator(".tile").first()).toBeVisible({ timeout: 30_000 });
     await page.route("**/api/albums", (r) => r.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: "not signed in" }) }));
     await page.getByRole("button", { name: "Albums" }).click();
+    // the page's title takes the focus a frame after the switch; typing before that would lose the name
+    await expect(page.getByRole("heading", { level: 1, name: "Albums" })).toBeFocused();
     await page.getByLabel("New album name").fill("x");
     await page.getByRole("button", { name: "Create album" }).click();
     await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible({ timeout: 15_000 });

@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"syscall"
 	"time"
 )
 
@@ -171,12 +170,7 @@ func dirSize(root string) int64 {
 
 // adminStatus reports the health of the server itself: disk, data size, sessions, last backup.
 func (a *App) adminStatus(w http.ResponseWriter, r *http.Request, u *user, s *session) {
-	var st syscall.Statfs_t
-	var free, total uint64
-	if syscall.Statfs(a.dataDir, &st) == nil {
-		free = uint64(st.Bavail) * uint64(st.Bsize)
-		total = uint64(st.Blocks) * uint64(st.Bsize)
-	}
+	free, total := diskSpace(a.dataDir)
 	var sessions int
 	a.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE expires_at > ?`, a.now().Unix()).Scan(&sessions)
 	var lastBackup int64

@@ -14,7 +14,7 @@ vi.mock("./api", () => ({
   newSignIn: () => {},
   api: async (_m: string, p: string) => { st.asked.push(p); if (!(p in st.answers)) throw new Error("unexpected " + p); return structuredClone(st.answers[p]); },
 }));
-vi.mock("./session", () => ({ session: () => ({ masterKey: st.master }), onWipe: (f: () => void) => { st.wipes.push(f); } }));
+vi.mock("./session", () => ({ session: () => ({ masterKey: st.master }), onOwnSignOut: () => {}, onWipe: (f: () => void) => { st.wipes.push(f); } }));
 vi.mock("@crypto/sodium", () => ({ getSodium: async () => ({}), b64: () => "", unb64: (_s: unknown, v: string) => v }));
 vi.mock("@crypto/item", () => ({
   encryptAlbumName: () => new Uint8Array(),

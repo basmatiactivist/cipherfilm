@@ -12,7 +12,7 @@ const st = vi.hoisted(() => ({
 vi.mock("react", () => ({ useSyncExternalStore: (_sub: unknown, get: () => unknown) => get() }));
 vi.mock("./session", () => ({
   session: () => ({ me: { user: { id: "alice" } }, masterKey: st.master }),
-  onWipe: (f: () => void) => { st.wipes.push(f); },
+  onOwnSignOut: () => {}, onWipe: (f: () => void) => { st.wipes.push(f); },
 }));
 // a load that waits at the gate, then fails as the real one does when the key went meanwhile
 async function slow<T>(v: T): Promise<T> {

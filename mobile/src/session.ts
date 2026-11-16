@@ -66,6 +66,15 @@ async function forgetAccount() {
   for (const f of signOuts) { try { await f(); } catch { /* keep deleting the rest */ } }
 }
 
+/** What only the person's own sign-out, deleting the account or leaving the server deletes, never a session the server
+ *  ended (a plain 401, a revoked one): which metadata versions this phone saw (library.ts). Otherwise a server could
+ *  make the phone forget them just by ending the session, then hand out older metadata as current. */
+const ownSignOuts = new Set<() => void>();
+export const onOwnSignOut = (f: () => void) => { ownSignOuts.add(f); };
+function ownSignOut() {
+  for (const f of ownSignOuts) { try { f(); } catch { /* the rest */ } }
+}
+
 /** Called whenever who the phone's session belongs to may have changed (a session end, a sign-in, another account,
  *  another server): work running for the account before (the backup) stops before its next request. */
 const handovers = new Set<() => void>();
@@ -200,7 +209,7 @@ export async function chooseServer(input: string) {
     throw e instanceof ApiError && e.status === 0 ? e : new Error(t("That address isn't a Cipherfilm server."));
   }
   // another server: what the phone keeps for the account on the old one (backup, background search) ends too
-  if (url.origin !== (await savedServer())) await forgetAccount();
+  if (url.origin !== (await savedServer())) { await forgetAccount(); ownSignOut(); }
   handedOver();
   setServer(url.origin);
   await SecureStore.setItemAsync(SERVER, url.origin);
@@ -212,6 +221,7 @@ export async function chooseServer(input: string) {
 export async function forgetServer() {
   wipe("ended");
   await forgetAccount();
+  ownSignOut();
   handedOver();
   setServer("");
   setCsrf("");
@@ -408,6 +418,7 @@ export async function signOut() {
   if (me) await dropKeys(me.user.id, true);
   wipe("ended");
   await forgetAccount();
+  ownSignOut();
   if (state.masterKey) state.masterKey.fill(0);
   setCsrf("");
   set({ phase: "signedOut", me: null, masterKey: null, biometric: false, notice: undefined });
@@ -433,6 +444,7 @@ export async function deleteAccount(password: string, second?: () => Promise<Ste
   await dropKeys(me.user.id, true);
   wipe("ended");
   await forgetAccount();
+  ownSignOut();
   handedOver();
   if (state.masterKey) state.masterKey.fill(0);
   setCsrf("");

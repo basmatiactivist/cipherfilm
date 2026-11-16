@@ -124,6 +124,8 @@ final class AppModel {
     a.invalidate()
     startOver()
     wipe(ended: true)
+    // another server: the metadata versions seen go (MetaVersion.swift; not when the server only ends the session)
+    if UserDefaults.standard.string(forKey: "server") != url.absoluteString { MetaHighWater.forgetAll() }
     UserDefaults.standard.set(url.absoluteString, forKey: "server")
     use(server: url)
     me = nil
@@ -134,6 +136,7 @@ final class AppModel {
   func forgetServer() {
     startOver()
     wipe(ended: true)
+    MetaHighWater.forgetAll()
     UserDefaults.standard.removeObject(forKey: "server")
     api?.invalidate(); api = nil; server = nil; me = nil
     phase = .noServer
@@ -332,7 +335,7 @@ final class AppModel {
     if let master, let api {
       vault = Vault(api: api, me: me, masterKey: master)
       phase = .unlocked
-      if let cached = vault!.loadCachedLibrary() { setItems(cached); images.prefetch(Array(items.prefix(400)), vault!) }
+      if let cached = vault!.loadCachedLibrary() { setItems(cached); images.prefetch(Array(cached.prefix(400)), vault!) }
       Task { await refresh() }
       restoreUploads()
       every(120)
@@ -421,6 +424,7 @@ final class AppModel {
     wipe(ended: true)
     api?.clearCookies()
     if let userId { forget(account: userId) }
+    MetaHighWater.forgetAll() // the person's own sign-out only (MetaVersion.swift)
     me = nil
     settings = AccountSettings()
     api?.csrf = ""
@@ -436,6 +440,7 @@ final class AppModel {
     wipe(ended: true)
     api.clearCookies()
     forget(account: me.user.id)
+    MetaHighWater.forgetAll()
     self.me = nil
     settings = AccountSettings()
     api.csrf = ""
@@ -618,7 +623,7 @@ final class AppModel {
       albums = al
       loadError = nil
       guard r.changed || albumsChanged else { return }
-      images.prefetch(Array(items.prefix(400)), vault)
+      images.prefetch(Array(r.items.prefix(400)), vault) // the whole list: whatever folder (Images.prefetch)
       // the locked folder's pictures aren't kept on disk: a cached copy from before goes here too
       if r.changed { vault.pruneCache(keeping: Set(items.map(\.id))) }
       libraryChanged(all: r.items)

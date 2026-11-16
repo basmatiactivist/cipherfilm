@@ -11,6 +11,12 @@ const st = vi.hoisted(() => ({
   keyed: [] as string[],
   master: new Uint8Array(32),
   forgot: [] as string[],
+  wipes: [] as ((how: string) => void)[],
+  own: [] as (() => void)[],
+  puts: [] as { path: string; body: any }[],
+  refuse: 0,
+  user: "alice",
+  status: 409,
 }));
 vi.mock("expo-file-system", () => {
   const pathOf = (p: unknown) => (typeof p === "string" ? p : (p as { uri: string }).uri);
@@ -19,6 +25,7 @@ vi.mock("expo-file-system", () => {
     constructor(parent: unknown, name: string) { this.uri = `${pathOf(parent)}/${name}`; }
     get exists() { return [...st.files.keys()].some((k) => k.startsWith(this.uri + "/")); }
     create() {}
+    delete() { for (const k of [...st.files.keys()]) if (k.startsWith(this.uri + "/")) st.files.delete(k); }
     // the files right in this folder (pruneCache)
     list() { return [...st.files.keys()].filter((k) => k.startsWith(this.uri + "/") && !k.slice(this.uri.length + 1).includes("/")).map((k) => new File(this.uri, k.slice(this.uri.length + 1))); }
   }
@@ -37,23 +44,32 @@ vi.mock("expo-file-system", () => {
   return { Directory, File, Paths: { cache: "/cache", document: "/doc" } };
 });
 vi.mock("../modules/cf-native/src/CfNativeModule", () => ({
-  default: { thumbsSetup: () => {}, thumbKeys: (ids: string[]) => { st.keyed.push(...ids); }, thumbsPrefetch: () => {}, thumbsForget: (ids: string[]) => { st.forgot.push(...ids); } },
+  default: { thumbsSetup: () => {}, thumbKeys: (ids: string[]) => { st.keyed.push(...ids); }, thumbsPrefetch: () => {}, thumbsForget: (ids: string[]) => { st.forgot.push(...ids); }, thumbsClearImages: () => {} },
 }));
 vi.mock("./api", () => ({
   newSignIn: () => {},
-  api: async (_m: string, p: string) => { st.asked.push(p); if (!st.answers[p]) throw new Error("unexpected " + p); return structuredClone(st.answers[p]); },
+  api: async (m: string, p: string, body?: any) => {
+    if (m === "PUT") {
+      st.puts.push({ path: p, body });
+      if (st.refuse > 0) { st.refuse--; throw Object.assign(new Error("refused"), { status: st.status }); }
+      return { ok: true };
+    }
+    st.asked.push(p); if (!st.answers[p]) throw new Error("unexpected " + p); return structuredClone(st.answers[p]);
+  },
   csrfToken: () => "", server: () => "https://x", getBytes: async () => new Uint8Array(), postForBytes: async () => new Uint8Array(),
 }));
 vi.mock("./session", () => ({
-  session: () => ({ me: { user: { id: "alice", email: "a@x.org" }, wrapped_privkey: "" }, masterKey: st.master }),
-  onWipe: () => {},
+  session: () => ({ me: { user: { id: st.user, email: "a@x.org" }, wrapped_privkey: "" }, masterKey: st.master }),
+  onWipe: (f: (how: string) => void) => { st.wipes.push(f); },
+  onOwnSignOut: (f: () => void) => { st.own.push(f); },
 }));
-vi.mock("@crypto/sodium", () => ({ getSodium: async () => ({ memzero: () => {} }), unb64: (_s: unknown, v: string) => v }));
+vi.mock("@crypto/sodium", () => ({ getSodium: async () => ({ memzero: () => {} }), unb64: (_s: unknown, v: string) => v, b64: (_s: unknown, v: string) => v }));
 vi.mock("@crypto/account", () => ({ normEmail: (e: string) => e }));
 vi.mock("@crypto/item", () => ({
   accountKeyPair: () => ({ sk: new Uint8Array(32) }),
   unwrapAnyItemKey: (_s: unknown, _w: unknown, _m: unknown, _p: unknown, id: string) => { st.decrypted.push(id); return new Uint8Array(32); },
   decryptMeta: (_s: unknown, meta: string) => JSON.parse(meta),
+  encryptMeta: (_s: unknown, meta: object) => JSON.stringify(meta),
   decryptPreview: () => new Uint8Array(), decryptThumb: () => new Uint8Array(),
 }));
 
@@ -70,7 +86,7 @@ describe("the library on the phone", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.useRealTimers();
-    Object.assign(st, { files: new Map(), answers: {}, asked: [], decrypted: [], keyed: [], forgot: [] });
+    Object.assign(st, { files: new Map(), answers: {}, asked: [], decrypted: [], keyed: [], forgot: [], wipes: [], own: [], puts: [], refuse: 0, user: "alice", status: 409 });
   });
 
   it("after the whole list, a live update fetches and decrypts only what changed", async () => {
@@ -122,7 +138,7 @@ describe("the library on the phone", () => {
     const uploaded = meta({ gps: { lat: 46.5, lon: 7.5 } });
     st.answers["/api/items"] = { items: [rec(A, 1, { meta_enc: placeRemoved })], next: "", cursor: "e.1" };
     expect((await lib.loadLibrary())[0].meta!.gps).toBeUndefined();
-    expect(JSON.parse(st.files.get(`/doc/cf-mv/alice.json`)!)).toEqual([[A, 1]]); // ids and numbers only
+    expect(JSON.parse(st.files.get(`/doc/cf-mv/alice.json`)!)).toEqual([[A, 1, expect.stringMatching(/^[0-9a-f]{16}$/)]]); // ids, numbers, digests only
     // the server replays the upload's metadata: the newer one stays
     st.answers["/api/items?since=e.1"] = { items: [rec(A, 1, { meta_enc: uploaded })], removed: [], cursor: "e.2", more: false };
     const kept = (await lib.loadLibrary())[0];
@@ -232,5 +248,87 @@ describe("the original's SHA-256 in the metadata", () => {
     expect(checkedMeta({ ...base, sha256: good }).sha256).toBe(good);
     for (const bad of ["0F".repeat(32), "0f".repeat(31), 42, null, ""]) expect(checkedMeta({ ...base, sha256: bad as never })).not.toHaveProperty("sha256");
     expect(checkedMeta({ ...base })).not.toHaveProperty("sha256");
+  });
+});
+
+describe("the metadata versions seen on this phone", () => {
+  const meta = (extra: object) => JSON.stringify({ name: "a.jpg", mime: "image/jpeg", size: 10, lastModified: 0, capture_ts: 1, ...extra });
+  const lockedV1 = meta({ locked: true, mv: 1 });
+  const before = meta({ gps: { lat: 46.5, lon: 7.5 } });
+  beforeEach(() => {
+    vi.resetModules();
+    Object.assign(st, { files: new Map(), answers: {}, asked: [], decrypted: [], keyed: [], forgot: [], wipes: [], own: [], puts: [], refuse: 0, user: "alice", status: 409 });
+  });
+  const restart = async () => {
+    vi.resetModules();
+    st.files.delete(LIST);
+    st.wipes = []; st.own = [];
+    return import("./library");
+  };
+
+  it("survive a session the server ended (a plain 401, a revoked one): only the person's own sign-out deletes them", async () => {
+    let lib = await import("./library");
+    st.answers["/api/items"] = { items: [rec(A, 1, { meta_enc: lockedV1 })], next: "", cursor: "e.1" };
+    await lib.loadLibrary();
+    for (const f of st.wipes) f("ended"); // what session.ts runs when the server ends the session
+    expect(st.files.has("/doc/cf-mv/alice.json")).toBe(true);
+    // signed in again: the server hands out the copy from before the lock
+    st.answers["/api/items"] = { items: [rec(A, 1, { meta_enc: before })], next: "", cursor: "e.2" };
+    const [it] = await lib.loadLibrary();
+    expect(it.stale).toBe(true);
+    const { splitLocked } = await import("@edit/folders");
+    expect(splitLocked([it]).open).toEqual([]); // never back in the open library
+    for (const f of st.own) f(); // signOut, deleteAccount, forgetServer, another server
+    expect([...st.files.keys()].filter((k) => k.startsWith("/doc/cf-mv/"))).toEqual([]);
+    lib = await restart();
+    expect((await lib.loadLibrary())[0].stale).toBeFalsy();
+  });
+
+  it("never name a file after an account id that isn't a safe file name", async () => {
+    st.user = "../autolock";
+    const lib = await import("./library");
+    st.answers["/api/items"] = { items: [rec(A, 1, { meta_enc: lockedV1 })], next: "", cursor: "e.1" };
+    await lib.loadLibrary();
+    expect([...st.files.keys()].filter((k) => k.startsWith("/doc"))).toEqual([]);
+    // still checked in memory
+    st.answers["/api/items?since=e.1"] = { items: [rec(A, 1, { meta_enc: before })], removed: [], cursor: "e.2", more: false };
+    expect((await lib.loadLibrary())[0].meta!.locked).toBe(true);
+  });
+
+  it("another copy at the version seen (made from an older copy) is stale after a restart", async () => {
+    let lib = await import("./library");
+    st.answers["/api/items"] = { items: [rec(A, 1, { meta_enc: lockedV1 })], next: "", cursor: "e.1" };
+    await lib.loadLibrary();
+    lib = await restart();
+    st.answers["/api/items"] = { items: [rec(A, 1, { meta_enc: meta({ archived: true, gps: { lat: 46.5, lon: 7.5 }, mv: 1 }) })], next: "", cursor: "e.2" };
+    const [it] = await lib.loadLibrary();
+    expect(it.stale).toBe(true);
+    expect(lib.writable(it)).toBe(false);
+  });
+
+  it("a change names the copy it was made from, is refused for a stale item, and reports another device's change", async () => {
+    let lib = await import("./library");
+    const { metaDigest } = await import("@crypto/metaVersion");
+    st.answers["/api/items"] = { items: [rec(A, 1, { meta_enc: lockedV1 })], next: "", cursor: "e.1" };
+    const [it] = await lib.loadLibrary();
+    await lib.writeMeta(it, { ...it.meta!, locked: undefined });
+    expect(st.puts).toHaveLength(1);
+    expect(st.puts[0].body.base).toBe(metaDigest(lockedV1));
+    expect(JSON.parse(st.puts[0].body.meta_enc).mv).toBe(2);
+    // refused: another device changed it meanwhile
+    st.refuse = 1;
+    await expect(lib.writeMeta(it, it.meta!)).rejects.toBeInstanceOf(lib.MetaChanged);
+    // a server from before bases: written without one
+    st.refuse = 1; st.status = 400; st.puts = [];
+    await lib.writeMeta(it, it.meta!);
+    expect(st.puts.map((p) => Object.keys(p.body))).toEqual([["meta_enc", "base"], ["meta_enc"]]);
+    // what this phone wrote itself is noted with its copy: another copy at that version is not taken
+    lib = await restart();
+    st.answers["/api/items"] = { items: [rec(A, 1, { meta_enc: meta({ mv: 3, gps: { lat: 1, lon: 2 } }) })], next: "", cursor: "e.2" };
+    const [later] = await lib.loadLibrary();
+    expect(later.stale).toBe(true);
+    await expect(lib.writeMeta(later, later.meta!)).rejects.toThrow(/newest details/);
+    st.puts = [];
+    expect(st.puts).toEqual([]);
   });
 });

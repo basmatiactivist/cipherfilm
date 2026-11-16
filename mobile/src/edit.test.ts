@@ -7,9 +7,9 @@ vi.mock("../modules/cf-native/src/CfNativeModule", () => ({ default: {} }));
 vi.mock("./api", () => ({
   newSignIn: () => {}, api: async () => ({}), putBytes: async () => {}, ApiError: class extends Error {} }));
 const who = vi.hoisted(() => ({ demo: false }));
-vi.mock("./session", () => ({ session: () => ({ me: { demo: who.demo } }), onWipe: () => {} }));
+vi.mock("./session", () => ({ session: () => ({ me: { demo: who.demo } }), onOwnSignOut: () => {}, onWipe: () => {} }));
 vi.mock("./autolock", () => ({ away: (f: () => unknown) => f() }));
-vi.mock("./library", () => ({ forgetPictures: () => {} }));
+vi.mock("./library", () => ({ forgetPictures: () => {}, writable: (it: any) => !it.broken && !it.stale && !!it.meta && !!it.itemKey }));
 vi.mock("./upload", () => ({ THUMB_PX: 640, PREVIEW_PX: 2048 }));
 
 const { canEdit, canEditPicture, dateParts, manipulatorSteps, parseDateTime, sourcePx, SOURCE_MAX } = await import("./edit");
@@ -58,6 +58,7 @@ describe("what can be edited", () => {
     expect(canEditPicture(item({ kind: "video" }))).toBe(false);
     expect(canEdit(item({ trashed_at: 5 }))).toBe(false);
     expect(canEdit(item({ broken: true }))).toBe(false);
+    expect(canEdit(item({ stale: true }))).toBe(false); // its newest metadata isn't known here
     expect(canEdit(item({ kind: "other" }))).toBe(false);
     expect(canEditPicture(item({ size: 300 * 1024 * 1024 }))).toBe(false);
   });

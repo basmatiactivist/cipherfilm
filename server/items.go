@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -651,19 +653,28 @@ func (a *App) finalizeItem(w http.ResponseWriter, r *http.Request, u *user, s *s
 // putMeta replaces a finished item's encrypted metadata: an app adds what it could only read later, such as where a
 // photo was taken (docs/MAP.md). The server can't read it, as at finalize; the change reaches the other devices like
 // any other (items_rev_upd). Its size counts toward the storage limit like the rest of the item.
+//
+// base names the metadata the change was made from: the SHA-256 (hex) of the meta_enc the app decrypted. When the
+// item's metadata is no longer that one (another device changed it meanwhile), the change is refused with 409 and
+// the app loads the item again, instead of writing over a change it never saw. Apps from before send no base.
 func (a *App) putMeta(w http.ResponseWriter, r *http.Request, u *user, s *session) {
 	it, ok := a.owned(w, r, u)
 	if !ok {
 		return
 	}
 	var req struct {
-		MetaEnc string `json:"meta_enc"`
+		MetaEnc string  `json:"meta_enc"`
+		Base    *string `json:"base"`
 	}
 	if !readJSON(w, r, &req) {
 		return
 	}
 	meta, err := b64.DecodeString(req.MetaEnc)
 	if err != nil || len(meta) < 1+24+16 || len(meta) > maxMetaBytes {
+		fail(w, 400, "invalid request")
+		return
+	}
+	if req.Base != nil && !sha256Hex.MatchString(*req.Base) {
 		fail(w, 400, "invalid request")
 		return
 	}
@@ -674,6 +685,10 @@ func (a *App) putMeta(w http.ResponseWriter, r *http.Request, u *user, s *sessio
 	var old string
 	if err := a.db.QueryRow(`SELECT COALESCE(meta_enc,'') FROM items WHERE id=? AND user_id=?`, it.ID, u.ID).Scan(&old); err != nil {
 		fail(w, 404, "not found")
+		return
+	}
+	if req.Base != nil && metaDigest(old) != *req.Base {
+		fail(w, 409, "the item changed meanwhile")
 		return
 	}
 	grow := int64(len(req.MetaEnc) - len(old))
@@ -691,6 +706,15 @@ func (a *App) putMeta(w http.ResponseWriter, r *http.Request, u *user, s *sessio
 	}
 	a.changed(u.ID, tItems)
 	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+// sha256Hex is a SHA-256 in lowercase hex, as apps send the base of a metadata change.
+var sha256Hex = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// metaDigest is how apps name a stored metadata: the SHA-256 (hex) of its meta_enc as listed.
+func metaDigest(metaEnc string) string {
+	d := sha256.Sum256([]byte(metaEnc))
+	return hex.EncodeToString(d[:])
 }
 
 // listPage and pageBytes bound one list response, in rows and in the bytes of their encrypted fields: a library is

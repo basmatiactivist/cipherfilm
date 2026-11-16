@@ -5,14 +5,13 @@
 // encrypted like any other change.
 import { Directory, File } from "expo-file-system";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
-import { b64, getSodium } from "@crypto/sodium";
-import { encryptMeta, encryptPreview, encryptThumb } from "@crypto/item";
-import { nextVersion } from "@crypto/metaVersion";
+import { getSodium } from "@crypto/sodium";
+import { encryptPreview, encryptThumb } from "@crypto/item";
 import { editedName, normEdit, sameEdit, turnedSize, versionName, withPicture, type Edit } from "@edit/edit";
 import { retagJpeg, withExif } from "@edit/exif";
 import N from "../modules/cf-native/src/CfNativeModule";
-import { api, ApiError, putBytes } from "./api";
-import { forgetPictures, type Item, type ItemMeta } from "./library";
+import { ApiError, putBytes } from "./api";
+import { forgetPictures, writable, writeMeta, type Item, type ItemMeta } from "./library";
 import { decryptTo, OUT, safeName, sweepLater } from "./outbox";
 import { session } from "./session";
 import { t } from "./i18n";
@@ -25,7 +24,8 @@ export const SOURCE_MAX = 8192;
 
 export const canEditPicture = (it: Item) => it.kind === "image" && !it.broken && !!it.itemKey && it.size <= EDIT_LIMIT;
 /** Not in the demo, not in the trash, readable; videos get only a new date or place. */
-export const canEdit = (it: Item) => !session().me?.demo && !it.trashed_at && !it.broken && !!it.itemKey && !!it.meta && (it.kind === "image" || it.kind === "video");
+/** Not stale either: a change made from an older copy than seen before would undo a change on every device. */
+export const canEdit = (it: Item) => !session().me?.demo && !it.trashed_at && writable(it) && (it.kind === "image" || it.kind === "video");
 
 /**
  * What expo-image-manipulator does to an upright picture of w × h pixels for the edit, in its order: turn clockwise,
@@ -152,6 +152,7 @@ async function storePictures(it: Item, src: Upright, e: Edit | undefined): Promi
 export async function saveEdit(it: Item, next: ItemMeta, onStep?: (label: string, progress: number) => void, opened?: Opened | null): Promise<void> {
   if (session().me?.demo) throw new Error(t("This is the public demo: changes are turned off."));
   if (!session().masterKey || !it.itemKey) throw new Error(t("Unlock your library first."));
+  if (!writable(it)) throw new Error(t("This item's newest details aren't known on this phone. Reload the library and try again."));
   let meta = next;
   const newPictures = !sameEdit(it.meta?.edit, next.edit);
   if (newPictures) {
@@ -170,9 +171,8 @@ export async function saveEdit(it: Item, next: ItemMeta, onStep?: (label: string
     }
   }
   onStep?.(t("Saving"), 0);
-  const s = await getSodium();
-  // a higher version than any before (@crypto/metaVersion): no device goes back to an older copy the server kept
-  await api("PUT", `/api/items/${it.id}/meta`, { meta_enc: b64(s, encryptMeta(s, nextVersion(meta), it.itemKey, it.id)) });
+  // the next version, made from the copy decrypted here; refused (MetaChanged) when another device changed it meanwhile
+  await writeMeta(it, meta);
   if (newPictures) forgetPictures(it.id);
 }
 

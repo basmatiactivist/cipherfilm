@@ -5,7 +5,7 @@ import { Icon } from "../icons";
 import { Loading } from "../loader";
 import { lazy } from "../lazy";
 import { cachedPreview, cachedThumb, previewUrl, thumbUrl } from "../cache";
-import type { Item } from "../items";
+import { MetaChanged, type Item } from "../items";
 import type { Decoded, ItemMeta } from "../media";
 import { loadPlaces } from "../map/locations";
 import { mapOn } from "../map/consent";
@@ -37,7 +37,9 @@ export const localInput = (ts: number) => {
 const placeLine = (p: Place) => [p.name, p.region !== p.name ? p.region : "", p.country].filter(Boolean).join(", ");
 
 export function Editor(p: { item: Item; onClose: () => void; onSaved: () => void }) {
-  const it = p.item;
+  // the item as it was when the editor opened: the changes are made from this copy and saved as made from it (a list
+  // loaded meanwhile doesn't swap in a newer copy underneath them; the server refuses the save then: MetaChanged)
+  const [it] = useState(p.item);
   const meta = it.meta!;
   const pictureTools = canEditPicture(it);
   const dlg = useRef<HTMLDialogElement>(null);
@@ -51,6 +53,8 @@ export function Editor(p: { item: Item; onClose: () => void; onSaved: () => void
   const [progress, setProgress] = useState(0);
   const [loadErr, setLoadErr] = useState("");
   const [busy, setBusy] = useState(false);
+  // another device changed the item meanwhile: these changes were made from the older copy and aren't saved over it
+  const [outdated, setOutdated] = useState(false);
   const [err, setErr] = useState("");
   const [still, setStill] = useState<string | undefined>(() => cachedPreview(it) ?? cachedThumb(it));
 
@@ -191,7 +195,11 @@ export function Editor(p: { item: Item; onClose: () => void; onSaved: () => void
       p.onSaved();
       p.onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Couldn't save the changes.");
+      if (e instanceof MetaChanged) {
+        setOutdated(true);
+        setErr("This item was changed on another device meanwhile, so these changes weren't saved. Close the editor and open it again to change the current version.");
+        p.onSaved(); // the list is loaded again
+      } else setErr(e instanceof Error ? e.message : "Couldn't save the changes.");
       setBusy(false);
     }
   };
@@ -264,7 +272,7 @@ export function Editor(p: { item: Item; onClose: () => void; onSaved: () => void
         </div>
         {err && <p class="error" role="alert">{err}</p>}
         <div class="row edactions">
-          <button class="btn" onClick={save} disabled={!changed || busy} aria-busy={busy}>{busy ? "Saving…" : "Save"}</button>
+          <button class="btn" onClick={save} disabled={!changed || busy || outdated} aria-busy={busy}>{busy ? "Saving…" : "Save"}</button>
           <button class="btn secondary" onClick={p.onClose} disabled={busy}>Cancel</button>
         </div>
         {(isEdited(meta) || touched.revert) && (

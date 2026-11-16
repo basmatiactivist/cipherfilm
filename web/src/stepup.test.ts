@@ -28,7 +28,7 @@ vi.mock("./crypto/account", () => ({
 }));
 vi.mock("./cache", () => ({ clearCaches: () => {} }));
 vi.mock("./player", () => ({ clearPlayer: () => {} }));
-vi.mock("./items", () => ({ clearUploadMemory: () => {}, forgetDecrypted: () => {} }));
+vi.mock("./items", () => ({ clearUploadMemory: () => {}, forgetDecrypted: () => {}, forgetVersions: () => {} }));
 vi.mock("./keep", () => ({ forgetKeptForGood: async () => {}, keepKey: async () => {}, keptKey: async () => null }));
 vi.mock("./albums", () => ({ forgetAlbums: () => {} }));
 vi.mock("./people/people", () => ({ clearPeople: () => {} }));

@@ -75,16 +75,30 @@ final class ImageStore: @unchecked Sendable {
     return img
   }
 
-  /** Thumbnails of the items the grid will show next, fetched ahead in the background. */
+  /** The locked and stale items whose thumbnails were fetched ahead since the app started (ids only). */
+  private var aheadLocked = Set<String>()
+  private let aheadLock = NSLock()
+
+  /** Thumbnails of the items the grid will show next, fetched ahead in the background. Chosen from the whole list
+   *  (pass it unsplit), whatever folder each item is in, so which ones are asked for doesn't tell the server which
+   *  items are locked: a locked or stale item's is fetched the same way but dropped (nothing of the locked folder is
+   *  kept outside it), once per app start. */
   func prefetch(_ items: [Item], _ vault: Vault) {
-    let want = items.filter { $0.hasThumb && !$0.broken && !$0.isLocked && thumbs.object(forKey: $0.pictureKey as NSString) == nil }
+    let want = aheadLock.withLock {
+      items.filter { it in
+        guard it.hasThumb, !it.broken else { return false }
+        if !it.isLocked { return thumbs.object(forKey: it.pictureKey as NSString) == nil }
+        return aheadLocked.insert(it.id).inserted
+      }
+    }
     let keys = Dictionary(want.map { ($0.id, $0.pictureKey) }, uniquingKeysWith: { a, _ in a })
+    let locked = Set(want.filter(\.isLocked).map(\.id))
     guard !want.isEmpty else { return }
     let g = generation
     Task.detached(priority: .utility) {
       for chunk in want.chunked(100) {
         guard vault.isOpen, g == self.generation, let got = try? await vault.thumbnails(chunk) else { return }
-        for (id, d) in got {
+        for (id, d) in got where !locked.contains(id) {
           guard vault.isOpen, g == self.generation else { return } // locked meanwhile: nothing goes into memory
           if let img = Self.decode(d) { self.thumbs.setObject(img, forKey: (keys[id] ?? id) as NSString) }
         }

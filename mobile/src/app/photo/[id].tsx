@@ -8,7 +8,7 @@ import { previewUri, when, type Item } from "../../library";
 import { libraryItems, refreshLibrary, setFavorite, useLibrary } from "../../libraryStore";
 import { canEdit } from "../../edit";
 import { normEdit, pictureKey } from "@edit/edit";
-import { folderOf, isLocked, mainGrid, type Folder } from "@edit/folders";
+import { asLocked, folderOf, mainGrid, type Folder } from "@edit/folders";
 import { canMove, movable, moveTo } from "../../moveFolder";
 import { deleteForever, lockedFolderItems, lockedThumbUri, useLockedFolder } from "../../lockedFolder";
 import { viewerList } from "../../viewerList";
@@ -352,14 +352,14 @@ function Page({ item, width, height, inset, active, onZoom, chrome, onTap, onChr
           may still become two. Neither holds the video: a tap on it is the player's (it would count twice) */}
       {!uri ? (
         <Pressable onPress={onTap} accessible={false} style={{ width, height }}>
-          {item.has_thumb ? (isLocked(item.meta)
+          {item.has_thumb ? (asLocked(item)
             ? <MemoryStill item={item} width={width} height={height} />
             : <ThumbView item={item.id} fit="contain" style={{ width, height }} accessibilityLabel={item.meta?.name} />) : null}
         </Pressable>
       ) : null}
       {uri ? (
         <Zoomable width={width} height={height} active={active && !ready} onZoom={onZoom} onTap={onTap}>
-          {isLocked(item.meta)
+          {asLocked(item)
             ? <Image source={{ uri }} style={{ width, height }} contentFit="contain" cachePolicy="none" accessibilityLabel={item.meta?.name} />
             : <Image source={{ uri }} style={{ width, height }} contentFit="contain" cachePolicy="memory" accessibilityLabel={item.meta?.name} />}
         </Zoomable>
@@ -481,7 +481,7 @@ function Info({ item, visible, onClose, onOriginal }: { item: Item; visible: boo
           </View>
         ) : null}
         {visible && at ? <MiniMap lat={at.lat} lon={at.lon} /> : null}
-        {visible && !isLocked(item.meta) ? <InPhoto item={item} onClose={onClose} /> : null}
+        {visible && !asLocked(item) ? <InPhoto item={item} onClose={onClose} /> : null}
         <Text variant="bodySmall" style={{ color: th.colors.onSurfaceVariant, marginTop: 12 }}>{t("Only you can read these details. The server stores them encrypted.")}</Text>
       </Modal>
     </Portal>

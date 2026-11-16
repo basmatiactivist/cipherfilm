@@ -118,7 +118,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const [narrow, setNarrow] = useState(() => matchMedia("(max-width: 600px)").matches);
   useEffect(() => { const m = matchMedia("(max-width: 600px)"); const f = () => setNarrow(m.matches); m.addEventListener("change", f); return () => m.removeEventListener("change", f); }, []);
 
-  const refreshItems = () => loadItems().then((r) => { setItems(r.items); setError(""); prefetchThumbs(splitLocked(r.items).open); }, (e) => setError(msg(e)));
+  const refreshItems = () => loadItems().then((r) => { setItems(r.items); setError(""); prefetchThumbs(r.items); }, (e) => setError(msg(e)));
   const refreshAlbums = () => loadAlbums().then(setAlbums, (e) => setError(msg(e))).finally(() => setAlbumsLoaded(true));
   const refreshTrash = () => loadTrash().then((r) => { setTrash(r.items); setRetention(r.retentionDays); }, (e) => setError(msg(e)));
   const refreshUsage = () => loadUsage().then(setUsage, () => {});

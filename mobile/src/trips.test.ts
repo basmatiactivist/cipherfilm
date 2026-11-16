@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("expo-asset", () => ({ Asset: { fromModule: () => ({}) } }));
 vi.mock("expo-file-system", () => ({ File: class { get exists() { return false; } }, Paths: { document: "/doc" } }));
-vi.mock("./session", () => ({ onWipe: () => {} }));
+vi.mock("./session", () => ({ onOwnSignOut: () => {}, onWipe: () => {} }));
 
 const { findTrips } = await import("@memories/trips");
 const { tripTitle } = await import("./trips");

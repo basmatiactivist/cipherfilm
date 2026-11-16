@@ -8,7 +8,7 @@ import { mem } from "./state";
 import { ListSync, type Page } from "./sync";
 import { normEdit, normOrig } from "./edit/edit";
 import { Sha256, SHA256_HEX } from "./crypto/sha256";
-import { HighWater, metaVersion, nextVersion } from "./crypto/metaVersion";
+import { HighWater, metaDigest, metaVersion } from "./crypto/metaVersion";
 import { normFolders, withFolder, type Folder } from "./edit/folders";
 
 export interface Item {
@@ -23,9 +23,12 @@ export interface Item {
   itemKey?: Uint8Array;
   /** Decryption or verification failed: never shown, the UI says so. */
   broken?: boolean;
-  /** The server gave an older version of the metadata than this browser saw before (crypto/metaVersion.ts) and the
-   *  newer one isn't known here any more: shown, but never downloaded as the original by default. */
+  /** The server gave an older version of the metadata than this browser saw before, or another copy at the version
+   *  seen (crypto/metaVersion.ts), and the newer one isn't known here any more: handled as a locked item
+   *  (edit/folders.ts asLocked), never changed here, and never downloaded as the original by default. */
   stale?: boolean;
+  /** Which sealed copy of the metadata `meta` is (crypto/metaVersion.ts metaDigest): a change names it as its base. */
+  base?: string;
   trashed_at?: number;
   purge_at?: number;
   favorite?: boolean;
@@ -41,7 +44,8 @@ const need = () => {
 let known = new Map<string, { wrapped: string; meta: string; master: Uint8Array; item: Item }>();
 
 // the highest metadata version seen of each item (crypto/metaVersion.ts), per account, kept in this browser's storage
-// (item ids and numbers only) until the session ends (clearUploadMemory)
+// (item ids, numbers and digests only) over locks and sessions the server ended, until the person signs out or deletes
+// the account here (forgetVersions)
 const MV = "cf-mv:";
 let versions: { owner: string; hw: HighWater } | null = null;
 function highWater(): HighWater {
@@ -90,11 +94,12 @@ function decryptRecords(s: Sodium, raw: any[]): Item[] {
       // the same record: keep what was decrypted, take the fields that change (favorite, thumbnail, trash) anew
       const same = k.item;
       if (same.favorite === it.favorite && same.has_thumb === it.has_thumb && same.has_preview === it.has_preview && same.trashed_at === it.trashed_at && same.purge_at === it.purge_at) return same;
-      const next = { ...it, kind: same.kind, itemKey: same.itemKey, meta: same.meta, broken: same.broken };
+      const next = { ...it, kind: same.kind, itemKey: same.itemKey, meta: same.meta, broken: same.broken, base: same.base };
       known.set(x.id, { ...k, item: next });
       return next;
     }
     try {
+      it.base = metaDigest(x.meta_enc);
       it.itemKey = unwrapAnyItemKey(s, unb64(s, x.wrapped_item_key), master, keyPair, x.id);
       it.meta = wellFormed(decryptMeta<ItemMeta>(s, unb64(s, x.meta_enc), it.itemKey, x.id), x.created_at);
       if (it.meta.size !== it.size) throw new Error("size mismatch");
@@ -102,11 +107,13 @@ function decryptRecords(s: Sodium, raw: any[]): Item[] {
     } catch {
       it.broken = true;
     }
-    if (!it.broken && !hw.check(x.id, metaVersion(it.meta))) {
-      // an older version of the metadata than seen before: the server handed out a copy it kept (a removed place
-      // back, an edit undone). The newer one decrypted in this session stays; without it the item is marked stale.
-      console.warn(`Cipherfilm: the server sent older metadata for item ${x.id} (version ${metaVersion(it.meta)}, seen ${hw.highest(x.id)}); keeping the newer one.`);
-      if (k && k.master === master && !k.item.broken && metaVersion(k.item.meta) > metaVersion(it.meta)) return { ...it, kind: k.item.kind, itemKey: k.item.itemKey, meta: k.item.meta };
+    if (!it.broken && !hw.check(x.id, metaVersion(it.meta), it.base)) {
+      // an older version of the metadata than seen before, or another copy at the version seen: the server handed out
+      // a copy it kept (a removed place back, an edit undone, out of the locked folder) or one made from an older copy.
+      // The one decrypted in this session stays; without it the item is stale (handled as locked, never changed).
+      const keep = !!k && k.master === master && !k.item.broken && hw.accepts(x.id, metaVersion(k.item.meta), k.item.base);
+      console.warn(`Cipherfilm: the server sent metadata for item ${x.id} that isn't the newest seen here (version ${metaVersion(it.meta)}, seen ${hw.highest(x.id)}); ${keep ? "keeping the newer one" : "marked stale"}.`);
+      if (keep) return { ...it, kind: k!.item.kind, itemKey: k!.item.itemKey, meta: k!.item.meta, base: k!.item.base };
       it.stale = true;
       return it;
     }
@@ -146,29 +153,76 @@ export async function inBatches(ids: string[], send: (part: string[]) => Promise
 export const trashItems = (ids: string[]) => inBatches(ids, (part) => api("POST", "/api/items/trash", { item_ids: part }));
 export const restoreItems = (ids: string[]) => inBatches(ids, (part) => api("POST", "/api/items/restore", { item_ids: part }));
 export const setFavorite = (ids: string[], favorite: boolean) => inBatches(ids, (part) => api("POST", "/api/items/favorite", { item_ids: part, favorite }));
+/** The item's metadata changed on another device after the copy here was decrypted: the change was not written. */
+export class MetaChanged extends Error {
+  constructor() { super("This item was changed on another device meanwhile. It was loaded again: try once more."); }
+}
+
+/** Whether an item's metadata may be changed here: readable, and its newest metadata known (not stale). */
+export const writable = (it: Item) => !it.broken && !it.stale && !!it.meta && !!it.itemKey;
+
+/**
+ * Writes `meta` as the next version of an item's metadata (crypto/metaVersion.ts), sealed with the item key, made from
+ * the copy decrypted here: the request names that copy (`base`), and the server refuses it (MetaChanged) when another
+ * device changed the item meanwhile, instead of writing over that change. Never for a stale or unreadable item:
+ * writing on top of an older copy would undo a change on every device.
+ */
+export async function writeMeta(it: Item, meta: ItemMeta): Promise<void> {
+  if (mem.me?.demo) throw new Error("This is the public demo: changes are turned off.");
+  if (!writable(it)) throw new Error("This item's newest details aren't known on this device. Reload the page and try again.");
+  const s = await getSodium();
+  const hw = highWater();
+  // a higher version than any seen here: no device goes back to an older copy the server kept
+  const next = { ...meta, mv: Math.max(metaVersion(meta), metaVersion(it.meta), hw.highest(it.id)) + 1 };
+  const enc = b64(s, encryptMeta(s, next, it.itemKey!, it.id));
+  try {
+    await api("PUT", `/api/items/${it.id}/meta`, { meta_enc: enc, base: it.base });
+  } catch (e) {
+    if ((e as { status?: unknown } | null)?.status === 409) throw new MetaChanged();
+    throw e;
+  }
+  hw.wrote(it.id, next.mv, metaDigest(enc));
+  hw.flush();
+}
+
 /**
  * Moves items to the library, the archive or the locked folder (edit/folders.ts). The folder is written inside the
  * encrypted metadata, as the next version of it, through the same request as any other change: the server sees that
  * the metadata of these items changed, not what. An unreadable or stale item (its newest metadata isn't known here) is
- * left alone: writing on top of an older copy would undo a change. Resolves with the ids that moved.
+ * left alone: writing on top of an older copy would undo a change. One another device changed meanwhile is loaded
+ * again and moved from its current metadata. Resolves with the ids that moved.
  */
 export async function moveToFolder(items: Item[], to: Folder, onProgress?: (done: number, total: number) => void): Promise<{ moved: string[]; failed: number }> {
   if (mem.me?.demo) throw new Error("This is the public demo: changes are turned off.");
-  const s = await getSodium();
-  const todo = items.filter((it) => !it.broken && !it.stale && it.meta && it.itemKey);
-  const moved: string[] = [];
+  const todo = items.filter(writable);
+  const moved: string[] = [], changed: Item[] = [];
   let failed = items.length - todo.length, done = 0, next = 0, last: unknown;
+  const move = async (it: Item, again: boolean) => {
+    try {
+      await writeMeta(it, withFolder(it.meta!, to));
+      moved.push(it.id);
+    } catch (e) {
+      if (e instanceof MetaChanged && !again) changed.push(it);
+      else { failed++; last = e; }
+    }
+  };
   const worker = async () => {
     while (next < todo.length) {
-      const it = todo[next++];
-      try {
-        await api("PUT", `/api/items/${it.id}/meta`, { meta_enc: b64(s, encryptMeta(s, nextVersion(withFolder(it.meta!, to)), it.itemKey!, it.id)) });
-        moved.push(it.id);
-      } catch (e) { failed++; last = e; }
+      await move(todo[next++], false);
       onProgress?.(++done, todo.length);
     }
   };
   await Promise.all(Array.from({ length: Math.min(4, todo.length) }, worker));
+  if (changed.length) {
+    // changed on another device meanwhile: once more, from the metadata as it is now
+    let fresh = new Map<string, Item>();
+    try { fresh = new Map((await loadItems()).items.map((it) => [it.id, it])); } catch (e) { last = e; }
+    for (const old of changed) {
+      const it = fresh.get(old.id);
+      if (it && writable(it)) await move(it, true);
+      else { failed++; last ??= new MetaChanged(); }
+    }
+  }
   if (!moved.length && last) throw last;
   return { moved, failed };
 }
@@ -369,10 +423,20 @@ export function forgetUnfinished() {
 }
 
 /** Upload-resume entries hold file names in their keys, and which videos got a location (map/relocate.ts) item ids:
- *  forget them when the session ends. */
+ *  forget them when the session ends. The metadata versions stay (forgetVersions); only this tab's copy of them goes. */
 export function clearUploadMemory() {
   try {
-    for (const k of Object.keys(localStorage)) if (k.startsWith("cf-upload:") || k.startsWith("cf-relocated:") || k.startsWith(MV)) localStorage.removeItem(k);
+    for (const k of Object.keys(localStorage)) if (k.startsWith("cf-upload:") || k.startsWith("cf-relocated:")) localStorage.removeItem(k);
+  } catch { /* storage unavailable */ }
+  versions = null;
+}
+
+/** The metadata versions seen (item ids, numbers and digests) go only when the person signs out or deletes the
+ *  account here: a lock or a session the server ended keeps them, or a server could make this browser forget which
+ *  versions it saw just by ending the session, and then hand out older metadata as current. */
+export function forgetVersions() {
+  try {
+    for (const k of Object.keys(localStorage)) if (k.startsWith(MV)) localStorage.removeItem(k);
   } catch { /* storage unavailable */ }
   versions = null;
 }

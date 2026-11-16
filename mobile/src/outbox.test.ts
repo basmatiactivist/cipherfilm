@@ -39,7 +39,7 @@ vi.mock("./api", () => ({
 vi.mock("@crypto/sodium", () => ({ getSodium: async () => ({ to_hex: () => "ab", randombytes_buf: () => new Uint8Array(16) }) }));
 vi.mock("@crypto/file", () => ({ decryptSegment: () => new Uint8Array(4) }));
 const wipes = vi.hoisted(() => [] as ((how: string) => void)[]);
-vi.mock("./session", () => ({ onWipe: (f: (how: string) => void) => { wipes.push(f); }, session: () => ({ masterKey: new Uint8Array(32) }) }));
+vi.mock("./session", () => ({ onOwnSignOut: () => {}, onWipe: (f: (how: string) => void) => { wipes.push(f); }, session: () => ({ masterKey: new Uint8Array(32) }) }));
 vi.mock("./autolock", () => ({ away: (f: () => Promise<unknown>) => f() }));
 // an edited photo leaves as the edited copy (edit.ts, a stand-in here): written like the others, as a JPEG
 vi.mock("./edit", () => ({

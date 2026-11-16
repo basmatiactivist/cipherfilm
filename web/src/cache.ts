@@ -4,7 +4,7 @@ import { decryptPreview, decryptThumb } from "./crypto/item";
 import type { Item } from "./items";
 import { ThumbBatcher } from "./thumbbatch";
 import { pictureKey } from "./edit/edit";
-import { isLocked } from "./edit/folders";
+import { asLocked } from "./edit/folders";
 
 /** Decrypted images are kept as object URLs in small LRU caches and revoked when evicted or on sign-out. */
 class UrlCache {
@@ -52,9 +52,10 @@ async function limited<T>(fn: () => Promise<T>, wanted: () => boolean): Promise<
 const batcher = new ThumbBatcher((ids) => postForBytes("/api/items/thumbs", { item_ids: ids }), (id, wanted) => limited(() => getBytes(`/api/items/${id}/thumb`), wanted));
 
 // cached by item and picture version: a turned or cropped photo has new ones (edit/edit.ts pictureKey)
-type Pic = Pick<Item, "id" | "meta">;
-export const cachedThumb = (it: Pic) => (isLocked(it.meta) ? lockedPics.get("t" + pictureKey(it.id, it.meta)) : thumbs.get(pictureKey(it.id, it.meta)));
-export const cachedPreview = (it: Pic) => (isLocked(it.meta) ? lockedPics.get("p" + pictureKey(it.id, it.meta)) : previews.get(pictureKey(it.id, it.meta)));
+// a stale item (crypto/metaVersion.ts) is handled as a locked one (edit/folders.ts asLocked)
+type Pic = Pick<Item, "id" | "meta" | "stale">;
+export const cachedThumb = (it: Pic) => (asLocked(it) ? lockedPics.get("t" + pictureKey(it.id, it.meta)) : thumbs.get(pictureKey(it.id, it.meta)));
+export const cachedPreview = (it: Pic) => (asLocked(it) ? lockedPics.get("p" + pictureKey(it.id, it.meta)) : previews.get(pictureKey(it.id, it.meta)));
 
 // The encrypted thumbnails and previews, exactly as the server sends them, are kept in the browser's Cache Storage, so
 // the next visit shows the grid, and paging back in the lightbox shows the photo, without downloading it again. They
@@ -128,7 +129,7 @@ async function store(kind: "thumb" | "preview", id: string, ct: Uint8Array, gen:
 
 function load(kind: "thumb" | "preview", shared: UrlCache, it: Item, wanted?: () => boolean): Promise<string> {
   const pic = pictureKey(it.id, it.meta);
-  const locked = isLocked(it.meta);
+  const locked = asLocked(it);
   const cache = locked ? lockedPics : shared;
   const memKey = locked ? kind[0] + pic : pic;
   const hit = cache.get(memKey);
@@ -164,11 +165,26 @@ function load(kind: "thumb" | "preview", shared: UrlCache, it: Item, wanted?: ()
 export const thumbUrl = (it: Item) => load("thumb", thumbs, it);
 export const previewUrl = (it: Item) => load("preview", previews, it);
 
-/** The newest thumbnails, fetched ahead after the library loads, so the grid has them before it asks. */
+/** The thumbnails fetched ahead in this tab whatever their folder (the locked and stale ones', which are never kept). */
+let ahead = new Set<string>();
+
+/**
+ * The newest thumbnails, fetched ahead after the library loads, so the grid has them before it asks. Chosen from the
+ * whole list (pass it unsplit), whatever folder each item is in, so which ones are asked for doesn't tell the server
+ * which items are locked: a locked or stale item's thumbnail is fetched like the others but dropped unopened (nothing
+ * of the locked folder is kept outside it). Each at most once per tab and lock; one stored in this browser already
+ * isn't asked for again.
+ */
 export function prefetchThumbs(items: Item[]) {
-  const want = items.filter((it) => it.has_thumb && !it.broken && it.itemKey && !isLocked(it.meta)).slice(0, 400);
+  const want = items.filter((it) => it.has_thumb && !it.broken && it.itemKey).slice(0, 400);
+  const gen = generation;
   // queued oldest first: the batcher sends the latest request first
-  for (const it of want.reverse()) load("thumb", thumbs, it, () => true).catch(() => {});
+  for (const it of want.reverse()) {
+    if (!asLocked(it)) { load("thumb", thumbs, it, () => true).catch(() => {}); continue; }
+    if (ahead.has(it.id)) continue;
+    ahead.add(it.id);
+    batcher.get(it.id, () => gen === generation).then((ct) => ct.fill(0), () => ahead.delete(it.id));
+  }
 }
 /** The locked folder's pictures leave memory: when the folder is left. */
 let lockedGen = 0;
@@ -198,6 +214,7 @@ export async function dropStored(items: Pick<Item, "id" | "meta">[]): Promise<vo
 /** stored: also the thumbnails and previews stored for every tab (Cache Storage), not only this tab's images. */
 export function clearCaches(stored = true) {
   generation++;
+  ahead = new Set();
   thumbs.clear(); previews.clear(); lockedPics.clear();
   opened.clear(); lru = null; clearTimeout(saveTimer);
   if (stored && typeof caches !== "undefined") for (const name of Object.values(STORED)) caches.delete(name).catch(() => {});

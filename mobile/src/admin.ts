@@ -40,6 +40,8 @@ function path(base: string, id: string, rest = ""): string {
 export const loadAccounts = () => api<Accounts>("GET", "/api/admin/users");
 export const loadAudit = async () => (await api<{ entries: AuditEntry[] }>("GET", "/api/admin/audit")).entries;
 export const loadStatus = () => api<ServerStatus>("GET", "/api/admin/status");
+/** Every account's storage and its devices' last uploads, and the server's disk (storage.ts has the shapes). */
+export const loadStorage = () => api<import("./storage").ServerStorage>("GET", "/api/admin/storage");
 
 /** The link the invited person opens in the browser (the server's own address, as the web app makes it). */
 export const inviteLink = (origin: string, token: string) => `${origin.replace(/\/+$/, "")}/invite/${encodeURIComponent(token)}`;

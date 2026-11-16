@@ -18,6 +18,8 @@ import { privacyUrl } from "../store";
 import { mapProvider, mapProviderLong, setMapOn, useMapOn } from "../mapConsent";
 import { reportUrl, summary, thisPhone } from "../report";
 import { isAdmin } from "../admin";
+import { type AccountStorage, loadMyStorage } from "../storage";
+import { StorageView } from "../StorageView";
 import { NoticeAlertsSwitch } from "../NoticeAlertsSetting";
 import { text } from "../tokens";
 import { busyIcon } from "../Loader";
@@ -37,6 +39,7 @@ export default function Account() {
   const { me, server, biometric } = useSession();
   const mapOn = useMapOn();
   const [usage, setUsage] = useState<{ used_bytes: number; quota_bytes: number; unlimited: boolean }>();
+  const [storage, setStorage] = useState<AccountStorage>();
   const [error, setError] = useState<string>();
   const [confirmOut, setConfirmOut] = useState(false);
   // Delete account: a warning, then the password (checked here first, then sent as the sign-in proof) and, while
@@ -62,7 +65,8 @@ export default function Account() {
     const sub = AppState.addEventListener("change", (s) => { if (s === "active") setBioOk(biometricPossible()); }); // back from Android settings
     return () => sub.remove();
   }, []);
-  useEffect(() => { api("GET", "/api/me/usage").then(setUsage, () => {}); }, []);
+  // the storage overview; an older server has only the usage
+  useEffect(() => { loadMyStorage().then(setStorage, () => api("GET", "/api/me/usage").then(setUsage, () => {})); }, []);
   const [app] = useState(() => { try { const v = N.appVersion(); return v.name ? `${v.name} (${v.code})` : undefined; } catch { return undefined; } });
   const [serverVersion, setServerVersion] = useState(me?.server_version);
   useEffect(() => {
@@ -115,7 +119,12 @@ export default function Account() {
           <Text variant="bodySmall" style={{ color: th.colors.onSurfaceVariant }} numberOfLines={1}>{server.replace(/^https:\/\//, "")}</Text>
           {me?.demo ? <Text variant="labelLarge" style={{ color: th.colors.primary, marginTop: 4 }}>{demoNote()}</Text> : null}
         </View>
-        {usage ? (
+        {storage ? (
+          <View style={st.block}>
+            <Text variant="labelLarge" style={{ color: th.colors.onSurfaceVariant, marginBottom: 6 }}>{t("Storage and backup")}</Text>
+            <StorageView a={storage} compact />
+          </View>
+        ) : usage ? (
           <View style={st.block}>
             <Text variant="bodyMedium" style={{ marginBottom: 8 }}>
               {usage.unlimited ? t("{used} used", { used: gb(usage.used_bytes) }) : t("{used} of {quota} used", { used: gb(usage.used_bytes), quota: gb(usage.quota_bytes) })}

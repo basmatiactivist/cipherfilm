@@ -643,6 +643,7 @@ func (a *App) finalizeItem(w http.ResponseWriter, r *http.Request, u *user, s *s
 		fail(w, 409, "this upload is already finished")
 		return
 	}
+	a.markUploaded(s)
 	a.changed(u.ID, tItems)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }

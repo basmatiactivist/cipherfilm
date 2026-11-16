@@ -210,6 +210,27 @@ button.link { padding: var(--space-2) 0; font: inherit; color: var(--teal); back
 .acc .accbody form { max-width: 420px; }
 .admin { max-width: 760px; }
 .usage { margin: var(--space-2) 0 0; }
+/* the storage overview (storageui.tsx): what an account is made of, and backup by device */
+.splitbar { display: flex; height: 8px; overflow: hidden; margin: var(--space-3) 0 var(--space-2); background: var(--rule); border-radius: var(--radius-tile); }
+.splitbar .seg { height: 100%; min-width: 3px; }
+.splitbar .seg + .seg { border-left: 2px solid var(--card); }
+.splitlegend { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); list-style: none; margin: 0; padding: 0; font-size: var(--text-label); }
+.splitlegend li { display: flex; align-items: center; gap: 6px; }
+.splitlegend .sw { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+.seg.photos, .sw.photos { background: var(--teal); }
+.seg.videos, .sw.videos { background: var(--teal-ink); }
+.seg.other, .sw.other { background: var(--faint); }
+.seg.thumbs, .sw.thumbs { background: var(--rule-strong); }
+.seg.index, .sw.index { background: var(--teal-over); }
+.subhead { margin: var(--space-4) 0 0; font-size: var(--text-label); color: var(--muted); }
+.storageacct h2 .email { overflow-wrap: anywhere; }
+.backupdevs { list-style: none; margin: var(--space-2) 0 0; padding: 0; }
+.backupdevs li { padding: var(--space-3) 0; border-bottom: 1px solid var(--rule); }
+.backupdevs li:last-child { border-bottom: 0; }
+.backupdevs .devtext { min-width: 0; }
+.backupdevs .devtext strong { display: block; overflow-wrap: anywhere; }
+.backupdevs .warnline { display: flex; gap: 6px; align-items: flex-start; margin-top: var(--space-1); color: var(--danger-ink); font-size: var(--text-small); }
+.backupdevs .warnline .icon { flex: none; margin-top: 2px; }
 
 /* people (admin) */
 .people { display: grid; margin: 0; padding: 0; list-style: none; }

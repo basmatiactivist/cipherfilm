@@ -1,4 +1,4 @@
-// Settings › Administration (admins only): people with their usage, invites, storage limits, roles, disabling and
+// Settings › Administration (admins only): people with their usage, each account's storage and its devices' backups, invites, storage limits, roles, disabling and
 // deleting accounts, turning off someone's two-step sign-in, the explicit-search permission, the default limit, the
 // server's state and the activity log; the web's Admin area (web/src/screens.tsx). The server checks every request
 // (CipherfilmCore/Admin.swift); this tab only shows what it answers, and asks before anything that can't be undone.
@@ -14,6 +14,8 @@ struct AdminSettings: View {
   @State private var accounts: Admin.Accounts?
   @State private var status: Admin.Status?
   @State private var activity: [Admin.Entry]?
+  @State private var storage: StorageOverview.Server?
+  @State private var storageError: String?
   @State private var refused = false
   @State private var error: String?
 
@@ -25,6 +27,7 @@ struct AdminSettings: View {
         } else {
           Picker("", selection: $page) {
             Text("People").tag("people")
+            Text("Storage").tag("storage")
             Text("Server").tag("server")
             Text("Activity").tag("activity")
           }
@@ -34,6 +37,7 @@ struct AdminSettings: View {
           }
           if let error { Text(error).font(Typo.caption).foregroundStyle(Ink.danger) }
           switch page {
+          case "storage": AdminStorage(storage: storage, error: storageError)
           case "server": AdminServer(status: status, accounts: accounts, reload: reload)
           case "activity": AdminActivity(entries: activity)
           default: AdminPeople(accounts: accounts, reload: reload)
@@ -59,6 +63,7 @@ struct AdminSettings: View {
     }
     status = try? await Admin.status(api: api)
     activity = try? await Admin.activity(api: api)
+    do { storage = try await StorageOverview.server(api: api); storageError = nil } catch { storageError = say(error) }
   }
 }
 
@@ -358,6 +363,106 @@ struct AdminServer: View {
         reload()
       }
     }
+  }
+}
+
+// ---- storage ----
+
+/** Every account's storage and how its devices back up (GET /api/admin/storage): the server's totals and free disk,
+ *  then per account its use against the limit, what it is made of, and per device the last upload, with a warning for
+ *  a phone that is used but has stopped uploading. */
+struct AdminStorage: View {
+  let storage: StorageOverview.Server?
+  let error: String?
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 22) {
+      if let s = storage {
+        Section_(title: "Storage on this server", subtitle: "\(StorageOverview.summary(s)). Only sizes, kinds and times: administrators can't see what a photo shows.") {
+          if s.disk_total_bytes > 0 {
+            ProgressView(value: Double(max(0, s.disk_total_bytes - s.disk_free_bytes)), total: Double(s.disk_total_bytes))
+              .tint(Double(s.disk_free_bytes) / Double(s.disk_total_bytes) < 0.1 ? Ink.danger : Ink.teal)
+            LabeledContent("Disk free", value: "\(Admin.size(s.disk_free_bytes)) of \(Admin.size(s.disk_total_bytes))")
+          }
+          LabeledContent("Used by all accounts", value: Admin.size(s.used_bytes))
+          LabeledContent("Items", value: String(s.item_count))
+          if let w = StorageOverview.staleSummary(s.stale_devices) { Note(text: w) }
+        }
+        ForEach(s.accounts) { a in
+          Divider()
+          Section_(title: a.email.isEmpty ? "Unknown account" : a.email) {
+            AccountStorageView(account: a)
+          }
+        }
+      } else if let error {
+        Text(error).font(Typo.caption).foregroundStyle(Ink.danger)
+      } else {
+        ProgressView().controlSize(.small)
+      }
+    }
+  }
+}
+
+/** One account's storage: used against the limit, the parts it is made of, the item count, and its devices' uploads.
+ *  Shared by Administration › Storage and Settings › General › Storage (compact: the person's own). */
+struct AccountStorageView: View {
+  let account: StorageOverview.Account
+  var compact = false
+
+  var body: some View {
+    let a = account
+    VStack(alignment: .leading, spacing: 8) {
+      if let f = StorageOverview.fill(a) {
+        ProgressView(value: f).tint(f >= 0.9 ? Ink.danger : Ink.teal)
+      }
+      Text("\(StorageOverview.usedText(a)) · \(StorageOverview.items(a.item_count))").font(Typo.label)
+      let parts = StorageOverview.parts(a.split)
+      if !parts.isEmpty {
+        VStack(alignment: .leading, spacing: 2) {
+          ForEach(parts, id: \.key) { p in
+            HStack {
+              Text(p.label)
+              Spacer()
+              Text("\(Admin.size(p.bytes)) · \(p.pct) %").monospacedDigit()
+            }
+            .font(Typo.caption).foregroundStyle(.secondary)
+          }
+        }
+      }
+      if a.devices_hidden {
+        Text(StorageOverview.hiddenDevices).font(Typo.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+      } else if !a.devices.isEmpty {
+        if !compact { Text("Devices").font(Typo.label).padding(.top, 4) }
+        VStack(alignment: .leading, spacing: 0) {
+          ForEach(a.devices) { d in
+            DeviceBackupRow(device: d)
+            if d.id != a.devices.last?.id { Divider() }
+          }
+        }
+      }
+    }
+  }
+}
+
+/** A device's last activity and upload, and the warning when its automatic backup seems to have stopped. */
+struct DeviceBackupRow: View {
+  let device: StorageOverview.Device
+
+  var body: some View {
+    let d = device
+    VStack(alignment: .leading, spacing: 4) {
+      HStack(spacing: 8) {
+        Image(systemName: d.backup_stale ? "exclamationmark.triangle" : d.auto_backup ? "iphone" : "laptopcomputer")
+          .foregroundStyle(d.backup_stale ? Ink.danger : Ink.teal).frame(width: 18)
+        Text(d.name).font(Typo.label)
+        Spacer()
+      }
+      Text("\(StorageOverview.lastSeen(d)) · \(StorageOverview.lastUpload(d))").font(Typo.caption).foregroundStyle(.secondary)
+      if let w = StorageOverview.stale(d) {
+        Text(w).font(Typo.caption).foregroundStyle(Ink.danger).fixedSize(horizontal: false, vertical: true)
+      }
+    }
+    .padding(.vertical, 6)
   }
 }
 

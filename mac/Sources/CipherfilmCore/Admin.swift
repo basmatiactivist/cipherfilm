@@ -265,3 +265,212 @@ public enum Admin {
     return out
   }
 }
+
+// ---- storage and backup overview (server/storage.go, web/src/storage.ts) ----
+// What an account takes, of what kind, and when each of its devices last uploaded: Settings › Account for each person
+// (GET /api/me/storage), Administration › Storage for every account (GET /api/admin/storage). Only sizes, counts,
+// device labels and times: nothing about what a photo shows. Decoding takes a missing field as empty, so an older or
+// newer server's answer still shows.
+
+public enum StorageOverview {
+  public struct Split: Decodable, Sendable, Equatable {
+    public var photos: Int64, videos: Int64, other: Int64
+    /** thumbnails and previews */
+    public var thumbs: Int64
+    /** search index entries and the account's encrypted documents (people, settings) */
+    public var index: Int64
+
+    public init(photos: Int64 = 0, videos: Int64 = 0, other: Int64 = 0, thumbs: Int64 = 0, index: Int64 = 0) {
+      self.photos = photos; self.videos = videos; self.other = other; self.thumbs = thumbs; self.index = index
+    }
+
+    public init(from decoder: Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      func n(_ k: CodingKeys) -> Int64 { (try? c.decodeIfPresent(Int64.self, forKey: k)) ?? 0 }
+      self.init(photos: n(.photos), videos: n(.videos), other: n(.other), thumbs: n(.thumbs), index: n(.index))
+    }
+
+    enum CodingKeys: String, CodingKey { case photos, videos, other, thumbs, index }
+  }
+
+  public struct Device: Decodable, Sendable, Equatable, Identifiable {
+    public let id: String
+    /** the device's label as its app sends it */
+    public let device: String
+    public let last_seen: Int64
+    /** 0: none recorded yet (the server notes it only since the overview came) */
+    public let last_upload_at: Int64
+    /** a phone app that backs up on its own */
+    public let auto_backup: Bool
+    /** in use, but no upload for more than 7 days */
+    public let backup_stale: Bool
+    public let current: Bool
+
+    public var name: String { device.isEmpty ? "Unknown device" : device }
+
+    public init(id: String, device: String, last_seen: Int64, last_upload_at: Int64, auto_backup: Bool = false, backup_stale: Bool = false, current: Bool = false) {
+      self.id = id; self.device = device; self.last_seen = last_seen; self.last_upload_at = last_upload_at
+      self.auto_backup = auto_backup; self.backup_stale = backup_stale; self.current = current
+    }
+
+    public init(from decoder: Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.init(
+        id: (try? c.decodeIfPresent(String.self, forKey: .id)) ?? "",
+        device: (try? c.decodeIfPresent(String.self, forKey: .device)) ?? "",
+        last_seen: (try? c.decodeIfPresent(Int64.self, forKey: .last_seen)) ?? 0,
+        last_upload_at: (try? c.decodeIfPresent(Int64.self, forKey: .last_upload_at)) ?? 0,
+        auto_backup: (try? c.decodeIfPresent(Bool.self, forKey: .auto_backup)) ?? false,
+        backup_stale: (try? c.decodeIfPresent(Bool.self, forKey: .backup_stale)) ?? false,
+        current: (try? c.decodeIfPresent(Bool.self, forKey: .current)) ?? false)
+    }
+
+    enum CodingKeys: String, CodingKey { case id, device, last_seen, last_upload_at, auto_backup, backup_stale, current }
+  }
+
+  public struct Account: Decodable, Sendable, Equatable, Identifiable {
+    public let id: String
+    public let email: String
+    public let role: String
+    public let status: String
+    public let quota_bytes: Int64
+    public let unlimited: Bool
+    public let used_bytes: Int64
+    public let item_count: Int64
+    public let split: Split
+    public let devices: [Device]
+    /** a public demo account: the strangers sharing it are not listed */
+    public let devices_hidden: Bool
+
+    public init(from decoder: Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      id = (try? c.decodeIfPresent(String.self, forKey: .id)) ?? ""
+      email = (try? c.decodeIfPresent(String.self, forKey: .email)) ?? ""
+      role = (try? c.decodeIfPresent(String.self, forKey: .role)) ?? "user"
+      status = (try? c.decodeIfPresent(String.self, forKey: .status)) ?? "active"
+      quota_bytes = (try? c.decodeIfPresent(Int64.self, forKey: .quota_bytes)) ?? 0
+      unlimited = (try? c.decodeIfPresent(Bool.self, forKey: .unlimited)) ?? (quota_bytes == 0)
+      used_bytes = (try? c.decodeIfPresent(Int64.self, forKey: .used_bytes)) ?? 0
+      item_count = (try? c.decodeIfPresent(Int64.self, forKey: .item_count)) ?? 0
+      split = (try? c.decodeIfPresent(Split.self, forKey: .split)) ?? Split()
+      devices = (try? c.decodeIfPresent([Device].self, forKey: .devices)) ?? []
+      devices_hidden = (try? c.decodeIfPresent(Bool.self, forKey: .devices_hidden)) ?? false
+    }
+
+    enum CodingKeys: String, CodingKey { case id, email, role, status, quota_bytes, unlimited, used_bytes, item_count, split, devices, devices_hidden }
+  }
+
+  public struct Server: Decodable, Sendable, Equatable {
+    public let accounts: [Account]
+    public let used_bytes: Int64
+    public let item_count: Int64
+    public let stale_devices: Int64
+    public let disk_free_bytes: Int64
+    public let disk_total_bytes: Int64
+
+    public init(from decoder: Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      accounts = (try? c.decodeIfPresent([Account].self, forKey: .accounts)) ?? []
+      used_bytes = (try? c.decodeIfPresent(Int64.self, forKey: .used_bytes)) ?? accounts.reduce(0) { $0 + $1.used_bytes }
+      item_count = (try? c.decodeIfPresent(Int64.self, forKey: .item_count)) ?? accounts.reduce(0) { $0 + $1.item_count }
+      stale_devices = (try? c.decodeIfPresent(Int64.self, forKey: .stale_devices)) ?? Int64(StorageOverview.staleCount(accounts))
+      disk_free_bytes = (try? c.decodeIfPresent(Int64.self, forKey: .disk_free_bytes)) ?? 0
+      disk_total_bytes = (try? c.decodeIfPresent(Int64.self, forKey: .disk_total_bytes)) ?? 0
+    }
+
+    enum CodingKeys: String, CodingKey { case accounts, used_bytes, item_count, stale_devices, disk_free_bytes, disk_total_bytes }
+  }
+
+  public static func mine(api: API) async throws -> Account { try await api.get(Account.self, "/api/me/storage") }
+  /** Admins only; anyone else gets "not found" (Admin.noAccess). */
+  public static func server(api: API) async throws -> Server { try await api.get(Server.self, "/api/admin/storage") }
+
+  // ---- wording (the web's) ----
+
+  public struct Part: Sendable, Equatable {
+    public let key: String
+    public let label: String
+    public let bytes: Int64
+    /** share of the whole, rounded; a part that is there shows at least 1 % */
+    public let pct: Int
+  }
+
+  public static let splitLabels: [(key: String, label: String)] = [
+    ("photos", "Photos"), ("videos", "Videos"), ("other", "Other files"),
+    ("thumbs", "Thumbnails and previews"), ("index", "Search index and settings"),
+  ]
+
+  static func bytes(_ s: Split, _ key: String) -> Int64 {
+    switch key {
+    case "photos": s.photos
+    case "videos": s.videos
+    case "other": s.other
+    case "thumbs": s.thumbs
+    default: s.index
+    }
+  }
+
+  /** The non-empty parts of an account's storage in a fixed order, with their share of the whole. */
+  public static func parts(_ s: Split) -> [Part] {
+    let total = splitLabels.reduce(Int64(0)) { $0 + max(0, bytes(s, $1.key)) }
+    guard total > 0 else { return [] }
+    return splitLabels.compactMap { k, label in
+      let b = bytes(s, k)
+      guard b > 0 else { return nil }
+      return Part(key: k, label: label, bytes: b, pct: max(1, Int((Double(b) / Double(total) * 100).rounded())))
+    }
+  }
+
+  /** How full an account is, 0...1, or nil when it has no limit. */
+  public static func fill(_ a: Account) -> Double? {
+    guard !a.unlimited, a.quota_bytes > 0 else { return nil }
+    return min(1, max(0, Double(a.used_bytes) / Double(a.quota_bytes)))
+  }
+
+  /** "2.5 GB of 10.0 GB" or "2.5 GB used, no limit". */
+  public static func usedText(_ a: Account) -> String {
+    fill(a) == nil ? "\(Admin.size(a.used_bytes)) used, no limit" : "\(Admin.size(a.used_bytes)) of \(Admin.size(a.quota_bytes))"
+  }
+
+  public static func items(_ n: Int64) -> String { n == 1 ? "1 item" : "\(n) items" }
+
+  public static func daysSince(_ sec: Int64, now: Date = Date()) -> Int {
+    max(0, Int(floor((now.timeIntervalSince1970 - Double(sec)) / 86400)))
+  }
+
+  /** "Last upload today", "… 3 days ago", or that none is recorded yet. */
+  public static func lastUpload(_ d: Device, now: Date = Date()) -> String {
+    if d.last_upload_at <= 0 { return "Last upload: none recorded yet" }
+    let n = daysSince(d.last_upload_at, now: now)
+    return n == 0 ? "Last upload today" : n == 1 ? "Last upload yesterday" : "Last upload \(n) days ago"
+  }
+
+  /** "Last seen today", "… yesterday", "… 3 days ago"; "Active now" for this device. */
+  public static func lastSeen(_ d: Device, now: Date = Date()) -> String {
+    if d.current { return "Active now" }
+    if d.last_seen <= 0 { return "Not seen yet" }
+    let n = daysSince(d.last_seen, now: now)
+    return n == 0 ? "Last seen today" : n == 1 ? "Last seen yesterday" : "Last seen \(n) days ago"
+  }
+
+  /** The warning for a phone whose automatic backup seems to have stopped; nil when it doesn't. */
+  public static func stale(_ d: Device, now: Date = Date()) -> String? {
+    guard d.backup_stale else { return nil }
+    return "No uploads for \(daysSince(d.last_upload_at, now: now)) days although this phone is in use. Automatic backup may be off or stuck: open the app on it and check Backup."
+  }
+
+  public static func staleCount(_ accounts: [Account]) -> Int { accounts.reduce(0) { $0 + $1.devices.filter(\.backup_stale).count } }
+
+  public static let hiddenDevices = "This is a shared demo account: the devices of the people using it are not listed."
+
+  /** "4 people · 12.3 GB stored · 812 items". */
+  public static func summary(_ s: Server) -> String {
+    let n = s.accounts.count
+    return "\(n) \(n == 1 ? "person" : "people") · \(Admin.size(s.used_bytes)) stored · \(items(s.item_count))"
+  }
+
+  /** "1 phone seems to have stopped backing up." */
+  public static func staleSummary(_ n: Int64) -> String? {
+    n <= 0 ? nil : n == 1 ? "1 phone seems to have stopped backing up. Details below." : "\(n) phones seem to have stopped backing up. Details below."
+  }
+}

@@ -8,6 +8,7 @@ import { setMemoriesOn, useMemoriesOn } from "./memories/setting";
 import { browserAlertsPossible, setBrowserAlerts, useBrowserAlerts } from "./noticeAlerts";
 import { Loader, Loading } from "./loader";
 import { BackupReport, backupState } from "./backup";
+import { AdminStorage, MyStorage } from "./storageui";
 import { gbBytes, gbText, uptimeText } from "./limits";
 import { explicitChosen, indexChecked, loadPeople, refreshIndex, setExplicit } from "./people/people";
 import { forgetContentModels, loadModel, oldCount, useModelDownload, useModelOnDevice, vectorCount } from "./search/content";
@@ -548,12 +549,9 @@ function RecoveryKeyPanel({ onNew }: { onNew: (k: auth.PendingKey) => void }) {
 
 
 function StoragePanel() {
-  const [u, setU] = useState<{ used_bytes: number; quota_bytes: number; unlimited: boolean } | null>(null);
-  useEffect(() => { auth.loadUsage().then(setU, () => {}); }, []);
   return (
-    <Acc icon="cloud" title="Storage" sub="How much you use">
-      {u && !u.unlimited && u.quota_bytes > 0 && <div class="meterbar big"><div style={{ width: `${Math.min(100, Math.round((u.used_bytes / u.quota_bytes) * 100))}%` }} /></div>}
-      {u ? <p class="usage">{fmtGB(u.used_bytes)} used{u.unlimited ? ", no limit" : ` of ${fmtGB(u.quota_bytes)}`}. Items in the trash count until they're deleted.</p> : <div class="usage"><Loading inline label="Checking…" /></div>}
+    <Acc icon="cloud" title="Storage" sub="How much you use, and backup by device">
+      <MyStorage />
     </Acc>
   );
 }
@@ -801,7 +799,7 @@ const ago = (ts: number): string => {
   return d <= 0 ? "active today" : d === 1 ? "active yesterday" : `active ${d} days ago`;
 };
 
-export function Admin({ section }: { section: "users" | "defaults" | "server" | "activity" }) {
+export function Admin({ section }: { section: "users" | "storage" | "defaults" | "server" | "activity" }) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [invites, setInvites] = useState<AdminInvite[]>([]);
   const [email, setEmail] = useState("");
@@ -925,6 +923,7 @@ export function Admin({ section }: { section: "users" | "defaults" | "server" | 
         </ul>
       </section>
       </>)}
+      {section === "storage" && <AdminStorage />}
       {section === "defaults" && <DefaultLimit current={defaultQuota} onSaved={changed} />}
       {section === "server" && (
       <section class="panel" aria-labelledby="srv-h">

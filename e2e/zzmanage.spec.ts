@@ -230,4 +230,41 @@ test.describe.serial("manage", () => {
     expect(await f.page.evaluate(async () => (await fetch("/api/admin/users")).status)).toBe(404);
     await f.ctx.close();
   });
+
+  test("storage overview: every account for the admin, only their own for the user", async ({ browser }) => {
+    const { ctx, page } = await newPage(browser);
+    await signIn(page, ADMIN, ADMIN_PW);
+    // a phone of frank's that still signs in but stopped uploading 9 days ago, as the server would flag it
+    const now = Math.floor(Date.now() / 1000);
+    await page.route("**/api/admin/storage", async (r) => {
+      const res = await r.fetch();
+      const body = await res.json();
+      for (const a of body.accounts) if (a.email === FRANK) a.devices.push({ id: "f".repeat(24), device: "Test phone (Android app)", last_seen: now - 600, last_upload_at: now - 9 * 86400, auto_backup: true, backup_stale: true });
+      await r.fulfill({ response: res, json: body });
+    });
+    await openMenuItem(page, "Admin");
+    await page.locator("nav.side").getByRole("button", { name: "Storage" }).click();
+    await expect(page.getByRole("heading", { name: "This server", level: 2 })).toBeVisible();
+    await expect(page.getByText("Disk free")).toBeVisible();
+    await expect(page.getByRole("alert")).toContainText("One phone seems to have stopped backing up.");
+    const frank = page.getByRole("region", { name: `Storage of ${FRANK}` });
+    await expect(frank.getByText(/used of 1\.0 GB · 1 item/)).toBeVisible();
+    await expect(frank.locator(".splitlegend")).toContainText("Photos");
+    await expect(frank.locator(".splitlegend")).toContainText("Thumbnails and previews");
+    await expect(frank.locator("li.stale")).toContainText("No uploads for 9 days although this phone is in use");
+    await expect(page.getByRole("region", { name: `Storage of ${ADMIN}` })).toBeVisible();
+    await ctx.close();
+
+    // frank sees his own storage and devices in Account, and nobody else's
+    const f = await newPage(browser);
+    await signIn(f.page, FRANK, FRANK_PW);
+    expect(await f.page.evaluate(async () => (await fetch("/api/admin/storage")).status)).toBe(404);
+    await openMenuItem(f.page, "Account");
+    await f.page.locator("summary", { hasText: "Storage" }).click();
+    await expect(f.page.getByRole("heading", { name: "Backup by device" })).toBeVisible();
+    await expect(f.page.locator(".backupdevs li").filter({ hasText: "This browser" })).toBeVisible();
+    await expect(f.page.locator(".splitlegend")).toContainText("Photos");
+    await expect(f.page.getByText(ADMIN)).toHaveCount(0);
+    await f.ctx.close();
+  });
 });

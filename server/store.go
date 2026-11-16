@@ -301,6 +301,13 @@ func migrate(db *sql.DB) error {
 			}
 		}
 	}
+	// sessions.last_upload_at: when the device last finished an upload (storage.go, the backup overview); only the
+	// newest time, never which items
+	if !scols["last_upload_at"] {
+		if _, err := db.Exec(`ALTER TABLE sessions ADD COLUMN last_upload_at INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+	}
 	if _, err := db.Exec(`UPDATE sessions SET pub=lower(hex(randomblob(12))) WHERE pub=''`); err != nil {
 		return err
 	}

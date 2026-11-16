@@ -226,6 +226,15 @@ only on the server your administrator runs.
 
 **Admin** (visible to administrators only) shows who is on the server and how much they use, last sign-in per person, open invites (revocable), a default storage limit for new people, per-person limits, role changes (make someone an administrator or a regular user), server status (disk, data size, signed-in devices, last backup) and a log of recent admin actions. None of it exposes photos, album names or file names.
 
+**Admin › Storage** is a storage and backup overview: the server's total use and free disk space, and per account its use
+against its limit with a split into photos, videos, other files, thumbnails and previews, and search index and
+settings (from the sizes and the photo/video/other kind the server stores anyway; items finished before 2.0 count their
+small copies as the original), the number of items and, per signed-in device, its label, when it was last seen and when
+it last finished an upload. A phone app that is still in use but hasn't uploaded for 7 days is flagged: its automatic
+backup may be off or stuck (or there was simply nothing new). Only the newest upload time per device is kept, not which
+items a device uploaded; upload times are recorded from the version that brought this overview on. The devices of a public demo account (`DEMO_ACCOUNTS`) are
+never listed, and each person sees the same overview for their own account under **Account › Storage**.
+
 The same is in the apps for administrators: on Android under **Account › Administration** (an invite link goes out
 through the share sheet), on the Mac under **Settings › Administration**. They use the same API; the server checks
 every request, so a regular account or a public demo login gets "not found" whatever an app shows. The Google Play

@@ -18,6 +18,8 @@ struct SecuritySettings: View {
             Divider()
           }
           DevicesSection()
+          Divider()
+          MyStorageSection()
           if !me.isDemo {
             Divider()
             NoticeNotificationsSection()

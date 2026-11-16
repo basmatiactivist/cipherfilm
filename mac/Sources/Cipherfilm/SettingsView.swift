@@ -125,6 +125,33 @@ struct GeneralSettings: View {
   }
 }
 
+/** Settings › Security, below Devices: the account's own storage and its devices' last uploads (GET /api/me/storage),
+ *  compact. On the public demo login the server lists only this device. */
+struct MyStorageSection: View {
+  @Environment(AppModel.self) private var model
+  @State private var storage: StorageOverview.Account?
+  @State private var error: String?
+
+  var body: some View {
+    Section_(title: "Storage and backup", subtitle: "What your library takes on the server, and when each of your devices last uploaded.") {
+      if let storage {
+        AccountStorageView(account: storage, compact: true)
+      } else if let error {
+        Text(error).font(Typo.caption).foregroundStyle(.secondary)
+      } else {
+        ProgressView().controlSize(.small)
+      }
+    }
+    .task(id: model.me?.user.id) { await load() }
+  }
+
+  private func load() async {
+    guard let api = model.api else { return }
+    do { storage = try await StorageOverview.mine(api: api); error = nil }
+    catch { self.error = (error as? APIError)?.status == 404 ? "This server doesn't show storage details yet." : (error as? LocalizedError)?.errorDescription ?? error.localizedDescription }
+  }
+}
+
 /** Deletes the account and everything in it from the server, permanently, after a warning and the password (and, while
  *  two-step sign-in is on, the second step: the same choices as for turning it off). */
 struct DeleteAccountSheet: View {

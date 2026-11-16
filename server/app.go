@@ -45,6 +45,7 @@ type App struct {
 	tsHeaders  bool              // TRUST_TAILSCALE_HEADERS: key per-source limits by Tailscale Serve's user header
 	proxies    []netip.Prefix    // TRUSTED_PROXIES: the peers whose X-Forwarded-For counts; empty: loopback and private
 	hosts      map[string]bool   // PUBLIC_HOSTS; empty: any
+	ports      hostPorts         // ports other than 443 PUBLIC_HOSTS publishes its names on (name:port)
 	mapConf    *mapConfig        // MAP_STYLE; nil: no map (mapconf.go)
 	demo       map[string]bool   // DEMO_ACCOUNTS: read-only public logins (demo.go)
 	demoLogin  map[string]string // DEMO_LOGIN: the one the sign-in page offers (email, password), or nil
@@ -146,6 +147,7 @@ func newApp(dataDir string) (*App, error) {
 		tsHeaders:  os.Getenv("TRUST_TAILSCALE_HEADERS") == "1",
 		proxies:    proxies,
 		hosts:      publicHosts(os.Getenv("PUBLIC_HOSTS")),
+		ports:      publicPorts(os.Getenv("PUBLIC_HOSTS")),
 		demo:       demo,
 		demoLogin:  demoLogin,
 		mapConf:    mapConf,
@@ -572,11 +574,34 @@ func (a *App) hostGuard(next http.Handler) http.Handler {
 	})
 }
 
-// publicHosts reads PUBLIC_HOSTS: names (without port) separated by commas or spaces.
+// publicHosts reads PUBLIC_HOSTS: names separated by commas or spaces, each optionally with the port the app is
+// published on when that isn't 443 (name:port; see publicPorts).
 func publicHosts(v string) map[string]bool {
 	out := map[string]bool{}
 	for _, h := range strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ' ' }) {
+		if name, _, err := net.SplitHostPort(h); err == nil {
+			h = name
+		}
 		out[strings.ToLower(h)] = true
+	}
+	return out
+}
+
+// hostPorts: per name, the ports it is published on besides 443.
+type hostPorts map[string]map[string]bool
+
+// publicPorts reads the ports PUBLIC_HOSTS gives with its names (name:port): the https origins besides
+// https://name that passkeys of that name are accepted from (passkeys.go rpName).
+func publicPorts(v string) hostPorts {
+	out := hostPorts{}
+	for _, h := range strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ' ' }) {
+		if name, port, err := net.SplitHostPort(h); err == nil && port != "" && port != "443" {
+			name = strings.ToLower(name)
+			if out[name] == nil {
+				out[name] = map[string]bool{}
+			}
+			out[name][port] = true
+		}
 	}
 	return out
 }

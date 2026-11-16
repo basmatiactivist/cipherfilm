@@ -123,7 +123,10 @@ func (a *App) assetLinks(w http.ResponseWriter, r *http.Request) {
 }
 
 // rpName is the relying party id for a request: the name it reached the server by, without port; never an address,
-// and only one of PUBLIC_HOSTS when that is set (hostGuard refuses the others before they get here).
+// and only one of PUBLIC_HOSTS when that is set (hostGuard refuses the others before they get here). The origin is
+// https://name; with PUBLIC_HOSTS set, another port only if PUBLIC_HOSTS gives it for that name (name:port), never just
+// because the request's Host names it: the client chooses its Host, and an answer made for a page on another port of
+// the same name (another service on that machine) must not be taken as made for this app.
 func (a *App) rpName(r *http.Request) (name, origin string, err error) {
 	host := strings.ToLower(r.Host)
 	name = host
@@ -141,7 +144,7 @@ func (a *App) rpName(r *http.Request) (name, origin string, err error) {
 		return "", "", errNoRelyingParty
 	}
 	origin = "https://" + name
-	if port != "" && port != "443" {
+	if port != "" && port != "443" && (len(a.hosts) == 0 || a.ports[name][port]) {
 		origin += ":" + port
 	}
 	return name, origin, nil

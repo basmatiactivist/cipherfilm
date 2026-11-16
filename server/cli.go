@@ -440,6 +440,10 @@ func cliInvite(a *App, out io.Writer, args []string) error {
 	if !ok {
 		for h := range a.hosts { // PUBLIC_HOSTS, if set
 			base = "https://" + h
+			for p := range a.ports[h] { // published on another port than 443
+				base += ":" + p
+				break
+			}
 			break
 		}
 	}

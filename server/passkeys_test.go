@@ -361,6 +361,39 @@ func TestPasskeyBelongsToItsName(t *testing.T) {
 	if name, origin, err := (&App{}).rpName(&http.Request{Host: "Photos.Test:8443"}); err != nil || name != "photos.test" || origin != "https://photos.test:8443" {
 		t.Fatalf("with a port: %q %q %v", name, origin, err)
 	}
+	// with PUBLIC_HOSTS, a port only as it gives it: the Host a client sends doesn't make another port's page this app's
+	v := "a.test, b.test:8443"
+	pub := &App{hosts: publicHosts(v), ports: publicPorts(v)}
+	for host, want := range map[string]string{"a.test": "https://a.test", "a.test:443": "https://a.test", "a.test:8443": "https://a.test",
+		"b.test": "https://b.test", "b.test:8443": "https://b.test:8443", "b.test:9443": "https://b.test"} {
+		if _, origin, err := pub.rpName(&http.Request{Host: host}); err != nil || origin != want {
+			t.Fatalf("%s: %q %v, want %q", host, origin, err, want)
+		}
+	}
+}
+
+// With PUBLIC_HOSTS set, a passkey's answer made for a page on another port of the server's name is refused, also when
+// the request names that port in its Host.
+func TestPasskeyAnswerFromAnotherPortIsRefused(t *testing.T) {
+	e := newEnv(t)
+	e.pinClock()
+	_, ab, k, _ := e.adminWithPasskey()
+	e.app.hosts = publicHosts(rpHost)
+	h := e.client()
+	h.host = rpHost + ":8443"
+	p := e.passwordStep(h, "admin@x.org", ab)
+	opts := e.passkeyChallenge(h, p)
+	k.origin = "https://" + rpHost + ":8443"
+	if r := h.post("/api/auth/login/2fa", map[string]any{"pending": p, "passkey": k.get(opts)}); r.code != 401 || r.body["code"] != "wrong_passkey" {
+		t.Fatalf("an answer for another port: %d %v", r.code, r.body)
+	}
+	// listed with its port, that origin is this app's
+	e.app.ports = publicPorts(rpHost + ":8443")
+	p = e.passwordStep(h, "admin@x.org", ab)
+	opts = e.passkeyChallenge(h, p)
+	if r := h.post("/api/auth/login/2fa", map[string]any{"pending": p, "passkey": k.get(opts)}); r.code != 200 {
+		t.Fatalf("an answer for the port PUBLIC_HOSTS gives: %d %v", r.code, r.body)
+	}
 }
 
 func TestPasskeyFromTheAndroidApp(t *testing.T) {

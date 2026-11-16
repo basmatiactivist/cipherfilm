@@ -8,5 +8,6 @@ import { deSecurity } from "./i18n/de.security";
 import { deCleanup } from "./i18n/de.cleanup";
 import { deEdit } from "./i18n/de.edit";
 import { deAdmin } from "./i18n/de.admin";
+import { deMemories } from "./i18n/de.memories";
 
-export const de: Record<string, string> = { ...deApp, ...deSearch, ...deBackup, ...deReport, ...deSecurity, ...deCleanup, ...deEdit, ...deAdmin };
+export const de: Record<string, string> = { ...deApp, ...deSearch, ...deBackup, ...deReport, ...deSecurity, ...deCleanup, ...deEdit, ...deAdmin, ...deMemories };

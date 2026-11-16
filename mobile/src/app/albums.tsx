@@ -15,6 +15,10 @@ import { Problem, useAppTheme, Dialog } from "../ui";
 import { radius, text } from "../tokens";
 import { busyIcon, Loading } from "../Loader";
 import { t, tn } from "../i18n";
+import { CardRow } from "../CardRow";
+import { tripTitle, useTrips } from "../trips";
+import { highlights } from "@memories/recap";
+import { savedAs } from "@memories/trips";
 
 const GAP = 12;
 // Favorites sits first in the grid, like an album
@@ -30,6 +34,13 @@ export default function Albums() {
   const [creating, setCreating] = useState(false);
   useEffect(() => { refreshAlbums(); if (!items) refreshLibrary(); }, []);
   const byId = useMemo(() => new Map((items ?? []).map((i) => [i.id, i])), [items]);
+  // suggested albums: trips found on this phone (trips.ts), under the person's own albums
+  const trips = useTrips(items);
+  const tripCards = useMemo(() => (trips ?? []).map((tr) => ({
+    key: tr.key, cover: highlights(tr.items, 1)[0] ?? tr.items[0], title: tripTitle(tr),
+    sub: tn(tr.items.length, "{n} item", "{n} items") + (savedAs(tr, albums ?? []) ? ` · ${t("Saved")}` : ""),
+    onPress: () => router.push({ pathname: "/trip/[key]", params: { key: tr.key } }),
+  })), [trips, albums]);
   const cols = width >= 900 ? 4 : width >= 600 ? 3 : 2;
   const size = Math.floor((width - inset.left - inset.right - 16 * 2 - GAP * (cols - 1)) / cols);
 
@@ -50,7 +61,12 @@ export default function Albums() {
         contentContainerStyle={{ paddingHorizontal: 16 + inset.left, paddingBottom: inset.bottom + NAV_HEIGHT + 96, gap: 20, flexGrow: 1 }}
         refreshControl={<RefreshControl refreshing={loading && !!albums} onRefresh={() => { refreshAlbums(); refreshLibrary(); }} colors={[th.colors.primary]} progressBackgroundColor={th.colors.elevation.level1} />}
         ListHeaderComponent={error ? <Problem>{error}</Problem> : undefined}
-        ListFooterComponent={albums && !albums.length && !error ? <Empty onCreate={() => setCreating(true)} /> : undefined}
+        ListFooterComponent={albums ? (
+          <>
+            {!albums.length && !error ? <Empty onCreate={() => setCreating(true)} /> : null}
+            <CardRow title={t("Trips")} note={t("Suggested from when and where your photos were taken, worked out on this phone. Save one to keep it as an album.")} cards={tripCards} size={140} />
+          </>
+        ) : undefined}
         // the first load (names are decrypted on the phone): the badge, not a blank page; the pull-to-refresh spinner
         // above is for the loads after it
         ListEmptyComponent={!albums && !error ? <Loading label={t("Opening your albums…")} /> : undefined}

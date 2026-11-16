@@ -29,6 +29,7 @@ import { Loading } from "./loader";
 import { findMemories, todayKey, type Memory } from "./memories/memories";
 import { useMemoriesOn } from "./memories/setting";
 import { MemoriesRow } from "./memories/ui";
+import { RecapPage, RecapRow, TripCards, TripHeader, tripTitle, useTrips, type RecapPerson } from "./memories/auto";
 
 // Loaded when first shown; the lightbox is fetched ahead once the grid is up, so the first photo opens at once.
 const Lightbox = lazy(() => import("./lightbox").then((m) => m.Lightbox), () => <div class="lightbox lbwait"><Loading stage label="Opening the viewer…" /></div>);
@@ -41,7 +42,7 @@ const Admin = lazy(() => import("./screens").then((m) => m.Admin));
 const Duplicates = lazy(() => import("./cleanup/ui").then((m) => m.Duplicates));
 
 interface Job { key: number; owner: string; name: string; file: File; done: number; total: number; state: "queued" | "working" | "done" | "error"; error?: string; retryable?: boolean; stop: { cancelled: boolean } }
-type View = { n: "timeline" } | { n: "favorites" } | { n: "albums" } | { n: "album"; id: string } | { n: "people" } | { n: "person"; key: string; cover?: string } | { n: "map" } | { n: "trash" };
+type View = { n: "timeline" } | { n: "favorites" } | { n: "albums" } | { n: "album"; id: string } | { n: "people" } | { n: "person"; key: string; cover?: string } | { n: "map" } | { n: "trash" } | { n: "trip"; key: string } | { n: "recap"; year: number };
 type Page = View | { n: "account"; open?: string } | { n: "admin" } | { n: "duplicates" };
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : "Something went wrong.");
@@ -164,15 +165,25 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const people = usePeople(live);
   // an unnamed group's key can change when the faces are grouped again: then it is found by its cover face
   const person = view.n === "person" ? people.all.find((g) => g.key === view.key) ?? people.all.find((g) => !!view.cover && g.faces.includes(view.cover)) : undefined;
+  // trips and year recaps (memories/auto.tsx), with "On this day" under the Memories setting: worked out in this
+  // browser, the place file loaded once Albums or a recap is opened
+  const memOn = useMemoriesOn();
+  const [tripsWanted, setTripsWanted] = useState(false);
+  useEffect(() => { if (view.n === "albums" || view.n === "trip" || view.n === "recap") setTripsWanted(true); }, [view.n]);
+  const trips = useTrips(items, memOn && tripsWanted);
+  const trip = view.n === "trip" ? trips?.find((t) => t.key === view.key) : undefined;
+  const recapPeople = useMemo<RecapPerson[]>(() => people.all.filter((g) => g.person?.name && !g.person.hidden).map((g) => ({ key: g.key, name: g.person!.name, items: g.items })), [people.all]);
   const shown = useMemo(() => {
     if (view.n === "trash") return trash ?? [];
     if (!items) return [];
     if (view.n === "favorites") return items.filter((i) => i.favorite);
     if (view.n === "person") { const ids = new Set(person?.items ?? []); return items.filter((i) => ids.has(i.id)); }
+    if (view.n === "trip") return trip?.items ?? [];
+    if (view.n === "recap") return [];
     if (!album) return items;
     const ids = new Set(album.itemIds);
     return items.filter((i) => ids.has(i.id));
-  }, [items, album, person, trash, view.n]);
+  }, [items, album, person, trip, trash, view.n]);
 
   const patch = (key: number, p: Partial<Job>) => setJobs((js) => js.map((j) => (j.key === key ? { ...j, ...p } : j)));
   // Several files at once: a single stream is limited by round trips, not by bandwidth or CPU.
@@ -247,6 +258,17 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
     try { await addToAlbum(a.id, ids); await refreshAlbums(); endSelect(); setNote({ text: `Added ${ids.length} to “${a.name}”.` }); } catch (e) { setError(msg(e)); }
   };
   const addSelected = (a: Album) => addIdsToAlbum(a, [...selected]);
+  /** A suggested trip becomes an ordinary encrypted album, named like the trip. */
+  const saveTrip = async () => {
+    if (!trip) return;
+    setError(""); setNote(null);
+    try {
+      const a = await createAlbum(tripTitle(trip));
+      await addToAlbum(a.id, trip.items.map((i) => i.id));
+      await refreshAlbums();
+      setNote({ text: `Saved as the album “${a.name}”.` });
+    } catch (e) { setError(msg(e)); }
+  };
   const removeIds = async (al: Album, ids: string[]) => {
     try { for (const id of ids) await removeFromAlbum(al.id, id); await refreshAlbums(); endSelect(); } catch (e) { setError(msg(e)); }
   };
@@ -332,8 +354,8 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const [unfinished, setUnfinished] = useState<string[]>(() => unfinishedUploads());
   useEffect(() => { if (!uploading) setUnfinished(unfinishedUploads().filter((n) => !active.some((j) => j.name === n))); }, [uploading]);
   const empty = items && items.length === 0 && active.length === 0;
-  const libraryView = page.n === "timeline" || page.n === "favorites" || page.n === "albums" || page.n === "album" || page.n === "people" || page.n === "person" || page.n === "map" || page.n === "trash";
-  const title = page.n === "timeline" ? "Timeline" : page.n === "favorites" ? "Favorites" : page.n === "albums" ? "Albums" : page.n === "trash" ? "Trash" : page.n === "people" ? "People" : page.n === "map" ? "Map" : page.n === "person" ? person?.person?.name || "Not named yet" : page.n === "account" ? "Account" : page.n === "duplicates" ? "Duplicates and similar photos" : page.n === "admin" ? { users: "Users", storage: "Storage", defaults: "Defaults", server: "Server", activity: "Activity" }[adminSection] : album?.name ?? "Album";
+  const libraryView = page.n === "timeline" || page.n === "favorites" || page.n === "albums" || page.n === "album" || page.n === "people" || page.n === "person" || page.n === "map" || page.n === "trash" || page.n === "trip";
+  const title = page.n === "trip" ? (trip ? tripTitle(trip) : "Trip") : page.n === "recap" ? `${page.year} in review` : page.n === "timeline" ? "Timeline" : page.n === "favorites" ? "Favorites" : page.n === "albums" ? "Albums" : page.n === "trash" ? "Trash" : page.n === "people" ? "People" : page.n === "map" ? "Map" : page.n === "person" ? person?.person?.name || "Not named yet" : page.n === "account" ? "Account" : page.n === "duplicates" ? "Duplicates and similar photos" : page.n === "admin" ? { users: "Users", storage: "Storage", defaults: "Defaults", server: "Server", activity: "Activity" }[adminSection] : album?.name ?? "Album";
   const pct = usage && !usage.unlimited && usage.quota_bytes ? Math.min(100, Math.round((usage.used_bytes / usage.quota_bytes) * 100)) : 0;
 
   // the library is filtered 150 ms after typing stops, not on every key: matching a big library takes a moment.
@@ -419,7 +441,6 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const moreLeft = !!ranked && (view.n === "timeline" ? timelineAll : shownAll).length > limit;
   const [mapList, setMapList] = useState<Item[]>([]);
   // "On this day" (memories/): worked out here from the capture dates, again when the library or the day changes
-  const memOn = useMemoriesOn();
   const today = todayKey();
   const memories = useMemo(() => (memOn && items ? findMemories(items) : []), [items, memOn, today]);
   // a memory's photos while the viewer shows them; dropped when it closes
@@ -437,7 +458,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
     else if (i < 0) { follow.current = null; if (lb >= lbList.length) closeLb(); }
   }, [lbList]);
   /** The photos on screen, in order: what select all, a range and the selection work on. */
-  function listed() { return view.n === "trash" ? trashItemsShown : view.n === "album" || view.n === "person" || view.n === "favorites" ? shownItems : view.n === "timeline" ? timelineItems : []; }
+  function listed() { return view.n === "trash" ? trashItemsShown : view.n === "album" || view.n === "person" || view.n === "favorites" || view.n === "trip" ? shownItems : view.n === "timeline" ? timelineItems : []; }
   const selectAll = () => { setSelectMode(true); setSelected(new Set(listed().map((i) => i.id))); };
 
   // what is selected must be what is on screen: narrowing the search or changing the view drops the rest
@@ -552,7 +573,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
 
   const picks = (
     <div class="actions">
-      {(page.n === "timeline" ? items && items.length > 0 : page.n === "trash" ? trash && trash.length > 0 : (page.n === "album" || page.n === "person" || page.n === "favorites") && shown.length > 0) && !selectMode && (
+      {(page.n === "timeline" ? items && items.length > 0 : page.n === "trash" ? trash && trash.length > 0 : (page.n === "album" || page.n === "person" || page.n === "favorites" || page.n === "trip") && shown.length > 0) && !selectMode && (
         <button class="btn secondary" aria-label="Select" onClick={() => setSelectMode(true)}><Icon name="select" /><span class="lbl">Select</span></button>
       )}
       {(page.n === "album" || page.n === "person" || page.n === "favorites") && shownItems.length > 1 && !selectMode && (
@@ -611,9 +632,9 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
             </>
           ) : (
             <>
-              <NavItem icon="photos" label="Timeline" current={page.n === "timeline"} onClick={() => go({ n: "timeline" })} />
+              <NavItem icon="photos" label="Timeline" current={page.n === "timeline" || page.n === "recap"} onClick={() => go({ n: "timeline" })} />
               <NavItem icon="heart" label="Favorites" current={page.n === "favorites"} onClick={() => go({ n: "favorites" })} />
-              <NavItem icon="albums" label="Albums" current={page.n === "albums" || page.n === "album"} onClick={() => go({ n: "albums" })} />
+              <NavItem icon="albums" label="Albums" current={page.n === "albums" || page.n === "album" || page.n === "trip"} onClick={() => go({ n: "albums" })} />
               {(hasIndex() || page.n === "people" || page.n === "person") && <NavItem icon="users" label="People" current={page.n === "people" || page.n === "person"} onClick={() => go({ n: "people" })} />}
               {mem.me?.map && <NavItem icon="map" label="Map" current={page.n === "map"} onClick={() => go({ n: "map" })} />}
               <NavItem icon="trash" label="Trash" badge={trash && trash.length > 0 ? trash.length : undefined} current={page.n === "trash"} onClick={() => { go({ n: "trash" }); refreshTrash(); }} />
@@ -633,6 +654,8 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
           <div class="pagehead">
             {page.n === "album" && <button class="iconbtn" onClick={() => go({ n: "albums" })} aria-label="All albums"><Icon name="back" /></button>}
             {page.n === "person" && <button class="iconbtn" onClick={() => go({ n: "people" })} aria-label="All people"><Icon name="back" /></button>}
+            {page.n === "trip" && <button class="iconbtn" onClick={() => go({ n: "albums" })} aria-label="All albums"><Icon name="back" /></button>}
+            {page.n === "recap" && <button class="iconbtn" onClick={() => go({ n: "timeline" })} aria-label="Back to the timeline"><Icon name="back" /></button>}
             <h1 class="pagetitle" tabIndex={-1} dir="auto">{title}</h1>
             {libraryView && picks}
           </div>
@@ -684,6 +707,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
               )}
               {q && items && items.length > 0 && timelineItems.length === 0 && !content.status && <p class="small">Nothing matches “{searched.trim()}”. Search covers file names, dates (2023, March, 14.03.2023), cameras, albums and people{searchable ? ", and what's in your photos" : ""}.{!searchable && " To search by what's in photos (dog, beach), turn on search in the Android or Mac app."}</p>}
               {!q && <MemoriesRow memories={memories} onOpen={openMemory} />}
+              {!q && memOn && items && <RecapRow items={items} onOpen={(year) => go({ n: "recap", year })} />}
               {items && items.length > 0 && albums.length > 0 && !selectMode && !q && <p class="small hint desktoponly">Tip: drag photos onto an album to file them.</p>}
               {timelineItems.length > 0 && <Timeline items={timelineItems} flat={!!ranked} selectMode={selectMode} selected={selected} onToggle={pick} onContext={(id, e) => setCtx({ x: e.clientX, y: e.clientY, kind: "item", id })} dragIds={dragIds} onOpen={(id) => openLb(timelineItems.findIndex((i) => i.id === id))} />}
             </>
@@ -723,6 +747,18 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
 
           {view.n === "albums" && !albumsLoaded && <Loading label="Opening your albums…" />}
           {view.n === "albums" && albumsLoaded && <AlbumList onContext={(id, e) => setCtx({ x: e.clientX, y: e.clientY, kind: "album", id })} albums={albums} items={items ?? []} dropTarget={(a) => dropTarget((ids) => addIdsToAlbum(a, ids))} onOpen={(id) => go({ n: "album", id })} onCreated={(a) => { setAlbums((x) => [...x, a]); go({ n: "album", id: a.id }); }} setError={setError} />}
+          {view.n === "albums" && albumsLoaded && memOn && <TripCards trips={trips} albums={albums} onOpen={(key) => go({ n: "trip", key })} />}
+
+          {view.n === "trip" && !trip && (trips === null || !items ? <Loading label="Opening the trip…" /> : <p>This trip is no longer in your library. <button class="link" onClick={() => go({ n: "albums" })}>Back to albums</button></p>)}
+          {view.n === "trip" && trip && (
+            <>
+              <TripHeader trip={trip} albums={albums} demo={demo} onSave={saveTrip} onOpenAlbum={(id) => go({ n: "album", id })} />
+              <Timeline items={shownItems} flat={!!ranked} selectMode={selectMode} selected={selected} onToggle={pick} onContext={(id, e) => setCtx({ x: e.clientX, y: e.clientY, kind: "item", id })} dragIds={dragIds} onOpen={(id) => openLb(shownItems.findIndex((i) => i.id === id))} />
+            </>
+          )}
+          {view.n === "recap" && (!items ? <Loading label="Opening your library…" /> : (
+            <RecapPage year={view.year} items={items} people={recapPeople} trips={trips} onOpenList={(list, i) => { setMemList(list); openLb(i); }} onOpenTrip={(key) => go({ n: "trip", key })} onOpenPerson={openPerson} />
+          ))}
 
           {view.n === "map" && <MapPage items={items ?? []} onOpen={(list, i) => { setMapList(list); openLb(i); }} onLater={() => go({ n: "timeline" })} />}
           {view.n === "people" && <PeopleList groups={people.groups} ready={people.ready} error={people.error} byId={byId} onOpen={(key) => openPerson(key)} />}

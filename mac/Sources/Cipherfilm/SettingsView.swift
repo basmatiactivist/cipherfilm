@@ -74,8 +74,8 @@ struct GeneralSettings: View {
         if model.me != nil && model.me?.hasMap != true { Text("This server doesn't offer a map.").font(Typo.caption).foregroundStyle(.secondary) }
       }
       Divider()
-      Section_(title: "Memories", subtitle: "Photos from around today's date in earlier years, above Photos. Worked out on this Mac from the encrypted dates; the server learns nothing.") {
-        Toggle("Show “On this day”", isOn: $memoriesOn)
+      Section_(title: "Memories", subtitle: "Photos from around today's date in earlier years, a look back at each year, and trips suggested in Albums. Worked out on this Mac from the encrypted dates and places; the server learns nothing unless you save a trip as an album.") {
+        Toggle("Show “On this day”, year recaps and trips", isOn: $memoriesOn)
       }
       Divider()
       Section_(title: "Unlock with Your Fingerprint", subtitle: "Your library's key is kept locked in this Mac's security chip. Changing your fingerprints turns it off. Your password always works.") {

@@ -251,5 +251,4 @@ export const deApp: Record<string, string> = {
   "1 year ago": "Vor einem Jahr",
   "{n} years ago": "Vor {n} Jahren",
   "Memories": "Erinnerungen",
-  "Show photos from this day in earlier years above Photos. Found on this phone; the server learns nothing.": "Zeigt über den Fotos, was an diesem Tag in früheren Jahren entstand. Wird auf dem Handy ermittelt; der Server erfährt nichts davon.",
 };

@@ -14,6 +14,13 @@ version into the GitHub release notes, so a release cannot be published without 
   stopped backing up for more than 7 days. Everyone sees the same for their own account under Account. Only sizes,
   counts, device labels and times; the server now also keeps the time of each device's newest upload
   (docs/THREAT_MODEL.md). A public demo account's devices are never listed.
+- Trips: photos taken more than 80 km from home on consecutive days are suggested as trips under Albums on the web,
+  Android and Mac ("Rome, May 2026"; countries and months in German on a German phone). A trip opens like an album,
+  and "Save as album" keeps it as an ordinary encrypted album. Worked out on the device from the decrypted dates and
+  places; nothing about a trip reaches the server unless it is saved.
+- Year recaps: "Your years" under On this day opens a year in review with the number of photos and videos, the places
+  and named people seen most, the year's trips and a few photos of every month (favorites first). Every earlier year,
+  and the current one from December. Both follow the Memories setting.
 
 ### Security
 - A password change, an account turned off by an admin and a recovery now count as signed out from another device:

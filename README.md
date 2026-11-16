@@ -78,6 +78,10 @@ and visitors are signed out every hour. To keep your own photos, [run your own s
   [docs/MAP.md](docs/MAP.md).
 - **On this day.** Photos from around today's date in earlier years at the top of your library, picked on the device
   from the encrypted capture dates.
+- **Trips and year recaps.** Photos taken far from home on consecutive days are suggested as trips under Albums
+  ("Rome, May 2026"), and one tap saves a trip as an ordinary encrypted album. Each past year has a recap: how many
+  photos and videos, the places and people seen most, its trips and a few photos of every month. All worked out on
+  the device from the decrypted dates and places ([docs/MEMORIES.md](docs/MEMORIES.md)).
 - **Simple editing.** Turn and crop photos, fix when and where a photo or video was taken, on the web and Android;
   the original is never changed and "Revert to original" brings it back ([docs/EDITING.md](docs/EDITING.md)).
 - **Free up space.** Remove photos from the phone once they are in Cipherfilm.

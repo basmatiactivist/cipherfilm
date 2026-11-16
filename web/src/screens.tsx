@@ -200,8 +200,8 @@ function MemoriesPanel() {
   const on = useMemoriesOn();
   return (
     <Acc icon="photos" title="Memories" sub={on ? "On in this browser" : "Off in this browser"}>
-      <label class="check"><input type="checkbox" checked={on} onChange={(e) => setMemoriesOn((e.target as HTMLInputElement).checked)} /> Show “On this day” above the timeline</label>
-      <p class="hint">Photos from around today's date in earlier years. Worked out in this browser from the encrypted dates; the server learns nothing about it.</p>
+      <label class="check"><input type="checkbox" checked={on} onChange={(e) => setMemoriesOn((e.target as HTMLInputElement).checked)} /> Show “On this day”, year recaps and trips</label>
+      <p class="hint">Photos from around today's date in earlier years, a look back at each year, and trips suggested in Albums. Worked out in this browser from the encrypted dates and places; the server learns nothing about it unless you save a trip as an album.</p>
     </Acc>
   );
 }

@@ -28,7 +28,7 @@ function countryNames(p: Places): Record<string, string> {
 }
 
 /** A place hit with its country in the app's language ("Zürich, Schweiz"). */
-function local(p: Places, r: Hit): Hit {
+export function local(p: Places, r: Hit): Hit {
   if (!r || !r.countryCode) return r;
   const name = countryNames(p)[r.countryCode];
   if (!name) return r;

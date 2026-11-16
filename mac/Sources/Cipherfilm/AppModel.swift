@@ -443,6 +443,7 @@ final class AppModel {
     vault = nil
     images.clear()
     PlaceBook.forget()
+    TripBook.shared.forget() // the trips hold decrypted items
     Outbox.clear()
     items = []; byId = [:]; albums = []; trash = []; notices = []; noticesSeen = 0
     if ended { watcher.stop(forget: true); uploads = []; uploadsOwner = nil; uploadsPaused = false; Inbox.clear() }

@@ -72,7 +72,7 @@ export default function Search() {
       {q.trim() && res?.chips.length ? (
         <View style={st.queryChips}>
           {res.chips.map((c) => (
-            <Chip key={`${c.kind}:${c.start}`} compact onClose={() => setQ(removeChip(q, c))} closeIcon="x" style={{ backgroundColor: th.colors.secondaryContainer }}
+            <Chip key={`${c.kind}:${c.start}`} compact onClose={() => setQ(removeChip(q, c))} closeIcon="x" closeIconAccessibilityLabel={t("Remove {name}", { name: c.label })} style={{ backgroundColor: th.colors.secondaryContainer }}
               accessibilityLabel={c.label} accessibilityHint={t("Removes this filter")}>{c.label}</Chip>
           ))}
         </View>

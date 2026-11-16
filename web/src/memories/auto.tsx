@@ -90,7 +90,7 @@ export function TripHeader(p: { trip: Trip<Item>; albums: Album[]; demo: boolean
   const days = `${dayFmt.format(p.trip.start)} – ${dayFmt.format(p.trip.end)}`;
   return (
     <header class="albumhead triphead">
-      <p class="small">{days} · {n(p.trip.days, "day", "days")} · {n(p.trip.items.length, "item", "items")}</p>
+      <p class="small">{days} · {n(p.trip.items.length, "item", "items")}</p>
       <div class="row">
         {saved ? (
           <button class="btn secondary small" onClick={() => p.onOpenAlbum(saved.id)}><Icon name="albums" size={18} />Open the album</button>

@@ -3,7 +3,7 @@ import { api } from "./api";
 import { fmtGB } from "./components";
 import { Icon } from "./icons";
 import { Loading } from "./loader";
-import { AccountStorage, ServerStorage, StorageDevice, lastUploadText, quotaPct, splitParts, staleCount, staleText } from "./storage";
+import { AccountStorage, ServerStorage, StorageDevice, foldDevices, lastUploadText, quotaPct, splitParts, staleCount, staleText } from "./storage";
 
 const seen = (sec: number) => {
   const d = Math.floor((Date.now() / 1000 - sec) / 86400);
@@ -34,11 +34,15 @@ export function StorageBreakdown({ acc }: { acc: AccountStorage }) {
 
 /** Each signed-in device with when it last uploaded, and a warning for a phone whose backup seems to have stopped. */
 export function BackupDevices({ acc, mine }: { acc: AccountStorage; mine?: boolean }) {
+  // every browser that ever signed in can make a long list: folded to this one and what needs a look first
+  const [open, setOpen] = useState(false);
   if (acc.devices_hidden) return <p class="hint small">A shared demo login: the devices of the people trying it are not listed.</p>;
   if (acc.devices.length === 0) return <p class="hint small">Not signed in on any device.</p>;
+  const fold = foldDevices(acc.devices, open);
   return (
+    <>
     <ul class="backupdevs">
-      {acc.devices.map((d: StorageDevice) => {
+      {fold.shown.map((d: StorageDevice) => {
         const warn = staleText(d);
         return (
           <li key={d.id} class={warn ? "stale" : undefined}>
@@ -51,6 +55,12 @@ export function BackupDevices({ acc, mine }: { acc: AccountStorage; mine?: boole
         );
       })}
     </ul>
+    {(fold.hidden > 0 || open) && acc.devices.length > 3 && (
+      <button type="button" class="btn secondary small" aria-expanded={open} onClick={() => setOpen(!open)}>
+        {open ? "Show fewer devices" : `Show ${fold.hidden} more device${fold.hidden === 1 ? "" : "s"}`}
+      </button>
+    )}
+    </>
   );
 }
 

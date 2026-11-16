@@ -54,6 +54,13 @@ version into the GitHub release notes, so a release cannot be published without 
   notifications off.
 - Web: a session that ended while the page was closed deletes what the browser kept for it at the next visit.
 
+### Fixed
+- Device lists under storage and backup are folded to this device, stuck backups and recent uploaders, with
+  "Show more devices" for the rest (Android, web, Mac).
+- Android: German texts in the archive, locked folder and editing screens use the formal form throughout; a trip shows
+  its dates without a confusing day count, and a year recap says "days with photos".
+- Year recap: a month whose photos are from only a few days shows up to four of them, not one per day.
+
 ## [2.7.3] - 2026-11-15
 
 ### Fixed

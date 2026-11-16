@@ -273,6 +273,17 @@ public enum Admin {
 // newer server's answer still shows.
 
 public enum StorageOverview {
+  /** Devices shown before "Show all": this Mac, any whose backup seems stuck, then the most recent uploaders. */
+  public static let devicesShown = 3
+  /** The devices to show folded (the important ones first, in their order) and how many are left out. */
+  public static func fold(_ devices: [Device], open: Bool) -> (shown: [Device], hidden: Int) {
+    if open || devices.count <= devicesShown { return (devices, 0) }
+    func rank(_ d: Device) -> Int { d.current ? 0 : d.backup_stale ? 1 : d.last_upload_at > 0 ? 2 : 3 }
+    let order = devices.sorted { (rank($0), -$0.last_upload_at, -$0.last_seen) < (rank($1), -$1.last_upload_at, -$1.last_seen) }
+    let keep = Set(order.prefix(max(devicesShown, order.filter { rank($0) <= 1 }.count)).map(\.id))
+    let shown = devices.filter { keep.contains($0.id) }
+    return (shown, devices.count - shown.count)
+  }
   public struct Split: Decodable, Sendable, Equatable {
     public var photos: Int64, videos: Int64, other: Int64
     /** thumbnails and previews */

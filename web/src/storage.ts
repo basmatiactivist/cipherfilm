@@ -56,3 +56,13 @@ export function staleText(d: StorageDevice, now = Date.now() / 1000): string {
 }
 
 export const staleCount = (accounts: AccountStorage[]) => accounts.reduce((n, a) => n + a.devices.filter((d) => d.backup_stale).length, 0);
+/** Devices shown before "Show all": this phone, any whose backup seems stuck, then the most recent uploaders. */
+export const DEVICES_SHOWN = 3;
+/** The devices to show folded (DEVICES_SHOWN at most, the important ones first) and how many are left out. */
+export function foldDevices<D extends Pick<StorageDevice, "last_seen" | "last_upload_at" | "backup_stale" | "current">>(devices: readonly D[], open: boolean): { shown: D[]; hidden: number } {
+  if (open || devices.length <= DEVICES_SHOWN) return { shown: [...devices], hidden: 0 };
+  const rank = (d: D) => (d.current ? 0 : d.backup_stale ? 1 : d.last_upload_at > 0 ? 2 : 3);
+  const order = [...devices].sort((a, b) => rank(a) - rank(b) || b.last_upload_at - a.last_upload_at || b.last_seen - a.last_seen);
+  const shown = order.slice(0, Math.max(DEVICES_SHOWN, order.filter((d) => rank(d) <= 1).length));
+  return { shown: devices.filter((d) => shown.includes(d)), hidden: devices.length - shown.length };
+}

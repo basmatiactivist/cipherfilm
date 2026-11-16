@@ -126,6 +126,10 @@ describe("recap", () => {
     expect(highlights(list, 3).map((i) => i.id)).toEqual(["a", "c", "f"]);
     expect(highlights(list, 1).map((i) => i.id)).toEqual(["c"]);
   });
+  it("fills a month of few days with its other photos", () => {
+    const list = [it2("a", 1), it2("b", 1), it2("c", 1), it2("d", 1), it2("e", 1)];
+    expect(highlights(list, 4)).toHaveLength(4);
+  });
   it("has no recap for a year without photos, and this year only in December", () => {
     expect(yearRecap([it2("a", 1)], 2024)).toBeNull();
     expect(recapYears([it2("a", 1)], new Date(2025, 10, 30))).toEqual([]);

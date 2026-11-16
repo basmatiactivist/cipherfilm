@@ -108,7 +108,7 @@ test.describe.serial("trips and recaps", () => {
     await expect(trips.getByRole("button")).toHaveCount(1); // home isn't a trip
     await card.click();
     await expect(page.locator("h1.pagetitle")).toHaveText("Rome, May 2024");
-    await expect(page.locator(".triphead")).toContainText("3 days · 6 items");
+    await expect(page.locator(".triphead")).toContainText("6 items");
     await page.getByRole("button", { name: "Save as album" }).click();
     await expect(page.getByText("Saved as the album “Rome, May 2024”.")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole("button", { name: "Open the album" })).toBeVisible();

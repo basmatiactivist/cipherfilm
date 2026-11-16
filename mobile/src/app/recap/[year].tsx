@@ -38,7 +38,7 @@ export default function RecapScreen() {
     router.push({ pathname: "/photo/[id]", params: { id: list[i].id, within: "memory" } });
   };
   const byKey = new Map(named.map((g) => [g.key, g]));
-  const facts = r ? [tn(r.photos, "{n} photo", "{n} photos"), r.videos ? tn(r.videos, "{n} video", "{n} videos") : "", tn(r.days, "{n} day", "{n} days"), r.countries > 1 ? tn(r.countries, "{n} country", "{n} countries") : ""].filter(Boolean).join(" · ") : "";
+  const facts = r ? [tn(r.photos, "{n} photo", "{n} photos"), r.videos ? tn(r.videos, "{n} video", "{n} videos") : "", tn(r.days, "{n} day with photos", "{n} days with photos"), r.countries > 1 ? tn(r.countries, "{n} country", "{n} countries") : ""].filter(Boolean).join(" · ") : "";
 
   return (
     <View style={{ flex: 1, backgroundColor: th.colors.background }}>

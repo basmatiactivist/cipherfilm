@@ -166,4 +166,7 @@ export const deAdmin: Record<string, string> = {
   "Invalid e-mail.": "Ungültige E-Mail-Adresse.",
   "Invalid storage limit.": "Ungültiges Speicherlimit.",
   "You can't change your own role, status or limit.": "Ihre eigene Rolle, Ihren Status und Ihr Limit können Sie nicht ändern.",
+  "Show fewer devices": "Weniger Geräte anzeigen",
+  "Show {n} more device": "{n} weiteres Gerät anzeigen",
+  "Show {n} more devices": "{n} weitere Geräte anzeigen",
 };

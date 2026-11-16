@@ -115,8 +115,9 @@ struct GeneralSettings: View {
       Divider()
       Text("Cipherfilm \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")\(model.me?.server_version.map { " · server \($0)" } ?? "") · libsodium \(Sodium.version) · ONNX Runtime \(Vision.runtimeVersion)")
         .font(Typo.small).foregroundStyle(.tertiary)
-      // the map's and the place names' sources ask to be named (OpenStreetMap: ODbL; GeoNames: CC BY 4.0)
-      Text(mapCredit + "Place names: GeoNames (geonames.org), CC BY 4.0")
+      // the map's, the place names' and the text model's sources ask to be named (OpenStreetMap: ODbL; GeoNames: CC BY
+      // 4.0; PaddleOCR: Apache 2.0)
+      Text(mapCredit + "Place names: GeoNames (geonames.org), CC BY 4.0 · Text recognition: PaddleOCR models, Apache 2.0")
         .font(Typo.small).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
     }
     .padding(24)
@@ -249,6 +250,16 @@ struct SearchSettings: View {
     }
   }
 
+  /** Text in photos: its model is asked for on its own (a no leaves search as it is). */
+  private func withOcrConsent(then: @escaping () -> Void) {
+    let store = model.search.models
+    Task { @MainActor in
+      await Task.detached { store.checkHere() }.value
+      guard let a = model.search.ocrAsk() else { then(); return }
+      consent = PendingConsent(ask: a, then: then)
+    }
+  }
+
   var body: some View {
     @Bindable var model = model
     let unlocked = model.phase == .unlocked
@@ -272,6 +283,15 @@ struct SearchSettings: View {
           if on && model.settings.search { withConsent(model.search.clip, faces: true) { model.settings.faces = true } } else { model.settings.faces = on }
         })).disabled(!unlocked || !model.settings.search)
         Toggle("Also while on battery", isOn: $model.settings.indexOnBattery).disabled(!model.settings.search)
+        // the words in photos (signs, receipts, screenshots), read by the Mac that indexes; off deletes its model
+        Toggle("Text in photos", isOn: Binding(get: { model.settings.textInPhotos }, set: { on in
+          if on { withOcrConsent { model.settings.textInPhotos = true } }
+          else { model.settings.textInPhotos = false; model.search.models.removeOcr() }
+        })).disabled(!unlocked || !model.settings.search || !model.search.indexes)
+        Text(model.search.indexes
+             ? "Finds photos by the words in them, read on this Mac with an open model (about \(ModelConsentSheet.mb(Models.ocrFiles.reduce(0) { $0 + $1.size }))). Turning it off deletes that model."
+             : "The device that indexes your photos reads the text in them.")
+          .font(Typo.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         if !unlocked { NeedsUnlock() }
       }
       // only for a person an admin allowed it (docs/SEARCH.md, "Explicit content")
@@ -294,6 +314,12 @@ struct SearchSettings: View {
         Section_(title: "Status") {
           Text(status(s)).font(Typo.caption)
           if s.phase == .consent { Button("Download…") { consent = PendingConsent(ask: s.pendingAsk(), then: {}) }.disabled(!unlocked) }
+          if s.ocrWaiting && model.settings.textInPhotos, let a = s.ocrAsk() {
+            Text("Text in photos waits for your OK to download its model.").font(Typo.caption)
+            Button("Download…") { consent = PendingConsent(ask: a, then: {}) }.disabled(!unlocked)
+          } else if s.textLeft > 0 {
+            Text("Reading the text in photos indexed before: \(s.textLeft) left.").font(Typo.caption).foregroundStyle(.secondary)
+          }
           Text("\(c.items) photos and videos indexed, \(c.faces) faces.").font(Typo.caption).foregroundStyle(.secondary)
         }
         // one device per account looks at the photos; the others read what it found (docs/SEARCH.md)

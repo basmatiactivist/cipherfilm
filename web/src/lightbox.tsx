@@ -1,4 +1,5 @@
 import { Icon, type IconName } from "./icons";
+import { textOf } from "./search/content";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Item, fetchOriginal } from "./items";
 import { lazy } from "./lazy";
@@ -52,7 +53,7 @@ function VideoPlayer({ item }: { item: Item }) {
 
 const Editor = lazy(() => import("./edit/editor").then((m) => m.Editor), () => null);
 
-export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number) => void; onClose: () => void; action?: { label: string; icon?: IconName; run: (it: Item) => Promise<void> }; people?: { all: Group[]; ready: boolean }; onPerson?: (key: string) => void; onFavorite?: (it: Item) => void; onMap?: () => void; onEdited?: (id: string) => void }) {
+export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number) => void; onClose: () => void; action?: { label: string; icon?: IconName; run: (it: Item) => Promise<void> }; people?: { all: Group[]; ready: boolean }; onPerson?: (key: string) => void; onFavorite?: (it: Item) => void; onMap?: () => void; onEdited?: (id: string) => void; found?: Map<string, string> }) {
   const dlg = useRef<HTMLDialogElement>(null);
   const startX = useRef<number | null>(null);
   const it = p.items[p.index];
@@ -175,6 +176,11 @@ export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number)
             {m?.gps && Number.isFinite(m.gps.lat) && Number.isFinite(m.gps.lon) && <MiniMap lat={m.gps.lat} lon={m.gps.lon} onShowMap={p.onMap} />}
             {m?.duration ? <div><dt>Length</dt><dd>{Math.round(m.duration)} s</dd></div> : null}
             {edited && <div><dt>Edited</dt><dd>{turned ? "Turned or cropped." : "Date or place changed."} The original is kept. <button class="link" disabled={busy} onClick={() => download(true)}>Download original</button></dd></div>}
+            {(() => {
+              // the text the indexing device read in the photo (docs/SEARCH.md): what matched the search, else its start
+              const all = textOf(it.id), hit = p.found?.get(it.id);
+              return all ? <div><dt>{hit ? "Text found" : "Text in photo"}</dt><dd dir="auto" class="phototext">{hit ?? (all.length > 240 ? `${all.slice(0, 240)}…` : all)}</dd></div> : null;
+            })()}
             {p.people && p.onPerson && !it.broken && <PhotoPeople item={it} all={p.people.all} ready={p.people.ready} onPerson={p.onPerson} />}
           </dl>
           <p class="small">Decrypted in your browser. The server never sees these details.</p>

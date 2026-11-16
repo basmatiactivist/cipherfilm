@@ -32,6 +32,15 @@ version into the GitHub release notes, so a release cannot be published without 
 - Whether an item is archived or locked is written inside its encrypted metadata (as a new metadata version), so the
   server can't tell which items are in which folder (docs/EDITING.md, docs/CRYPTO.md). Older app versions don't know
   the folders and show such items as usual: update every app before using the locked folder.
+- Combined search on the web, Android and Mac: one query mixes filters and content, such as "dog beach May 2025 Anna
+  Rome" or "Hund Strand 2025 Anna Rom". Names of people, years, months (English and German), date ranges ("2019–2021",
+  "since 2020", "May to July 2025"), places where photos were taken, favorites, videos and screenshots become
+  filters, shown as chips that can be removed; the words left are searched for in the photos. Common German words are
+  given to the image model in English. The same parser and the same test cases on every platform.
+- Text in photos: the indexing device (Android or Mac) reads the text in photos with a small open model (about 10 MB,
+  Latin script, downloaded only after you agree, like the other search models) and keeps it in the photo's encrypted
+  index entry. Every app finds photos by that text, the web too without the model; a photo's details show what
+  matched. Older photos are read in the background, a few at a time. Turn it off in the search settings.
 
 ### Security
 - A password change, an account turned off by an admin and a recovery now count as signed out from another device:

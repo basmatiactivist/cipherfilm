@@ -43,6 +43,8 @@
     "../web/src/edit/exif.ts",
     "../web/src/search/explicit.ts",
     "../web/src/search/rank.ts",
+    "../web/src/search/parse.ts",
+    "../web/src/search/glossary-de.json",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
   ],

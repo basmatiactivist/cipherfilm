@@ -72,6 +72,9 @@ struct AccountSettings: Codable, Equatable {
   var searchAsked = false
   /** index while running on battery too (off: only on power) */
   var indexOnBattery = true
+  /** text in photos: the indexing Mac reads the text in them (its model is downloaded after the person's OK; off
+   *  deletes it) */
+  var textInPhotos = true
   // continuous export
   var exportOn = false
   var exportPath: String?

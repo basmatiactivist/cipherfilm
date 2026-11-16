@@ -9,9 +9,9 @@ import { FaceAvatar } from "../Faces";
 import { Icon, type IconName } from "../icons";
 import { refreshLibrary, useLibrary } from "../libraryStore";
 import type { Item } from "../library";
-import { similarTo, useSearchProgress, type Progress } from "../search/engine";
+import { similarTo, useSearchProgress, useTextProgress, type Progress } from "../search/engine";
 import { usePeople } from "../search/people";
-import { search, SUGGESTIONS, type Result } from "../search/query";
+import { removeChip, search, SUGGESTIONS, type Result } from "../search/query";
 import { loadSettings, onSettingsChange, type SearchSettings } from "../search/settings";
 import { useAppTheme } from "../ui";
 import { radius, text } from "../tokens";
@@ -53,7 +53,7 @@ export default function Search() {
     setBusy(true);
     const h = setTimeout(() => {
       // one that fails finds nothing, rather than leaving the badge on
-      search(q, (items ?? []).filter((i) => !i.broken)).then((r) => { if (seq.current === mine) setRes(r); }, () => { if (seq.current === mine) setRes({ items: [], people: [], how: [] }); })
+      search(q, (items ?? []).filter((i) => !i.broken)).then((r) => { if (seq.current === mine) setRes(r); }, () => { if (seq.current === mine) setRes({ items: [], people: [], how: [], chips: [], snippets: {} }); })
         .finally(() => { if (seq.current === mine) setBusy(false); });
     }, 250);
     return () => clearTimeout(h);
@@ -68,7 +68,17 @@ export default function Search() {
         icon="search" clearIcon="x" style={{ backgroundColor: th.colors.surfaceVariant }} inputStyle={{ minHeight: 0 }}
         autoCorrect={false} returnKeyType="search" accessibilityLabel={t("Search your photos")}
         searchAccessibilityLabel={t("Search")} clearAccessibilityLabel={t("Clear the search")} />
-      {res?.how.length ? <Text variant="bodySmall" style={{ marginTop: 8, color: th.colors.onSurfaceVariant }}>{tn(res.items.length, "{n} result · {how}", "{n} results · {how}", { how: res.how.join(" · ") })}</Text> : null}
+      {/* what the words were taken as (a person, a place, dates…): all of them hold; × takes those words out of the box */}
+      {q.trim() && res?.chips.length ? (
+        <View style={st.queryChips}>
+          {res.chips.map((c) => (
+            <Chip key={`${c.kind}:${c.start}`} compact onClose={() => setQ(removeChip(q, c))} closeIcon="x" style={{ backgroundColor: th.colors.secondaryContainer }}
+              accessibilityLabel={c.label} accessibilityHint={t("Removes this filter")}>{c.label}</Chip>
+          ))}
+        </View>
+      ) : null}
+      {q.trim() && res?.how.length ? <Text variant="bodySmall" numberOfLines={2} style={{ marginTop: 8, color: th.colors.onSurfaceVariant }}>{tn(res.items.length, "{n} result · {how}", "{n} results · {how}", { how: res.how.join(" · ") })}</Text>
+        : q.trim() && res?.chips.length ? <Text variant="bodySmall" style={{ marginTop: 8, color: th.colors.onSurfaceVariant }}>{tn(res.items.length, "{n} result", "{n} results")}</Text> : null}
       {similar ? (
         <View style={st.similarRow}>
           <Text style={[text.heading, { flex: 1 }]}>{t("Photos like this one")}</Text>
@@ -105,6 +115,7 @@ export default function Search() {
       {bar}
       <ScrollView contentContainerStyle={{ paddingBottom: inset.bottom + NAV_HEIGHT + 24 }} keyboardShouldPersistTaps="handled">
         {settings && !settings.enabled ? <TurnOn /> : <Status p={progress} />}
+        {settings?.enabled && progress.phase === "ready" ? <TextStatus /> : null}
         {settings?.enabled && settings.faces && people.length ? (
           <>
             <Heading title={t("People")} action={[t("See all"), () => router.push("/people")]} />
@@ -177,6 +188,23 @@ function Status({ p }: { p: Progress }) {
   );
 }
 
+/** Text in photos, when it waits for something or reads older photos (search itself is ready). */
+function TextStatus() {
+  const th = useAppTheme();
+  const p = useTextProgress();
+  const text = p.phase === "consent" ? t("Text in photos waits for your OK to download its model ({size}).", { size: mb(p.total) })
+    : p.phase === "waitWifi" ? t("Text in photos: waiting for Wi-Fi to download its model ({size}).", { size: mb(p.total) })
+    : p.phase === "download" ? t("Text in photos: downloading · {done} of {total}", { done: mb(p.done), total: mb(p.total) })
+    : p.phase === "reading" ? t("Reading the text in older photos · {done} of {total}", { done: num(p.done), total: num(p.total) })
+    : null;
+  if (!text) return null;
+  return (
+    <Pressable onPress={() => router.push("/search-settings")} style={[st.card, { backgroundColor: th.colors.surfaceVariant }]} accessibilityRole="button">
+      <Text variant="bodyMedium">{text}</Text>
+    </Pressable>
+  );
+}
+
 function NoResults({ ready, on }: { ready: boolean; on: boolean }) {
   const th = useAppTheme();
   return (
@@ -211,4 +239,5 @@ const st = StyleSheet.create({
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 8, paddingHorizontal: 16 },
   hint: { paddingHorizontal: 16, paddingTop: 16 },
   similarRow: { flexDirection: "row", alignItems: "center", marginTop: 8 },
+  queryChips: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 },
 });

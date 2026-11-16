@@ -31,6 +31,7 @@ vi.mock("../../modules/cf-native/src/CfNativeModule", () => ({
     downloadModel: async (url: string, path: string) => { fetched.push(url); fs.files.set(`file://${path}`, { text: "", mtime: 1 }); return true; },
     checkModel: async (path: string) => fs.good.has(path.split("/").pop()!),
     visionClose: () => {},
+    ocrClose: () => {},
   },
 }));
 
@@ -143,5 +144,43 @@ describe("asking before the models are downloaded (Android)", () => {
     expect(m.unagreed(false, "clip-b32").map((x) => x.name)).toEqual(["clip-b32-vision.onnx"]);
     await expect(m.downloadModels(false, "clip-b32", () => {})).rejects.toBeInstanceOf(m.NeedsConsent);
     expect(fetched).toEqual([]);
+  });
+});
+
+describe("text in photos (Android)", () => {
+  const OCR = ["ocr-det-v3.onnx", "ocr-latin-dict.txt", "ocr-rec-latin-v5.onnx"];
+  it("its files are asked for like the others, only for the phone that indexes, and never hold up the rest", async () => {
+    const m = await load();
+    // the question when search is turned on with "Text in photos" on names them, with their size
+    expect(m.unagreed(true, "clip-b32", true, true).map((x) => x.name).sort()).toEqual([...m.needed(true, "clip-b32").map((x) => x.name), ...OCR].sort());
+    // a phone that only searches never downloads them (another device reads the text)
+    expect(m.unagreed(true, "clip-b32", false, true).map((x) => x.name).sort()).toEqual(["clip-b32-text.onnx", "clip-b32-tokenizer.json"]);
+    // a yes for search alone (the text part declined or not answered) lets search and people download; the text part waits
+    m.agreeModels(true, "clip-b32");
+    expect(m.unagreed(true, "clip-b32")).toEqual([]);
+    expect(m.ocrUnagreed().map((x) => x.name).sort()).toEqual(OCR);
+    await m.downloadModels(true, "clip-b32", () => {});
+    expect(fetched.some((u) => /paddleocr/.test(u))).toBe(false);
+    await expect(m.downloadOcr(() => {})).rejects.toBeInstanceOf(m.NeedsConsent);
+    // its own yes: from the pinned URLs, then checked (SHA-256) before use
+    m.agreeOcr();
+    expect(m.ocrUnagreed()).toEqual([]);
+    fetched.length = 0;
+    await m.downloadOcr(() => {});
+    expect(fetched).toEqual(m.OCR_MODELS.map((x) => x.url));
+    expect(fetched.every((u) => /^https:\/\/huggingface\.co\/monkt\/paddleocr-onnx\/resolve\/[0-9a-f]{40}\//.test(u))).toBe(true);
+    for (const n of OCR) fs.good.add(n);
+    expect(await m.haveOcr()).toBe(true);
+  });
+
+  it("turning it off deletes the three files and the yes for them; the rest stays", async () => {
+    const m = await load();
+    m.agreeModels(true, "clip-b32", true, true);
+    for (const x of m.MODELS) fs.files.set(at(x.name), { text: "", mtime: 1 });
+    m.deleteOcr();
+    expect(OCR.some((n) => fs.files.has(at(n)))).toBe(false);
+    expect(m.MODELS.filter((x) => !x.ocr).every((x) => fs.files.has(at(x.name)))).toBe(true);
+    expect(m.ocrUnagreed().map((x) => x.name).sort()).toEqual(OCR); // asked again before they come back
+    expect(m.unagreed(true, "clip-b32")).toEqual([]);
   });
 });

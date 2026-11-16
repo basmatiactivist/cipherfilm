@@ -56,19 +56,26 @@ MobileCLIP's files are not passed through any more (below), so such an app can't
 | `clip-b32-tokenizer.json` | CLIP BPE tokenizer | OpenAI (CLIP), in Immich's export | same, `textual/tokenizer.json` | MIT | 3,642,073 bytes |
 | `yunet-2023mar.onnx` | YuNet face detector | OpenCV (Shiqi Yu et al.) | [opencv/face_detection_yunet](https://huggingface.co/opencv/face_detection_yunet) `3cc26e7f…` | MIT | 232,589 bytes |
 | `sface-2021dec.onnx` | SFace face recognition | OpenCV (Yaoyao Zhong et al.) | [opencv/face_recognition_sface](https://huggingface.co/opencv/face_recognition_sface) `3d708243…` | Apache 2.0 | 38,696,353 bytes |
+| `ocr-det-v3.onnx` | PP-OCRv3 mobile text detector | PaddlePaddle (PaddleOCR), ONNX export by monkt | [monkt/paddleocr-onnx](https://huggingface.co/monkt/paddleocr-onnx) `7b02d0a3…`, `detection/v3/det.onnx` | Apache 2.0 | 2,429,873 bytes |
+| `ocr-rec-latin-v5.onnx` | PP-OCRv5 mobile text recogniser, Latin script | same | same, `languages/latin/rec.onnx` | Apache 2.0 | 7,862,832 bytes |
+| `ocr-latin-dict.txt` | its character list (502) | same | same, `languages/latin/dict.txt` | Apache 2.0 | 1,634 bytes |
 
 | SHA-256 | File |
 |---|---|
 | `b9ce24b91a8c62ef8d40ea786051709c93140104cbf2b6b4a2cc270df3838f9c` | `clip-b32-vision.onnx` |
 | `48c25be37b352398f2533c9426dab6f9340535e14e46f884cc894236a5060722` | `clip-b32-text.onnx` |
 | `6d9109cc838977f3ca94a379eec36aecc7c807e1785cd729660ca2fc0171fb35` | `clip-b32-tokenizer.json` |
+| `ee40e80071ba3a320d4efda75f3e22047a7d049e9bf7bcaaf9daea23fc21b935` | `ocr-det-v3.onnx` |
+| `614ffc2d6d3902d360fad7f1b0dd455ee45e877069d14c4e51a99dc4ef144409` | `ocr-rec-latin-v5.onnx` |
+| `3c0a8a79b612653c25f765271714f71281e4e955962c153e272b7b8c1d2b13ff` | `ocr-latin-dict.txt` |
 
 The weights are LAION's, published under MIT ([laion/CLIP-ViT-B-32-laion2B-s34B-b79K](https://huggingface.co/laion/CLIP-ViT-B-32-laion2B-s34B-b79K),
 `license:mit`). Immich's repository is an ONNX conversion of them without a license of its own; its vectors are
 identical to the original's (below). The two model files are the ones explicit search used before, under neutral
 names (they were `nsfw-laion-b32-*`; a device moves them, docs/SEARCH.md "One model").
 
-Downloads per device: indexing (Android, Mac) 609,449,193 bytes, 648,378,135 with the face models; a device that
+Downloads per device: indexing (Android, Mac) 609,449,193 bytes, 648,378,135 with the face models, 10,294,339 more
+with text in photos (only the indexing device, docs/SEARCH.md "Text in photos"); a device that
 only searches, and the web app: 257,835,469 bytes (text model and tokenizer).
 
 **No longer used: MobileCLIP S2.** Until 2.6.x the standard search model was Apple's MobileCLIP S2
@@ -90,6 +97,11 @@ The full commits, SHA-256 values and sizes are in `server/models.json`.
   tokenizer (`textual/tokenizer.json`) has the same vocabulary and merges as CLIP's and gives the ids the apps' own
   tokenizers are tested against. The browser's text vectors (ONNX Runtime Web) and the Mac's (image and text) match
   the Python reference with cosine ≥ 0.9999 (`web/src/search/search.test.ts`, `mac/.../LaionParityTests.swift`).
+- **Text in photos:** the repository's monkt/paddleocr-onnx files are ONNX conversions of PaddleOCR's own models
+  (`PP-OCRv3_mobile_det`, `latin_PP-OCRv5_mobile_rec`, Apache 2.0, github.com/PaddlePaddle/PaddleOCR); the repository is
+  Apache 2.0 too. The reference steps (`scripts/ocr-reference.py`) read the test picture
+  (`web/src/search/ocr-fixture.jpg`) exactly ("BAKERY OPEN Zürich Hauptbahnhof Gleis 7 Fresh bread daily"), and the
+  Mac's and Android's steps are tested against that text.
 - **Mac and Android** produce the same vectors for the same photo (image cosine ≥ 0.998), so entries from either
   device are used by the other.
 
@@ -104,6 +116,9 @@ can't run foreign code. The worst a wrong file could do is search badly; and a w
   chooses it, find it. It is larger than MobileCLIP S2 was (606 MB against 207 MB for the two encoders) and somewhat
   weaker for ordinary searches (Flickr30k text-to-image recall 66.4 % vs 73.4 %).
 - **YuNet and SFace:** small, fast and accurate enough on a phone; widely used through OpenCV.
+- **PaddleOCR (PP-OCR):** open (Apache 2.0), small (10.3 MB for detection and Latin recognition), runs with the ONNX
+  Runtime the apps already have, on every platform the same; the v3 mobile detector is a fraction of the v5 one's size
+  (2.4 MB against 88 MB) and good enough to find words to search for.
 
 ## Provenance notes
 
@@ -124,6 +139,6 @@ can't run foreign code. The worst a wrong file could do is search badly; and a w
 OpenCLIP and LAION-2B: Cherti et al., "Reproducible scaling laws for contrastive language-image learning"
 (CVPR 2023); Schuhmann et al., "LAION-5B" (NeurIPS 2022). YuNet: Wu, Peng, Yu, "YuNet: A Tiny Millisecond-level Face
 Detector" (2023). SFace: Zhong et al., "SFace: Sigmoid-Constrained Hypersphere Loss for Robust Face Recognition"
-(2021). ONNX export of the LAION model: the Immich project. CLIP: Radford et al. (OpenAI, 2021).
+(2021). ONNX export of the LAION model: the Immich project. PP-OCR: PaddlePaddle, "PP-OCRv3" (Li et al., 2022) and PaddleOCR 3.0 (2025); ONNX export by monkt. CLIP: Radford et al. (OpenAI, 2021).
 
 Hugging Face is a trademark of Hugging Face, Inc. Cipherfilm is not affiliated with or endorsed by Hugging Face.

@@ -1,0 +1,956 @@
+{
+  "about": "Query parser cases (docs/SEARCH.md \"Combined search\"), run by web/src/search/parse.test.ts and the Mac's QueryParserTests.swift. Places: folded phrase -> name, as if the library had photos there.",
+  "context": {
+    "people": [
+      "Anna Müller",
+      "Anna Schmidt",
+      "Ben",
+      "Jean-Luc Picard"
+    ],
+    "places": {
+      "rome": "Rome",
+      "rom": "Rome",
+      "new york": "New York",
+      "zurich": "Zurich",
+      "switzerland": "Switzerland",
+      "schweiz": "Switzerland",
+      "bath": "Bath"
+    },
+    "today": "2026-11-16"
+  },
+  "cases": [
+    {
+      "q": "Hund Strand 2025 Anna Rom",
+      "people": [
+        [
+          "Anna Müller",
+          "Anna Schmidt"
+        ]
+      ],
+      "places": [
+        "Rome"
+      ],
+      "dates": [
+        {
+          "from": "2025-01-01",
+          "to": "2025-12-31"
+        }
+      ],
+      "text": "hund strand",
+      "clip": "dog beach",
+      "chips": [
+        [
+          "date",
+          2,
+          3
+        ],
+        [
+          "person",
+          3,
+          4
+        ],
+        [
+          "place",
+          4,
+          5
+        ]
+      ]
+    },
+    {
+      "q": "dog beach May 2025 Anna Rome",
+      "people": [
+        [
+          "Anna Müller",
+          "Anna Schmidt"
+        ]
+      ],
+      "places": [
+        "Rome"
+      ],
+      "dates": [
+        {
+          "from": "2025-05-01",
+          "to": "2025-05-31"
+        }
+      ],
+      "text": "dog beach",
+      "clip": "dog beach",
+      "chips": [
+        [
+          "date",
+          2,
+          4
+        ],
+        [
+          "person",
+          4,
+          5
+        ],
+        [
+          "place",
+          5,
+          6
+        ]
+      ]
+    },
+    {
+      "q": "Anna Müller",
+      "people": [
+        [
+          "Anna Müller"
+        ]
+      ],
+      "text": "",
+      "clip": "",
+      "chips": [
+        [
+          "person",
+          0,
+          2
+        ]
+      ]
+    },
+    {
+      "q": "muller",
+      "people": [
+        [
+          "Anna Müller"
+        ]
+      ],
+      "text": "",
+      "chips": [
+        [
+          "person",
+          0,
+          1
+        ]
+      ]
+    },
+    {
+      "q": "anna ben",
+      "people": [
+        [
+          "Anna Müller",
+          "Anna Schmidt"
+        ],
+        [
+          "Ben"
+        ]
+      ],
+      "text": "",
+      "chips": [
+        [
+          "person",
+          0,
+          1
+        ],
+        [
+          "person",
+          1,
+          2
+        ]
+      ]
+    },
+    {
+      "q": "photos with Ben at the zoo",
+      "people": [
+        [
+          "Ben"
+        ]
+      ],
+      "text": "the zoo",
+      "clip": "the zoo",
+      "chips": [
+        [
+          "person",
+          1,
+          3
+        ]
+      ]
+    },
+    {
+      "q": "jean-luc",
+      "people": [
+        [
+          "Jean-Luc Picard"
+        ]
+      ],
+      "text": "",
+      "chips": [
+        [
+          "person",
+          0,
+          1
+        ]
+      ]
+    },
+    {
+      "q": "2019-2021",
+      "dates": [
+        {
+          "from": "2019-01-01",
+          "to": "2021-12-31"
+        }
+      ],
+      "text": "",
+      "chips": [
+        [
+          "date",
+          0,
+          1
+        ]
+      ]
+    },
+    {
+      "q": "2021–2019 snow",
+      "dates": [
+        {
+          "from": "2019-01-01",
+          "to": "2021-12-31"
+        }
+      ],
+      "text": "snow",
+      "chips": [
+        [
+          "date",
+          0,
+          1
+        ]
+      ]
+    },
+    {
+      "q": "zwischen 2019 und 2021 Schnee",
+      "dates": [
+        {
+          "from": "2019-01-01",
+          "to": "2021-12-31"
+        }
+      ],
+      "text": "schnee",
+      "clip": "snow",
+      "chips": [
+        [
+          "date",
+          0,
+          4
+        ]
+      ]
+    },
+    {
+      "q": "from 2019 to 2021",
+      "dates": [
+        {
+          "from": "2019-01-01",
+          "to": "2021-12-31"
+        }
+      ],
+      "text": "",
+      "chips": [
+        [
+          "date",
+          0,
+          4
+        ]
+      ]
+    },
+    {
+      "q": "2019 - 2021 cake",
+      "dates": [
+        {
+          "from": "2019-01-01",
+          "to": "2021-12-31"
+        }
+      ],
+      "text": "cake",
+      "chips": [
+        [
+          "date",
+          0,
+          3
+        ]
+      ]
+    },
+    {
+      "q": "since 2020",
+      "dates": [
+        {
+          "from": "2020-01-01"
+        }
+      ],
+      "text": "",
+      "chips": [
+        [
+          "date",
+          0,
+          2
+        ]
+      ]
+    },
+    {
+      "q": "nach 2020",
+      "dates": [
+        {
+          "from": "2021-01-01"
+        }
+      ],
+      "text": "",
+      "chips": [
+        [
+          "date",
+          0,
+          2
+        ]
+      ]
+    },
+    {
+      "q": "before 2020 cat",
+      "dates": [
+        {
+          "to": "2019-12-31"
+        }
+      ],
+      "text": "cat",
+      "chips": [
+        [
+          "date",
+          0,
+          2
+        ]
+      ]
+    },
+    {
+      "q": "bis 2020",
+      "dates": [
+        {
+          "to": "2020-12-31"
+        }
+      ],
+      "text": "",
+      "chips": [
+        [
+          "date",
+          0,
+          2
+        ]
+      ]
+    },
+    {
+      "q": "Mai",
+      "dates": [
+        {
+          "months": [
+            4,
+            4
+          ]
+        }
+      ],
+      "text": "",
+      "chips": [
+        [
+          "date",
+          0,
+          1
+        ]
+      ]
+    },
+    {
+      "q": "im Mai 2024",
+      "dates": [
+        {
+          "from": "2024-05-01",
+          "to": "2024-05-31"
+        }
+      ],
+      "text": "",
+      "chips": [
+        [
+          "date",
+          0,
+          3
+        ]
+      ]
+    },
+    {
+      "q": "2024 february",
+      "dates": [
+        {
+          "from": "2024-02-01",
+          "to": "2024-02-29"
+        }
+      ],
+      "text": "",
+      "chips": [
+        [
+          "date",
+          0,
+          2
+        ]
+      ]
+    },
+    {
+      "q": "Mai bis Juli 2025",
+      "dates": [
+        {
+          "from": "2025-05-01",
+          "to": "2025-07-31"
+        }
+      ],
+      "text": "",
+      "chips": [
+        [
+          "date",
+          0,
+          4
+        ]
+      ]
+    },
+    {
+      "q": "june to august",
+      "dates": [
+        {
+          "months": [
+            5,
+            7
+          ]
+        }
+      ],
+      "text": "",
+      "chips": [
+        [
+          "date",
+          0,
+          3
+        ]
+      ]
+    },
+    {
+      "q": "März",
+      "dates": [
+        {
+          "months": [
+            2,
+            2
+          ]
+        }
+      ],
+      "text": "",
+      "chips": [
+        [
+          "date",
+          0,
+          1
+        ]
+      ]
+    },
+    {
+      "q": "dez. 2023",
+      "dates": [
+        {
+          "from": "2023-12-01",
+          "to": "2023-12-31"
+        }
+      ],
+      "text": "",
+      "chips": [
+        [
+          "date",
+          0,
+          2
+        ]
+      ]
+    },
+    {
+      "q": "christmas",
+      "dates": [
+        {
+          "months": [
+            11,
+            11
+          ],
+          "days": [
+            20,
+            27
+          ]
+        }
+      ],
+      "text": "",
+      "chips": [
+        [
+          "date",
+          0,
+          1
+        ]
+      ]
+    },
+    {
+      "q": "Weihnachten 2023 Baum",
+      "dates": [
+        {
+          "from": "2023-12-20",
+          "to": "2023-12-27"
+        }
+      ],
+      "text": "baum",
+      "clip": "tree",
+      "chips": [
+        [
+          "date",
+          0,
+          2
+        ]
+      ]
+    },
+    {
+      "q": "24.12.2023",
+      "dates": [
+        {
+          "from": "2023-12-24",
+          "to": "2023-12-24"
+        }
+      ],
+      "text": "",
+      "chips": [
+        [
+          "date",
+          0,
+          1
+        ]
+      ]
+    },
+    {
+      "q": "2023-07-04 fireworks",
+      "dates": [
+        {
+          "from": "2023-07-04",
+          "to": "2023-07-04"
+        }
+      ],
+      "text": "fireworks",
+      "chips": [
+        [
+          "date",
+          0,
+          1
+        ]
+      ]
+    },
+    {
+      "q": "2023-07",
+      "dates": [
+        {
+          "from": "2023-07-01",
+          "to": "2023-07-31"
+        }
+      ],
+      "text": "",
+      "chips": [
+        [
+          "date",
+          0,
+          1
+        ]
+      ]
+    },
+    {
+      "q": "last year",
+      "dates": [
+        {
+          "from": "2025-01-01",
+          "to": "2025-12-31"
+        }
+      ],
+      "text": "",
+      "chips": [
+        [
+          "date",
+          0,
+          2
+        ]
+      ]
+    },
+    {
+      "q": "dieses Jahr Hund",
+      "dates": [
+        {
+          "from": "2026-01-01",
+          "to": "2026-12-31"
+        }
+      ],
+      "text": "hund",
+      "clip": "dog",
+      "chips": [
+        [
+          "date",
+          0,
+          2
+        ]
+      ]
+    },
+    {
+      "q": "may",
+      "dates": [
+        {
+          "months": [
+            4,
+            4
+          ]
+        }
+      ],
+      "text": "",
+      "chips": [
+        [
+          "date",
+          0,
+          1
+        ]
+      ]
+    },
+    {
+      "q": "favorites",
+      "favorites": true,
+      "text": "",
+      "chips": [
+        [
+          "favorites",
+          0,
+          1
+        ]
+      ]
+    },
+    {
+      "q": "Videos Schnee",
+      "videos": true,
+      "text": "schnee",
+      "clip": "snow",
+      "chips": [
+        [
+          "videos",
+          0,
+          1
+        ]
+      ]
+    },
+    {
+      "q": "Lieblingsfotos Zürich",
+      "favorites": true,
+      "places": [
+        "Zurich"
+      ],
+      "text": "",
+      "chips": [
+        [
+          "favorites",
+          0,
+          1
+        ],
+        [
+          "place",
+          1,
+          2
+        ]
+      ]
+    },
+    {
+      "q": "screenshots",
+      "screenshots": true,
+      "text": "",
+      "chips": [
+        [
+          "screenshots",
+          0,
+          1
+        ]
+      ]
+    },
+    {
+      "q": "sunset in new york",
+      "places": [
+        "New York"
+      ],
+      "text": "sunset",
+      "chips": [
+        [
+          "place",
+          1,
+          4
+        ]
+      ]
+    },
+    {
+      "q": "Schweiz Berge",
+      "places": [
+        "Switzerland"
+      ],
+      "text": "berge",
+      "clip": "mountains",
+      "chips": [
+        [
+          "place",
+          0,
+          1
+        ]
+      ]
+    },
+    {
+      "q": "zurich switzerland",
+      "places": [
+        "Zurich",
+        "Switzerland"
+      ],
+      "text": "",
+      "chips": [
+        [
+          "place",
+          0,
+          1
+        ],
+        [
+          "place",
+          1,
+          2
+        ]
+      ]
+    },
+    {
+      "q": "birthday cake",
+      "text": "birthday cake",
+      "clip": "birthday cake",
+      "chips": []
+    },
+    {
+      "q": "Hund am See",
+      "text": "hund am see",
+      "clip": "dog at the lake",
+      "chips": []
+    },
+    {
+      "q": "dog in",
+      "text": "dog",
+      "chips": []
+    },
+    {
+      "q": "Bäckerei Müller",
+      "people": [
+        [
+          "Anna Müller"
+        ]
+      ],
+      "text": "backerei",
+      "chips": [
+        [
+          "person",
+          1,
+          2
+        ]
+      ]
+    },
+    {
+      "q": "  dog,  2025  ",
+      "dates": [
+        {
+          "from": "2025-01-01",
+          "to": "2025-12-31"
+        }
+      ],
+      "text": "dog",
+      "chips": [
+        [
+          "date",
+          1,
+          2
+        ]
+      ]
+    },
+    {
+      "q": "1850 receipt",
+      "text": "1850 receipt",
+      "chips": []
+    },
+    {
+      "q": "fotos von Anna aus Rom im Mai",
+      "people": [
+        [
+          "Anna Müller",
+          "Anna Schmidt"
+        ]
+      ],
+      "places": [
+        "Rome"
+      ],
+      "dates": [
+        {
+          "months": [
+            4,
+            4
+          ]
+        }
+      ],
+      "text": "",
+      "chips": [
+        [
+          "person",
+          1,
+          3
+        ],
+        [
+          "place",
+          3,
+          5
+        ],
+        [
+          "date",
+          5,
+          7
+        ]
+      ]
+    },
+    {
+      "q": "constructor toString",
+      "text": "constructor tostring",
+      "chips": []
+    },
+    {
+      "q": "Favorit Hund",
+      "favorites": true,
+      "text": "hund",
+      "clip": "dog",
+      "chips": [
+        [
+          "favorites",
+          0,
+          1
+        ]
+      ]
+    }
+  ],
+  "remove": [
+    {
+      "q": "dog beach May 2025 Anna Rome",
+      "chip": 0,
+      "out": "dog beach Anna Rome"
+    },
+    {
+      "q": "dog beach May 2025 Anna Rome",
+      "chip": 2,
+      "out": "dog beach May 2025 Anna"
+    },
+    {
+      "q": "fotos von Anna aus Rom",
+      "chip": 0,
+      "out": "fotos aus Rom"
+    }
+  ],
+  "text": [
+    {
+      "text": "BAKERY OPEN Zürich Hauptbahnhof Gleis 7 Fresh bread daily",
+      "q": "zurich gleis",
+      "match": "BAKERY OPEN Zürich Hauptbahnhof Gleis 7 Fresh bread…"
+    },
+    {
+      "text": "BAKERY OPEN Zürich Hauptbahnhof Gleis 7 Fresh bread daily",
+      "q": "the bakery",
+      "match": "BAKERY OPEN Zürich Hauptbahnhof Gleis 7 Fresh bread…"
+    },
+    {
+      "text": "BAKERY OPEN Zürich Hauptbahnhof Gleis 7 Fresh bread daily",
+      "q": "daily",
+      "match": "…Fresh bread daily"
+    },
+    {
+      "text": "BAKERY OPEN",
+      "q": "bakery closed",
+      "match": null
+    },
+    {
+      "text": "",
+      "q": "bakery",
+      "match": null
+    },
+    {
+      "text": "Straße gesperrt",
+      "q": "strasse",
+      "match": "Straße gesperrt"
+    }
+  ],
+  "when": [
+    {
+      "when": {
+        "from": "2025-05-01",
+        "to": "2025-05-31"
+      },
+      "day": "2025-05-31",
+      "in": true
+    },
+    {
+      "when": {
+        "from": "2025-05-01",
+        "to": "2025-05-31"
+      },
+      "day": "2025-06-01",
+      "in": false
+    },
+    {
+      "when": {
+        "months": [
+          11,
+          11
+        ],
+        "days": [
+          20,
+          27
+        ]
+      },
+      "day": "2019-12-24",
+      "in": true
+    },
+    {
+      "when": {
+        "months": [
+          11,
+          11
+        ],
+        "days": [
+          20,
+          27
+        ]
+      },
+      "day": "2019-12-28",
+      "in": false
+    },
+    {
+      "when": {
+        "months": [
+          5,
+          7
+        ]
+      },
+      "day": "2019-08-15",
+      "in": true
+    },
+    {
+      "when": {
+        "from": "2021-01-01"
+      },
+      "day": "2020-12-31",
+      "in": false
+    }
+  ],
+  "slot": [
+    {
+      "in": "BAKERY OPEN",
+      "out": "BAKERY OPEN"
+    },
+    {
+      "in": "  Zürich \"Gleis\" 7 / Ausgang\\West\n\tNord ",
+      "out": "Zürich Gleis 7 Ausgang West Nord"
+    },
+    {
+      "in": "",
+      "out": ""
+    },
+    {
+      "in": "€uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro ",
+      "out": "€uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro €uro"
+    }
+  ]
+}

@@ -283,3 +283,36 @@ describe("search index", () => {
     expect(() => decryptPeople(s, enc, acct.masterKey, "u2")).toThrow();
   }, 60_000);
 });
+
+describe("text in photos (docs/SEARCH.md)", () => {
+  test("the text takes the same room whatever it says; entries without it still open", async () => {
+    const { accountKeyPair } = await import("./item");
+    const { openIndexEntry, sealIndexEntry, textSlot, entryText, OCR_TAG, TEXT_BYTES } = await import("./search");
+    const s = await getSodium();
+    const acct = await createAccount(s, "a@b.org", "pw pw pw pw", newKdfParams(s, 2, 32 * 1024 * 1024));
+    const pk = unb64(s, acct.bundle.pubkey);
+    const pair = accountKeyPair(s, unb64(s, acct.bundle.wrapped_privkey), acct.masterKey, "a@b.org");
+    const id = "0123456789abcdef0123456789abcdef";
+    const base = { v: 1 as const, m: "laionb32+yunet23+sface21/1", clip: "A".repeat(1366), faces: [] };
+    const texts = ["", "BAKERY OPEN", "Zürich Hauptbahnhof \"Gleis\" 7 / Ausgang\nWest", "wörter ".repeat(400), "€".repeat(500)];
+    const sizes = new Set<number>(), plain = new Set<number>();
+    for (const t of texts) {
+      const e = { ...base, o: OCR_TAG, t: textSlot(t) };
+      plain.add(new TextEncoder().encode(JSON.stringify(e)).length);
+      const blob = sealIndexEntry(s, e, pk, id);
+      sizes.add(blob.length);
+      const back = openIndexEntry(s, blob, pair, id);
+      expect(back.o).toBe(OCR_TAG);
+      expect(new TextEncoder().encode(back.t!).length).toBe(TEXT_BYTES);
+      expect(t.startsWith(entryText(back).split(" ")[0] ?? "") || t.includes(entryText(back).slice(0, 5))).toBe(true);
+    }
+    expect(plain.size).toBe(1); // the same number of bytes before padding, so the same after it
+    expect(sizes.size).toBe(1);
+    expect(entryText({ ...base, o: OCR_TAG, t: textSlot('Zürich "Gleis" 7') })).toBe("Zürich Gleis 7");
+    // an entry from before text in photos opens as it did, with no text
+    const old = sealIndexEntry(s, base, pk, id);
+    expect(entryText(openIndexEntry(s, old, pair, id))).toBe("");
+    expect(openIndexEntry(s, old, pair, id).o).toBeUndefined();
+  }, 60_000);
+});
+

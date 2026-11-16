@@ -11,8 +11,9 @@ import { t } from "../i18n";
  *  (@websearch/explicit). The parameter stays in the functions below, with this one value. */
 export type Clip = "clip-b32";
 export const CLIP: Clip = "clip-b32";
-/** text: needed by a phone that only searches (another device indexes, docs/SEARCH.md "One device indexes") */
-export interface Model { name: string; url: string; sha256: string; size: number; faces?: boolean; clip?: Clip; text?: boolean }
+/** text: needed by a phone that only searches (another device indexes, docs/SEARCH.md "One device indexes"); ocr: reads
+ *  the text in photos, only on the device that indexes and only with "Text in photos" on (docs/SEARCH.md) */
+export interface Model { name: string; url: string; sha256: string; size: number; faces?: boolean; clip?: Clip; text?: boolean; ocr?: boolean }
 
 /** What each file is for here; where it comes from is in the shared list. */
 const ROLES: Record<string, Omit<Model, "name" | "url" | "sha256" | "size">> = {
@@ -21,6 +22,9 @@ const ROLES: Record<string, Omit<Model, "name" | "url" | "sha256" | "size">> = {
   "clip-b32-tokenizer.json": { text: true },
   "yunet-2023mar.onnx": { faces: true },
   "sface-2021dec.onnx": { faces: true },
+  "ocr-det-v3.onnx": { ocr: true },
+  "ocr-rec-latin-v5.onnx": { ocr: true },
+  "ocr-latin-dict.txt": { ocr: true },
 };
 
 export const MODELS: Model[] = LIST.map((m) => ({ ...m, ...ROLES[m.name] }));
@@ -49,13 +53,17 @@ export function toCompute(tag: string | undefined, faces: boolean, clip: Clip = 
 export const modelDir = () => new Directory(Paths.document, "models");
 const path = (m: Model) => new File(modelDir(), m.name).uri.replace(/^file:\/\//, "");
 
-/** What this phone needs: everything if it indexes, only the text side if it only searches. */
-export const needed = (faces: boolean, clip: Clip, indexes = true) =>
-  MODELS.filter((m) => (indexes ? faces || !m.faces : m.text) && (!m.clip || m.clip === clip));
-export const downloadSize = (faces: boolean, clip: Clip, indexes = true) => {
+/** What this phone needs: everything if it indexes, only the text side if it only searches. The text-in-photos files
+ *  only with ocr (the device that indexes, the setting on): without them search and people work as before, so the
+ *  engine never waits for them (ocrNeeded, below). */
+export const needed = (faces: boolean, clip: Clip, indexes = true, ocr = false) =>
+  MODELS.filter((m) => (m.ocr ? indexes && ocr : (indexes ? faces || !m.faces : m.text) && (!m.clip || m.clip === clip)));
+export const downloadSize = (faces: boolean, clip: Clip, indexes = true, ocr = false) => {
   tidyOldFiles();
-  return needed(faces, clip, indexes).filter((m) => !new File(modelDir(), m.name).exists).reduce((n, m) => n + m.size, 0);
+  return needed(faces, clip, indexes, ocr).filter((m) => !new File(modelDir(), m.name).exists).reduce((n, m) => n + m.size, 0);
 };
+/** The text-in-photos files (docs/SEARCH.md "Text in photos"). */
+export const OCR_MODELS = MODELS.filter((m) => m.ocr);
 
 /** Files earlier versions downloaded: explicit search's LAION model is everyone's model now, under neutral names (the
  *  same bytes: moved, not downloaded again; still checked by SHA-256 before use); MobileCLIP's files are deleted, its
@@ -121,10 +129,10 @@ function writeAgreed(v: Agreed | null) {
 /** What a download would fetch that the person hasn't agreed to: empty when nothing needs asking. A file on the phone
  *  counts only once its SHA-256 was checked (haveModels, checkModelsHere): one of the same name but another content (a
  *  model changed in a release) is asked for again, never taken as agreed by its name. */
-export const unagreed = (faces: boolean, clip: Clip, indexes = true) => {
+export const unagreed = (faces: boolean, clip: Clip, indexes = true, ocr = false) => {
   tidyOldFiles();
   const a = readAgreed();
-  return needed(faces, clip, indexes).filter((m) => !checked.has(m.name) && !a?.sha.includes(m.sha256));
+  return needed(faces, clip, indexes, ocr).filter((m) => !checked.has(m.name) && !a?.sha.includes(m.sha256));
 };
 
 /** Checks the hash of every model file on the phone not checked yet this run; one with the wrong hash goes (it would
@@ -142,9 +150,9 @@ export async function checkModelsHere(): Promise<void> {
 }
 
 /** The yes: what using these settings needs may be downloaded. */
-export function agreeModels(faces: boolean, clip: Clip, indexes = true) {
+export function agreeModels(faces: boolean, clip: Clip, indexes = true, ocr = false) {
   const a = readAgreed();
-  writeAgreed({ at: Date.now(), sha: [...new Set([...(a?.sha ?? []), ...needed(faces, clip, indexes).map((m) => m.sha256)])] });
+  writeAgreed({ at: Date.now(), sha: [...new Set([...(a?.sha ?? []), ...needed(faces, clip, indexes, ocr).map((m) => m.sha256)])] });
 }
 
 /** For the search settings: when the models on this phone were downloaded and how big they are; null when none.
@@ -171,8 +179,12 @@ export class NeedsConsent extends Error {
 }
 
 export async function haveModels(faces: boolean, clip: Clip, indexes = true): Promise<boolean> {
+  return haveFiles(needed(faces, clip, indexes));
+}
+
+async function haveFiles(list: Model[]): Promise<boolean> {
   tidyOldFiles();
-  for (const m of needed(faces, clip, indexes)) {
+  for (const m of list) {
     if (checked.has(m.name)) continue;
     if (!new File(modelDir(), m.name).exists) return false;
     if (!(await N.checkModel(path(m), m.sha256))) { try { new File(modelDir(), m.name).delete(); } catch { /* gone */ } return false; }
@@ -209,19 +221,23 @@ export function dropOtherModels(clip: Clip, indexes = true): string[] {
 }
 
 async function fetchAll(faces: boolean, clip: Clip, indexes: boolean, onProgress: (done: number, total: number) => void) {
+  return fetchFiles(needed(faces, clip, indexes), onProgress);
+}
+
+async function fetchFiles(wanted: Model[], onProgress: (done: number, total: number) => void) {
   tidyOldFiles();
   // nothing goes to Hugging Face without the yes, whatever asked for it (above): a file already here with the right
   // hash isn't downloaded and needs none
   const a = readAgreed();
   const ask: Model[] = [];
-  for (const m of needed(faces, clip, indexes)) {
+  for (const m of wanted) {
     if (checked.has(m.name) || a?.sha.includes(m.sha256)) continue;
     if (new File(modelDir(), m.name).exists && (await N.checkModel(path(m), m.sha256))) { checked.add(m.name); continue; }
     ask.push(m);
   }
   if (ask.length) throw new NeedsConsent(ask.reduce((n, m) => n + m.size, 0));
   modelDir().create({ intermediates: true, idempotent: true });
-  const list = needed(faces, clip, indexes).filter((m) => !checked.has(m.name));
+  const list = wanted.filter((m) => !checked.has(m.name));
   const total = list.reduce((n, m) => n + m.size, 0);
   let before = 0;
   const sub = N.addListener("onModelProgress", (e) => {
@@ -238,6 +254,39 @@ async function fetchAll(faces: boolean, clip: Clip, indexes: boolean, onProgress
   } finally {
     sub.remove();
   }
+}
+
+// ---- text in photos: its own files, asked for like the others, but never in the way of search and people ----
+
+/** Whether the text-in-photos files are here and checked (SHA-256). */
+export const haveOcr = () => haveFiles(OCR_MODELS);
+/** The text-in-photos files the person hasn't agreed to download (empty: nothing to ask). */
+export const ocrUnagreed = () => { const a = readAgreed(); return OCR_MODELS.filter((m) => !checked.has(m.name) && !a?.sha.includes(m.sha256)); };
+/** What downloading them fetches: the files not here yet. */
+export const ocrSize = () => OCR_MODELS.filter((m) => !new File(modelDir(), m.name).exists).reduce((n, m) => n + m.size, 0) || OCR_MODELS.reduce((n, m) => n + m.size, 0);
+let ocrDownloading: Promise<void> | null = null;
+/** Downloads them (after the yes, else NeedsConsent); a second call joins the first. */
+export function downloadOcr(onProgress: (done: number, total: number) => void): Promise<void> {
+  ocrDownloading ??= fetchFiles(OCR_MODELS, onProgress).finally(() => { ocrDownloading = null; });
+  return ocrDownloading;
+}
+/** The yes for the text-in-photos files alone (asked when search was on before, or "Text in photos" turned on). */
+export function agreeOcr() {
+  const a = readAgreed();
+  writeAgreed({ at: a?.at ?? Date.now(), sha: [...new Set([...(a?.sha ?? []), ...OCR_MODELS.map((m) => m.sha256)])] });
+}
+
+/** "Text in photos" off (or this device no longer indexes): the three files go, and the yes for them with them. */
+export function deleteOcr() {
+  try { N.ocrClose(); } catch { /* not open */ }
+  const gone: string[] = [];
+  for (const m of OCR_MODELS) {
+    for (const ext of ["", ".part"]) try { const f = new File(modelDir(), m.name + ext); if (f.exists) f.delete(); } catch { /* next time */ }
+    checked.delete(m.name);
+    gone.push(m.sha256);
+  }
+  const a = readAgreed();
+  if (a && a.sha.some((x) => gone.includes(x))) writeAgreed({ ...a, sha: a.sha.filter((x) => !gone.includes(x)) });
 }
 
 /** Turning search off: the models go, and with them the yes to download them (asked again next time). */

@@ -72,15 +72,26 @@ function send(r: Req) {
   worker.postMessage(r);
 }
 
-/** Index entries as they are opened: the image vector (float16) and the model tag. Entries without one drop out. */
-export function putVectors(entries: { item: string; m?: string; clip?: Uint8Array }[]) {
+// The text the indexing device read in each photo (docs/SEARCH.md "Text in photos"), from the entries: matched here,
+// in the page, word by word; the browser never runs the text model itself.
+const texts = new Map<string, string>();
+
+/** The text read in a photo, or "" (none, or its entry is from before text in photos). */
+export const textOf = (id: string): string => texts.get(id) ?? "";
+/** How many photos had their text read (with or without any found). */
+export const textCount = () => texts.size;
+
+/** Index entries as they are opened: the image vector (float16), the model tag and the text read in the photo
+ *  (undefined: not read yet). Entries without a vector drop out of search by content. */
+export function putVectors(entries: { item: string; m?: string; clip?: Uint8Array; text?: string }[]) {
   if (!entries.length) return;
   for (const e of entries) {
+    if (e.text !== undefined) texts.set(e.item, e.text); else texts.delete(e.item);
     const f = familyOf(e.m);
     if (f && e.clip) made.set(e.item, f); else made.delete(e.item);
     if (!f && e.m?.startsWith("mcs2")) old.add(e.item); else old.delete(e.item);
   }
-  send({ t: "put", entries });
+  send({ t: "put", entries: entries.map(({ text: _, ...e }) => e) });
 }
 
 /** How many photos have a vector from this model (the ones search by content can find). */
@@ -154,7 +165,7 @@ export async function forgetContentModels() {
 /** Drops the vectors and the loaded model (sign-out, lock). forgetExplicit (sign-out) also removes the model files
  *  from the browser's cache, so nothing on this device shows that search, explicit or not, was used. */
 export function clearContent(forgetExplicit = false) {
-  made.clear(); old.clear();
+  made.clear(); old.clear(); texts.clear();
   worker?.terminate();
   worker = null;
   for (const w of waiting.values()) w.fail(new Error("Search stopped."));

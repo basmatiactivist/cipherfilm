@@ -9,13 +9,22 @@ import N from "../../modules/cf-native/src/CfNativeModule";
 import { api, ApiError, remote, type Remote } from "../api";
 import { savedServer } from "../session";
 import { fingerprint } from "../prints";
-import { CLIP, haveModels, modelPath, type Clip } from "./models";
+import { CLIP, haveModels, haveOcr, modelPath, type Clip } from "./models";
 import { loadSettings, saveSettings, type SearchSettings } from "./settings";
 import { analyzeBytes, localFile } from "./engine";
 
 const BUDGET = 6 * 60_000;
 
 const open = (st: SearchSettings, clip: Clip) => N.visionOpen(modelPath(), st.faces, clip, true);
+/** Text in photos for the new entries too, when it is on and its files are here (checked); else they get it later in
+ *  the app (engine.ts rereadText). Never in the way of the rest. */
+async function openOcr(st: SearchSettings): Promise<boolean> {
+  try {
+    if (!st.ocr || st.indexes === false || !(await haveOcr())) return false;
+    if (!N.ocrState()) await N.ocrOpen(modelPath());
+    return true;
+  } catch { return false; }
+}
 
 /** Whether background indexing may run now; the reason in plain words if not. */
 export function backgroundBlocker(st: SearchSettings): string | undefined {
@@ -36,7 +45,7 @@ export async function indexUploaded(s: Sodium, id: string, uri: string, video: b
     const why = backgroundBlocker(st) ?? (!(await haveModels(st.faces, clip)) ? "models missing" : undefined);
     if (why) { if (why !== "off") console.log(`search index (upload): later, ${why}`); return; }
     await open(st, clip);
-    await indexFile(s, id, uri, video, st.faces, pubkey, clip, to);
+    await indexFile(s, id, uri, video, st.faces, pubkey, clip, to, await openOcr(st));
   } catch (e) {
     if (e instanceof ApiError && e.code === "not_indexer") await saveSettings({ indexes: false }).catch(() => {});
     console.log(`search index (upload): skipped, ${e instanceof Error ? e.message : e}`); // the app indexes it later
@@ -59,11 +68,11 @@ export async function rememberUploaded(userId: string, print: string, id: string
   } catch { /* the app indexes it from the server's preview */ }
 }
 
-async function indexFile(s: Sodium, id: string, uri: string, video: boolean, faces: boolean, pubkey: Uint8Array, clip: Clip, to: Remote) {
+async function indexFile(s: Sodium, id: string, uri: string, video: boolean, faces: boolean, pubkey: Uint8Array, clip: Clip, to: Remote, ocr = false) {
   const img = await N.jpeg(uri, video, 2048, 90);
   if (!img) return;
   // wipes the bytes; an unusable picture gets an empty entry
-  for (const entry of await analyzeBytes(img.bytes, faces, [clip])) {
+  for (const entry of await analyzeBytes(img.bytes, faces, [clip], undefined, ocr)) {
     // the tag in the clear too: the server takes only the current model's entries (docs/SEARCH.md)
     await api("PUT", `/api/items/${id}/index`, { data_enc: b64(s, sealIndexEntry(s, entry, pubkey, id)), model: entry.m }, to);
   }
@@ -105,12 +114,13 @@ export async function runBackgroundIndex(): Promise<number> {
     }
     if (!todo.length) return 0;
     await open(st, clip);
+    const ocr = await openOcr(st);
     for (const t of todo) {
       if (Date.now() > deadline || backgroundBlocker(st)) break;
       local.attempt = t.id;
       await f.write(JSON.stringify(local));
       try {
-        await indexFile(s, t.id, t.uri, t.video, st.faces, pk, clip, to);
+        await indexFile(s, t.id, t.uri, t.video, st.faces, pk, clip, to, ocr);
         local.done.push(t.id);
         n++;
       } catch (e) {

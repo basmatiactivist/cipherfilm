@@ -32,26 +32,34 @@ const names = (l: { name: string }[]) => l.map((m) => m.name).sort();
 describe("the files", () => {
   beforeEach(() => { files.clear(); fetched.length = 0; });
 
-  it("are LAION's ViT-B/32 (Immich's export), its tokenizer and the face models, each pinned to a Hugging Face commit", () => {
-    expect(names(MODELS)).toEqual(["clip-b32-text.onnx", "clip-b32-tokenizer.json", "clip-b32-vision.onnx", "sface-2021dec.onnx", "yunet-2023mar.onnx"]);
+  it("are LAION's ViT-B/32 (Immich's export), its tokenizer, the face models and the text-in-photos ones, each pinned to a Hugging Face commit", () => {
+    expect(names(MODELS)).toEqual(["clip-b32-text.onnx", "clip-b32-tokenizer.json", "clip-b32-vision.onnx", "ocr-det-v3.onnx", "ocr-latin-dict.txt", "ocr-rec-latin-v5.onnx", "sface-2021dec.onnx", "yunet-2023mar.onnx"]);
     for (const m of MODELS) {
       expect(m.url).toMatch(/^https:\/\/huggingface\.co\/[\w.-]+\/[\w.-]+\/resolve\/[0-9a-f]{40}\//);
       expect(m.url).not.toMatch(/mobileclip/i);
       expect(m.sha256).toMatch(/^[0-9a-f]{64}$/);
-      expect(m.faces || m.clip || m.text).toBeTruthy();
+      expect(m.faces || m.clip || m.text || m.ocr).toBeTruthy();
     }
   });
 
   it("a phone that indexes needs everything (faces only with faces on), one that only searches the text side", () => {
-    expect(names(needed(true, CLIP))).toEqual(names(MODELS));
+    expect(names(needed(true, CLIP))).toEqual(names(MODELS.filter((m) => !m.ocr)));
     expect(names(needed(false, CLIP))).toEqual(["clip-b32-text.onnx", "clip-b32-tokenizer.json", "clip-b32-vision.onnx"]);
     expect(names(needed(true, CLIP, false))).toEqual(["clip-b32-text.onnx", "clip-b32-tokenizer.json"]);
+  });
+
+  it("text in photos: its three files only for the phone that indexes, with the setting on", () => {
+    const ocr = ["ocr-det-v3.onnx", "ocr-latin-dict.txt", "ocr-rec-latin-v5.onnx"];
+    expect(names(needed(true, CLIP, true, true))).toEqual(names(MODELS));
+    expect(names(needed(false, CLIP, true, true))).toEqual(["clip-b32-text.onnx", "clip-b32-tokenizer.json", "clip-b32-vision.onnx", ...ocr]);
+    expect(names(needed(true, CLIP, false, true))).toEqual(["clip-b32-text.onnx", "clip-b32-tokenizer.json"]); // another device reads the text
+    expect(MODELS.filter((m) => m.ocr).reduce((n, m) => n + m.size, 0)).toBe(2_429_873 + 7_862_832 + 1_634); // about 10 MB
   });
 
   it("downloads from the pinned URLs, in the Play build too (one model for every build)", async () => {
     agreeModels(false, CLIP);
     await downloadModels(false, CLIP, () => {});
-    expect(fetched).toEqual(MODELS.filter((m) => !m.faces).map((m) => m.url));
+    expect(fetched).toEqual(MODELS.filter((m) => !m.faces && !m.ocr).map((m) => m.url)); // text in photos has its own download
   });
 
   it("counts what is missing", () => {
@@ -98,7 +106,7 @@ describe("dropOtherModels", () => {
   });
 
   it("a phone that only searches keeps only the text model and the tokenizer", () => {
-    expect(dropOtherModels(CLIP, false).sort()).toEqual(["clip-b32-vision.onnx", "sface-2021dec.onnx", "yunet-2023mar.onnx"]);
+    expect(dropOtherModels(CLIP, false).sort()).toEqual(["clip-b32-vision.onnx", "ocr-det-v3.onnx", "ocr-latin-dict.txt", "ocr-rec-latin-v5.onnx", "sface-2021dec.onnx", "yunet-2023mar.onnx"]);
     expect(here()).toEqual(["clip-b32-text.onnx", "clip-b32-tokenizer.json"]);
   });
 });

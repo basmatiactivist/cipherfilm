@@ -181,7 +181,9 @@ func TestModelListIsPinned(t *testing.T) {
 		}
 		seen[m.Name] = true
 	}
-	if len(list) != 5 || !seen["clip-b32-vision.onnx"] || !seen["clip-b32-text.onnx"] || !seen["clip-b32-tokenizer.json"] || !seen["sface-2021dec.onnx"] {
+	// the search model, the face models and, for text in photos, PaddleOCR's detector, Latin recogniser and its characters
+	if len(list) != 8 || !seen["clip-b32-vision.onnx"] || !seen["clip-b32-text.onnx"] || !seen["clip-b32-tokenizer.json"] || !seen["sface-2021dec.onnx"] ||
+		!seen["ocr-det-v3.onnx"] || !seen["ocr-rec-latin-v5.onnx"] || !seen["ocr-latin-dict.txt"] {
 		t.Fatalf("%d models", len(list))
 	}
 	// MobileCLIP S2's license (apple-amlr) doesn't allow its use here: it is in no list, not even under an old name

@@ -55,6 +55,24 @@ final class SearchEngine {
   private var items: [Item] = []
   private var settings = AccountSettings()
 
+  // ---- text in photos (Ocr, docs/SEARCH.md "Text in photos") ----
+  /** the text model, while this Mac indexes, the setting is on and its files are here */
+  private var ocr: Ocr?
+  /** each item's text read in it (trimmed; only items with some), from the entries: for search */
+  private var texts: [String: String] = [:]
+  /** items whose entry was made before text in photos (no `o`): read again, a few at a time, when nothing else runs */
+  private var noText: Set<String> = []
+  /** read again and failed in this run (the picture can't be loaded): not tried again until the next run */
+  private var textSkipped: Set<String> = []
+  /** The account was full for an entry with text (413): the reading waits until search starts again. */
+  private var textFull = false
+  /** when the text model was last tried and couldn't be loaded or downloaded (offline): tried again a minute later */
+  private var ocrTriedAt = Date.distantPast
+  /** the text model waits for the person's OK to download it: images and faces are indexed meanwhile */
+  private(set) var ocrWaiting = false
+  /** photos and videos whose text is still to be read (entries from before text in photos) */
+  var textLeft: Int { ocr == nil ? 0 : noText.subtracting(textSkipped).count }
+
   var ready: Bool { phase == .ready || phase == .indexing || phase == .waitPower }
 
   // ---- the run ----
@@ -76,6 +94,7 @@ final class SearchEngine {
       return
     }
     if runVault === vault && runFaces == settings.faces && run != nil {
+      textSettingChanged()
       queueMissing() // the running loop picks these up
       return
     }
@@ -89,12 +108,12 @@ final class SearchEngine {
   func stop(clear: Bool) {
     run?.cancel(); run = nil
     if clear {
-      index.clear(); tags = [:]; runVault = nil; people = PeopleDoc(); peopleVersion = 0; peopleLoaded = false; groupsAt = -1; groups = []
+      index.clear(); tags = [:]; texts = [:]; noText = []; runVault = nil; people = PeopleDoc(); peopleVersion = 0; peopleLoaded = false; groupsAt = -1; groups = []
       // the decrypted items it was handed (with their item keys) and what was queued from them
       items = []; pending = []; inFlight = []
       version += 1
     }
-    phase = .off; done = 0; total = 0; waiting = 0; message = nil; skipped = []
+    phase = .off; done = 0; total = 0; waiting = 0; message = nil; skipped = []; textSkipped = []; textFull = false; ocrWaiting = false; ocrTriedAt = .distantPast
   }
 
   private func live(_ v: Vault) -> Bool { !Task.isCancelled && runVault === v && v.isOpen }
@@ -133,6 +152,8 @@ final class SearchEngine {
         vision = try await Task.detached(priority: .utility) { try Vision(dir: dir, faces: faces, clip: clip, threads: 4, textOnly: reader) }.value
         visionFaces = faces; visionReader = reader
       }
+      guard live(vault) else { return }
+      if indexes { await ensureOcr() } else { ocr = nil }
       guard live(vault) else { return }
       let pair = try vault.pair()
       let pk = try vault.checkedPublicKey()
@@ -177,7 +198,14 @@ final class SearchEngine {
           if indexes && !legacy.entries.isEmpty && inFlight.isEmpty {
             if (try? await vault.api.json("DELETE", "/api/index?model=\(old)")) != nil { legacy = IndexCache(); IndexCache.delete(vault, old) }
           }
-          try await Task.sleep(nanoseconds: 3_000_000_000)
+          // entries from before text in photos: their text, a few at a time, when nothing else is to do
+          if indexes && settings.textInPhotos && ocr == nil && !ocrWaiting && Date().timeIntervalSince(ocrTriedAt) > 60 { await ensureOcr() }
+          var read = 0
+          if indexes, let o = ocr, settings.indexOnBattery || !Power.onBattery() {
+            read = await readTextAgain(vault, &cache, ocr: o, pair: pair, pk: pk) // written with the cache next round
+          }
+          // while there is text to read, the next few come sooner
+          try await Task.sleep(nanoseconds: read > 0 ? 500_000_000 : 3_000_000_000)
           // the library may have arrived or changed without being handed over (search turned on before it loaded)
           if adoptLibrary() { if !indexes { try? await pull(vault, &cache, pair: pair, faces: faces, all: true) }; queueMissing(); continue }
           // another device may have turned explicit search on or off, an admin changed the permission, or the
@@ -203,6 +231,7 @@ final class SearchEngine {
         }
         phase = .indexing; message = nil
         let v = vision!
+        let o = settings.textInPhotos ? ocr : nil
         let batch = Array(pending.prefix(48))
         pending.removeFirst(batch.count)
         var offlineCount = 0
@@ -226,7 +255,7 @@ final class SearchEngine {
               var stored: [(IndexEntry, String)] = []
               do {
                 let pic = try await vault.bestPicture(of: item)
-                let es = try await Task.detached(priority: .utility) { IndexEntry.entries(try v.analyze(pic, faces: faces && known == nil, clips: want), faces: faces, known: known) }.value
+                let es = try await Task.detached(priority: .utility) { IndexEntry.entries(try v.analyze(pic, faces: faces && known == nil, clips: want, ocr: o), faces: faces, known: known) }.value
                 for e in es {
                   let enc = B64.encode(try e.seal(pk: pk, itemId: item.id))
                   try await Self.put(enc, model: e.m, item: item.id, api: vault.api)
@@ -245,6 +274,7 @@ final class SearchEngine {
               let d = e.decoded(faces: faces)
               index.put(item.id, clip: d.clip, faces: d.faces)
               tags[item.id] = e.m
+              noteText(item.id, e)
               cache.entries[item.id] = enc
               legacy.entries.removeValue(forKey: item.id) // the server replaced it
             }
@@ -321,12 +351,14 @@ final class SearchEngine {
     cache.write(vault, clip.family)
     let ids = Set(items.map(\.id))
     // entries deleted on the server meanwhile: out of the index, and made again by the device that indexes
-    if anew { for id in tags.keys where cache.entries[id] == nil { tags.removeValue(forKey: id); index.remove(id) } }
+    if anew { for id in tags.keys where cache.entries[id] == nil { tags.removeValue(forKey: id); index.remove(id); texts.removeValue(forKey: id); noText.remove(id) } }
     let entries = all || anew ? cache.entries : fresh
     let idx = index, clip = clip
-    let opened = await Task.detached(priority: .utility) { () -> ([String: String], [String]) in
+    let opened = await Task.detached(priority: .utility) { () -> ([String: String], [String], [String: String], Set<String>) in
       var tags: [String: String] = [:]
       var bad: [String] = []
+      var texts: [String: String] = [:]
+      var noText = Set<String>()
       for (id, enc) in entries where ids.contains(id) {
         guard vault.isOpen, !Task.isCancelled else { break }
         guard let blob = try? B64.decode(enc), let e = try? IndexEntry.open(blob, pair: pair, itemId: id) else { bad.append(id); continue }
@@ -334,14 +366,101 @@ final class SearchEngine {
         // a vector from the other model can't be compared with this one's: kept out until it is made again
         idx.put(id, clip: clip.owns(e.m) ? d.clip : nil, faces: d.faces)
         tags[id] = e.m
+        let t = e.text
+        if !t.isEmpty { texts[id] = t }
+        if e.o == nil && clip.owns(e.m) { noText.insert(id) }
       }
-      return (tags, bad)
+      return (tags, bad, texts, noText)
     }.value
     guard live(vault) else { for id in opened.0.keys { idx.remove(id) }; throw CancellationError() } // opened during a lock: out again
     tags.merge(opened.0) { _, b in b }
+    for id in opened.0.keys { texts[id] = opened.2[id]; if opened.3.contains(id) { noText.insert(id) } else { noText.remove(id) } }
     for id in opened.1 { cache.entries.removeValue(forKey: id) } // damaged or not for this item: made again
-    for id in tags.keys where !ids.contains(id) { tags.removeValue(forKey: id); index.remove(id) }
+    for id in tags.keys where !ids.contains(id) { tags.removeValue(forKey: id); index.remove(id); texts.removeValue(forKey: id); noText.remove(id) }
+    if anew { for id in noText where tags[id] == nil { noText.remove(id); texts.removeValue(forKey: id) } }
     version += 1
+  }
+
+  // ---- text in photos ----
+
+  /** The text of an entry just made or read: kept for search, and whether it still needs reading. */
+  private func noteText(_ id: String, _ e: IndexEntry) {
+    let t = e.text
+    texts[id] = t.isEmpty ? nil : t
+    if e.o == nil && clip.owns(e.m) { noText.insert(id) } else { noText.remove(id) }
+  }
+
+  /** Opens the text model when the setting is on and its files are here; downloads them first when the person agreed
+   *  to that. Never fails the run: without the OK it waits (ocrWaiting), offline it is tried again a minute later. */
+  private func ensureOcr() async {
+    guard indexes, settings.textInPhotos else { ocr = nil; ocrWaiting = false; return }
+    guard ocr == nil else { return }
+    let files = Models.ocrFiles, store = models
+    ocrTriedAt = Date()
+    if !(await Task.detached(priority: .utility) { store.have(files) }.value) {
+      guard store.unagreed(files).isEmpty else { ocrWaiting = true; return }
+      ocrWaiting = false
+      do { try await store.download(files) { _ in } } catch is NeedsConsent { ocrWaiting = true; return } catch { return }
+    }
+    ocrWaiting = false
+    let dir = store.dir
+    let loaded = try? await Task.detached(priority: .utility) { try Ocr(dir: dir, threads: 2) }.value
+    ocr = settings.textInPhotos && indexes ? loaded : nil // turned off meanwhile
+  }
+
+  /** The setting "Text in photos" changed (or another setting while the run goes on): off deletes the model's three
+   *  files (and the yes to download them); on is picked up by the run. */
+  private func textSettingChanged() {
+    if !settings.textInPhotos {
+      if ocr != nil || ocrWaiting || models.have(Models.ocrFiles) { models.removeOcr() }
+      ocr = nil; ocrWaiting = false
+    } else if ocr == nil {
+      ocrTriedAt = .distantPast // the running loop loads it on its next idle round
+    }
+  }
+
+  /** The question before the text model is downloaded; nil when nothing needs asking. */
+  func ocrAsk() -> ModelConsentAsk? {
+    let files = models.unagreed(Models.ocrFiles)
+    guard !files.isEmpty else { return nil }
+    return ModelConsentAsk(clip: clip, faces: false, reader: false, ocr: true, bytes: models.missingBytes(Models.ocrFiles))
+  }
+
+  /** Entries made before text in photos (no `o`): their text read and added, the image vector and faces kept, sealed
+   *  again and stored under the same model tag. A few at a time, at the lowest priority; returns how many were done. */
+  private func readTextAgain(_ vault: Vault, _ cache: inout IndexCache, ocr: Ocr, pair: KeyPair, pk: Data) async -> Int {
+    let byId = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+    guard !textFull else { return 0 }
+    let todo = noText.subtracting(textSkipped).compactMap { byId[$0] }.sorted { $0.when > $1.when }.prefix(6)
+    var n = 0
+    for item in todo {
+      guard live(vault), pending.isEmpty else { break } // new photos go first
+      guard let enc = cache.entries[item.id], let blob = try? B64.decode(enc), var e = try? IndexEntry.open(blob, pair: pair, itemId: item.id),
+            clip.owns(e.m) else { textSkipped.insert(item.id); continue }
+      if e.o != nil { noteText(item.id, e); continue }
+      do {
+        let pic = try await vault.bestPicture(of: item)
+        let text = try await Task.detached(priority: .background) { Ocr.normalize(try ocr.read(pic)) }.value
+        guard live(vault) else { break }
+        e.setText(text)
+        let sealed = B64.encode(try e.seal(pk: pk, itemId: item.id))
+        try await Self.put(sealed, model: e.m, item: item.id, api: vault.api)
+        cache.entries[item.id] = sealed
+        noteText(item.id, e)
+        n += 1
+      } catch let err as APIError where err.status == 0 || err.code == "not_indexer" {
+        break // offline, or another device indexes now (the run notices): later
+      } catch let err as APIError where err.status == 413 {
+        // the account is full: entries with text are a little larger, so none fits now; not every photo is read only
+        // to throw the text away
+        textFull = true
+        break
+      } catch {
+        textSkipped.insert(item.id)
+      }
+    }
+    if n > 0 { version += 1 }
+    return n
   }
 
   /** The account as the server sees it now: who indexes, whether explicit search is allowed. */
@@ -386,6 +505,11 @@ final class SearchEngine {
 
   /** The yes; a run that waited for it goes on. */
   func agree(_ a: ModelConsentAsk) {
+    if a.ocr {
+      models.agree(Models.ocrFiles)
+      ocrWaiting = false; ocrTriedAt = .distantPast // the run downloads it on its next idle round
+      return
+    }
     models.agree(faces: a.faces, clip: a.clip, reader: a.reader)
     if phase == .consent { restart() }
   }
@@ -481,11 +605,13 @@ final class SearchEngine {
 
   // ---- for uploads from watched folders: index the file while it is at hand (no master key needed) ----
 
-  nonisolated static func indexFile(_ url: URL, id: String, video: Bool, faces: Bool, clip: ClipModel = .clip, pk: Data, api: API) async {
+  nonisolated static func indexFile(_ url: URL, id: String, video: Bool, faces: Bool, text: Bool, clip: ClipModel = .clip, pk: Data, api: API) async {
     let store = ModelStore(dir: Paths.models)
     guard store.have(faces: faces, clip: clip), let img = await Media.jpeg(url, video: video, maxPx: 2048, quality: 0.9),
-          let v = try? Vision(dir: Paths.models, faces: faces, clip: clip, threads: 2),
-          let a = try? v.analyze(img.data, faces: faces, clips: [clip]) else { return }
+          let v = try? Vision(dir: Paths.models, faces: faces, clip: clip, threads: 2) else { return }
+    // the text in it too, when that is on and its model here (otherwise the indexing run reads it later)
+    let ocr = text && store.have(Models.ocrFiles) ? try? Ocr(dir: Paths.models, threads: 2) : nil
+    guard let a = try? v.analyze(img.data, faces: faces, clips: [clip], ocr: ocr) else { return }
     for entry in IndexEntry.entries(a, faces: faces) {
       guard let enc = try? entry.seal(pk: pk, itemId: id) else { return }
       try? await put(B64.encode(enc), model: entry.m, item: id, api: api)
@@ -504,8 +630,14 @@ final class SearchEngine {
 
   // ---- queries ----
 
-  /** ranked: the items are ordered by how well they match the words, not by date */
-  struct Result { var items: [Item]; var people: [Group]; var how: [String]; var ranked = false }
+  /** ranked: the items are ordered by how well they match the words, not by date; chips: what the query was taken as
+   *  (people, places, dates, favorites, videos, screenshots), each removable; found: for photos found by the text in
+   *  them, the piece of it that matched */
+  struct Result {
+    var items: [Item]; var people: [Group]; var how: [String]; var ranked = false
+    var chips: [QueryParser.Chip] = []
+    var found: [String: String] = [:]
+  }
 
   /** Every photo with an image vector from the model, best match first, with no cut-off (as Immich's smart search
    *  ranks); the results page shows them a page at a time. Filtered (docs/SEARCH.md "Explicit content"): words close to
@@ -524,62 +656,66 @@ final class SearchEngine {
 
   func similar(to id: String) -> [String] { ready ? index.similar(id, limit: 60, minScore: 0.6).map(\.id) : [] }
 
-  /** One search box for everything the Mac knows about a photo (port of mobile/src/search/query.ts). */
+  /** One search box for everything the Mac knows about a photo (docs/SEARCH.md "Combined search"): the query taken
+   *  apart as on the web and the phone (QueryParser, the port of web/src/search/parse.ts); people, places, dates,
+   *  favorites, videos and screenshots narrow (all of them); the words left find file names and cameras first, then
+   *  photos taken at a place of that name, then photos with those words in them (text in photos), then what the
+   *  photos show, ranked by the image model (in English: QueryParser's glossary). */
   func search(_ raw: String, library: [Item], favoritesOnly: Bool = false) async -> Result {
     let q = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !q.isEmpty else { return Result(items: [], people: [], how: []) }
-    var how: [String] = []
-    let lower = q.lowercased()
-    var pool = library.filter { !$0.broken }
+    let base = library.filter { !$0.broken }
+    // named people (hidden ones left out), in the order of their groups; a name may have several groups
     let gs = await peopleGroups()
-    let people = gs.filter { g in
-      guard let p = g.person, !p.name.isEmpty, p.hidden != true else { return false }
-      return p.name.lowercased().split(separator: " ").contains { w in w.hasPrefix(lower) || lower.split(separator: " ").contains(w) }
+    var names: [String] = []
+    var byName: [String: Set<String>] = [:]
+    for g in gs {
+      guard let p = g.person, !p.name.isEmpty, p.hidden != true else { continue }
+      if byName[p.name] == nil { names.append(p.name) }
+      byName[p.name, default: []].formUnion(g.items)
     }
-    var words = lower.split(whereSeparator: \.isWhitespace).map(String.init)
-    if !people.isEmpty {
-      let ids = Set(people.flatMap(\.items))
-      pool = pool.filter { ids.contains($0.id) }
-      let names = Set(people.flatMap { $0.person!.name.lowercased().split(separator: " ").map(String.init) })
-      words = words.filter { w in !names.contains(w) && !people.contains { $0.person!.name.lowercased().hasPrefix(w) } }
-      how.append(people.map { $0.person!.name }.joined(separator: ", "))
-    }
-    if words.contains(where: Query.isVideoWord) { pool = pool.filter { $0.kind == .video }; words.removeAll(where: Query.isVideoWord); how.append("videos") }
-    if words.contains(where: Query.isFavWord) { pool = pool.filter(\.favorite); words.removeAll(where: Query.isFavWord); how.append("favorites") }
-    if words.contains(where: Query.isShotWord) {
-      pool = pool.filter { $0.name.range(of: "screenshot|bildschirm", options: [.regularExpression, .caseInsensitive]) != nil }
-      words.removeAll(where: Query.isShotWord); how.append("screenshots")
-    }
-    let d = Query.parseDate(words.joined(separator: " "))
-    if d.year != nil || d.month != nil {
-      let cal = Calendar.current
-      pool = pool.filter { i in
-        let c = cal.dateComponents([.year, .month, .day], from: i.date)
-        if let y = d.year, c.year != y { return false }
-        if let m = d.month, c.month != m + 1 { return false }
-        if d.day == -1, let day = c.day, day < 20 || day > 27 { return false }
-        return true
+    // a word or two is a place only when photos were taken there
+    let placed = await PlaceBook.names(base)
+    let p = QueryParser.parse(q, .init(people: names, place: { $0.count >= 3 ? placed.names[$0] : nil }, today: QueryParser.localDay(Date().timeIntervalSince1970 * 1000)))
+    let pool = base.filter { it in
+      if p.favorites && !it.favorite { return false }
+      if p.videos && it.kind != .video { return false }
+      if p.screenshots && it.name.range(of: "screenshot|bildschirm", options: [.regularExpression, .caseInsensitive]) == nil { return false }
+      for ns in p.people where !ns.contains(where: { byName[$0]?.contains(it.id) == true }) { return false }
+      if !p.places.isEmpty {
+        // by the folded name: two places spelled differently can fold alike ("Zürich", "Zurich")
+        guard let here = placed.byItem[it.id]?.map(QueryParser.fold), p.places.allSatisfy({ here.contains(QueryParser.fold($0)) }) else { return false }
       }
-      let month = d.month.map { DateFormatter().monthSymbols[$0] } ?? ""
-      how.append([month, d.year.map(String.init) ?? ""].joined(separator: " ").trimmingCharacters(in: .whitespaces))
+      if !p.dates.isEmpty {
+        let day = QueryParser.localDay(it.when)
+        if !p.dates.allSatisfy({ QueryParser.inWhen($0, day) }) { return false }
+      }
+      return true
     }
-    let rest = d.rest
-    if rest.isEmpty { return Result(items: pool.sorted { $0.when > $1.when }, people: people, how: how) }
-    // a file name or camera that contains the words comes first, then photos taken at a place of that name (town,
-    // region, country, looked up on this Mac: PlaceBook); then everything else, ranked by what is in it, and the
-    // filters above (people, kind, favorites, dates) only narrow that ranking
-    let named = pool.filter { $0.name.lowercased().contains(rest) || "\($0.meta?.make ?? "") \($0.meta?.model ?? "")".lowercased().contains(rest) }
-    let placed = await PlaceBook.matching(rest, in: pool)
-    let hits = await textHits(rest)
+    let wanted = Set(p.people.flatMap { $0 })
+    let shown = gs.filter { g in g.person.map { wanted.contains($0.name) && $0.hidden != true } ?? false }
+    guard !p.text.isEmpty else { return Result(items: pool.sorted { $0.when > $1.when }, people: shown, how: [], chips: p.chips) }
+
+    var how: [String] = []
+    let text = p.text
+    let named = pool.filter { QueryParser.fold($0.name).contains(text) || QueryParser.fold("\($0.meta?.make ?? "") \($0.meta?.model ?? "")").contains(text) }
+    let near = await PlaceBook.matching(text, in: pool)
+    var found: [String: String] = [:]
+    var read: [Item] = []
+    for it in pool { if let m = QueryParser.textMatch(texts[it.id], text) { found[it.id] = m; read.append(it) } }
+    let hits = p.clip.isEmpty ? [] : await textHits(p.clip)
     let inPool = Dictionary(pool.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
     var seen = Set<String>()
     var out: [Item] = []
     for i in named where seen.insert(i.id).inserted { out.append(i) }
-    for i in pool.filter({ placed.contains($0.id) }).sorted(by: { $0.when > $1.when }) where seen.insert(i.id).inserted { out.append(i) }
-    if !placed.isEmpty { how.append("taken in “\(rest)”") }
+    if !named.isEmpty { how.append("named “\(text)”") }
+    for i in pool.filter({ near.contains($0.id) }).sorted(by: { $0.when > $1.when }) where seen.insert(i.id).inserted { out.append(i) }
+    if !near.isEmpty { how.append("taken in “\(text)”") }
+    for i in read where seen.insert(i.id).inserted { out.append(i) }
+    if !read.isEmpty { how.append("“\(text)” in \(read.count == 1 ? "1 photo" : "\(read.count) photos")") }
     for h in hits { if let it = inPool[h.id], seen.insert(it.id).inserted { out.append(it) } }
-    if !hits.isEmpty { how.append("“\(rest)”") } else if !named.isEmpty { how.append("named “\(rest)”") }
-    return Result(items: out, people: people, how: how, ranked: !hits.isEmpty)
+    if !hits.isEmpty { how.append("showing “\(p.clip)”") }
+    return Result(items: out, people: shown, how: how, ranked: !hits.isEmpty, chips: p.chips, found: found)
   }
 
   // ---- people: faces grouped here, the person's decisions in one document encrypted with the master key ----
@@ -817,9 +953,14 @@ struct ModelConsentAsk: Identifiable, Equatable {
   let clip: ClipModel
   let faces: Bool
   let reader: Bool
+  /** the text model alone (text in photos), asked for on its own: a no never holds up the other models */
+  var ocr = false
   let bytes: Int64
-  var id: String { "\(clip.rawValue)-\(faces)-\(reader)" }
+  var id: String { ocr ? "ocr" : "\(clip.rawValue)-\(faces)-\(reader)" }
 
   /** Which models, in words, by what they are for (files and sizes come from the model list, whichever model). */
-  var what: String { Models.needed(faces: faces, clip: clip, reader: reader).contains { $0.faces } ? "the search model and the face models" : "the search model" }
+  var what: String {
+    if ocr { return "the model that reads text in photos" }
+    return Models.needed(faces: faces, clip: clip, reader: reader).contains { $0.faces } ? "the search model and the face models" : "the search model"
+  }
 }

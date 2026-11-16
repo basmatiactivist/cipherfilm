@@ -17,6 +17,9 @@ export interface SearchSettings {
   chargingOnly: boolean;
   /** download the models only on Wi-Fi */
   wifiOnly: boolean;
+  /** text in photos (docs/SEARCH.md): read the text in photos on the device that indexes, after the yes to download
+   *  its files; off deletes them. Search and people never wait for it. */
+  ocr: boolean;
   /** the question after unlocking was answered */
   asked: boolean;
   server?: string; userId?: string; pubkey?: string;
@@ -24,7 +27,7 @@ export interface SearchSettings {
   indexes?: boolean;
 }
 
-const DEFAULTS: SearchSettings = { enabled: false, faces: true, background: true, chargingOnly: true, wifiOnly: true, asked: false };
+const DEFAULTS: SearchSettings = { enabled: false, faces: true, background: true, chargingOnly: true, wifiOnly: true, ocr: true, asked: false };
 
 const DIR = () => new Directory(Paths.document, "search");
 const FILE = () => new File(DIR(), "settings.json");

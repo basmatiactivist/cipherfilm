@@ -51,9 +51,18 @@ public enum Models {
     ModelFile(name: "sface-2021dec.onnx", url: "https://huggingface.co/opencv/face_recognition_sface/resolve/3d7082438a6e4551e840c9b2bb60b71e8da4b524/face_recognition_sface_2021dec.onnx", sha256: "0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79", size: 38_696_353, faces: true),
   ]
 
+  /** Text in photos (Ocr.swift): PP-OCRv3's detector, PP-OCRv5's Latin recogniser and its characters (PaddleOCR,
+   *  Apache-2.0). Only the indexing Mac downloads them, asked for on their own: a no (or no answer) never holds up the
+   *  image and face models; the text part just waits. */
+  public static let ocrFiles: [ModelFile] = [
+    ModelFile(name: "ocr-det-v3.onnx", url: "https://huggingface.co/monkt/paddleocr-onnx/resolve/7b02d0a30a07ba2b92ad1ff5a8941ae2c633de65/detection/v3/det.onnx", sha256: "ee40e80071ba3a320d4efda75f3e22047a7d049e9bf7bcaaf9daea23fc21b935", size: 2_429_873, faces: false),
+    ModelFile(name: "ocr-rec-latin-v5.onnx", url: "https://huggingface.co/monkt/paddleocr-onnx/resolve/7b02d0a30a07ba2b92ad1ff5a8941ae2c633de65/languages/latin/rec.onnx", sha256: "614ffc2d6d3902d360fad7f1b0dd455ee45e877069d14c4e51a99dc4ef144409", size: 7_862_832, faces: false),
+    ModelFile(name: "ocr-latin-dict.txt", url: "https://huggingface.co/monkt/paddleocr-onnx/resolve/7b02d0a30a07ba2b92ad1ff5a8941ae2c633de65/languages/latin/dict.txt", sha256: "3c0a8a79b612653c25f765271714f71281e4e955962c153e272b7b8c1d2b13ff", size: 1_634, faces: false),
+  ]
+
   public static func all(_ clip: ClipModel) -> [ModelFile] { [clip.vision, clip.text, tokenizer] + faceFiles }
   /** Every file any setting can need. */
-  public static let every: [ModelFile] = all(.clip)
+  public static let every: [ModelFile] = all(.clip) + ocrFiles
 
   public static let tag = ClipModel.clip.tag
   public static let tagNoFaces = ClipModel.clip.tagNoFaces
@@ -167,8 +176,12 @@ public final class ModelStore: @unchecked Sendable {
    *  only once its SHA-256 was checked (`have`, `checkHere`): one of the same name but another content (a model changed
    *  in a release) is asked for again, never taken as agreed by its name. */
   public func unagreed(faces: Bool, clip: ClipModel = .clip, reader: Bool = false) -> [ModelFile] {
+    unagreed(Models.needed(faces: faces, clip: clip, reader: reader))
+  }
+
+  public func unagreed(_ files: [ModelFile]) -> [ModelFile] {
     let sha = Set(consent()?.sha ?? [])
-    return Models.needed(faces: faces, clip: clip, reader: reader).filter { !isChecked($0) && !sha.contains($0.sha256) }
+    return files.filter { !isChecked($0) && !sha.contains($0.sha256) }
   }
 
   /** Checks the hash of every model file here not checked yet this run; one with the wrong hash goes (downloaded again,
@@ -183,8 +196,12 @@ public final class ModelStore: @unchecked Sendable {
 
   /** The yes: what these settings need may be downloaded. */
   public func agree(faces: Bool, clip: ClipModel = .clip, reader: Bool = false, now: Date = Date()) {
+    agree(Models.needed(faces: faces, clip: clip, reader: reader), now: now)
+  }
+
+  public func agree(_ files: [ModelFile], now: Date = Date()) {
     let old = consent()?.sha ?? []
-    let add = Models.needed(faces: faces, clip: clip, reader: reader).map(\.sha256).filter { !old.contains($0) }
+    let add = files.map(\.sha256).filter { !old.contains($0) }
     save(ModelConsent(at: now, sha: old + add))
   }
 
@@ -207,11 +224,19 @@ public final class ModelStore: @unchecked Sendable {
   }
 
   public func missingBytes(faces: Bool, clip: ClipModel = .clip, reader: Bool = false) -> Int64 {
-    Models.needed(faces: faces, clip: clip, reader: reader).filter { !FileManager.default.fileExists(atPath: dir.appendingPathComponent($0.name).path) }.reduce(0) { $0 + $1.size }
+    missingBytes(Models.needed(faces: faces, clip: clip, reader: reader))
+  }
+
+  public func missingBytes(_ files: [ModelFile]) -> Int64 {
+    files.filter { !FileManager.default.fileExists(atPath: dir.appendingPathComponent($0.name).path) }.reduce(0) { $0 + $1.size }
   }
 
   public func have(faces: Bool, clip: ClipModel = .clip, reader: Bool = false) -> Bool {
-    for m in Models.needed(faces: faces, clip: clip, reader: reader) {
+    have(Models.needed(faces: faces, clip: clip, reader: reader))
+  }
+
+  public func have(_ files: [ModelFile]) -> Bool {
+    for m in files {
       if lock.withLock({ checked.contains(m.name) }) { continue }
       let f = dir.appendingPathComponent(m.name)
       guard FileManager.default.fileExists(atPath: f.path) else { return false }
@@ -231,17 +256,21 @@ public final class ModelStore: @unchecked Sendable {
   /** Downloads what is missing from Hugging Face, each file into "<name>.part" next to where it goes, so a drop (or a
    *  quit) resumes where it stopped; progress counts the bytes of all files together. */
   public func download(faces: Bool, clip: ClipModel = .clip, reader: Bool = false, progress: @escaping @Sendable (Progress) -> Void) async throws {
+    try await download(Models.needed(faces: faces, clip: clip, reader: reader), progress: progress)
+  }
+
+  public func download(_ files: [ModelFile], progress: @escaping @Sendable (Progress) -> Void) async throws {
     // nothing goes to Hugging Face without the yes, whatever asked for it: a file already here with the right hash
     // isn't downloaded and needs none
     let sha = Set(consent()?.sha ?? [])
-    let ask = Models.needed(faces: faces, clip: clip, reader: reader).filter { m in
+    let ask = files.filter { m in
       if lock.withLock({ checked.contains(m.name) }) || sha.contains(m.sha256) { return false }
       let f = dir.appendingPathComponent(m.name)
       return !(FileManager.default.fileExists(atPath: f.path) && hash(f) == m.sha256)
     }
     if !ask.isEmpty { throw NeedsConsent(bytes: ask.reduce(0) { $0 + $1.size }) }
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    let list = Models.needed(faces: faces, clip: clip, reader: reader).filter { m in !lock.withLock { checked.contains(m.name) } && !(FileManager.default.fileExists(atPath: dir.appendingPathComponent(m.name).path) && Models.sha256(of: dir.appendingPathComponent(m.name)) == m.sha256) }
+    let list = files.filter { m in !lock.withLock { checked.contains(m.name) } && !(FileManager.default.fileExists(atPath: dir.appendingPathComponent(m.name).path) && Models.sha256(of: dir.appendingPathComponent(m.name)) == m.sha256) }
     let total = list.reduce(Int64(0)) { $0 + $1.size }
     var before: Int64 = 0
     for m in list {
@@ -269,7 +298,10 @@ public final class ModelStore: @unchecked Sendable {
   }
 
   /** A device that only reads the index keeps no image or face models (hundreds of MB it would never run). */
-  public func removeIndexing() { remove([ClipModel.clip.vision] + Models.faceFiles) }
+  public func removeIndexing() { remove([ClipModel.clip.vision] + Models.faceFiles + Models.ocrFiles) }
+
+  /** Text in photos turned off: its three files go, and with them the yes to download them. */
+  public func removeOcr() { remove(Models.ocrFiles) }
 
   private func remove(_ files: [ModelFile]) {
     for m in files {
@@ -300,6 +332,48 @@ public struct IndexEntry: Codable, Sendable {
   public var m: String
   public var clip: String?
   public var faces: [Face]?
+  /** Which text model read the text in the photo (ocrTag); set whenever it ran, also when it found none. Missing in
+   *  entries made before text in photos: the indexing Mac reads their text again, little by little. */
+  public var o: String?
+  /** The text in the photo (textSlot): whitespace collapsed, padded with spaces to exactly textBytes. Readers trim. */
+  public var t: String?
+
+  /** The text model's tag (docs/MODELS.md): PP-OCRv3's detector and PP-OCRv5's Latin recogniser, steps version 1. */
+  public static let ocrTag = "ppocr3det+ppocr5latin/1"
+  /** The text's fixed length in the entry, in UTF-8 bytes: every entry with text in it (`o`) is the same size whatever
+   *  the photo says, so the sealed entry's length tells the server nothing about it (docs/SEARCH.md). */
+  public static let textBytes = 1022
+
+  /** Text ready for an entry (web/src/crypto/search.ts textSlot): characters JSON would escape (quotes, backslash,
+   *  slash, control characters) become spaces, so the stored value is exactly textBytes bytes in every app's JSON; cut
+   *  at a word to fit, then padded. */
+  public static func textSlot(_ text: String) -> String {
+    var clean = String.UnicodeScalarView()
+    for u in text.unicodeScalars {
+      switch u.value {
+      case 0x22, 0x5C, 0x2F, 0x00...0x1F, 0x7F, 0x2028, 0x2029: clean.append(" ")
+      default: clean.append(u)
+      }
+    }
+    var out = "", n = 0
+    for w in QueryParser.split(String(clean)) {
+      let add = (out.isEmpty ? 0 : 1) + w.utf8.count
+      if n + add > textBytes { break }
+      out += (out.isEmpty ? "" : " ") + w
+      n += add
+    }
+    return out + String(repeating: " ", count: textBytes - n)
+  }
+
+  /** The text the entry holds, or "" (none found, or an entry from before text in photos). */
+  public var text: String { (t ?? "").trimmingCharacters(in: .whitespaces) }
+
+  /** The text found in the photo goes in (nil: the text model didn't run, the entry stays as before). */
+  public mutating func setText(_ found: String?) {
+    guard let found else { return }
+    o = Self.ocrTag
+    t = Self.textSlot(found)
+  }
 
   public init(analysis a: Analysis, faces: Bool, model: ClipModel = .clip) {
     self.init(vector: a.clip, faces: faces ? Self.faces(a.faces) : nil, model: model)
@@ -319,7 +393,7 @@ public struct IndexEntry: Codable, Sendable {
    *  photo's MobileCLIP entry made before one model), so the people document's names stay with them. */
   public static func entries(_ a: Analyses, faces: Bool, known: [Face]? = nil) -> [IndexEntry] {
     let fs = faces ? known ?? Self.faces(a.faces) : nil
-    return a.clips.map { IndexEntry(vector: $0.vector, faces: fs, model: $0.model) }
+    return a.clips.map { var e = IndexEntry(vector: $0.vector, faces: fs, model: $0.model); e.setText(a.text); return e }
   }
 
   public func seal(pk: Data, itemId: String) throws -> Data {
@@ -394,36 +468,4 @@ public enum People {
   }
 }
 
-// ---- the search box: people, kinds, dates, file names, then what is in the photo ----
-
-public enum Query {
-  static let months: [String: Int] = {
-    var m: [String: Int] = [:]
-    for (i, n) in ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"].enumerated() { m[n] = i; m[String(n.prefix(3))] = i }
-    for (i, n) in ["januar", "februar", "märz", "april", "mai", "juni", "juli", "august", "september", "oktober", "november", "dezember"].enumerated() { m[n] = i; m[String(n.prefix(3))] = i }
-    m["jänner"] = 0; m["maerz"] = 2; m["sept"] = 8
-    return m
-  }()
-
-  /** A year, a month or both in the query; also "christmas" and "weihnachten" (day -1: the 20th to the 27th of December). */
-  public static func parseDate(_ q: String) -> (year: Int?, month: Int?, day: Int?, rest: String) {
-    var rest = q.lowercased()
-    var year: Int?, month: Int?, day: Int?
-    if let r = rest.range(of: #"\b(19[5-9]\d|20[0-9]\d)\b"#, options: .regularExpression) { year = Int(rest[r]); rest.replaceSubrange(r, with: " ") }
-    for (name, m) in months.sorted(by: { $0.key.count > $1.key.count }) {
-      if let r = rest.range(of: "(^|\\s)\(NSRegularExpression.escapedPattern(for: name))\\.?(\\s|$)", options: .regularExpression) {
-        month = m; rest.replaceSubrange(r, with: " "); break
-      }
-    }
-    if rest.range(of: #"\b(christmas|weihnachten|xmas)\b"#, options: .regularExpression) != nil { month = 11; day = -1 }
-    return (year, month, day, rest.split(whereSeparator: \.isWhitespace).joined(separator: " "))
-  }
-
-  static func matches(_ w: String, _ pattern: String) -> Bool { w.range(of: pattern, options: .regularExpression) != nil }
-  public static func isVideoWord(_ w: String) -> Bool { matches(w, "^(videos?|filme?|clips?)$") }
-  public static func isFavWord(_ w: String) -> Bool { matches(w, "^(favou?rites?|favoriten?|liked|herz)$") }
-  public static func isShotWord(_ w: String) -> Bool { matches(w, "^(screenshots?|bildschirmfotos?)$") }
-
-  /** Ideas shown under an empty search box: everyday things the model knows well. */
-  public static let suggestions = ["beach", "mountains", "snow", "sunset", "food", "dog", "cat", "car", "birthday cake", "flowers", "city at night", "document", "selfie", "forest", "lake"]
-}
+// The search box's query language: QueryParser.swift (the port of web/src/search/parse.ts).

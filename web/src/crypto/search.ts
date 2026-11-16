@@ -20,7 +20,36 @@ export interface IndexEntry {
   clip?: string;
   /** faces: box (x, y, w, h in 0..1 of the image), detector score, face vector (float16, base64url) */
   faces?: { box: number[]; score: number; emb: string }[];
+  /** Which text model read the text (OCR_TAG); set even when it found none. Missing in entries made before text in
+   *  photos (2.8.0): the indexing device reads their text again, little by little. */
+  o?: string;
+  /** The text in the photo (textSlot): whitespace collapsed, padded with spaces to a fixed length. Readers trim. */
+  t?: string;
 }
+
+/** The text model's tag (docs/MODELS.md): PP-OCRv3's detector and PP-OCRv5's Latin recogniser, steps version 1. */
+export const OCR_TAG = "ppocr3det+ppocr5latin/1";
+/** The text's fixed length in the entry, in UTF-8 bytes: every entry with text in it (`o`) is the same size whatever
+ *  the photo says, so the sealed entry's length tells the server nothing about it (docs/SEARCH.md). */
+export const TEXT_BYTES = 1022;
+
+/** Text ready for an entry: characters JSON would escape (quotes, backslash, slash, control characters) become
+ *  spaces, so the stored value is exactly TEXT_BYTES bytes in every app's JSON; cut at a word to fit, then padded. */
+export function textSlot(text: string): string {
+  const words = text.replace(/["\\/\u0000-\u001f\u007f\u2028\u2029]/g, " ").split(/\s+/).filter(Boolean);
+  const enc = new TextEncoder();
+  let out = "", n = 0;
+  for (const w of words) {
+    const add = (out ? 1 : 0) + enc.encode(w).length;
+    if (n + add > TEXT_BYTES) break;
+    out += (out ? " " : "") + w;
+    n += add;
+  }
+  return out + " ".repeat(TEXT_BYTES - n);
+}
+
+/** The text an entry holds, or "" (none found, or an entry from before text in photos). */
+export const entryText = (e: IndexEntry): string => (e.t ?? "").trim();
 
 export function sealIndexEntry(s: Sodium, entry: IndexEntry, pubkey: Uint8Array, itemId: string): Uint8Array {
   const json = s.pad(s.from_string(JSON.stringify(entry)), PAD);

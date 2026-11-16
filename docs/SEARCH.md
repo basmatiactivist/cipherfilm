@@ -32,8 +32,11 @@ the server.
 | `clip-b32-tokenizer.json` | CLIP BPE tokenizer (from the same export) | words to tokens | MIT | 3.6 MB |
 | `yunet-2023mar.onnx` | OpenCV YuNet ([opencv/face_detection_yunet](https://huggingface.co/opencv/face_detection_yunet)) | where faces are, with five landmarks | MIT | 0.2 MB |
 | `sface-2021dec.onnx` | OpenCV SFace ([opencv/face_recognition_sface](https://huggingface.co/opencv/face_recognition_sface)) | a 128-number description of each face | Apache 2.0 | 38.7 MB |
+| `ocr-det-v3.onnx` | PaddleOCR PP-OCRv3 mobile text detector (ONNX export, [monkt/paddleocr-onnx](https://huggingface.co/monkt/paddleocr-onnx)) | where text is in a photo | Apache 2.0 | 2.4 MB |
+| `ocr-rec-latin-v5.onnx` | PaddleOCR PP-OCRv5 mobile recogniser for Latin script (same export) | the letters in each line | Apache 2.0 | 7.9 MB |
+| `ocr-latin-dict.txt` | its 502 characters | ids to letters | Apache 2.0 | 1.6 KB |
 
-What a device downloads: the indexing device all of it (609 MB, 648 MB with faces); a device that only searches
+What a device downloads: the indexing device all of it (609 MB, 648 MB with faces, 10.3 MB more with text in photos); a device that only searches
 (another one indexes) the text model and the tokenizer (258 MB); the web app the same 258 MB.
 
 - Image: input `image`, float32 `[1,3,224,224]`: RGB, shortest side to 224 (bicubic or a good downscale), centre crop,
@@ -180,9 +183,8 @@ next to the account button (web), Account (Android) or Lock in the toolbar (Mac)
   (RGB, 0..255); L2-normalised 128 numbers.
 - **Text:** CLIP's byte-level BPE (`mobile/src/search/tokenizer.ts`, checked against Hugging Face's tokenizer),
   77 tokens, through the text encoder.
-- **Search:** cosine similarity of the text vector against all image vectors, in native memory; results within 0.09
-  of the best match and above 0.15. Names of people, years and months (English and German), "videos", "favorites",
-  "screenshots", file names and cameras narrow the results first.
+- **Search:** cosine similarity of the text vector against all image vectors, in native memory. The query is taken
+  apart first ("Combined search" below): its filters narrow the results, the words left go to the model.
 - **People:** faces with a detector score ≥ 0.86 and at least 4 % of the image are grouped greedily against each
   group's running mean (cosine ≥ 0.5), then groups whose means are within 0.55 are joined. A group shows as a person
   from three photos on. Names and decisions ("same person as…", "not this person", hidden) are anchors: groups holding
@@ -221,7 +223,7 @@ from the decrypted thumbnail or preview in the browser.
 
 | What | Where | Encryption |
 |---|---|---|
-| Index entry per item: model tag, image vector (float16), faces (box, score, float16 vector) | server, `item_index` | sealed to the account's public key: `0x02 ‖ crypto_box_seal(item id (16 bytes) ‖ pad₅₁₂(JSON))` |
+| Index entry per item: model tag, image vector (float16), faces (box, score, float16 vector), text read in the photo (fixed 1022 bytes) | server, `item_index` | sealed to the account's public key: `0x02 ‖ crypto_box_seal(item id (16 bytes) ‖ pad₅₁₂(JSON))` |
 | People: names, anchor faces, taken-out faces, hidden | server, `user_blobs` "people" | XChaCha20-Poly1305 under `kdf(master, "PEOPLEST")`, AD `blob/people \0 user id`, padded to 1024 bytes |
 | Favorites | server, `items.favorite` | plain flag, like album membership |
 | The server's index entries (ciphertext) | phone cache | as on the server; removed at sign-out |
@@ -249,6 +251,69 @@ made-up entries, which could make a photo show up in a search where it doesn't b
   app's own indexing of server-only photos pauses until it is opened again.
 - Android may delay background work. Allowing Cipherfilm to run in the background (battery optimisation) makes it
   reliable on most phones; some makers (Samsung, Xiaomi, Huawei) need "Unrestricted" in the app's battery settings.
+
+## Combined search
+
+One search box takes filters and content together: "dog beach May 2025 Anna Rome" or "Hund Strand 2025 Anna Rom" is
+the photos of Anna, taken in Rome in May 2025 (or in 2025), ranked by how well they show a dog on a beach. The query is
+taken apart on the device by one parser, `web/src/search/parse.ts`, used by the web and the Android app (`@websearch`),
+and a careful port on the Mac (`mac/Sources/CipherfilmCore/QueryParser.swift`); `web/src/search/parse-cases.json`
+holds the cases all of them are tested with.
+
+- **People:** the name of a named person, whole ("Anna Müller") or one word of it ("anna", "müller"); two people with
+  that word: either. Accents and case don't matter ("muller").
+- **Dates** (English and German): years ("2025"), months ("May", "Mai", "dez."), both ("May 2025", "2025 May"),
+  ranges ("2019–2021", "2019 bis 2021", "between 2019 and 2021", "May to July 2025"), "since"/"seit", "after"/"nach",
+  "before"/"vor", "until"/"bis" a year, Christmas/Weihnachten (20–27 December, of a year or any), "last year",
+  "this year" ("letztes Jahr", "dieses Jahr"), and dates typed as numbers (2023-12-24, 24.12.2023, 2023-12).
+- **Places:** one to three words that name a town, region or country where photos in the library were taken (the
+  place names bundled with the apps, docs/MAP.md): "rome", "new york", "switzerland". A place without photos is a word
+  like any other. Country codes are not places ("de", "it" are words).
+- **Kinds:** favorites ("favorites", "Lieblingsfotos"), videos ("videos", "Filme"), screenshots.
+- A word like "in", "with", "aus" or "von" right before a filter belongs to it ("dog in Rome"); "photos", "Bilder"
+  and the like are dropped.
+- **Everything left** is what to look for: in file names, cameras and albums, in the text read in the photos (below)
+  and by what the photos show. The image model knows English, so about 170 common German words are given to it in
+  English ("Hund" → "dog", "Strand" → "beach", `web/src/search/glossary-de.json`; the Mac has a copy, tested equal).
+- All filters must hold. Results: names first, then photos whose text has the words, then the model's ranking.
+- **Chips:** each filter shows as a chip under the search box ("Anna Müller", "May 2025", "Rome") with a button that
+  removes its words from the query.
+
+## Text in photos
+
+The indexing device (Android or Mac; docs above) also reads the text in each photo: signs, menus, documents,
+screenshots. Latin script only (English, German, French, Italian, Spanish and about 30 more); other scripts aren't
+read. The open models are PaddleOCR's (Apache 2.0, docs/MODELS.md), 10.3 MB, downloaded only after the person agreed
+in the same question as the other search models; only the indexing device downloads them. Turning "Text in photos"
+off in the search settings deletes them; declining them never stops search by content or faces.
+
+- **Steps** (`scripts/ocr-reference.py` is the reference; Android `Ocr.kt`, Mac `Ocr.swift`): the same decoded
+  picture the image model gets (the preview, up to 2048 px; for a video, its one frame) is scaled so its longest side is
+  at most 960 px and through the detector; connected text regions (probability > 0.3, mean ≥ 0.6) are grown a little,
+  cut out, scaled to 48 px high and read by the recogniser (greedy CTC); lines with a mean confidence below 0.5 are
+  dropped, at most 40 lines. Standing text is turned first. Rotated or curved text is read less well.
+- **Stored:** in the photo's sealed index entry, as `t`, with `o` naming the text model
+  (`ppocr3det+ppocr5latin/1`). The text is cleaned (quotes, slashes, backslashes and control characters become
+  spaces) and padded with spaces to exactly 1022 bytes, cut at a word if longer (about the first 1000 characters).
+  Every entry with `o` is the same size, whatever the photo says or whether it has text at all, so the padded entry
+  (still 512-byte steps, as before) tells the server nothing about the text. The model tag `m` and `v` are
+  unchanged: the server sees nothing new, and older apps open these entries as before (they ignore the two fields).
+- **Older photos:** entries without `o` are read again in the background, a few at a time, after new photos are
+  indexed: only the text is read, the image vector and faces are kept, and the entry is sealed and stored again. Until
+  then those photos aren't found by their text.
+- **Searching:** every app, the web included, matches the words left in the query against each photo's text after
+  opening the entries: each word must start a word of the text, accents and case ignored ("zurich" finds "Zürich",
+  "bake" finds "Bakery"); "the", "and", "der", "und" and the like needn't be there. The web never downloads the text
+  model. A photo's details show the text that matched (web) or the text found.
+- **Speed** (measured per photo, detector and recogniser, warm, 2 threads; 2026-11-16): Mac (Apple silicon, Release
+  build, a busy machine) about 70 ms for a photo with little text, 130 ms for the test picture (3 lines), 250–370 ms
+  for screenshots with 28–37 lines: the detector takes about 70 ms, each line 15–20 ms. Android: 257–300 ms for the test
+  picture (decoding included) in the arm64 emulator on that Mac; not measured on a phone yet (expect a few hundred ms
+  on a mid-range one). At most 40 lines are read per photo. The image model takes longer than that per photo, so
+  reading text adds a modest share to indexing; older photos are read only after new ones are indexed.
+- **Limits:** Latin script only; small, rotated or curved text and handwriting are read poorly or not at all; matching
+  is by word starts, without spelling tolerance; about the first 1000 characters of a photo are kept. The Mac app's
+  texts are English only, as the rest of it.
 
 ## Free up space
 

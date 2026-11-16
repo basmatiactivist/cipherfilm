@@ -58,6 +58,7 @@ export const deApp: Record<string, string> = {
   "Not now": "Nicht jetzt",
   "Credits": "Quellen",
   "Place names: GeoNames, CC BY 4.0.": "Ortsnamen: GeoNames, CC BY 4.0.",
+  "Text recognition: PaddleOCR models, Apache 2.0.": "Texterkennung: PaddleOCR-Modelle, Apache 2.0.",
   "Map data © OpenStreetMap contributors, © OpenMapTiles.": "Kartendaten © OpenStreetMap-Mitwirkende, © OpenMapTiles.",
   "Map data: see the credits on the map.": "Kartendaten: siehe Angaben auf der Karte.",
   "Show on the map": "Auf der Karte zeigen",

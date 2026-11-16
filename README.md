@@ -69,8 +69,8 @@ and visitors are signed out every hour. To keep your own photos, [run your own s
 - **Automatic backup from Android.** New photos in the folders you choose are encrypted and uploaded in the background.
   The backup never holds your master key: it seals each new photo to your account's public key, so it can add photos
   but never read any.
-- **Search and people, on your device.** Find photos by content and group faces into people, with one open CLIP model
-  (LAION's ViT-B/32, MIT) and open face models that run locally, the same in every app. The models are downloaded once per
+- **Search and people, on your device.** Find photos by content, by the text in them and with filters in the same query ("dog beach May 2025 Anna Rome"), and group faces into people, with one open CLIP model
+  (LAION's ViT-B/32, MIT), open face models and a small open text model (PP-OCR, Apache 2.0) that run locally. The models are downloaded once per
   device, only after the app asked you. Search leaves explicit photos out unless an admin allows otherwise ([docs/SEARCH.md](docs/SEARCH.md), [docs/MODELS.md](docs/MODELS.md)).
 - **Map and places.** See your photos on a map, find them by town, region or country, and see where each was taken.
   Coordinates stay encrypted and are only read on your devices. Place names come from a file inside the apps, so

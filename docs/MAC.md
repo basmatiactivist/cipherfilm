@@ -2,7 +2,7 @@
 
 A native app (Swift, SwiftUI) for Apple silicon Macs with macOS 15 or later. It does what the Android app does and three
 things only a computer that is on all day does well: it keeps a decrypted copy of the library in a folder, uploads new
-files from folders it watches, and does the search and face work for the whole library in the background. Source and
+files from folders it watches (and imports WebDAV folders), and does the search and face work for the whole library in the background. Source and
 build notes: `mac/README.md`.
 
 ## What it does
@@ -99,6 +99,7 @@ What needs what:
 | Work | Needs | While locked |
 |---|---|---|
 | Watched folders | the session (cookie) and the account's public key, pinned when turned on | keeps working |
+| WebDAV import | the session, the pinned public key and the WebDAV password (keychain) | stops; goes on at the next unlock |
 | Continuous export | the master key (it decrypts) | waits for unlock |
 | Search indexing | the master key (it decrypts previews) | waits for unlock; files from watched folders are indexed from the file at upload |
 | Security notifications | the session (cookie); notices aren't encrypted | checked every 5 minutes (live updates while unlocked) |
@@ -167,6 +168,73 @@ docs/CRYPTO.md §3, version 2), pinned when the feature is turned on after check
 works while the library is locked, and it can add photos but not read any. Skipped: files the library already has
 (same name and size, refreshed whenever the library is unlocked), files it uploaded before, hidden files, and the
 insides of packages (such as a Photos library). A file that fails three times is skipped and listed in Settings.
+
+## Import from a WebDAV folder
+
+Settings › Import › Add Folder…: any WebDAV folder (a network drive, a NAS, a cloud drive that speaks WebDAV) as a
+source, with its address, user name and password, imported **once** or **kept importing** (new files every 15 minutes,
+hour, 6 hours or day, and at every unlock; "Only files added from now on" counts what is there now as done). Several
+folders can be added; Test Connection lists the folder and says how many files it would import. Each folder shows its
+progress (files, bytes, speed, the files in progress), can be paused, imported again ("Import Now") and removed;
+files that failed three times are listed with the reason and Retry Failed tries them again. Items go straight into the
+timeline.
+
+- **Only the folder itself.** One `PROPFIND` with `Depth: 1`; subfolders are counted and left alone, hidden files
+  skipped. The types the upload tool takes are imported (JPEG, PNG, WebP, HEIC/HEIF, GIF, DNG, MP4, MOV, M4V); other
+  files are listed as skipped.
+- **Streamed, not downloaded.** A file is read from the server by HTTP Range requests, 4 MiB at a time, encrypted and
+  uploaded segment by segment (one segment being read and at most two on the way per file), so the folder is never
+  copied to the Mac. A photo up to 48 MB is read once into memory (it is decoded whole for its thumbnail anyway) and
+  encrypted from there. A video's thumbnail, size, duration, date and place come from AVFoundation reading through
+  the same Range requests (its moov box, at the start or the end, and one frame; at most 64 MB), the place also from
+  the moov box directly like a local file. Only a photo over 48 MB, or any file from a server that sends no parts of
+  files, goes through a temporary file in the app's private caches (`~/Library/Caches/app.cipherfilm.mac/webdav/`),
+  one folder per file, deleted as soon as it is uploaded or fails; the folder is emptied at every stop.
+- **Fast.** Three files at a time by default (like the upload tool; Settings › Import, 1 to 6), each with its parts
+  in flight while the next is read. Measured with `mac/scripts/webdav-e2e.sh` (below).
+- **Resumes, never twice.** Each folder keeps a log of the files it imported (name, size, ETag, modification time;
+  `webdav/<id>.log` in the account's folder, one line per file, so a folder of any size costs one small write per
+  file). A file counts as done while its name and size and its ETag or modification time match; a file replaced by
+  another of the same name is imported as a new one. Files the library already has (same name and size, like the
+  watched folders) are skipped. A stop (lock, sleep, pause, quit, a server that can't be reached) discards the file in
+  progress on the server, and the next pass starts with it.
+- **Metadata as for a local file.** Capture time, size, camera and place from EXIF or the video's own metadata;
+  without a date of its own, the server's modification time (`getlastmodified`). The original name and size, the
+  SHA-256 of the original and thumbnails and previews made the same way as for a file on the Mac.
+- **Only while unlocked.** A lock (also the one at sleep), sleep itself and sign-out stop it at once; nothing more is
+  read or decrypted after. The new items' keys are sealed to the account's public key, pinned when the first folder
+  is added (like the watched folders). Not indexed for search at upload: the indexing device indexes them from their
+  previews.
+- **Addresses.** `https://` only, with macOS's own certificate check (there is no "trust anyway"). `http://` is
+  accepted only for this Mac and private network addresses (10/8, 172.16/12, 192.168/16, 100.64/10 as tailnets use,
+  link-local, unique-local IPv6, `.local`, `.lan`, `.home.arpa`, `.internal`, names without a dot), with a warning that
+  the password and photos then cross the network unencrypted. No user name or password inside the address; redirects
+  only within the same server and scheme.
+
+Security: the password is kept in the login keychain, readable by this app only (Keychain.swift), never logged, and
+answered only to the folder's own server's challenge (Basic or Digest), held in the import's memory while it runs. The
+WebDAV server sees this Mac list the folder and read files, nothing more (no writes, no cookies, no cache). The
+Cipherfilm server sees new encrypted items like any upload; the folder's address, user name and file names never
+reach it (the names only inside the encrypted metadata). Sign-out, and a sign-out from another device, delete the
+account's WebDAV passwords and logs; removing a folder deletes its password and log (what it imported stays).
+
+End-to-end test: `mac/scripts/webdav-e2e.sh` starts a throwaway Cipherfilm (tools/upload/e2e/compose.yaml) and a local
+WebDAV server (`rclone serve webdav`) with a few hundred drawn photos, the upload tool's samples, a subfolder, a text
+file and a large video with its moov box at the end, imports it with an interruption and a resume, checks dedupe, the
+metadata, thumbnails and previews (like the web app), and restores the video with cipherfilm-decrypt; it reports the
+peak temporary disk use, the peak memory and the throughput, and deletes everything afterwards. A WebDAV server with
+a self-signed certificate is refused.
+
+Measured on an M-series Mac, both servers on the same Mac (so the network is no limit), three files at a time: 300
+drawn photos (about 0.4 MB each), the samples and a 569 MB two-minute video, 680 MB in all. After an interruption
+after 40 files, the resume imported the other 266 files (666 MB) in 6.3 s, about 106 MB/s or 42 files a second. It
+read 0.3% more from the WebDAV server than the files' size (the video probe and metadata reads); the temporary folder
+stayed empty (0 MB at its peak), and the test process peaked at 140 MB of memory (126 MB above its start). Over a real
+network the speed is that of the slower of the two connections.
+
+Limits: flat folders only; a file interrupted mid-way starts over (its finished parts are not kept on the server);
+the server's listing is read whole (a folder of 100,000 files is a few tens of MB of XML); no file-name dates (a
+photo without EXIF and a server without modification times gets the time of the import).
 
 ## Speed
 
@@ -240,8 +308,8 @@ the same picture decoded by both gives that cosine in Python alone). About 50 ms
 
 ## Sign-out
 
-Deletes everything the Mac keeps for the account: settings, the export's and watched folders' bookkeeping, the
-encrypted cache (item list, thumbnails, previews, index entries) and the session cookie. The search models stay; they
+Deletes everything the Mac keeps for the account: settings, the export's, watched folders' and WebDAV import's
+bookkeeping, the WebDAV passwords in the keychain, the encrypted cache (item list, thumbnails, previews, index entries) and the session cookie. The search models stay; they
 hold nothing of anyone. Exported copies stay unless you choose otherwise (see above).
 
 The same happens when the server ends the session (signed out from another device in Account › Devices, a password
@@ -259,7 +327,11 @@ as at sign-out. Exported copies stay. The only active administrator must make so
 ## Where things are
 
 - `~/Library/Application Support/app.cipherfilm.mac/accounts/<user id>/`: settings, `export.json`, `watch.json`,
-  `known.json` (name-and-size fingerprints, BLAKE2b, like Android's).
+  `known.json` (name-and-size fingerprints, BLAKE2b, like Android's), `webdav/<id>.log` (what each WebDAV folder
+  imported).
+- Login keychain, service `app.cipherfilm.mac.webdav.<user id>`: the WebDAV passwords, one item per folder.
+- `~/Library/Caches/app.cipherfilm.mac/webdav/`: a WebDAV file in progress, only for photos over 48 MB or servers
+  without Range requests; deleted right away.
 - `~/Library/Application Support/app.cipherfilm.mac/models/`: the search models.
 - `~/Library/Caches/app.cipherfilm.mac/cf-ct/<user id>/`: the server's ciphertext (opens only with the master key).
 - `~/Library/HTTPStorages/app.cipherfilm.mac`: the session cookie.

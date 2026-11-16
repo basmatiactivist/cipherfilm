@@ -64,6 +64,25 @@ struct WatchedFolder: Codable, Hashable, Identifiable {
   var url: URL { URL(fileURLWithPath: path, isDirectory: true) }
 }
 
+/** A WebDAV folder to import from. */
+struct WebDAVSource: Codable, Hashable, Identifiable {
+  var id = UUID().uuidString
+  /** the folder's address, as WebDAVAddress accepted it */
+  var url: String
+  var user: String
+  /** false: import once, then stop; true: look for new files every `interval` minutes and at every unlock */
+  var keepImporting = false
+  var interval = 15
+  var paused = false
+  /** an "import once" that went through the whole folder */
+  var finished = false
+  var label: String {
+    guard let u = URL(string: url) else { return url }
+    let name = u.lastPathComponent.removingPercentEncoding ?? u.lastPathComponent
+    return (name.isEmpty || name == "/" ? "" : name + " on ") + (u.host ?? url)
+  }
+}
+
 /** The account's settings on this Mac. Everything here can be turned on and off in Settings. */
 struct AccountSettings: Codable, Equatable {
   // search and people
@@ -88,8 +107,12 @@ struct AccountSettings: Codable, Equatable {
   var watchOn = false
   var watched: [WatchedFolder] = []
   var watchIncludeExisting = false
-  /** the account's public key, checked against its private key when watched folders were turned on */
+  /** the account's public key, checked against its private key when watched folders or a WebDAV import were turned on */
   var pubkey: String?
+  // WebDAV import (WebDAVImporter.swift); each source's password is in the keychain, its progress in webdav/<id>.log
+  var webdav: [WebDAVSource] = []
+  /** files imported at the same time */
+  var webdavParallel = WebDAVImport.defaultParallel
   // this Mac
   var agentAsked = false
   /** the map (MapPage.swift): the map servers the person agreed to (Me.MapStyles.hosts); empty until they turn the map

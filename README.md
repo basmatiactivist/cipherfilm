@@ -98,8 +98,8 @@ and visitors are signed out every hour. To keep your own photos, [run your own s
   signed-in devices to sign out one or all others; a notice on your other devices when a new one signs in or two-step
   sign-in changes, collected under a bell with a count of unread ones, also as a notification on Android and the Mac
   while the app is closed (no push service).
-- **Mac app.** Keeps an export folder up to date, uploads watched folders and indexes for search in the background
-  ([docs/MAC.md](docs/MAC.md)).
+- **Mac app.** Keeps an export folder up to date, uploads watched folders, imports WebDAV folders (streamed, without a
+  local copy) and indexes for search in the background ([docs/MAC.md](docs/MAC.md)).
 - **Made for a small group.** Invite-only, a private library per person, storage limits, an admin area that never
   shows anyone's photos, on the web and in the Android and Mac apps.
 - **Light to run.** One Docker container with SQLite; about 35 MB of RAM when idle, fine on a 1–2 vCPU / 2 GB server.

@@ -13,6 +13,7 @@ struct SettingsView: View {
       SearchSettings().tabItem { Label("Search & People", systemImage: "sparkle.magnifyingglass") }.tag("search")
       ExportSettings().tabItem { Label("Export", systemImage: "folder") }.tag("export")
       WatchSettings().tabItem { Label("Watched Folders", systemImage: "eye") }.tag("watch")
+      WebDAVSettings().tabItem { Label("Import", systemImage: "square.and.arrow.down.on.square") }.tag("import")
       // only for an administrator, never the public demo login; the server checks every request itself
       if Admin.offered(model.me) {
         AdminSettings().tabItem { Label("Administration", systemImage: "person.2.badge.gearshape") }.tag("admin")

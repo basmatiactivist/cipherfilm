@@ -8,6 +8,15 @@ version into the GitHub release notes, so a release cannot be published without 
 ## [Unreleased]
 
 ### Added
+- Mac: import from WebDAV folders (Settings › Import). Any WebDAV folder (https; http only for this Mac or a home
+  network, with a warning) imported once or kept importing every 15 minutes to a day; several folders; Test Connection.
+  Flat folders only, subfolders are left alone. Files are streamed with Range requests through the usual encryption
+  into the timeline, without a copy of the folder on the Mac (only photos over 48 MB, or a server without Range
+  requests, go through a temporary file that is deleted right away); three files at a time; an interrupted import goes
+  on where it stopped and never uploads a file twice, and files already in the library are skipped. Capture time,
+  place, camera, original name and thumbnails as for a local file (the server's modification time when a file has no
+  date). Progress, pause, retry; stops at lock, sleep and sign-out. The password is kept in the keychain for this app
+  only and deleted at sign-out.
 - Unused devices are signed out (web, Android, Mac, under Devices): choose "Sign out devices not used for" 7, 14 or 30
   days (30 as before). A device unused for longer is now signed out as if from another device, so it deletes what it
   keeps of the library when it comes back, also with the 30 days. "Sign out unused devices now" shows how many devices

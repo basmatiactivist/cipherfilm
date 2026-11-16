@@ -31,21 +31,34 @@ public enum Media {
 
   /** An upright JPEG no larger than maxPx on its long side; a frame at 1 s for videos. */
   public static func jpeg(_ url: URL, video: Bool, maxPx: Int, quality: Double) async -> (data: Data, width: Int, height: Int)? {
-    var img: CGImage?
-    if video {
-      let gen = AVAssetImageGenerator(asset: AVURLAsset(url: url))
-      gen.appliesPreferredTrackTransform = true
-      gen.maximumSize = CGSize(width: maxPx, height: maxPx)
-      gen.requestedTimeToleranceBefore = .positiveInfinity
-      gen.requestedTimeToleranceAfter = .positiveInfinity
-      img = try? await gen.image(at: CMTime(seconds: 1, preferredTimescale: 600)).image
-      if img == nil { img = try? await gen.image(at: .zero).image }
-    } else if let src = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) {
-      img = CGImageSourceCreateThumbnailAtIndex(src, 0, [
-        kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true,
-        kCGImageSourceThumbnailMaxPixelSize: maxPx, kCGImageSourceShouldCacheImmediately: true,
-      ] as CFDictionary)
-    }
+    if video { return await jpeg(asset: AVURLAsset(url: url), maxPx: maxPx, quality: quality) }
+    guard let src = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) else { return nil }
+    return jpeg(source: src, maxPx: maxPx, quality: quality)
+  }
+
+  /** The same from a picture's bytes in memory (a file streamed from a WebDAV folder). */
+  public static func jpeg(data: Data, maxPx: Int, quality: Double) -> (data: Data, width: Int, height: Int)? {
+    guard let src = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary) else { return nil }
+    return jpeg(source: src, maxPx: maxPx, quality: quality)
+  }
+
+  static func jpeg(source src: CGImageSource, maxPx: Int, quality: Double) -> (data: Data, width: Int, height: Int)? {
+    guard let img = CGImageSourceCreateThumbnailAtIndex(src, 0, [
+      kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true,
+      kCGImageSourceThumbnailMaxPixelSize: maxPx, kCGImageSourceShouldCacheImmediately: true,
+    ] as CFDictionary), let d = encodeJPEG(img, quality: quality) else { return nil }
+    return (d, img.width, img.height)
+  }
+
+  /** A video's frame at 1 s (or its first), from a file or from ranged reads of a remote one (RangedAsset). */
+  static func jpeg(asset: AVAsset, maxPx: Int, quality: Double) async -> (data: Data, width: Int, height: Int)? {
+    let gen = AVAssetImageGenerator(asset: asset)
+    gen.appliesPreferredTrackTransform = true
+    gen.maximumSize = CGSize(width: maxPx, height: maxPx)
+    gen.requestedTimeToleranceBefore = .positiveInfinity
+    gen.requestedTimeToleranceAfter = .positiveInfinity
+    var img = try? await gen.image(at: CMTime(seconds: 1, preferredTimescale: 600)).image
+    if img == nil { img = try? await gen.image(at: .zero).image }
     guard let img, let d = encodeJPEG(img, quality: quality) else { return nil }
     return (d, img.width, img.height)
   }
@@ -80,20 +93,33 @@ public enum Media {
 
   /** Capture time, size, camera and place, from EXIF or the video's own metadata. */
   public static func info(_ url: URL, video: Bool) async -> Info {
+    if video { return await info(asset: AVURLAsset(url: url), location: { fileVideoLocation(url) }) }
+    guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return Info() }
+    return info(source: src)
+  }
+
+  /** The same for a picture's bytes in memory. */
+  public static func info(data: Data) -> Info {
+    guard let src = CGImageSourceCreateWithData(data as CFData, nil) else { return Info() }
+    return info(source: src)
+  }
+
+  /** A video's: location falls back to reading its moov box when AVFoundation reports none (videoLocation). */
+  static func info(asset a: AVAsset, location: @Sendable () async -> (lat: Double, lon: Double)?) async -> Info {
     var out = Info()
-    if video {
-      let a = AVURLAsset(url: url)
-      if let d = try? await a.load(.duration), d.isNumeric { out.duration = d.seconds }
-      if let t = try? await a.loadTracks(withMediaType: .video).first, let (sz, tr) = try? await t.load(.naturalSize, .preferredTransform) {
-        let r = sz.applying(tr)
-        out.width = Int(abs(r.width).rounded()); out.height = Int(abs(r.height).rounded())
-      }
-      if let d = try? await a.load(.creationDate), let date = try? await d.load(.dateValue) { out.captureTs = date.timeIntervalSince1970 * 1000 }
-      if let p = await videoLocation(a) { (out.lat, out.lon) = (p.lat, p.lon) }
-      return out
+    if let d = try? await a.load(.duration), d.isNumeric { out.duration = d.seconds }
+    if let t = try? await a.loadTracks(withMediaType: .video).first, let (sz, tr) = try? await t.load(.naturalSize, .preferredTransform) {
+      let r = sz.applying(tr)
+      out.width = Int(abs(r.width).rounded()); out.height = Int(abs(r.height).rounded())
     }
-    guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
-          let p = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any] else { return out }
+    if let d = try? await a.load(.creationDate), let date = try? await d.load(.dateValue) { out.captureTs = date.timeIntervalSince1970 * 1000 }
+    if let p = await metadataLocation(a) { (out.lat, out.lon) = (p.lat, p.lon) } else if let p = await location() { (out.lat, out.lon) = (p.lat, p.lon) }
+    return out
+  }
+
+  static func info(source src: CGImageSource) -> Info {
+    var out = Info()
+    guard let p = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any] else { return out }
     if let w = p[kCGImagePropertyPixelWidth] as? Int, let h = p[kCGImagePropertyPixelHeight] as? Int {
       let o = p[kCGImagePropertyOrientation] as? Int ?? 1
       (out.width, out.height) = (5...8).contains(o) ? (h, w) : (w, h)
@@ -118,17 +144,21 @@ public enum Media {
    *  box inside udta (as ffmpeg writes it) AVFoundation doesn't report: for that, and anything else it missed, the
    *  file's moov box is read directly, like the web app and the upload tool do (web/src/places/videoLocation.ts). */
   static func videoLocation(_ a: AVURLAsset) async -> (lat: Double, lon: Double)? {
-    if let items = try? await a.load(.metadata) {
-      let ids: Set<AVMetadataIdentifier> = [
-        .quickTimeMetadataLocationISO6709, .quickTimeUserDataLocationISO6709, .commonIdentifierLocation,
-        AVMetadataIdentifier(rawValue: "uiso/%A9xyz"), // the ©xyz atom of an MP4
-      ]
-      for item in items where item.identifier.map(ids.contains) == true || item.commonKey == .commonKeyLocation {
-        if let s = try? await item.load(.stringValue), let p = iso6709(s) { return p }
-        if let d = try? await item.load(.dataValue), let p = xyzAtom(d) { return p }
-      }
-    }
+    if let p = await metadataLocation(a) { return p }
     return a.url.isFileURL ? fileVideoLocation(a.url) : nil
+  }
+
+  static func metadataLocation(_ a: AVAsset) async -> (lat: Double, lon: Double)? {
+    guard let items = try? await a.load(.metadata) else { return nil }
+    let ids: Set<AVMetadataIdentifier> = [
+      .quickTimeMetadataLocationISO6709, .quickTimeUserDataLocationISO6709, .commonIdentifierLocation,
+      AVMetadataIdentifier(rawValue: "uiso/%A9xyz"), // the ©xyz atom of an MP4
+    ]
+    for item in items where item.identifier.map(ids.contains) == true || item.commonKey == .commonKeyLocation {
+      if let s = try? await item.load(.stringValue), let p = iso6709(s) { return p }
+      if let d = try? await item.load(.dataValue), let p = xyzAtom(d) { return p }
+    }
+    return nil
   }
 
   // ---- the video's boxes, read directly: only the box headers on the way to moov and moov itself ----
@@ -210,26 +240,62 @@ public enum Media {
     guard let h = try? FileHandle(forReadingFrom: url) else { return nil }
     defer { try? h.close() }
     guard let size = try? h.seekToEnd() else { return nil }
+    return moovLocation(size: size) { o, n in
+      guard (try? h.seek(toOffset: o)) != nil else { return nil }
+      return try? h.read(upToCount: n)
+    }
+  }
+
+  /** The same through ranged reads of a file elsewhere (a WebDAV folder): only the box headers on the way to moov and
+   *  moov itself are fetched, wherever moov is. */
+  static func remoteVideoLocation(size: Int64, read: @Sendable (Int64, Int) async throws -> Data) async -> (lat: Double, lon: Double)? {
+    guard size > 0 else { return nil }
     var o: UInt64 = 0
     for _ in 0..<maxBoxes {
-      // compared by what is left (size - o), never o + len: a crafted 64-bit box size would overflow the sum and trap
-      guard o <= size, size - o >= 8, (try? h.seek(toOffset: o)) != nil, let hd = try? h.read(upToCount: 16) else { return nil }
-      let b = [UInt8](hd)
-      guard b.count >= 8 else { return nil }
-      var len = UInt64(u32(b, 0)), head: UInt64 = 8
-      if len == 1 {
-        guard b.count >= 16 else { return nil }
-        len = UInt64(u32(b, 8)) << 32 | UInt64(u32(b, 12)); head = 16
-      } else if len == 0 { len = size - o }
-      guard len >= head, len <= size - o else { return nil }
-      if fourCC(b, 4) == "moov" {
-        guard len - head <= UInt64(maxMoov), (try? h.seek(toOffset: o + head)) != nil,
-              let m = try? h.read(upToCount: Int(len - head)), m.count == Int(len - head) else { return nil }
+      guard let step = boxStep(at: o, size: UInt64(size), header: try? await read(Int64(o), Int(min(16, UInt64(size) - min(o, UInt64(size)))))) else { return nil }
+      switch step {
+      case .next(let n): o = n
+      case .moov(let at, let len):
+        guard let m = try? await read(Int64(at), len), m.count == len else { return nil }
         return locationInMoov([UInt8](m))
       }
-      o += len
     }
     return nil
+  }
+
+  static func moovLocation(size: UInt64, read: (UInt64, Int) -> Data?) -> (lat: Double, lon: Double)? {
+    var o: UInt64 = 0
+    for _ in 0..<maxBoxes {
+      guard let step = boxStep(at: o, size: size, header: o < size ? read(o, Int(min(16, size - o))) : nil) else { return nil }
+      switch step {
+      case .next(let n): o = n
+      case .moov(let at, let len):
+        guard let m = read(at, len), m.count == len else { return nil }
+        return locationInMoov([UInt8](m))
+      }
+    }
+    return nil
+  }
+
+  enum BoxStep { case next(UInt64), moov(at: UInt64, len: Int) }
+
+  /** The top-level box whose header (up to 16 bytes) starts at o: where the next one starts, or where moov's body is. */
+  static func boxStep(at o: UInt64, size: UInt64, header hd: Data?) -> BoxStep? {
+    // compared by what is left (size - o), never o + len: a crafted 64-bit box size would overflow the sum and trap
+    guard o <= size, size - o >= 8, let hd else { return nil }
+    let b = [UInt8](hd)
+    guard b.count >= 8 else { return nil }
+    var len = UInt64(u32(b, 0)), head: UInt64 = 8
+    if len == 1 {
+      guard b.count >= 16 else { return nil }
+      len = UInt64(u32(b, 8)) << 32 | UInt64(u32(b, 12)); head = 16
+    } else if len == 0 { len = size - o }
+    guard len >= head, len <= size - o else { return nil }
+    if fourCC(b, 4) == "moov" {
+      guard len - head <= UInt64(maxMoov) else { return nil }
+      return .moov(at: o + head, len: Int(len - head))
+    }
+    return .next(o + len)
   }
 
   /** A ©xyz atom's payload: text length, language, then the ISO 6709 text (at most what the atom holds). */
@@ -304,6 +370,35 @@ public enum Uploader {
     }
   }
 
+  /** What is uploaded: a file on this Mac, or one streamed from elsewhere (a WebDAV folder, WebDAVImport.swift). */
+  public struct Source: Sendable {
+    public var name: String
+    public var mime: String
+    public var size: Int64
+    /** the file's modification time: the capture time when its own metadata has none */
+    public var modified: Date
+    /** the bytes [offset, offset + len), asked for in order, one segment at a time; fewer bytes means it changed */
+    public var read: @Sendable (_ offset: Int64, _ len: Int) async throws -> Data
+    /** thumbnail and preview (made the same way for every source); nil when macOS can't decode it */
+    public var pictures: @Sendable () async -> Pictures?
+    public var info: @Sendable () async -> Media.Info
+
+    public init(name: String, mime: String, size: Int64, modified: Date, read: @escaping @Sendable (Int64, Int) async throws -> Data,
+                pictures: @escaping @Sendable () async -> Pictures?, info: @escaping @Sendable () async -> Media.Info) {
+      self.name = name; self.mime = mime; self.size = size; self.modified = modified
+      self.read = read; self.pictures = pictures; self.info = info
+    }
+  }
+
+  public struct Pictures: Sendable {
+    public let thumb: Data, preview: Data
+    public let width: Int, height: Int
+    public init?(thumb: (data: Data, width: Int, height: Int)?, preview: (data: Data, width: Int, height: Int)?) {
+      guard let thumb, let preview else { return nil }
+      self.thumb = thumb.data; self.preview = preview.data; width = preview.width; height = preview.height
+    }
+  }
+
   /** Uploads one file; resolves with the new item's id once the server has it. `live` throws to stop between steps. */
   public static func upload(_ url: URL, api: API, wrap: Wrap, live: @escaping @Sendable () throws -> Void = {},
                             progress: @escaping @Sendable (Int64, Int64) -> Void = { _, _ in }) async throws -> String {
@@ -311,17 +406,34 @@ public enum Uploader {
     // parts are read from the same descriptor, so they are the file that was checked
     let fd = open(url.resolvingSymlinksInPath().path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
     guard fd >= 0 else { throw APIError(status: -1, message: "This file can't be opened.") }
-    let fh = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
-    defer { try? fh.close() }
+    let fh = SendableHandle(FileHandle(fileDescriptor: fd, closeOnDealloc: true))
+    defer { try? fh.h.close() }
     var st = stat()
     guard fstat(fd, &st) == 0, st.st_mode & S_IFMT == S_IFREG else { throw APIError(status: -1, message: "Only files can be uploaded, not folders or devices.") }
     let size = Int64(st.st_size)
     let modified = Date(timeIntervalSince1970: Double(st.st_mtimespec.tv_sec) + Double(st.st_mtimespec.tv_nsec) / 1e9)
-    guard size >= 0 else { throw APIError(status: -1, message: "This file's size is unknown, so it can't be uploaded safely.") }
-    guard size <= Media.maxFile else { throw APIError(status: -1, message: "Files over 8 GB can't be uploaded.") }
     let name = url.lastPathComponent
     let mime = Media.mime(of: url)
-    let kind = Media.kind(name: name, mime: mime)
+    let video = Media.kind(name: name, mime: mime) == .video
+    let src = Source(name: name, mime: mime, size: size, modified: modified, read: { o, n in
+      try fh.h.seek(toOffset: UInt64(o))
+      return n > 0 ? (try fh.h.read(upToCount: n) ?? Data()) : Data()
+    }, pictures: {
+      async let t = Media.jpeg(url, video: video, maxPx: Media.thumbPx, quality: 0.82)
+      async let p = Media.jpeg(url, video: video, maxPx: Media.previewPx, quality: 0.85)
+      return Pictures(thumb: await t, preview: await p)
+    }, info: { await Media.info(url, video: video) })
+    return try await upload(src, api: api, wrap: wrap, live: live, progress: progress)
+  }
+
+  /** Uploads from any source: encrypted segment by segment as it is read, at most `inFlight` segments on the way at
+   *  once, so a file of any size takes a few segments of memory. */
+  public static func upload(_ src: Source, api: API, wrap: Wrap, inFlight maxInFlight: Int = 2, live: @escaping @Sendable () throws -> Void = {},
+                            progress: @escaping @Sendable (Int64, Int64) -> Void = { _, _ in }) async throws -> String {
+    let size = src.size
+    guard size >= 0 else { throw APIError(status: -1, message: "This file's size is unknown, so it can't be uploaded safely.") }
+    guard size <= Media.maxFile else { throw APIError(status: -1, message: "Files over 8 GB can't be uploaded.") }
+    let kind = Media.kind(name: src.name, mime: src.mime)
     let count = Segments.count(size)
     try live()
     struct Created: Decodable { let id: String }
@@ -335,45 +447,46 @@ public enum Uploader {
       let wrapped = B64.encode(try wrap.apply(key, id))
       // thumbnails while the parts upload; a file macOS can't decode still uploads, without a thumbnail
       let thumbs = Task<(Int, Int)?, Error> {
-        guard kind != .other else { return nil }
-        async let t = Media.jpeg(url, video: kind == .video, maxPx: Media.thumbPx, quality: 0.82)
-        async let p = Media.jpeg(url, video: kind == .video, maxPx: Media.previewPx, quality: 0.85)
-        guard let t = await t, let p = await p else { return nil }
+        guard kind != .other, let p = await src.pictures() else { return nil }
         try live()
-        try await api.putBytes("/api/items/\(id)/thumb", Crypto.encryptThumb(t.data, itemKey: key, itemId: id))
-        try await api.putBytes("/api/items/\(id)/preview", Crypto.encryptPreview(p.data, itemKey: key, itemId: id))
+        try await api.putBytes("/api/items/\(id)/thumb", Crypto.encryptThumb(p.thumb, itemKey: key, itemId: id))
+        try await api.putBytes("/api/items/\(id)/preview", Crypto.encryptPreview(p.preview, itemKey: key, itemId: id))
         return (p.width, p.height)
       }
-      let info = Task { await Media.info(url, video: kind == .video) }
+      let info = Task { await src.info() }
 
       progress(0, max(size, 1))
       let done = Counter()
       // the original's SHA-256 for the metadata (finding the same file again, docs/CRYPTO.md): from the parts as they
       // are read for encryption, never a second read of the file
       var hash = SHA256()
-      try await withThrowingTaskGroup(of: Void.self) { g in
-        var inFlight = 0
-        for i in 0..<count {
-          try live()
-          let len = size == 0 ? 0 : Segments.plainLen(size, i)
-          try fh.seek(toOffset: UInt64(i) * UInt64(Segments.plain))
-          var plain = len > 0 ? (try fh.read(upToCount: len) ?? Data()) : Data()
-          guard plain.count == len else { throw APIError(status: -1, message: "The file changed while it was being read.") }
-          hash.update(data: plain)
-          let ct = try Segments.encrypt(itemKey: key, itemId: id, index: i, count: count, total: size, plain: plain)
-          Sodium.memzero(&plain)
-          if inFlight >= 2 { try await g.next(); inFlight -= 1 }
-          g.addTask {
-            try await api.putBytes("/api/items/\(id)/segments/\(i)", ct)
-            progress(min(done.add(Int64(len)), size), max(size, 1))
+      do {
+        try await withThrowingTaskGroup(of: Void.self) { g in
+          var inFlight = 0
+          for i in 0..<count {
+            try live()
+            let len = size == 0 ? 0 : Segments.plainLen(size, i)
+            var plain = len > 0 ? try await src.read(Int64(i) * Int64(Segments.plain), len) : Data()
+            guard plain.count == len else { throw APIError(status: -1, message: "The file changed while it was being read.") }
+            hash.update(data: plain)
+            let ct = try Segments.encrypt(itemKey: key, itemId: id, index: i, count: count, total: size, plain: plain)
+            Sodium.memzero(&plain)
+            if inFlight >= maxInFlight { try await g.next(); inFlight -= 1 }
+            g.addTask {
+              try await api.putBytes("/api/items/\(id)/segments/\(i)", ct)
+              progress(min(done.add(Int64(len)), size), max(size, 1))
+            }
+            inFlight += 1
           }
-          inFlight += 1
+          try await g.waitForAll()
         }
-        try await g.waitForAll()
+      } catch {
+        thumbs.cancel(); info.cancel()
+        throw error
       }
       let dims = (try? await thumbs.value) ?? nil
       let mi = await info.value
-      let json = try metaJSON(name: name, mime: mime, size: size, modified: modified, info: mi, dims: dims, sha256: hex(hash.finalize()))
+      let json = try metaJSON(name: src.name, mime: src.mime, size: size, modified: src.modified, info: mi, dims: dims, sha256: hex(hash.finalize()))
       try live()
       try await api.json("POST", "/api/items/\(id)/finalize", body: ["wrapped_item_key": wrapped, "meta_enc": B64.encode(Crypto.encryptMeta(json, itemKey: key, itemId: id))])
       return id
@@ -383,6 +496,12 @@ public enum Uploader {
       throw error
     }
   }
+}
+
+/** A file handle used by one upload at a time (its segments are read in order, never at once). */
+final class SendableHandle: @unchecked Sendable {
+  let h: FileHandle
+  init(_ h: FileHandle) { self.h = h }
 }
 
 extension Uploader {
@@ -405,8 +524,10 @@ extension Uploader {
   static func hex(_ d: SHA256.Digest) -> String { d.map { String(format: "%02x", $0) }.joined() }
 }
 
-final class Counter: @unchecked Sendable {
+public final class Counter: @unchecked Sendable {
   private let lock = NSLock()
   private var n: Int64 = 0
-  func add(_ x: Int64) -> Int64 { lock.withLock { n += x; return n } }
+  public init() {}
+  @discardableResult public func add(_ x: Int64) -> Int64 { lock.withLock { n += x; return n } }
+  public var value: Int64 { lock.withLock { n } }
 }

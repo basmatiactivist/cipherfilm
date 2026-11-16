@@ -106,6 +106,32 @@ import UniformTypeIdentifiers
     #expect(!WebDAVAddress.isPrivate("172.32.0.1"))
     #expect(WebDAVAddress.isPrivate("[::1]"))
     #expect(WebDAVAddress.isPrivate("fd7a:115c:a1e0::1"))
+    #expect(WebDAVAddress.isPrivate("fe80::1%25en0"))
+    #expect(WebDAVAddress.isPrivate("::ffff:192.168.1.2"))
+    #expect(!WebDAVAddress.isPrivate("fcb::1")) // 0fcb::, not unique-local
+    #expect(!WebDAVAddress.isPrivate("2001:db8::1"))
+    #expect(!WebDAVAddress.isPrivate("::ffff:8.8.8.8"))
+    // numbers in other spellings are addresses a resolver may read as public ones, never names
+    for odd in ["134744072", "0x08080808", "010.8.8.8", "0127.0.0.1", "127.1", "10.0.1", "192.168.001.002", "0x7f.0.0.1", "nas.0x1"] {
+      #expect(!WebDAVAddress.isPrivate(odd), "\(odd)")
+      if case .invalid = WebDAVAddress.check("http://\(odd)/dav") {} else { Issue.record("accepted http://\(odd)") }
+    }
+    #expect(WebDAVAddress.isPrivate("nas") && WebDAVAddress.isPrivate("nas-2") && WebDAVAddress.isPrivate("10.0.0.1"))
+  }
+
+  /** Over http the name is looked up too: this Mac's own names pass, a public address doesn't (no network needed). */
+  @Test func plainHTTPNeedsAPrivateAddress() async throws {
+    #expect(WebDAVAddress.resolvesPrivately("127.0.0.1"))
+    #expect(WebDAVAddress.resolvesPrivately("localhost"))
+    #expect(WebDAVAddress.resolvesPrivately("[::1]"))
+    #expect(!WebDAVAddress.resolvesPrivately("8.8.8.8"))
+    #expect(!WebDAVAddress.resolvesPrivately("2001:db8::1"))
+    // a client for an http folder looks the name up before it sends anything
+    let c = WebDAVClient(folder: URL(string: "http://8.8.8.8/dav/")!, user: "u", password: "p", protocols: [StubDAV.self])
+    await #expect(throws: WebDAVError.address("This address doesn't lead to this Mac or a home network, so nothing is sent to it without https://.")) {
+      try await c.checkPlain()
+    }
+    try await WebDAVClient(folder: URL(string: "http://127.0.0.1:9/dav/")!, user: "u", password: "p").checkPlain()
   }
 
   // ---- what a pass imports ----
@@ -132,10 +158,11 @@ import UniformTypeIdentifiers
   /** Sizes are the server's word: impossible ones leave the member out, huge ones are summed without overflowing. */
   @Test func listedSizesNeverOverflowThePlan() throws {
     func resp(_ name: String, _ len: String) -> String {
-      "<d:response><d:href>/p/\(name)</d:href><d:propstat><d:prop><d:getcontentlength>\(len)</d:getcontentlength></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>"
+      "<d:response><d:href>\(name.contains(":") ? name : "/p/" + name)</d:href><d:propstat><d:prop><d:getcontentlength>\(len)</d:getcontentlength></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>"
     }
     let xml = "<?xml version=\"1.0\"?><d:multistatus xmlns:d=\"DAV:\">" + resp("a.jpg", "9223372036854775807") + resp("b.jpg", "1")
-      + resp("c.jpg", "9223372036854775807") + resp("neg.jpg", "-9223372036854775808") + "</d:multistatus>"
+      + resp("c.jpg", "9223372036854775807") + resp("neg.jpg", "-9223372036854775808") + resp("http://dav.example:443/p/clear.jpg", "1")
+      + resp("ftp://dav.example/p/other.jpg", "1") + "</d:multistatus>"
     let l = try PropFind.parse(Data(xml.utf8), folder: URL(string: "https://dav.example/p/")!)
     #expect(l.files.map(\.name) == ["a.jpg", "b.jpg", "c.jpg"])
     let p = WebDAVImport.plan(l, book: ImportBook(file: nil), known: [])

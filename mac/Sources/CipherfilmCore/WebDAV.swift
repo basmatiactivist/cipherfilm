@@ -37,10 +37,12 @@ public enum WebDAVError: Error, LocalizedError, Equatable, Sendable {
     }
   }
 
+  var isAddress: Bool { if case .address = self { return true } else { return false } }
+
   /** The server or the way to it rather than one file: the pass ends and is tried again later, no file counts as failed. */
   public var transient: Bool {
     switch self {
-    case .offline, .unauthorized, .certificate, .diskFull: return true
+    case .offline, .unauthorized, .certificate, .diskFull, .address: return true
     case .status(let s): return s == 408 || s == 429 || s >= 500
     default: return false
     }
@@ -74,26 +76,104 @@ public enum WebDAVAddress {
     return isPrivate(host) ? .unencrypted(url) : .invalid("Only https:// addresses can be used, except for this Mac or a home network.")
   }
 
-  /** This Mac, a private (RFC 1918, link-local, CGNAT as tailnets use, unique-local IPv6) address or a local name. */
+  /** This Mac, a private (RFC 1918, link-local, CGNAT as tailnets use, unique-local IPv6) address or a local name.
+   *  Decided from the spelling: an address only in its plain form (four decimal numbers, no leading zeros; IPv6 as
+   *  written), and a number in any other spelling (2130706433, 0x7f000001, 0177.0.0.1, 10.1) is never taken for a
+   *  name. Before anything is sent over http the name is also looked up (resolvesPrivately). */
   public static func isPrivate(_ hostIn: String) -> Bool {
     let host = hostIn.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
     if host == "localhost" || host.hasSuffix(".localhost") { return true }
     for s in [".local", ".lan", ".home.arpa", ".internal"] where host.hasSuffix(s) { return true }
-    let parts = host.split(separator: ".", omittingEmptySubsequences: false)
-    if parts.count == 4, case let n = parts.compactMap({ UInt8($0) }), n.count == 4 {
-      switch (n[0], n[1]) {
-      case (127, _), (10, _), (192, 168), (169, 254): return true
-      case (172, 16...31): return true
-      case (100, 64...127): return true
-      default: return false
-      }
-    }
-    if host.contains(":") { // IPv6
-      if host == "::1" { return true }
-      return host.hasPrefix("fc") || host.hasPrefix("fd") || host.hasPrefix("fe8") || host.hasPrefix("fe9") || host.hasPrefix("fea") || host.hasPrefix("feb")
-    }
+    if let a = ipv4(host) { return isPrivate(v4: a) }
+    if host.contains(":") { return ipv6(host).map { isPrivate(v6: $0) } ?? false }
+    // the last label of a name is never a number; one that is is an address in an odd spelling
+    let last = host.split(separator: ".", omittingEmptySubsequences: false).last.map(String.init) ?? host
+    if last.range(of: #"^([0-9]+|0x[0-9a-f]*)$"#, options: .regularExpression) != nil { return false }
     // a single name without dots (a NAS's name on the home network)
     return !host.contains(".") && host.range(of: #"^[a-z0-9-]+$"#, options: .regularExpression) != nil
+  }
+
+  /** Four decimal numbers 0…255 without leading zeros, nothing else. */
+  static func ipv4(_ s: String) -> [UInt8]? {
+    let parts = s.split(separator: ".", omittingEmptySubsequences: false)
+    guard parts.count == 4 else { return nil }
+    var out: [UInt8] = []
+    for p in parts {
+      guard (1...3).contains(p.count), p.allSatisfy({ ("0"..."9").contains($0) }), p == "0" || !p.hasPrefix("0"), let n = UInt8(p) else { return nil }
+      out.append(n)
+    }
+    return out
+  }
+
+  static func ipv6(_ s: String) -> [UInt8]? {
+    let plain = s.split(separator: "%", maxSplits: 1).first.map(String.init) ?? s // a zone (fe80::1%en0)
+    var a = in6_addr()
+    guard inet_pton(AF_INET6, plain, &a) == 1 else { return nil }
+    return withUnsafeBytes(of: &a) { Array($0) }
+  }
+
+  static func isPrivate(v4 n: [UInt8]) -> Bool {
+    switch (n[0], n[1]) {
+    case (127, _), (10, _), (192, 168), (169, 254): return true
+    case (172, 16...31): return true
+    case (100, 64...127): return true
+    default: return false
+    }
+  }
+
+  /** ::1, unique-local fc00::/7, link-local fe80::/10, and an IPv4 one written as IPv6 (::ffff:a.b.c.d). */
+  static func isPrivate(v6 b: [UInt8]) -> Bool {
+    if b == [UInt8](repeating: 0, count: 15) + [1] { return true }
+    if b[0] & 0xfe == 0xfc { return true }
+    if b[0] == 0xfe, b[1] & 0xc0 == 0x80 { return true }
+    if b[0..<10].allSatisfy({ $0 == 0 }), b[10] == 0xff, b[11] == 0xff { return isPrivate(v4: Array(b[12..<16])) }
+    return false
+  }
+
+  /** Whether every address the name leads to is this Mac, a private network or, for IPv6, the same /64 network as one
+   *  of this Mac's own (a home network's global IPv6 addresses). A name that can't be looked up counts as not private.
+   *  Blocking: call off the main thread. */
+  public static func resolvesPrivately(_ hostIn: String) -> Bool {
+    let host = hostIn.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+    var hints = addrinfo()
+    hints.ai_socktype = SOCK_STREAM
+    var res: UnsafeMutablePointer<addrinfo>?
+    guard getaddrinfo(host, nil, &hints, &res) == 0, let first = res else { return false }
+    defer { freeaddrinfo(first) }
+    let own = ownV6Networks()
+    var any = false
+    var p: UnsafeMutablePointer<addrinfo>? = first
+    while let a = p {
+      defer { p = a.pointee.ai_next }
+      guard let sa = a.pointee.ai_addr else { continue }
+      switch Int32(sa.pointee.sa_family) {
+      case AF_INET:
+        let b = sa.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { s in withUnsafeBytes(of: s.pointee.sin_addr) { Array($0) } }
+        guard isPrivate(v4: b) else { return false }
+      case AF_INET6:
+        let b = sa.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { s in withUnsafeBytes(of: s.pointee.sin6_addr) { Array($0) } }
+        guard isPrivate(v6: b) || own.contains(Array(b[0..<8])) else { return false }
+      default: return false
+      }
+      any = true
+    }
+    return any
+  }
+
+  /** The /64 networks of this Mac's own global IPv6 addresses. */
+  static func ownV6Networks() -> Set<[UInt8]> {
+    var out = Set<[UInt8]>()
+    var list: UnsafeMutablePointer<ifaddrs>?
+    guard getifaddrs(&list) == 0, let first = list else { return out }
+    defer { freeifaddrs(first) }
+    var p: UnsafeMutablePointer<ifaddrs>? = first
+    while let i = p {
+      defer { p = i.pointee.ifa_next }
+      guard let sa = i.pointee.ifa_addr, Int32(sa.pointee.sa_family) == AF_INET6 else { continue }
+      let b = sa.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { s in withUnsafeBytes(of: s.pointee.sin6_addr) { Array($0) } }
+      if b[0] & 0xe0 == 0x20 { out.insert(Array(b[0..<8])) } // global unicast 2000::/3
+    }
+    return out
   }
 }
 
@@ -143,7 +223,8 @@ public enum PropFind {
             let u = URL(string: href, relativeTo: folder)?.absoluteURL ?? href.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed).flatMap({ URL(string: $0, relativeTo: folder)?.absoluteURL })
       else { continue }
       // the same server (an absolute href may name it), directly inside the folder
-      guard u.host?.lowercased() == folder.host?.lowercased(), (u.port ?? defaultPort(u)) == (folder.port ?? defaultPort(folder)) else { continue }
+      guard u.scheme?.lowercased() == folder.scheme?.lowercased(), u.host?.lowercased() == folder.host?.lowercased(),
+            (u.port ?? defaultPort(u)) == (folder.port ?? defaultPort(folder)) else { continue }
       let path = u.path(percentEncoded: false)
       let dir = path.hasSuffix("/") && path.count > 1 ? String(path.dropLast()) : path
       if dir + "/" == base || dir == base || path == base { continue } // the folder itself
@@ -253,8 +334,11 @@ public final class WebDAVClient: NSObject, URLSessionTaskDelegate, @unchecked Se
     c.httpMaximumConnectionsPerHost = 8
     c.urlCredentialStorage = nil
     if !protocols.isEmpty { c.protocolClasses = protocols + (c.protocolClasses ?? []) }
+    sessionMade = true
     return URLSession(configuration: c, delegate: self, delegateQueue: nil)
   }()
+  /** whether `session` exists (a client that never sent anything doesn't make one on its way out) */
+  private var sessionMade = false
   private let protocols: [AnyClass]
   /** bytes read from the server, for the import's speed and the tests' measurements */
   public let received = Counter()
@@ -264,8 +348,8 @@ public final class WebDAVClient: NSObject, URLSessionTaskDelegate, @unchecked Se
     self.folder = folder; self.user = user; self.password = password; self.protocols = protocols
   }
 
-  deinit { session.invalidateAndCancel() }
-  public func invalidate() { session.invalidateAndCancel() }
+  deinit { if sessionMade { session.invalidateAndCancel() } }
+  public func invalidate() { if sessionMade { session.invalidateAndCancel() } }
 
   /** The folder's members (one PROPFIND, Depth 1). */
   public func list() async throws -> WebDAVListing {
@@ -332,7 +416,7 @@ public final class WebDAVClient: NSObject, URLSessionTaskDelegate, @unchecked Se
         case 412, 416: bytes.task.cancel(); throw WebDAVError.changed
         default: bytes.task.cancel(); throw Self.failure(h.statusCode)
         }
-      } catch let w as WebDAVError where w.transient && w != .unauthorized && w != .certificate {
+      } catch let w as WebDAVError where w.transient && w != .unauthorized && w != .certificate && !w.isAddress {
         last = w
       }
     }
@@ -354,10 +438,8 @@ public final class WebDAVClient: NSObject, URLSessionTaskDelegate, @unchecked Se
     r.httpMethod = "GET"
     r.setValue("bytes=0-0", forHTTPHeaderField: "Range")
     r.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
-    let (bytes, resp): (URLSession.AsyncBytes, URLResponse)
-    do { (bytes, resp) = try await session.bytes(for: r) } catch { throw Self.mapped(error) }
+    let (bytes, h) = try await open(r)
     bytes.task.cancel()
-    guard let h = resp as? HTTPURLResponse else { throw WebDAVError.malformed }
     let ok: Bool
     switch h.statusCode {
     case 206: ok = true
@@ -406,7 +488,22 @@ public final class WebDAVClient: NSObject, URLSessionTaskDelegate, @unchecked Se
     done = true
   }
 
+  private let plainLock = NSLock()
+  private var plainChecked: Date?
+
+  /** Over http, the folder's name must still lead only to this Mac or a private network, looked up before anything
+   *  (the password included) is sent, and again after a minute. https needs no look-up. */
+  func checkPlain() async throws {
+    guard folder.scheme?.lowercased() == "http" else { return }
+    if let t = plainLock.withLock({ plainChecked }), Date().timeIntervalSince(t) < 60 { return }
+    let host = folder.host ?? ""
+    let ok = await Task.detached { WebDAVAddress.isPrivate(host) && WebDAVAddress.resolvesPrivately(host) }.value
+    guard ok else { throw WebDAVError.address("This address doesn't lead to this Mac or a home network, so nothing is sent to it without https://.") }
+    plainLock.withLock { plainChecked = Date() }
+  }
+
   private func open(_ r: URLRequest) async throws -> (URLSession.AsyncBytes, HTTPURLResponse) {
+    try await checkPlain()
     let (bytes, resp): (URLSession.AsyncBytes, URLResponse)
     do { (bytes, resp) = try await session.bytes(for: r) } catch { throw Self.mapped(error) }
     guard let h = resp as? HTTPURLResponse else { bytes.task.cancel(); throw WebDAVError.malformed }
@@ -460,6 +557,7 @@ public final class WebDAVClient: NSObject, URLSessionTaskDelegate, @unchecked Se
     // the password only to the folder's own server, once per challenge (a wrong one isn't sent again and again)
     let space = challenge.protectionSpace
     guard m == NSURLAuthenticationMethodHTTPBasic || m == NSURLAuthenticationMethodHTTPDigest,
+          space.protocol?.lowercased() == folder.scheme?.lowercased(),
           space.host.lowercased() == folder.host?.lowercased(), space.port == (folder.port ?? PropFind.defaultPort(folder)),
           challenge.previousFailureCount == 0, !user.isEmpty else {
       completionHandler(.rejectProtectionSpace, nil); return

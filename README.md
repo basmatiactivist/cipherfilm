@@ -90,8 +90,9 @@ and visitors are signed out every hour. To keep your own photos, [run your own s
 - **Archive and locked folder.** Archive screenshots and receipts out of the timeline (search, albums and the map
   still find them), or move photos and videos into a locked folder that shows them nowhere else and asks for your
   fingerprint or password each time it opens. Which folder a photo is in is encrypted with its other details, so the
-  server doesn't know ([docs/EDITING.md](docs/EDITING.md)).
-- **Free up space.** Remove photos from the phone once they are in Cipherfilm.
+  server isn't told; it can guess some of it from which photos a device fetches ([docs/EDITING.md](docs/EDITING.md)).
+- **Free up space.** Remove photos from the phone once they are in Cipherfilm (ones this phone backed up, or added with
+  the Upload button, the web or the Mac).
 - **Duplicates and similar photos.** Find photos uploaded twice and bursts of nearly the same shot, worked out on
   your device, and move the extras to the trash (web and Android).
 - **Locks itself.** Fingerprint unlock, automatic lock after a time you choose or when the screen turns off, and

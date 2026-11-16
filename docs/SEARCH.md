@@ -295,7 +295,8 @@ made-up entries, which could make a photo show up in a search where it doesn't b
   then indexes every photo and video in the library that has none (from the decrypted preview, two at a time).
 - **In the background** (the backup's WorkManager task, about every 15 minutes when Android allows; by default only
   while charging): photos on the phone that are in the library but not indexed yet are indexed from the phone's
-  files. A photo the backup just uploaded is indexed from the phone's own file right away when the run is a plain
+  files (matched by name and size only to items this phone uploaded or made with the master key, as for Free up
+  space below). A photo the backup just uploaded is indexed from the phone's own file right away when the run is a plain
   WorkManager run; a run that holds the upload service (`TransferService`, a `dataSync` foreground service for
   transfers only, as Google Play requires) only notes it, and the next background run indexes it. Photos that exist
   only on the server need the master key and wait for the app.
@@ -373,7 +374,10 @@ off in the search settings deletes them; declining them never stops search by co
 ## Free up space
 
 Account › Free up space lists photos and videos on the phone whose name and size match a finished item in the library
-(not in the trash). Optionally only older ones and only some folders. They go to Android's own trash
+(not in the trash) that this phone uploaded itself or that was made with the account's master key (the Upload button,
+the web, the Mac): an item sealed only to the public key could have been added by someone else, so it never counts
+(docs/THREAT_MODEL.md, Server inserts items). Photos this phone backed up before 2.7.0 are not offered for that
+reason. Optionally only older ones and only some folders. They go to Android's own trash
 (`MediaStore.createTrashRequest`, restorable for 30 days) after the system's confirmation dialog.
 
 ## Duplicates and similar photos

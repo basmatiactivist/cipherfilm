@@ -45,7 +45,7 @@ Merged permissions (app plus libraries):
 | `USE_BIOMETRIC`, `USE_FINGERPRINT` | expo-local-authentication | no |
 | `VIBRATE` | app | no |
 | `READ_EXTERNAL_STORAGE` with `maxSdkVersion="32"` | `plugins/withStoragePermission.js` | no (Android 7–12 only) |
-| Removed: `WRITE_EXTERNAL_STORAGE`, `RECORD_AUDIO`, `SYSTEM_ALERT_WINDOW`, ONNX Runtime telemetry provider | blockedPermissions / `tools:node="remove"` | n/a |
+| Removed: `WRITE_EXTERNAL_STORAGE`, `RECORD_AUDIO`, `SYSTEM_ALERT_WINDOW`, `ACCESS_FINE_LOCATION` and `ACCESS_COARSE_LOCATION` (from the map library), ONNX Runtime telemetry provider | blockedPermissions / `tools:node="remove"` | n/a |
 | Not present (good): location, `MANAGE_MEDIA`, `SCHEDULE_EXACT_ALARM`/`USE_EXACT_ALARM`, `USE_FULL_SCREEN_INTENT`, `com.google.android.gms.permission.AD_ID`, `QUERY_ALL_PACKAGES` | | |
 
 > **Done (2.1.0):** restored with `maxSdkVersion="32"`. Original note: `READ_EXTERNAL_STORAGE` was removed completely, but minSdk is 24. On Android 7–12 the app then has no permission to read the photo library, so backup can't work there. Either restore it with `android:maxSdkVersion="32"` (this is what Immich and Ente do) or raise minSdk to 33. Play's photo policy applies only to `READ_MEDIA_*`, so `READ_EXTERNAL_STORAGE` with maxSdk 32 doesn't add another declaration.

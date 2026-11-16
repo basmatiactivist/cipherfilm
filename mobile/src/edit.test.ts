@@ -4,7 +4,8 @@ vi.mock("expo-file-system", () => ({ File: class {}, Directory: class {}, Paths:
 vi.mock("expo-image-manipulator", () => ({ ImageManipulator: {}, SaveFormat: { JPEG: "jpeg" } }));
 vi.mock("expo-asset", () => ({ Asset: { fromModule: () => ({}) } }));
 vi.mock("../modules/cf-native/src/CfNativeModule", () => ({ default: {} }));
-vi.mock("./api", () => ({ api: async () => ({}), putBytes: async () => {}, ApiError: class extends Error {} }));
+vi.mock("./api", () => ({
+  newSignIn: () => {}, api: async () => ({}), putBytes: async () => {}, ApiError: class extends Error {} }));
 const who = vi.hoisted(() => ({ demo: false }));
 vi.mock("./session", () => ({ session: () => ({ me: { demo: who.demo } }), onWipe: () => {} }));
 vi.mock("./autolock", () => ({ away: (f: () => unknown) => f() }));

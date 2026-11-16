@@ -7,6 +7,18 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+### Security
+- A password change, an account turned off by an admin and a recovery now count as signed out from another device:
+  the other devices delete their copy of the library and keys instead of only asking to sign in again.
+- Android: a phone signed out from another device deletes the key behind fingerprint unlock also when it learns it at
+  the app's start or during a background backup (it was kept then); a session that simply ended takes that key too.
+  The image editor's leftovers are deleted with the shared copies; the map's yes goes at sign-out.
+- Mac: decrypted copies made for dragging out and Share… are deleted when the app quits and 15 minutes after they were
+  made (they stayed until the next start, or an hour). Unlocking asks the server first, so a Mac signed out elsewhere
+  never shows its cached library again; while locked it learns of such a sign-out within minutes, also with
+  notifications off.
+- Web: a session that ended while the page was closed deletes what the browser kept for it at the next visit.
+
 ## [2.7.3] - 2026-11-15
 
 ### Fixed

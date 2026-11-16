@@ -21,6 +21,7 @@ vi.mock("./backup", () => ({ rememberLibrary: async () => {} }));
 vi.mock("./keepAlive", () => ({ keepRunning: () => true, letGo: () => {}, onlyHolder: () => false }));
 const server = vi.hoisted(() => ({ user: "alice" }));
 vi.mock("./api", () => ({
+  newSignIn: () => {},
   setCsrf: () => {},
   setServer: () => {},
   whenSessionEnds: () => {},

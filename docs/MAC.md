@@ -40,7 +40,7 @@ build notes: `mac/README.md`.
   ← →, Esc.
 - **Taking photos out:** drag them into the Finder, Mail or any app, or right-click › Share…. The originals are
   decrypted into a private folder in the app's caches only when asked for, and that folder is emptied at every lock,
-  sign-out and start and after an hour. "Save Original…" writes them where you choose.
+  sign-out, start and quit, and 15 minutes after a copy was made. "Save Original…" writes them where you choose.
 - **Viewer:** takes the whole window. The preview at once, the original when it has arrived (HEIC, RAW: whatever
   macOS reads); pinch or double click to zoom, drag to pan; ← →, a filmstrip of the neighbours; quick actions for
   favorite (F), album, share (⌘⇧S), save (⌘S), photos like this one and trash (⌫). The info column (I) lists every
@@ -240,9 +240,11 @@ Deletes everything the Mac keeps for the account: settings, the export's and wat
 encrypted cache (item list, thumbnails, previews, index entries) and the session cookie. The search models stay; they
 hold nothing of anyone. Exported copies stay unless you choose otherwise (see above).
 
-The same happens when the server ends the session (signed out from another device in Account › Devices, or expired):
-the first request that gets 401 forgets the account here, and so does the next start if it happened while the app
-was closed. Exported copies stay.
+The same happens when the server ends the session (signed out from another device in Account › Devices, a password
+change, recovery or an admin turning the account off, or expired): the first request that gets 401 forgets the account
+here, and so does the next start if it happened while the app was closed. Unlocking asks the server first (at most 4
+seconds; offline it unlocks as before), so a Mac signed out elsewhere never shows its cached library again, and while
+locked it checks every 5 minutes. Exported copies stay.
 
 ## Deleting the account
 

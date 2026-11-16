@@ -30,7 +30,8 @@ vi.mock("./library", () => ({
 vi.mock("./albums", () => ({ loadAlbums: () => slow([{ id: "x", name: "Trip", itemIds: [] }]) }));
 vi.mock("./backup", () => ({ rememberLibrary: async () => {} }));
 vi.mock("./search/engine", () => ({ startSearch: async () => {}, libraryChanged: async () => {}, warmSearch: async () => {} }));
-vi.mock("./api", () => ({ api: async () => ({}) }));
+vi.mock("./api", () => ({
+  newSignIn: () => {}, api: async () => ({}) }));
 
 const lock = () => { st.master = null; st.wipes.forEach((f) => f()); };
 const unlock = () => { st.master = new Uint8Array(32).fill(2); };

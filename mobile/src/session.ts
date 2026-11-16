@@ -6,7 +6,7 @@ import { getSodium, b64, unb64 } from "@crypto/sodium";
 import { loginProof, normEmail, unlockMasterKey } from "@crypto/account";
 import { open, LABEL } from "@crypto/wrap";
 import type { KdfParams } from "@crypto/kdf";
-import { api, ApiError, remote, setCsrf, setServer, whenRevoked, whenSessionEnds } from "./api";
+import { api, ApiError, newSignIn, remote, server, setCsrf, setServer, whenRevoked, whenSessionEnds } from "./api";
 import { t } from "./i18n";
 import { codeProblem, methods, pendingToken, withStep, type Step } from "./twoStep";
 import { getPasskey } from "./passkeys";
@@ -71,6 +71,7 @@ async function forgetAccount() {
 const handovers = new Set<() => void>();
 export const onSessionChange = (f: () => void) => { handovers.add(f); };
 function handedOver() {
+  newSignIn(); // a "signed out" answer to a request made before this doesn't end what comes now
   for (const f of handovers) { try { f(); } catch { /* tell the rest */ } }
 }
 
@@ -83,6 +84,17 @@ export const savedServer = async () => (await SecureStore.getItemAsync(SERVER)) 
 const keyName = (userId: string) => `cf.mk.${userId}`; // only letters, digits, ".", "-", "_" are allowed
 const bioName = (userId: string) => `cf.bio.${userId}`;
 const bioNoName = (userId: string) => `cf.bioNo.${userId}`; // "Not now" to fingerprint unlock: not offered again
+/** Whose keys are on the phone: a session that ends before /api/me answered (the app's start, a background run) still
+ *  knows which fingerprint key to delete. */
+const LAST_USER = "cf.user";
+const lastUser = async () => (await SecureStore.getItemAsync(LAST_USER).catch(() => null)) ?? "";
+/** The fingerprint key goes (the session is over); with `all`, also the "Not now" and whose keys these were. */
+async function dropKeys(userId: string, all: boolean) {
+  if (!userId) return;
+  // with all: also the map's yes (mapConsent.ts), whose name holds the account's id
+  for (const k of [keyName(userId), bioName(userId), ...(all ? [bioNoName(userId), `map_on_${userId}`] : [])]) await SecureStore.deleteItemAsync(k).catch(() => {});
+  if (all && (await lastUser()) === userId) await SecureStore.deleteItemAsync(LAST_USER).catch(() => {});
+}
 const prompt = () => t("Unlock Cipherfilm");
 
 /** Same bounds as the server and the web client: a server can't talk the app into weak or absurd Argon2 settings. */
@@ -109,12 +121,16 @@ async function checkKey(me: Me, key: Uint8Array): Promise<boolean> {
 
 function adopt(me: Me, masterKey: Uint8Array | null) {
   if (state.me && state.me.user.id !== me.user.id) { wipe("ended"); handedOver(); }
+  SecureStore.setItemAsync(LAST_USER, me.user.id).catch(() => {});
   setCsrf(me.csrf);
   set({ me, masterKey, phase: masterKey ? "unlocked" : "locked", notice: undefined, byHand: false });
 }
 
 whenSessionEnds(() => {
   if (state.phase === "unlocked" || state.phase === "locked") {
+    // the next sign-in needs the password anyway: the key behind the fingerprint doesn't stay for a session that's over
+    const id = state.me?.user.id ?? "";
+    dropKeys(id, false).catch(() => {});
     wipe("ended");
     handedOver();
     if (state.masterKey) state.masterKey.fill(0);
@@ -122,22 +138,26 @@ whenSessionEnds(() => {
   }
 });
 
-/** Signed out from another device (web, Account › Devices): as at sign-out, minus telling the server. */
-async function revoked() {
+/** Signed out from another device (web, Account › Devices), or the password changed or an admin turned the account
+ *  off: as at sign-out, minus telling the server. Also when it comes before /api/me answered (the app's start) or to a
+ *  background run (no account loaded, the app's server not set yet): whose keys these are is stored for that. */
+async function revoked(from: string) {
+  const bare = (o: string) => o.replace(/\/+$/, "");
+  const origin = bare(from);
+  const saved = bare(await savedServer().catch(() => ""));
+  if (!origin || (origin !== bare(server()) && origin !== saved)) return; // only this phone's own server
   const me = state.me;
-  if (me) {
-    await SecureStore.deleteItemAsync(keyName(me.user.id));
-    await SecureStore.deleteItemAsync(bioName(me.user.id));
-    await SecureStore.deleteItemAsync(bioNoName(me.user.id));
-  }
+  handedOver(); // a backup still running stops before its next request
+  await dropKeys(me?.user.id ?? (await lastUser()), true);
   wipe("ended");
   await forgetAccount();
   if (state.masterKey) state.masterKey.fill(0);
   setCsrf("");
   set({ phase: "signedOut", me: null, masterKey: null, biometric: false, notice: t("This phone was signed out from another device. Its copy of your library was deleted.") });
 }
-let revoking = false;
-whenRevoked(() => { if (!revoking) { revoking = true; revoked().finally(() => { revoking = false; }); } });
+// one after the other: a second answer waits for the first wipe (and then finds nothing left to delete)
+let revoking: Promise<void> = Promise.resolve();
+whenRevoked((origin) => { revoking = revoking.then(() => revoked(origin)).catch(() => {}); });
 
 /** Fetches the account again (an admin may have allowed explicit search, another device may index now). */
 export async function refreshMe(): Promise<Me | null> {
@@ -159,6 +179,9 @@ export async function start() {
     adopt(me, null);
     set({ biometric: (await SecureStore.getItemAsync(bioName(me.user.id))) === "1" });
   } catch (e) {
+    // the session ended while the app was closed: the fingerprint key of whoever was signed in goes with it
+    if (e instanceof ApiError && e.status === 401) await dropKeys(await lastUser(), false);
+    if (state.phase === "signedOut") return; // signed out from elsewhere: its message stays
     // offline with a session we can't check: still offer sign-in; the error shows when they try
     set({ phase: "signedOut", notice: e instanceof ApiError && e.status === 0 ? e.message : undefined });
   }
@@ -382,11 +405,7 @@ export function lock(byHand = false) {
 export async function signOut() {
   const me = state.me;
   try { await api("POST", "/api/auth/logout"); } catch { /* signed out locally either way */ }
-  if (me) {
-    await SecureStore.deleteItemAsync(keyName(me.user.id));
-    await SecureStore.deleteItemAsync(bioName(me.user.id));
-    await SecureStore.deleteItemAsync(bioNoName(me.user.id));
-  }
+  if (me) await dropKeys(me.user.id, true);
   wipe("ended");
   await forgetAccount();
   if (state.masterKey) state.masterKey.fill(0);
@@ -411,9 +430,7 @@ export async function deleteAccount(password: string, second?: () => Promise<Ste
     s.memzero(kek);
   }
   await api("DELETE", "/api/me", withStep({ current_auth: auth }, second ? await second() : null));
-  await SecureStore.deleteItemAsync(keyName(me.user.id));
-  await SecureStore.deleteItemAsync(bioName(me.user.id));
-  await SecureStore.deleteItemAsync(bioNoName(me.user.id));
+  await dropKeys(me.user.id, true);
   wipe("ended");
   await forgetAccount();
   handedOver();

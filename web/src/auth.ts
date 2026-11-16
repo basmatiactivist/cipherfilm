@@ -71,7 +71,10 @@ export async function loadSession(): Promise<Me | null> {
     if (!key) { const k = await keptKey(me.user.id); if (k && (await opensAccount(me, k))) key = k; }
     await adopt(me, key);
     return me;
-  } catch {
+  } catch (e) {
+    // the session ended while the page was closed (expired, or ended elsewhere): what this browser kept for it goes,
+    // as at sign-out, instead of waiting for a sign-in that may never come
+    if (e instanceof ApiError && e.status === 401) forgetLocal();
     return null;
   }
 }
@@ -332,6 +335,10 @@ export function forgetLocal(): void {
   clearPlayer();
   clearUploadMemory();
   forgetBrowserAlerts();
+  // what was read and whether the map was agreed to, per account: their keys name the account
+  try {
+    for (const k of Object.keys(localStorage)) if (k.startsWith("cf-notices-read:") || k.startsWith("cf-map-on:")) localStorage.removeItem(k);
+  } catch { /* storage blocked: nothing kept there */ }
 }
 
 /** This tab no longer holds a session (what it stores is dropped by the caller). */

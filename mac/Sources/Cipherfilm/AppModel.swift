@@ -75,6 +75,7 @@ final class AppModel {
 
   func start() async {
     Outbox.clear()
+    Outbox.sweepWhileRunning()
     agent.setUp()
     watchSleep()
     guard let s = UserDefaults.standard.string(forKey: "server"), let url = URL(string: s) else { phase = .noServer; return }
@@ -227,8 +228,9 @@ final class AppModel {
     lockedNoticeTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { _ in
       Task { @MainActor in
         let m = AppModel.shared
-        guard m.phase == .locked, NoticeNotifier.enabled, let api = m.api,
-              let l = try? await Notice.load(api: api, background: true), m.phase == .locked else { return }
+        // also without notifications: a sign-out from another device then wipes this Mac within minutes, not at unlock
+        guard m.phase == .locked, let api = m.api,
+              let l = try? await Notice.load(api: api, background: true), m.phase == .locked, NoticeNotifier.enabled else { return }
         NoticeNotifier.consider(l, server: api.base.absoluteString, visible: false)
       }
     }
@@ -269,6 +271,7 @@ final class AppModel {
     guard let me else { return false }
     do {
       guard let key = try await TouchID.unlock(me: me) else { return false }
+      guard await stillSignedIn() else { return false }
       adopt(me, master: key)
       return true
     } catch {
@@ -280,7 +283,30 @@ final class AppModel {
   func unlock(password: String) async throws {
     guard let me else { return }
     let key = try await Task.detached { try Account.unlock(me: me, password: password) }.value
+    guard await stillSignedIn() else { return }
     adopt(me, master: key)
+  }
+
+  /** Before an unlock shows the cached library: asks the server whether this Mac is still signed in, so one signed out
+   *  from another device (or after a password change) forgets everything instead of showing it once more. Offline or
+   *  slow (4 s): the unlock goes on as before, the next request then ends it. */
+  private func stillSignedIn() async -> Bool {
+    guard let api else { return true }
+    let answer = await withTaskGroup(of: Int?.self) { g -> Int? in
+      g.addTask {
+        do { _ = try await Notice.load(api: api, background: true); return 200 }
+        catch let e as APIError { return e.status } catch { return nil }
+      }
+      g.addTask { try? await Task.sleep(for: .seconds(4)); return nil }
+      let first = await g.next() ?? nil
+      g.cancelAll()
+      return first
+    }
+    guard answer == 401 else { return true }
+    // API's own report ends the session with the right message ("signed out from another device" or not); wait for it
+    for _ in 0..<20 where phase == .locked { try? await Task.sleep(for: .milliseconds(25)) }
+    if phase == .locked { sessionEnded(revoked: false) }
+    return false
   }
 
   private func adopt(_ me: Me, master: Data?) {

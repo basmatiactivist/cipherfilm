@@ -177,6 +177,33 @@ func (a *App) remember(where string, args ...any) {
 	a.db.Exec(`INSERT OR IGNORE INTO revoked_sessions(id_hash,at) SELECT id_hash,? FROM sessions WHERE `+where, append([]any{now.Unix()}, args...)...)
 }
 
+// toRevoke and revokeLater are remember in two halves, for sessions ended inside a transaction that may still fail (a
+// password change, a recovery): the hashes are read before it and kept only once it committed, so a device whose
+// session survives a failed change isn't later told it was signed out on purpose.
+func (a *App) toRevoke(where string, args ...any) []string {
+	rows, err := a.db.Query(`SELECT id_hash FROM sessions WHERE `+where, args...)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var h string
+		if rows.Scan(&h) == nil {
+			out = append(out, h)
+		}
+	}
+	return out
+}
+
+func (a *App) revokeLater(hashes []string) {
+	now := a.now()
+	a.db.Exec(`DELETE FROM revoked_sessions WHERE at < ?`, now.Add(-365*24*time.Hour).Unix())
+	for _, h := range hashes {
+		a.db.Exec(`INSERT OR IGNORE INTO revoked_sessions(id_hash,at) VALUES(?,?)`, h, now.Unix())
+	}
+}
+
 func (a *App) revoked(token string) bool {
 	var n int
 	a.db.QueryRow(`SELECT COUNT(*) FROM revoked_sessions WHERE id_hash=?`, sha256hex(token)).Scan(&n)

@@ -10,7 +10,8 @@ vi.mock("react-native", () => ({
     addEventListener: (_: string, f: (s: string) => void) => { st.listeners.push(f); return { remove() {} }; },
   },
 }));
-vi.mock("./api", () => ({ server: () => "https://photos.example" }));
+vi.mock("./api", () => ({
+  newSignIn: () => {}, server: () => "https://photos.example" }));
 
 import type { Opener, Topic } from "./live";
 

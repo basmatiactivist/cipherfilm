@@ -28,7 +28,8 @@ vi.mock("../modules/cf-native/src/CfNativeModule", () => ({ default: {
   phoneMedia: async () => phone.media, mediaInfo: async () => ({ lat: 47.1, lon: 8.2 }),
 } }));
 const puts = vi.hoisted(() => [] as { path: string; body: { meta_enc: string } }[]);
-vi.mock("./api", () => ({ api: async (method: string, path: string, body: { meta_enc: string }) => { if (method === "PUT") puts.push({ path, body }); return {}; } }));
+vi.mock("./api", () => ({
+  newSignIn: () => {}, api: async (method: string, path: string, body: { meta_enc: string }) => { if (method === "PUT") puts.push({ path, body }); return {}; } }));
 const lib = vi.hoisted(() => ({ items: [] as unknown[] }));
 vi.mock("./session", () => ({ session: () => ({ me: { user: { id: "u1" } }, masterKey: new Uint8Array(32) }), onWipe: () => {}, onSignOut: () => {} }));
 vi.mock("./libraryStore", () => ({ libraryItems: () => lib.items, refreshLibrary: async () => {} }));

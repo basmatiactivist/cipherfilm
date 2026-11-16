@@ -40,6 +40,7 @@ vi.mock("../modules/cf-native/src/CfNativeModule", () => ({
   default: { thumbsSetup: () => {}, thumbKeys: (ids: string[]) => { st.keyed.push(...ids); }, thumbsPrefetch: () => {}, thumbsForget: (ids: string[]) => { st.forgot.push(...ids); } },
 }));
 vi.mock("./api", () => ({
+  newSignIn: () => {},
   api: async (_m: string, p: string) => { st.asked.push(p); if (!st.answers[p]) throw new Error("unexpected " + p); return structuredClone(st.answers[p]); },
   csrfToken: () => "", server: () => "https://x", getBytes: async () => new Uint8Array(), postForBytes: async () => new Uint8Array(),
 }));

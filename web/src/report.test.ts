@@ -26,6 +26,18 @@ describe("report link", () => {
     expect([...query(reportUrl()).keys()]).toEqual(["template"]);
   });
 
+  it("takes the server's version only as a plain release number", () => {
+    for (const v of ["2.8.0", "2.8.0-rc.1", "dev"]) {
+      expect(query(reportUrl({ ...d, serverVersion: v })).get("server_version")).toBe(v);
+      expect(summary({ ...d, serverVersion: v })).toBe(`Cipherfilm 2.3.0 (web) · Firefox 140 · macOS · Server ${v}`);
+    }
+    const hidden = "2.8.0" + [..."u=a@b"].map((c) => String.fromCodePoint(0xe0000 + c.charCodeAt(0))).join("");
+    for (const v of [hidden, "2.8.0\u200b", "2.8.0\u202e", "2.8.0\u2028x", "2.8.0 extra", "2.8.0-" + "a".repeat(21), "２.８.０", "v2.8.0", "2.8.0\n", " 2.8.0"]) {
+      expect([...query(reportUrl({ ...d, serverVersion: v })).keys()]).not.toContain("server_version");
+      expect(summary({ ...d, serverVersion: v })).toBe("Cipherfilm 2.3.0 (web) · Firefox 140 · macOS");
+    }
+  });
+
   it("leaves out an unknown server version", () => {
     const { serverVersion: _, ...rest } = d;
     expect([...query(reportUrl(rest)).keys()]).not.toContain("server_version");

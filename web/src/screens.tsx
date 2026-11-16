@@ -1,6 +1,7 @@
 import { Icon, IconName } from "./icons";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { api } from "./api";
+import { copySecret } from "./clipboard";
 import * as auth from "./auth";
 import { mem } from "./state";
 import { mapProvider, mapProviderLong, PRIVACY_URL, setMapOn, useMapOn } from "./map/consent";
@@ -96,7 +97,7 @@ export function RecoveryKey({ pending, onDone, title = "Save your recovery key",
         {words.map((w, i) => <li key={i}><span class="n">{i + 1}</span>{w}</li>)}
       </ol>
       <div class="row no-print">
-        <button class="btn secondary" onClick={async () => { try { await navigator.clipboard.writeText(text); setCopied(true); } catch { setCopied(false); } }}>{copied ? "Copied" : "Copy"}</button>
+        <button class="btn secondary" onClick={async () => { try { await copySecret(text); setCopied(true); } catch { setCopied(false); } }}>{copied ? "Copied" : "Copy"}</button>
         <a class="btn secondary" download="cipherfilm-recovery-key.txt" href={"data:text/plain;charset=utf-8," + encodeURIComponent(file)}>Download</a>
         <button class="btn secondary" onClick={() => window.print()}>Print</button>
       </div>
@@ -295,7 +296,7 @@ function TwoFactorPanel({ open }: { open?: boolean }) {
   const reset = () => { setMode(""); setCode(""); setSecret(null); setError(""); setSaved(false); setCopied(""); };
   const done = () => { reset(); load(); };
   const showCodes = (c: string[] | null) => { if (c && c.length) { setCodes(c); setMode("codes"); } else done(); };
-  const copy = (what: string, text: string) => navigator.clipboard.writeText(text).then(() => setCopied(what), () => setCopied(""));
+  const copy = (what: string, text: string) => copySecret(text).then(() => setCopied(what), () => setCopied(""));
   const on = st?.enabled ?? !!mem.me!.two_factor;
   const totp = st?.totp ?? on; // an older server: on means the app
   const canPasskey = pk.passkeysSupported();
@@ -378,10 +379,10 @@ function TwoFactorPanel({ open }: { open?: boolean }) {
             {/* on a phone the app is on the same device: the otpauth: address opens it (or a password manager) directly */}
             {tf.totpUri(secret.uri) && <a class="btn touch-only" href={secret.uri}>Open in authenticator app</a>}
             {/* drawn here from the key: the key never goes to a QR service */}
-            <svg class="qr" viewBox={`0 0 ${qr.size} ${qr.size}`} role="img" aria-label="QR code for your authenticator app" shape-rendering="crispEdges">
+            {qr && <svg class="qr" viewBox={`0 0 ${qr.size} ${qr.size}`} role="img" aria-label="QR code for your authenticator app" shape-rendering="crispEdges">
               <rect width={qr.size} height={qr.size} fill="#fff" />
               <path d={qr.d} fill="#000" />
-            </svg>
+            </svg>}
             <p class="secret"><span class="small">Key</span> <code>{tf.groupSecret(secret.secret)}</code> <button type="button" class="link" onClick={() => copy("key", secret.secret)}>{copied === "key" ? "Copied" : "Copy"}</button></p>
             <Field label="Code from the app" id="tf-code" value={code} onInput={setCode} autocomplete="one-time-code" inputmode="numeric" pattern="[0-9 ]*" maxLength={7} autofocus={!tf.touchDevice()} />
             <ErrorLine text={error} />
@@ -883,7 +884,7 @@ export function Admin({ section }: { section: "users" | "storage" | "defaults" |
           <div class="linkbox sealed" role="status">
             <p>Invite link for <strong class="email">{link.email}</strong>, valid until {new Date(link.exp * 1000).toLocaleDateString()}. It's shown only once.</p>
             <input readOnly value={link.url} aria-label="Invite link" onFocus={(e) => (e.target as HTMLInputElement).select()} />
-            <button class="btn secondary" onClick={() => navigator.clipboard.writeText(link.url).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }, () => {})}><Icon name={copied ? "check" : "copy"} size={18} />{copied ? "Copied" : "Copy link"}</button>
+            <button class="btn secondary" onClick={() => copySecret(link.url).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }, () => {})}><Icon name={copied ? "check" : "copy"} size={18} />{copied ? "Copied" : "Copy link"}</button>
           </div>
         )}
       </section>

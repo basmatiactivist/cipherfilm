@@ -98,7 +98,7 @@ async function fetchIndex(): Promise<void> {
         } catch { vecs.push({ item: e.item_id }); /* damaged or not for this item: the phone or Mac makes it again */ }
         if (!facesByItem.has(e.item_id)) entries++;
         const keys: { key: string; box: number[] }[] = [];
-        faces.forEach((f, k) => { if (f.emb.length >= 256 && f.box.length === 4) keys.push({ key: `${e.item_id}:${k}`, box: f.box }); });
+        faces.forEach((f, k) => { if (f.emb.length >= 256 && Array.isArray(f.box) && f.box.length === 4 && f.box.every(Number.isFinite)) keys.push({ key: `${e.item_id}:${k}`, box: f.box }); });
         facesByItem.set(e.item_id, keys);
         put.push({ item: e.item_id, faces });
       }

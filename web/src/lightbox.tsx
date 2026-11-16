@@ -84,7 +84,7 @@ export function Lightbox(p: { items: Item[]; index: number; onIndex: (i: number)
       document.body.style.overflow = "";
       d.close();
       setTimeout(() => {
-        const tile = document.querySelector<HTMLElement>(`.tile[data-id="${shownId.current}"]`);
+        const tile = document.querySelector<HTMLElement>(`.tile[data-id="${CSS.escape(shownId.current)}"]`);
         if (tile) { tile.focus({ preventScroll: true }); tile.scrollIntoView({ block: "nearest" }); } else document.getElementById("main")?.focus();
       });
     };

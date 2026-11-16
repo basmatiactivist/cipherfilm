@@ -63,9 +63,13 @@ export const groupSecret = (s: string): string => s.replace(/(.{4})(?=.)/g, "$1 
 export const totpUri = (uri: unknown): uri is string => typeof uri === "string" && uri.slice(0, 15).toLowerCase() === "otpauth://totp/";
 
 /** The QR code of the otpauth:// address, drawn here (never by a QR service): an SVG path and its size. */
-export function qrFor(uri: string): { d: string; size: number } {
-  const q = encodeQR(uri);
-  return { d: qrPath(q, 4), size: q.size + 8 };
+export function qrFor(uri: string): { d: string; size: number } | null {
+  try {
+    const q = encodeQR(uri);
+    return { d: qrPath(q, 4), size: q.size + 8 };
+  } catch {
+    return null; // too long for a QR code: the key below is typed in instead
+  }
 }
 
 /** What the recovery codes file says. */

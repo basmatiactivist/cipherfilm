@@ -31,6 +31,19 @@ describe("report link", () => {
     expect(q.getAll("server_version")).toEqual([]);
   });
 
+  it("takes the server's version only as a plain release number", () => {
+    const at = (serverVersion: string) => details({ play: true, version: "2.3.0", constants: pixel, serverVersion });
+    for (const v of ["2.8.0", "2.8.0-rc.1", "dev"]) {
+      expect(query(reportUrl(at(v))).get("server_version")).toBe(v);
+      expect(summary(at(v))).toBe(`Cipherfilm 2.3.0 (Google Play) · Android 15 · Google Pixel 9 · Server ${v}`);
+    }
+    const hidden = "2.8.0" + [..."u=a@b"].map((c) => String.fromCodePoint(0xe0000 + c.charCodeAt(0))).join("");
+    for (const v of [hidden, "2.8.0\u200b", "2.8.0\u202e", "2.8.0\u2028x", "2.8.0 extra", "2.8.0-" + "a".repeat(21), "v2.8.0", "2.8.0\n", " 2.8.0"]) {
+      expect(query(reportUrl(at(v))).getAll("server_version")).toEqual([]);
+      expect(summary(at(v))).toBe("Cipherfilm 2.3.0 (Google Play) · Android 15 · Google Pixel 9");
+    }
+  });
+
   it("opens only the empty form without details", () => {
     expect(reportUrl()).toBe("https://github.com/basmatiactivist/cipherfilm/issues/new?template=bug_report.yml");
     expect([...query(reportUrl()).keys()]).toEqual(["template"]);

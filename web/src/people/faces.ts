@@ -101,7 +101,7 @@ export class FaceIndex {
     }
     // a face given to a person (an anchor) is theirs even where the grouping put it with someone else: "move to"
     const anchorOwner = new Map<string, string>();
-    for (const [person, keys] of anchors) for (const k of keys) if (!anchorOwner.has(k) && !(rejects[person] ?? []).includes(k)) anchorOwner.set(k, person);
+    for (const [person, keys] of anchors) for (const k of keys) if (!anchorOwner.has(k) && !((Object.hasOwn(rejects, person) && rejects[person]) || []).includes(k)) anchorOwner.set(k, person);
     const rootOf = new Map<string, number>();
     for (const [r, p] of owner) if (!rootOf.has(p)) rootOf.set(p, r);
     const buckets = new Map<string, FaceRec[]>();
@@ -122,7 +122,7 @@ export class FaceIndex {
     });
     return [...buckets.entries()].map(([b, list]): FaceGroup => {
       const person = bucketPerson.get(b);
-      const no = new Set(person !== undefined ? rejects[person] ?? [] : []);
+      const no = new Set(person !== undefined && Object.hasOwn(rejects, person) ? rejects[person] ?? [] : []);
       const kept = list.filter((f) => !no.has(f.key));
       let cover: FaceRec | undefined;
       for (const f of kept) if (!cover || weight(f) > weight(cover)) cover = f;

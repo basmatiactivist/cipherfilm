@@ -274,7 +274,10 @@ Sources: [App access](https://support.google.com/googleplay/android-developer/an
     user, and `reviewer2@<domain>`, an administrator, so a reviewer can see the admin area (Account › Administration).
     The public read-only login `demo@<domain>` (`DEMO_ACCOUNTS`) stays as it is: the server refuses every admin change
     to a `DEMO_ACCOUNTS` account (delete, disable, promote, storage limit, two-step reset; `server/handlers_admin.go`
-    `adminGuard`), so the administrator reviewer can't touch it (deploy/demo/README.md);
+    `adminGuard`), so the administrator reviewer can't touch it (deploy/demo/README.md). `reviewer2@` is a full
+    administrator: keep no account of your own on the demo (run it with the server commands), give its password only
+    where an administrator is really needed, and let the daily reset put both reviewer accounts' roles back
+    (`DEMO_ADMINS`, `DEMO_USERS`; deploy/demo/README.md, "Reviewer accounts");
   - about 30 pre-loaded neutral demo photos and videos (own or CC0, no identifiable private people), plus one album;
   - **explicit search not allowed** for the reviewer accounts (the Play build doesn't offer it anyway, and its admin
     area hides the "Allow explicit search" switch; the models come from Hugging Face, not the server), small quota (e.g. 2 GB);

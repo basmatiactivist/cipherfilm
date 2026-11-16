@@ -5,15 +5,32 @@ encrypted, so the operator could never see what strangers store. That is why the
 (`DEMO_ACCOUNTS`, [docs/SELF-HOSTING.md](../../docs/SELF-HOSTING.md#settings)): visitors can sign in, browse, open
 originals and videos and search, but uploads, edits, albums and account changes get a 403 ("This is the public demo:
 changes are turned off."). The apps say "Public demo · read-only · resets every hour" and hide what would fail. Other
-accounts on the same server (your admin, app-store reviewers) work as usual. The storage and backup overview never
+accounts on the same server (app-store reviewers) work as usual. The storage and backup overview never
 lists the demo account's devices to an administrator, and each visitor sees only their own (`server/storage.go`).
+
+### Reviewer accounts
 
 The project's demo has two reviewer accounts besides `demo@`: `reviewer@`, an ordinary user, and `reviewer2@`, an
 administrator, so a reviewer can see the admin area. That is safe for the public login: the server refuses every
 administrative change to a `DEMO_ACCOUNTS` account (deleting, disabling, making it an administrator, its storage
 limit, turning off its two-step sign-in; `server/handlers_admin.go` `adminGuard`), and a `DEMO_ACCOUNTS` account can
 never use the admin area itself. Only the server commands (`/app …`) can still change it. Give reviewer accounts no
-explicit search and a small storage limit.
+explicit search and a small storage limit (and keep the server's default limit small: `revoke-admin` gives it).
+
+An administrator login is a full administrator, though: there is no read-only kind. Whoever holds `reviewer2@`'s
+password can see every other account's e-mail address, last sign-in and the activity log, make other accounts
+administrators or regular users, disable or delete them, and invite new people with any storage limit. So:
+
+- **Keep no account of your own on the demo.** `reviewer2@` is its only administrator; you run the server with the
+  server commands on the host (`docker compose exec app /app …`, [docs/SERVER-COMMANDS.md](../../docs/SERVER-COMMANDS.md)),
+  which need no account. An admin account of yours next to `reviewer2@` could be demoted, locked or deleted by
+  whoever has the reviewer's password.
+- **Give `reviewer2@`'s password only where an administrator is really needed**, and to no one else; the store's
+  App access form usually needs only `reviewer@`.
+- **The daily reset puts the reviewer accounts back.** It restores the seed, which drops accounts and invites made
+  since, but keeps the roles and states of the seed's accounts as they were (see below). List the reviewer accounts
+  for `reset.sh` (`DEMO_ADMINS`, `DEMO_USERS`, in the reset unit below) and it makes them enabled administrators or
+  enabled regular users again after each reset. Check `/app list-users` after a store review.
 
 The demo account stores nothing, so all that visitors leave behind are their sign-ins: every hour a timer signs out
 all of the demo account's devices (`/app sign-out DEMO_EMAIL`). Once a day (04:00 UTC) the whole server is put back to
@@ -31,7 +48,8 @@ private one stays responsive.
 ## 1. The server
 
 A normal install from the Cipherfilm checkout ([docs/SELF-HOSTING.md](../../docs/SELF-HOSTING.md)), on a public
-domain behind an HTTPS proxy, with your own admin account. Leave `DEMO_ACCOUNTS` empty for now.
+domain behind an HTTPS proxy. The administrator the setup creates is `reviewer2@`, not an account of your own
+("Reviewer accounts" above); invite `reviewer@` with `/app invite`. Leave `DEMO_ACCOUNTS` empty for now.
 
 ## 2. The demo account
 
@@ -42,7 +60,7 @@ an environment variable, never the command line; the recovery words are printed 
 docker compose exec app /app invite demo@example.org --url https://demo.example.org
 cd web && npm ci
 read -rs CF_DEMO_PASSWORD && export CF_DEMO_PASSWORD     # type the demo password, then Enter
-npx tsx ../deploy/demo/create-account.mts 'https://demo.example.org/invite/…' demo@example.org > demo-recovery.txt
+(umask 077; npx tsx ../deploy/demo/create-account.mts 'https://demo.example.org/invite/…' demo@example.org > demo-recovery.txt)
 ```
 
 Keep `demo-recovery.txt` private. (Against a server with a locally issued certificate, put
@@ -72,7 +90,7 @@ docker compose up -d
 ```
 
 Set `DEMO_ACCOUNTS` only after the photos are uploaded and the seed is made: from then on the account can't add
-anything. Never list your admin or an account with real photos.
+anything. Never list the administrator or an account with real photos.
 
 To change the seed later, do it on a copy, never on the public server: there, without `DEMO_ACCOUNTS`, everyone who
 knows the published password could change the library, and whatever they leave would go into the new seed. On your
@@ -91,6 +109,8 @@ a password changed or an account added on the copy doesn't reach the server (an 
 Description=Reset the Cipherfilm demo to its seed
 [Service]
 Type=oneshot
+# the reviewer accounts whose role and state each reset puts back ("Reviewer accounts" above)
+Environment="DEMO_ADMINS=reviewer2@example.org" "DEMO_USERS=reviewer@example.org"
 ExecStart=/opt/cipherfilm/deploy/demo/reset.sh
 ```
 
@@ -112,7 +132,9 @@ systemctl start cipherfilm-demo-reset.service && journalctl -u cipherfilm-demo-r
 ```
 
 Every hour, sign out the demo visitors: `/etc/systemd/system/cipherfilm-demo-signout.service` runs
-`/bin/sh -c 'cd /opt/cipherfilm-demo && docker compose exec -T app /app sign-out demo@example.org'`, and its timer has
+`/bin/sh -c 'cd /opt/cipherfilm && docker compose exec -T app /app sign-out demo@example.org'` (the same checkout as
+the reset), and check once that it works (`systemctl start cipherfilm-demo-signout.service`, then `journalctl -u
+cipherfilm-demo-signout -n 5`), and its timer has
 `OnCalendar=hourly`.
 
 Then publish the e-mail and the password, never the recovery words.

@@ -21,4 +21,16 @@ describe("private screens at lock and sign-out", () => {
     expect(mustLeave("locked", routeNames({ routes: [{ name: "index" }, { name: "unlock" }] }))).toBe(false);
     expect(mustLeave("signedOut", [undefined, "signin"])).toBe(false);
   });
+
+  it("no screen holds the reset up: the editor asks about unsaved changes only while the library is unlocked", async () => {
+    // @ts-ignore: runs in Node (vitest), where the app's types have no node:fs
+    const { readdirSync, readFileSync } = await import("node:fs");
+    const dir = new URL("./app/", import.meta.url);
+    const walk = (u: URL): string[] => (readdirSync(u, { withFileTypes: true }) as { name: string; isDirectory: () => boolean }[])
+      .flatMap((e) => (e.isDirectory() ? walk(new URL(`${e.name}/`, u)) : e.name.endsWith(".tsx") ? [new URL(e.name, u).pathname] : []));
+    const guards = walk(dir).flatMap((p) => [...(readFileSync(p, "utf8") as string).matchAll(/usePreventRemove\(([^,]+),/g)].map((m) => `${p.split("/app/")[1]}: ${m[1]}`));
+    expect(guards).toEqual(["edit/[id].tsx: changed && !saved && !leaveWith && unlocked"]);
+    const edit: string = readFileSync(new URL("./app/edit/[id].tsx", import.meta.url), "utf8");
+    expect(edit).toContain('const unlocked = useSession().phase === "unlocked";');
+  });
 });

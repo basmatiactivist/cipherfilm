@@ -58,6 +58,7 @@ describe("a JPEG whose date or place changed, with its own pixels", () => {
       ...seg(0xe2, [...ascii("ICC_PROFILE"), 0, 1, 1, 9, 9]),
       ...seg(0xfe, ascii("taken at home")),
       ...seg(0xed, [...ascii("Photoshop 3.0"), 0, 1, 2]),
+      ...seg(0xe0, [...ascii("JFXX"), 0, 0x10, 0xff, 0xd8, ...ascii("old picture"), 0xff, 0xd9]),
       ...seg(0xdb, [0, 1, 2, 3]),
       0xff, 0xda, 0, 4, 1, 2, 0x11, 0xff, 0x00, 0x22, 0xff, 0xd0, 0x33, 0xff, 0xd9,
       ...ascii("ftypmp42 moov ©xyz+46.5+7.5/"),
@@ -80,7 +81,7 @@ describe("a JPEG whose date or place changed, with its own pixels", () => {
     const out = retagJpeg(camera, { ts: Date.UTC(2019, 0, 1) });
     expect((await exifr.gps(out as any))?.latitude).toBeUndefined();
     const text = String.fromCharCode(...out);
-    for (const s of ["GPSLatitude", "xap", "taken at home", "Photoshop", "moov", "46.5"]) expect(text).not.toContain(s);
+    for (const s of ["GPSLatitude", "xap", "taken at home", "Photoshop", "moov", "46.5", "JFXX", "old picture"]) expect(text).not.toContain(s);
     expect(text).toContain("ICC_PROFILE"); // the colours stay
     expect([...out.keys()].filter((i) => out[i] === 0xff && out[i + 1] === 0xe1)).toHaveLength(1);
   });

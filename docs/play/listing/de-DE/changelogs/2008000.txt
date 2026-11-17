@@ -1,0 +1,4 @@
+• Gesperrter Ordner und Archiv: Fotos hinter der Bildschirmsperre oder aus der Zeitachse ausblenden.
+• Kombinierte Suche mit Text in Fotos, Reisen und Jahresrückblicke.
+• Unbenutzte Geräte lassen sich automatisch abmelden; Verbesserungen bei Sicherheit und Datenschutz.
+Benötigt Ihren eigenen Cipherfilm-Server: https://cipherfilm.app/de

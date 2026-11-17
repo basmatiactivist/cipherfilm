@@ -1,0 +1,4 @@
+• Locked folder and archive: hide photos behind your screen lock or out of the timeline.
+• Combined search with text in photos, trips and year recaps.
+• Unused devices can be signed out automatically; security and privacy improvements.
+Needs your own Cipherfilm server: https://cipherfilm.app

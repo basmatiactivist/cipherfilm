@@ -7,6 +7,8 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-11-17
+
 ### Upgrade notes
 - After a restore, invites made from a session no longer work (every session ends at a restore, and such an invite
   ends with its session). Invites made on the server console are not affected.

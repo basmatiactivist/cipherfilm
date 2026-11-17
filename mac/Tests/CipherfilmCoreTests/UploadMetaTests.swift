@@ -51,7 +51,9 @@ import Testing
    *  the Mac only uploads metadata, never changes it, so it neither needs nor drops it. */
   @Test func theMetadataVersionIsIgnored() throws {
     for mv in ["7", "0", "-1", "\"x\"", "1e300", "null"] {
-      let json = Data(#"{"name":"a.jpg","mime":"image/jpeg","size":3,"lastModified":1,"capture_ts":1,"mv":"#.utf8 + Data(mv.utf8) + Data("}".utf8))
+      var json = Data(#"{"name":"a.jpg","mime":"image/jpeg","size":3,"lastModified":1,"capture_ts":1,"mv":"#.utf8)
+      json.append(contentsOf: Array(mv.utf8))
+      json.append(contentsOf: Array("}".utf8))
       let m = try JSONDecoder().decode(ItemMeta.self, from: json)
       #expect(m.name == "a.jpg" && m.size == 3)
     }

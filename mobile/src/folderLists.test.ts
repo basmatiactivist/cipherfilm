@@ -21,7 +21,7 @@ vi.mock("react", () => ({ useSyncExternalStore: (_sub: unknown, get: () => unkno
 vi.mock("expo-file-system", () => ({ File: class { exists = false; textSync() { return ""; } }, Directory: class {}, Paths: {} }));
 vi.mock("./session", () => ({
   session: () => ({ me: { user: { id: "alice" } }, masterKey: st.master }),
-  onWipe: (f: () => void) => { st.wipes.push(f); },
+  onOwnSignOut: () => {}, onWipe: (f: () => void) => { st.wipes.push(f); },
   passwordProof: async (p: string) => { if (p !== st.password) throw new Error("That password isn't right."); return "auth"; },
 }));
 vi.mock("./library", () => ({

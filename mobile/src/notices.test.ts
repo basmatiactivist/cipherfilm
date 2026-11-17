@@ -55,6 +55,17 @@ describe("notices", () => {
     }
   });
 
+  it("words a new recovery key made on another device, with no button (it is made in the browser)", () => {
+    setLang("en");
+    const n: Notice = { id: 1, kind: "recovery_key", device: "Firefox on Linux", at: 1_700_000_000 };
+    expect(visibleNotices({ notices: [n] }, new Set())).toHaveLength(1);
+    expect(noticeText(n)).toMatch(/^A new recovery key was made on Firefox on Linux, .+; the old one no longer works\. Not you\? Make a new one in Cipherfilm in the browser\.$/);
+    expect(noticeOpens("recovery_key")).toBeNull();
+    setLang("de");
+    expect(noticeText(n)).toMatch(/^Ein neuer Wiederherstellungsschlüssel wurde erstellt: Firefox auf Linux, /);
+    setLang("en");
+  });
+
   it("says how long ago a device was active", () => {
     setLang("en");
     const now = 1_700_000_000;

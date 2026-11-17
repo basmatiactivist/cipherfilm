@@ -45,7 +45,7 @@ vi.mock("./crypto/account", () => ({
 }));
 vi.mock("./cache", () => ({ clearCaches: () => {} }));
 vi.mock("./player", () => ({ clearPlayer: () => {} }));
-vi.mock("./items", () => ({ clearUploadMemory: () => {}, forgetDecrypted: () => {} }));
+vi.mock("./items", () => ({ clearUploadMemory: () => {}, forgetDecrypted: () => {}, forgetVersions: () => {} }));
 
 const storedWords = () => `word${server.user!.bundle.recovery_verifier.slice(1)}`;
 

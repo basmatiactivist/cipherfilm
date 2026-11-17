@@ -348,3 +348,85 @@ func TestLiveSessionsPerAccountAreCapped(t *testing.T) {
 		t.Fatalf("the newest: %d", code)
 	}
 }
+
+// A burst of sign-ins beyond sessionsMax (someone with the password) pushes out its own new sessions, not the devices
+// that were signed in before it, so those are still shown the sign-ins. A device already unused for longer than the
+// account allows goes first, told it was signed out on purpose.
+func TestSignInBurstDoesNotPushOutTheDevicesThatAreTold(t *testing.T) {
+	e := newEnv(t)
+	clk := e.pinClock()
+	laptop, ab := e.setupAdmin("admin@x.org")
+	phone := e.login("admin@x.org", ab)
+	drawer := e.login("admin@x.org", ab)
+	if code, _ := laptop.do("PUT", "/api/me/device-idle", map[string]int{"days": 7}, true); code != 200 {
+		t.Fatal(code)
+	}
+	use := func() {
+		for _, c := range []*client{laptop, phone} {
+			if code, _ := c.do("GET", "/api/me", nil, false); code != 200 {
+				t.Fatal(code)
+			}
+		}
+	}
+	clk.tick(6 * 24 * time.Hour)
+	use()
+	clk.tick(2 * 24 * time.Hour) // the drawer's device: 8 days unused now
+	use()
+	for range sessionsMax + 3 {
+		clk.tick(time.Second)
+		e.login("admin@x.org", ab)
+	}
+	for name, c := range map[string]*client{"laptop": laptop, "phone": phone} {
+		if code, _ := c.do("GET", "/api/me", nil, false); code != 200 {
+			t.Fatalf("%s was pushed out by the burst: %d", name, code)
+		}
+		if k := shownKinds(t, c); len(k) == 0 || k[0] != noticeSignIn {
+			t.Fatalf("%s is shown %v", name, k)
+		}
+	}
+	if !told(t, e, drawer) {
+		t.Fatal("the device unused for too long was not told it was signed out")
+	}
+	var n int
+	e.app.db.QueryRow(`SELECT COUNT(*) FROM sessions`).Scan(&n)
+	if n != sessionsMax {
+		t.Fatalf("%d live sessions, want %d", n, sessionsMax)
+	}
+}
+
+// The session cookie is kept for the session's whole lifetime, not only for the time it may go unused: a device that
+// comes back after it was signed out (also for going unused) still presents it, and is told it was signed out on
+// purpose rather than only asked to sign in again.
+func TestSessionCookieOutlivesTheIdleLimit(t *testing.T) {
+	e := newEnv(t)
+	clk := e.pinClock()
+	_, ab := e.setupAdmin("admin@x.org")
+	maxAge := func(h http.Header) int {
+		for _, c := range (&http.Response{Header: h}).Cookies() {
+			if c.Name == cookieName {
+				return c.MaxAge
+			}
+		}
+		return 0
+	}
+	phone := e.client()
+	r := phone.post("/api/auth/login", map[string]any{"email": "admin@x.org", "auth": ab["auth"]})
+	if r.code != 200 || maxAge(r.header) != int(sessionAbs.Seconds()) {
+		t.Fatalf("at sign-in: %d, Max-Age %d", r.code, maxAge(r.header))
+	}
+	clk.tick(10 * 24 * time.Hour)
+	req, _ := http.NewRequest("GET", e.srv.URL+"/api/me", nil)
+	resp, err := phone.c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if want := int((sessionAbs - 10*24*time.Hour).Seconds()); resp.StatusCode != 200 || maxAge(resp.Header) != want {
+		t.Fatalf("renewed: %d, Max-Age %d, want %d", resp.StatusCode, maxAge(resp.Header), want)
+	}
+	// unused for longer than the limit: still presented, and told
+	clk.tick(31 * 24 * time.Hour)
+	if !told(t, e, phone) {
+		t.Fatal("a device unused for too long isn't told")
+	}
+}

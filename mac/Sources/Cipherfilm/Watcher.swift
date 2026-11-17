@@ -22,6 +22,8 @@ final class Watcher {
     var done: Set<String> = []
     var failures: [String: Int] = [:]
     var uploaded = 0
+    /** when the last file was uploaded (seconds, this Mac's clock); nil in state from before it was noted */
+    var lastUploadAt: Double?
   }
 
   private var api: API?
@@ -69,12 +71,14 @@ final class Watcher {
     knownFile(userId).write(prints)
   }
 
-  /** What the watched folders uploaded for the account, for its last upload time (AppModel backfillLastUpload): the
-   *  prints of the files done, and when the state was last written. nil when they never uploaded anything. */
-  func uploadRecord(_ userId: String) -> (done: Set<String>, written: Date?)? {
+  /** When the watched folders last uploaded for the account, for its last upload time (AppModel backfillLastUpload):
+   *  as noted at the upload, or for state from before that was noted, when the state was last written. nil when they
+   *  never uploaded anything. */
+  func lastUpload(_ userId: String) -> Date? {
     let f = stateFile(userId)
     guard let st = f.read(), st.uploaded > 0 else { return nil }
-    return (st.done, (try? f.url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate)
+    if let t = st.lastUploadAt { return Date(timeIntervalSince1970: t) }
+    return (try? f.url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
   }
 
   /** "Only new files" for a folder just added: what is in it now counts as done. */
@@ -170,7 +174,7 @@ final class Watcher {
           let id = try await Uploader.upload(c.url, api: api, wrap: .sealed(pk: pk), live: { if flag.get() != gen { throw Stopped() } })
           guard stillOn() else { return }
           if search && indexes { await SearchEngine.indexFile(c.url, id: id, video: Media.kind(name: c.url.lastPathComponent, mime: Media.mime(of: c.url)) == .video, faces: faces, text: text, clip: clip, pk: pk, api: api) }
-          st.done.insert(c.print); st.failures.removeValue(forKey: c.print); st.uploaded += 1
+          st.done.insert(c.print); st.failures.removeValue(forKey: c.print); st.uploaded += 1; st.lastUploadAt = Date().timeIntervalSince1970
           uploaded = st.uploaded
           waiting -= 1
           guard stillOn() else { return }

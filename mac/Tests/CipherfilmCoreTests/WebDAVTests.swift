@@ -98,7 +98,7 @@ import UniformTypeIdentifiers
     #expect(WebDAVAddress.check("http://localhost:8080/dav/") == .unencrypted(URL(string: "http://localhost:8080/dav/")!))
     #expect(WebDAVAddress.check("http://192.168.1.20/dav") == .unencrypted(URL(string: "http://192.168.1.20/dav/")!))
     #expect(WebDAVAddress.check("http://nas.local/dav") == .unencrypted(URL(string: "http://nas.local/dav/")!))
-    #expect(WebDAVAddress.check("http://100.97.1.2/dav") == .unencrypted(URL(string: "http://100.97.1.2/dav/")!))
+    #expect(WebDAVAddress.check("http://100.64.1.2/dav") == .unencrypted(URL(string: "http://100.64.1.2/dav/")!))
     for bad in ["http://nas.example.org/dav", "ftp://nas.local/x", "https://me:pw@nas.example.org/", "https://nas.example.org/?a=1", "", "nas.example.org", "http://8.8.8.8/"] {
       if case .invalid = WebDAVAddress.check(bad) {} else { Issue.record("accepted \(bad)") }
     }
@@ -106,6 +106,32 @@ import UniformTypeIdentifiers
     #expect(!WebDAVAddress.isPrivate("172.32.0.1"))
     #expect(WebDAVAddress.isPrivate("[::1]"))
     #expect(WebDAVAddress.isPrivate("fd7a:115c:a1e0::1"))
+    #expect(WebDAVAddress.isPrivate("fe80::1%25en0"))
+    #expect(WebDAVAddress.isPrivate("::ffff:192.168.1.2"))
+    #expect(!WebDAVAddress.isPrivate("fcb::1")) // 0fcb::, not unique-local
+    #expect(!WebDAVAddress.isPrivate("2001:db8::1"))
+    #expect(!WebDAVAddress.isPrivate("::ffff:8.8.8.8"))
+    // numbers in other spellings are addresses a resolver may read as public ones, never names
+    for odd in ["134744072", "0x08080808", "010.8.8.8", "0127.0.0.1", "127.1", "10.0.1", "192.168.001.002", "0x7f.0.0.1", "nas.0x1"] {
+      #expect(!WebDAVAddress.isPrivate(odd), "\(odd)")
+      if case .invalid = WebDAVAddress.check("http://\(odd)/dav") {} else { Issue.record("accepted http://\(odd)") }
+    }
+    #expect(WebDAVAddress.isPrivate("nas") && WebDAVAddress.isPrivate("nas-2") && WebDAVAddress.isPrivate("10.0.0.1"))
+  }
+
+  /** Over http the name is looked up too: this Mac's own names pass, a public address doesn't (no network needed). */
+  @Test func plainHTTPNeedsAPrivateAddress() async throws {
+    #expect(WebDAVAddress.resolvesPrivately("127.0.0.1"))
+    #expect(WebDAVAddress.resolvesPrivately("localhost"))
+    #expect(WebDAVAddress.resolvesPrivately("[::1]"))
+    #expect(!WebDAVAddress.resolvesPrivately("8.8.8.8"))
+    #expect(!WebDAVAddress.resolvesPrivately("2001:db8::1"))
+    // a client for an http folder looks the name up before it sends anything
+    let c = WebDAVClient(folder: URL(string: "http://8.8.8.8/dav/")!, user: "u", password: "p", protocols: [StubDAV.self])
+    await #expect(throws: WebDAVError.address("This address doesn't lead to this Mac or a home network, so nothing is sent to it without https://.")) {
+      try await c.checkPlain()
+    }
+    try await WebDAVClient(folder: URL(string: "http://127.0.0.1:9/dav/")!, user: "u", password: "p").checkPlain()
   }
 
   // ---- what a pass imports ----
@@ -127,6 +153,21 @@ import UniformTypeIdentifiers
     #expect(p.bytes == 70)
     #expect(p.done == 1 && p.inLibrary == 1 && p.folders == 2 && p.files == 6)
     #expect(p.unsupported == ["notes.txt", "raw.CR3"])
+  }
+
+  /** Sizes are the server's word: impossible ones leave the member out, huge ones are summed without overflowing. */
+  @Test func listedSizesNeverOverflowThePlan() throws {
+    func resp(_ name: String, _ len: String) -> String {
+      "<d:response><d:href>\(name.contains(":") ? name : "/p/" + name)</d:href><d:propstat><d:prop><d:getcontentlength>\(len)</d:getcontentlength></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>"
+    }
+    let xml = "<?xml version=\"1.0\"?><d:multistatus xmlns:d=\"DAV:\">" + resp("a.jpg", "9223372036854775807") + resp("b.jpg", "1")
+      + resp("c.jpg", "9223372036854775807") + resp("neg.jpg", "-9223372036854775808") + resp("http://dav.example:443/p/clear.jpg", "1")
+      + resp("ftp://dav.example/p/other.jpg", "1") + "</d:multistatus>"
+    let l = try PropFind.parse(Data(xml.utf8), folder: URL(string: "https://dav.example/p/")!)
+    #expect(l.files.map(\.name) == ["a.jpg", "b.jpg", "c.jpg"])
+    let p = WebDAVImport.plan(l, book: ImportBook(file: nil), known: [])
+    #expect(p.todo.count == 3)
+    #expect(p.bytes == .max)
   }
 
   // ---- bookkeeping ----
@@ -312,6 +353,67 @@ final class StubDAV: URLProtocol, @unchecked Sendable {
 
   @Test func notAWebDAVFolder() async throws {
     await #expect(throws: WebDAVError.notWebDAV) { try await client(ranges: true).list() }
+  }
+
+  /** A file the locked folder has is read like a new one (the server can't tell it apart) and then dropped: not
+   *  uploaded, recorded as imported. */
+  @Test func aLockedFolderFileIsReadAndDropped() async throws {
+    let f = file
+    let reads = Counter()
+    StubDAV.handler = { r in
+      guard let h = r.value(forHTTPHeaderField: "Range"), h.hasPrefix("bytes=") else { return (200, [:], f) }
+      reads.add(1)
+      let p = h.dropFirst(6).split(separator: "-").map { Int($0)! }
+      return (206, ["Content-Range": "bytes \(p[0])-\(p[1])/\(f.count)"], f.subdata(in: p[0]..<p[1] + 1))
+    }
+    let c = WebDAVClient(folder: folder, user: "u", password: "p", protocols: [StubDAV.self])
+    let print = Crypto.fingerprint(name: entry.name, size: entry.size)
+    let book = ImportBook(file: nil)
+    let p = WebDAVImport.plan(WebDAVListing(files: [entry], folders: 0), book: book, known: [], locked: [print])
+    #expect(p.todo == [entry] && p.readOnly == [entry.name] && p.inLibrary == 0)
+    let events = Counter()
+    // the Cipherfilm server isn't reachable: an upload would end the pass with an error
+    try await WebDAVImport.run(p.todo, client: c, api: API(base: URL(string: "https://127.0.0.1:9")!), wrap: .sealed(pk: Data(repeating: 1, count: 32)),
+                               book: book, temp: FileManager.default.temporaryDirectory, readOnly: p.readOnly, live: {}) { ev in
+      if case .alreadyThere = ev { events.add(1) }
+    }
+    #expect(reads.value >= 1 && events.value == 1 && book.isDone(entry))
+  }
+
+  /** No answer is taken in beyond what was asked for: a part longer than requested, a whole file longer than listed,
+   *  a listing that announces more than the cap. */
+  @Test func answersLongerThanAskedForAreRefused() async throws {
+    let big = Data(count: 50_000)
+    StubDAV.handler = { r in
+      if r.httpMethod == "PROPFIND" { return (207, ["Content-Length": "\(WebDAVClient.listingCap + 1)"], Data()) }
+      if let h = r.value(forHTTPHeaderField: "Range") { return (206, ["Content-Range": "\(h.replacingOccurrences(of: "=", with: " "))/10000"], big) }
+      return (200, [:], big)
+    }
+    let c = WebDAVClient(folder: folder, user: "u", password: "p", protocols: [StubDAV.self])
+    await #expect(throws: WebDAVError.changed) { try await c.read(entry, offset: 0, len: 50) }
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cf-dl-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let dest = dir.appendingPathComponent("a.jpg")
+    await #expect(throws: WebDAVError.changed) { try await c.download(entry, to: dest) }
+    #expect(!FileManager.default.fileExists(atPath: dest.path))
+    #expect(c.received.value <= 2 << 20)
+    await #expect(throws: WebDAVError.malformed) { try await c.list() }
+  }
+
+  /** A server without ranges answers a part with the whole file: found out without taking the file in, and the
+   *  temporary copy then comes in one piece of exactly the listed size. */
+  @Test func aWholeFileIsNotReadForAPart() async throws {
+    let c = client(ranges: false)
+    await #expect(throws: WebDAVError.noRanges) { try await c.read(entry, offset: 100, len: 50) }
+    #expect(c.knownToSendRanges == false)
+    #expect(c.received.value == 0)
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cf-dl-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let dest = dir.appendingPathComponent("a.jpg")
+    try await c.download(entry, to: dest)
+    #expect(try Data(contentsOf: dest) == file)
   }
 }
 

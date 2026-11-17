@@ -98,7 +98,7 @@ export async function refreshLibrary(opts?: { quiet?: boolean }) {
       if (!current()) return;
       const now = items ?? list; // the newest list when a later change replaced it meanwhile (the open part)
       const all = whole ?? list;
-      prefetchThumbs(now);
+      prefetchThumbs(all); // the whole list: which thumbnails are fetched ahead must not depend on the folder (library.ts)
       // the cached pictures of locked items go too: none are kept for them (library.ts)
       setTimeout(() => current() && pruneCache(new Set(now.map((i) => i.id))), 2000);
       // the rest waits until the grid is on screen and scrolling: both read the whole list on the JS thread

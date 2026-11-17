@@ -180,8 +180,13 @@ public enum Admin {
   }
 
   public static func summary(_ users: [User]) -> String {
-    let stored = users.reduce(Int64(0)) { $0 + $1.used_bytes }, items = users.reduce(0) { $0 + $1.item_count }
+    let stored = Saturating.sum(users.map(\.used_bytes)), items = Saturating.sum(users.map(\.item_count))
     return "\(users.count) \(users.count == 1 ? "person" : "people") · \(size(stored)) stored · \(items) \(items == 1 ? "item" : "items")"
+  }
+
+  /** The used part of the server's disk for its bar, 0...total, whatever numbers the server sent. */
+  public static func diskUsed(total: Int64, free: Int64) -> Double {
+    min(Double(max(0, total)), max(0, Double(total) - Double(max(0, free))))
   }
 
   public static func lastSeen(_ ts: Int64, now: Date = Date()) -> String {
@@ -240,6 +245,7 @@ public enum Admin {
     case "turned on two-step sign-in": return ("key", "\(who) turned on two-step sign-in", false)
     case "turned off two-step sign-in": return ("key", "\(who) turned off two-step sign-in", false)
     case "made new recovery codes": return ("key", "\(who) made new recovery codes", false)
+    case "made a new recovery key": return ("key", "\(who) made a new recovery key", false)
     case "signed out every device":
       return ("rectangle.portrait.and.arrow.right", "\(who) signed out every device of \(t)" + (a.detail.isEmpty ? "" : ", and they delete what they keep"), !a.detail.isEmpty)
     default:
@@ -267,6 +273,19 @@ public enum Admin {
   }
 }
 
+/** Arithmetic on numbers a server sent: sums and differences stop at the type's ends instead of ending the app. */
+public enum Saturating {
+  public static func add<T: FixedWidthInteger>(_ a: T, _ b: T) -> T {
+    let (r, over) = a.addingReportingOverflow(b)
+    return over ? (b > 0 ? .max : .min) : r
+  }
+  public static func sub<T: FixedWidthInteger>(_ a: T, _ b: T) -> T {
+    let (r, over) = a.subtractingReportingOverflow(b)
+    return over ? (b < 0 ? .max : .min) : r
+  }
+  public static func sum<T: FixedWidthInteger>(_ s: [T]) -> T { s.reduce(0, add) }
+}
+
 // ---- storage and backup overview (server/storage.go, web/src/storage.ts) ----
 // What an account takes, of what kind, and when each of its devices last uploaded: Settings › Account for each person
 // (GET /api/me/storage), Administration › Storage for every account (GET /api/admin/storage). Only sizes, counts,
@@ -280,7 +299,8 @@ public enum StorageOverview {
   public static func fold(_ devices: [Device], open: Bool) -> (shown: [Device], hidden: Int) {
     if open || devices.count <= devicesShown { return (devices, 0) }
     func rank(_ d: Device) -> Int { d.current ? 0 : d.backup_stale ? 1 : d.last_upload_at > 0 ? 2 : 3 }
-    let order = devices.sorted { (rank($0), -$0.last_upload_at, -$0.last_seen) < (rank($1), -$1.last_upload_at, -$1.last_seen) }
+    // newest first by comparing the other way round (no negating a server's number)
+    let order = devices.sorted { (rank($0), $1.last_upload_at, $1.last_seen) < (rank($1), $0.last_upload_at, $0.last_seen) }
     let keep = Set(order.prefix(max(devicesShown, order.filter { rank($0) <= 1 }.count)).map(\.id))
     let shown = devices.filter { keep.contains($0.id) }
     return (shown, devices.count - shown.count)
@@ -383,8 +403,8 @@ public enum StorageOverview {
     public init(from decoder: Decoder) throws {
       let c = try decoder.container(keyedBy: CodingKeys.self)
       accounts = (try? c.decodeIfPresent([Account].self, forKey: .accounts)) ?? []
-      used_bytes = (try? c.decodeIfPresent(Int64.self, forKey: .used_bytes)) ?? accounts.reduce(0) { $0 + $1.used_bytes }
-      item_count = (try? c.decodeIfPresent(Int64.self, forKey: .item_count)) ?? accounts.reduce(0) { $0 + $1.item_count }
+      used_bytes = (try? c.decodeIfPresent(Int64.self, forKey: .used_bytes)) ?? Saturating.sum(accounts.map(\.used_bytes))
+      item_count = (try? c.decodeIfPresent(Int64.self, forKey: .item_count)) ?? Saturating.sum(accounts.map(\.item_count))
       stale_devices = (try? c.decodeIfPresent(Int64.self, forKey: .stale_devices)) ?? Int64(StorageOverview.staleCount(accounts))
       disk_free_bytes = (try? c.decodeIfPresent(Int64.self, forKey: .disk_free_bytes)) ?? 0
       disk_total_bytes = (try? c.decodeIfPresent(Int64.self, forKey: .disk_total_bytes)) ?? 0
@@ -424,7 +444,7 @@ public enum StorageOverview {
 
   /** The non-empty parts of an account's storage in a fixed order, with their share of the whole. */
   public static func parts(_ s: Split) -> [Part] {
-    let total = splitLabels.reduce(Int64(0)) { $0 + max(0, bytes(s, $1.key)) }
+    let total = Saturating.sum(splitLabels.map { max(0, bytes(s, $0.key)) })
     guard total > 0 else { return [] }
     return splitLabels.compactMap { k, label in
       let b = bytes(s, k)

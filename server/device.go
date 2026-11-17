@@ -52,10 +52,12 @@ func (a *App) setDevice(w http.ResponseWriter, u *user) {
 // password and signed in once) could queue checks without end and keep every other sign-in waiting.
 const knownInFlight = 2
 
-// Password proofs of signed-in sessions (proofOK), per account, right or wrong: plenty for a person, few for a flood.
+// Password proofs of signed-in sessions (proofOK), per session, right or wrong: plenty for a person, few for a flood;
+// and at most proofInFlight of a session's proofs at once.
 const (
-	proofsPerAccount = 30
+	proofsPerSession = 30
 	proofWindow      = 15 * time.Minute
+	proofInFlight    = 1
 )
 
 type inFlight struct {
@@ -63,24 +65,40 @@ type inFlight struct {
 	m  map[string]int
 }
 
-// knownTurn admits one credential check from a known browser of the account; false when it has knownInFlight
-// already. release must be called when the check is done.
-func (a *App) knownTurn(userID string) (release func(), ok bool) {
-	f := &a.knownBusy
+// take admits one more check for key, false when it has max running or waiting already. release must be called when
+// the check is done.
+func (f *inFlight) take(key string, max int) (release func(), ok bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.m == nil {
 		f.m = map[string]int{}
 	}
-	if f.m[userID] >= knownInFlight {
+	if f.m[key] >= max {
 		return nil, false
 	}
-	f.m[userID]++
+	f.m[key]++
 	return func() {
 		f.mu.Lock()
 		defer f.mu.Unlock()
-		if f.m[userID]--; f.m[userID] <= 0 {
-			delete(f.m, userID)
+		if f.m[key]--; f.m[key] <= 0 {
+			delete(f.m, key)
 		}
 	}, true
+}
+
+// knownTurn admits one credential check from a known browser of the account; false when it has knownInFlight
+// already. release must be called when the check is done.
+func (a *App) knownTurn(userID string) (release func(), ok bool) {
+	return a.knownBusy.take(userID, knownInFlight)
+}
+
+// sourceInFlight is how many sign-in and recovery checks from unknown browsers one source may have running or waiting
+// at once, well below maxArgonWaiting: a right password or recovery key gives back its place in the per-source bucket,
+// so without this someone who knows their own (or any one) account's credentials could keep the queue full from one
+// address, and everyone else's sign-ins from new browsers would be turned away.
+const sourceInFlight = 4
+
+// sourceTurn admits one credential check from an unknown browser of the source (limiterIP of the client).
+func (a *App) sourceTurn(source string) (release func(), ok bool) {
+	return a.sourceBusy.take(source, sourceInFlight)
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { setLang } from "./i18n";
-import { cleanCode, codeProblem, codeReady, firstWay, groupSecret, methods, passkeyTrouble, pendingToken, totpUri, passkeyFor, serverHost, stepButtons, stepError, stepNeeded, usesRecovery, withStep } from "./twoStep";
+import { cleanCode, codeProblem, codeReady, firstWay, groupSecret, methods, passkeyTrouble, pendingToken, totpUri, passkeyFor, serverHost, setupUri, stepButtons, stepError, stepNeeded, usesRecovery, withStep } from "./twoStep";
 
 // The answers of server/twofactor.go, as api.ts turns them into errors (status, code, the JSON body).
 const err = (status: number, code: string, body: unknown = null) => Object.assign(new Error("x"), { status, code, body });
@@ -102,6 +102,21 @@ describe("two-step sign-in", () => {
       expect((stepError(err(403, "wrong_code")) as Error).message).toBe("Dieser Code stimmt nicht. Versuchen Sie es noch einmal.");
       setLang("en");
     });
+  });
+});
+
+describe("setupUri", () => {
+  it("is the server's address only when the key in it is the key shown", () => {
+    const uri = "otpauth://totp/Cipherfilm:me%40x?secret=JBSWY3DPEHPK3PXP&issuer=Cipherfilm";
+    expect(setupUri({ uri, secret: "JBSWY3DPEHPK3PXP" })).toBe(uri);
+    expect(setupUri({ uri: uri.replace("secret=JBSWY3DPEHPK3PXP", "secret=jbswy3dpehpk3pxp"), secret: "JBSW Y3DP EHPK 3PXP" })).not.toBeNull();
+    // another key, two keys, none, or not an authenticator address at all
+    expect(setupUri({ uri: uri.replace("JBSWY3DPEHPK3PXP", "AAAAAAAAAAAAAAAA"), secret: "JBSWY3DPEHPK3PXP" })).toBeNull();
+    expect(setupUri({ uri: uri + "&secret=AAAAAAAAAAAAAAAA", secret: "JBSWY3DPEHPK3PXP" })).toBeNull();
+    expect(setupUri({ uri: "otpauth://totp/Cipherfilm:me?issuer=Cipherfilm", secret: "JBSWY3DPEHPK3PXP" })).toBeNull();
+    expect(setupUri({ uri: "https://evil.example/?secret=JBSWY3DPEHPK3PXP", secret: "JBSWY3DPEHPK3PXP" })).toBeNull();
+    expect(setupUri({ uri, secret: "" })).toBeNull();
+    expect(setupUri({ uri, secret: undefined })).toBeNull();
   });
 });
 

@@ -2,9 +2,10 @@
 // the areas looked at, so nothing is loaded from it before a yes. Per account on this phone; Account › Map turns it off.
 import { useSyncExternalStore } from "react";
 import * as SecureStore from "expo-secure-store";
+import { File, Paths } from "expo-file-system";
 import { privacyUrl } from "./store";
 import { onWipe, session } from "./session";
-import { OfflineManager } from "@maplibre/maplibre-react-native";
+import { OfflineManager, TransformRequestManager } from "@maplibre/maplibre-react-native";
 import { t } from "./i18n";
 import { mapHosts, mapProviderOf } from "@places/mapHosts";
 
@@ -61,21 +62,48 @@ export const mapPrivacyUrl = () => `${privacyUrl()}#map`;
 
 // MapLibre keeps the map images it loaded in a cache in the app's storage, which tells where the map was looked at.
 // It goes when the app locks or signs out and when the map is turned off, and once per start before the first map
-// shows (for an app that was closed while unlocked). Nothing calls into MapLibre before a map was shown.
+// shows (for an app that was closed while unlocked). The cache outlives the app's process, so a mark in the app's
+// files says that a map was shown since the cache was last cleared: a run that shows no map still clears it at a lock,
+// a sign-out or the map turned off. Nothing calls into MapLibre while no map was ever shown.
 let cacheChecked: Promise<void> | null = null;
 let shown = false;
-const clearCache = () => OfflineManager.clearAmbientCache().catch(() => {});
+const USED = () => new File(Paths.document, "map-cache-used");
+const marked = () => { try { return USED().exists; } catch { return true; } };
+const clearCache = () => OfflineManager.clearAmbientCache().then(
+  // (a map shown in this run may still be loading images: the mark stays for the next run's clear)
+  () => { if (!shown) try { USED().delete(); } catch { /* cleared again next time */ } },
+  () => {},
+);
 
-/** Before a map shows: the cache from an earlier run is gone. */
+// Only the hosts the question before the map named (the styles' own hosts, mapHosts) are asked for anything: a style
+// that names tiles, a TileJSON, fonts or icons elsewhere gets them from nowhere, as the web app's and the Mac app's
+// Content-Security-Policy do (docs/MAP.md). MapLibre's requests to any other address are sent to this phone's own
+// closed port instead, so they fail without leaving it.
+const NOWHERE = "https://127.0.0.1:9/";
+const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+/** The requests to refuse: everything that isn't https to one of `hosts` (host or host:port, as mapHosts names them). */
+export function outsideHosts(hosts: string[]): string {
+  const allowed = hosts.map((h) => h.toLowerCase().replace(/:443$/, "")).filter((h) => /^[a-z0-9.-]+(:\d{1,5})?$/.test(h)).map(escape);
+  return allowed.length ? `^(?!https://(?:${allowed.join("|")})(?:[/?#]|$))` : "^";
+}
+function onlyMapHosts() {
+  try {
+    TransformRequestManager.addUrlTransform({ id: "cf-map-hosts", match: outsideHosts(mapHosts(session().me?.map)), find: "^.+$", replace: NOWHERE });
+  } catch { /* an older map module: the styles' own hosts are all an honest server's styles use */ }
+}
+
+/** Before a map shows: the cache from an earlier run is gone, and only the agreed hosts are asked. */
 export function mapCacheReady(): Promise<void> {
+  onlyMapHosts();
   shown = true;
+  try { if (!USED().exists) USED().write("1"); } catch { /* this run still clears it */ }
   cacheChecked ??= clearCache();
   return cacheChecked;
 }
 
-/** After the map was on screen: the cache is cleared (lock, sign-out, map turned off). */
-export function clearMapCache() {
-  if (shown) clearCache();
+/** After the map was on screen, in this run or an earlier one: the cache is cleared (lock, sign-out, map turned off). */
+export function clearMapCache(): Promise<void> {
+  return shown || marked() ? clearCache() : Promise.resolve();
 }
 
 onWipe((how) => {

@@ -237,6 +237,33 @@ public enum Passkeys {
     return d
   }
 
+  /** The answer, accepted only when the browser made it for this server and this request: its client data names the
+   *  configured server's own https address, the step asked for, and the challenge in the options. The /passkey page is
+   *  the server's own, so a server could send the browser on to another server's page; that answer is refused here. */
+  public static func answer(from callback: URL, server: URL, op: String, options: Data) throws -> Data {
+    let d = try answer(from: callback)
+    guard let a = try? JSONSerialization.jsonObject(with: d) as? [String: Any], let r = a["response"] as? [String: Any],
+          let cd = (r["clientDataJSON"] as? String).flatMap(unb64url),
+          let c = try? JSONSerialization.jsonObject(with: cd) as? [String: Any],
+          let o = try? JSONSerialization.jsonObject(with: options) as? [String: Any],
+          let want = (o["challenge"] as? String).flatMap(unb64url), !want.isEmpty,
+          let got = (c["challenge"] as? String).flatMap(unb64url),
+          let origin = c["origin"] as? String, let mine = Self.origin(server) else { throw noAnswer }
+    guard c["type"] as? String == (op == "create" ? "webauthn.create" : "webauthn.get"), got == want,
+          origin.lowercased() == mine, c["crossOrigin"] as? Bool != true else {
+      throw APIError(status: -1, message: "The passkey answer wasn't made for this server. Nothing was sent.")
+    }
+    return d
+  }
+
+  /** "https://host" or "https://host:port", as a browser writes a page's origin into a passkey's client data. */
+  static func origin(_ server: URL) -> String? {
+    guard server.scheme?.lowercased() == "https", let h = server.host?.lowercased(), !h.isEmpty else { return nil }
+    let host = h.contains(":") && !h.hasPrefix("[") ? "[\(h)]" : h
+    if let p = server.port, p != 443 { return "https://\(host):\(p)" }
+    return "https://\(host)"
+  }
+
   static func b64url(_ d: Data) -> String {
     d.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
   }
@@ -289,7 +316,7 @@ public enum DeviceIdle {
   /** The other devices unused for longer than the limit: the ones "Sign out unused devices now" ends, never this one. */
   public static func unused(_ list: [Device], days: Int, now: Date = Date()) -> [Device] {
     let limit = Int64(days) * 86400, t = Int64(now.timeIntervalSince1970)
-    return list.filter { !$0.current && t - $0.last_seen > limit }
+    return list.filter { !$0.current && Saturating.sub(t, $0.last_seen) > limit }
   }
 
   /** The devices and the account's choice. */
@@ -317,19 +344,12 @@ public enum DeviceIdle {
  *  (before, every device showed "No upload recorded yet"). Sent once per session; the server keeps it only if it has
  *  none for the session, and never for another one. */
 public enum LastUpload {
-  /** The newest upload time (seconds, the server's) among library items this Mac's watched folders uploaded: items whose
-   *  name and size print the watcher noted as done. Not after `notAfter` (when the watcher last wrote its state), so a
-   *  file that only counted as done (a folder's existing files) can't make it newer than the watcher's last upload.
-   *  0 when there is none. */
-  public static func newest(items: [Item], done: Set<String>, notAfter: Date? = nil) -> Int64 {
-    guard !done.isEmpty else { return 0 }
-    var newest = 0.0
-    for it in items where it.createdAt > newest {
-      guard let m = it.meta, done.contains(Crypto.fingerprint(name: m.name, size: m.size)) else { continue }
-      newest = it.createdAt
-    }
-    if let notAfter, newest > notAfter.timeIntervalSince1970 { newest = notAfter.timeIntervalSince1970 }
-    return Int64(newest)
+  /** The time to send (seconds): when this Mac's watched folders last uploaded, as this Mac noted it itself. Nothing
+   *  of the library is looked at, so the answer can't depend on items the server lists; never in the future, 0 when
+   *  there is none. */
+  public static func time(_ last: Date?, now: Date = Date()) -> Int64 {
+    guard let t = last?.timeIntervalSince1970, t.isFinite, t > 0 else { return 0 }
+    return Int64(min(t, now.timeIntervalSince1970))
   }
 
   /** Whether to send for this session: not for the demo, not twice for the same session, not without a time. */
@@ -344,8 +364,9 @@ public enum LastUpload {
 }
 
 /** Something the account's devices show once (a new sign-in, two-step sign-in turned off by an admin, the password used
- *  for a sign-in that wasn't finished, a change to two-step sign-in made on another of its devices). Dismissing it
- *  on any device dismisses it everywhere. */
+ *  for a sign-in that wasn't finished, a change to two-step sign-in or a new recovery key made on another of its
+ *  devices). Dismissing a sign-in, unfinished-password or admin-reset notice dismisses it everywhere; a two-step
+ *  change or a new recovery key only on the device that dismisses it. */
 public struct Notice: Decodable, Sendable, Equatable, Identifiable {
   public let id: Int64
   public let kind: String
@@ -355,12 +376,13 @@ public struct Notice: Decodable, Sendable, Equatable, Identifiable {
   public init(id: Int64, kind: String, device: String, at: Int64) { self.id = id; self.kind = kind; self.device = device; self.at = at }
 
   public static let kinds: Set<String> = ["sign_in", "2fa_reset", "password_used", "totp_added", "totp_removed",
-                                           "passkey_added", "passkey_removed", "recovery_codes", "2fa_off"]
+                                           "passkey_added", "passkey_removed", "recovery_codes", "2fa_off", "recovery_key"]
   public var date: Date { Date(timeIntervalSince1970: TimeInterval(at)) }
   /** a sign-in notice leads to the device list */
   public var reviewDevices: Bool { kind == "sign_in" }
-  /** the inbox has a button to Settings (the devices, or two-step sign-in); the password is changed in the browser */
-  public var opensSettings: Bool { kind != "password_used" }
+  /** the inbox has a button to Settings (the devices, or two-step sign-in); the password and the recovery key are
+   *  changed in the browser */
+  public var opensSettings: Bool { kind != "password_used" && kind != "recovery_key" }
   /** What that button says: what the notice asks to look at. nil: nothing to open in the app. */
   public var action: String? { reviewDevices ? "Review Devices" : opensSettings ? "Two-Step Sign-In" : nil }
 
@@ -379,6 +401,7 @@ public struct Notice: Decodable, Sendable, Equatable, Identifiable {
     case "passkey_removed": return "A passkey was removed from two-step sign-in on \(on), \(time). Not you?"
     case "recovery_codes": return "New recovery codes were made on \(on), \(time); the old ones no longer work. Not you?"
     case "2fa_off": return "Two-step sign-in was turned off on \(on), \(time). Not you?"
+    case "recovery_key": return "A new recovery key was made on \(on), \(time); the old one no longer works. Not you? Make a new one in Cipherfilm in the browser."
     default: return "An administrator turned off two-step sign-in for your account (\(time)). Turn it on again in Settings."
     }
   }
@@ -429,6 +452,7 @@ public struct NoticeAlerts: Codable, Equatable, Sendable {
     case "2fa_reset", "2fa_off": return "Two-step sign-in turned off"
     case "totp_added", "totp_removed", "passkey_added", "passkey_removed": return "Two-step sign-in changed"
     case "recovery_codes": return "New recovery codes made"
+    case "recovery_key": return "New recovery key made"
     default: return "Unfinished sign-in to Cipherfilm"
     }
   }

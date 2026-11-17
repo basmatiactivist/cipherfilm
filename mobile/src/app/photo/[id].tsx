@@ -8,9 +8,9 @@ import { previewUri, when, type Item } from "../../library";
 import { libraryItems, refreshLibrary, setFavorite, useLibrary } from "../../libraryStore";
 import { canEdit } from "../../edit";
 import { normEdit, pictureKey } from "@edit/edit";
-import { folderOf, isLocked, mainGrid, type Folder } from "@edit/folders";
+import { asLocked, folderOf, mainGrid, type Folder } from "@edit/folders";
 import { canMove, movable, moveTo } from "../../moveFolder";
-import { deleteForever, lockedFolderItems, lockedThumbUri, useLockedFolder } from "../../lockedFolder";
+import { deleteForever, lockedFolderItems, lockedThumbUri, mustLeaveFolder, useLockedFolder } from "../../lockedFolder";
 import { viewerList } from "../../viewerList";
 import { faceUri, facesIn, nameFace, type FaceInPhoto } from "../../search/people";
 import { NameDialog } from "../albums";
@@ -70,8 +70,15 @@ export default function Viewer() {
   const [start] = useState(() => Math.max(0, list.findIndex((i) => i.id === id)));
   // the library changed (an edit here or on another device): the pages show the items as they are now, in place
   const { items: libOpen } = useLibrary();
-  const { items: lockedNow } = useLockedFolder();
+  const { open: lockedOpen, items: lockedNow } = useLockedFolder();
   const libNow = inLocked ? lockedNow : libOpen;
+  // opened from the locked folder, which closed meanwhile: nothing of it stays on screen, back to the folder's check
+  const folderGone = mustLeaveFolder(within, lockedOpen);
+  useEffect(() => {
+    if (!folderGone) return;
+    setList([]);
+    if (router.canGoBack()) router.back(); else router.replace("/");
+  }, [folderGone]);
   useEffect(() => {
     if (!libNow) return;
     const byId = new Map(libNow.map((i) => [i.id, i]));
@@ -352,14 +359,14 @@ function Page({ item, width, height, inset, active, onZoom, chrome, onTap, onChr
           may still become two. Neither holds the video: a tap on it is the player's (it would count twice) */}
       {!uri ? (
         <Pressable onPress={onTap} accessible={false} style={{ width, height }}>
-          {item.has_thumb ? (isLocked(item.meta)
+          {item.has_thumb ? (asLocked(item)
             ? <MemoryStill item={item} width={width} height={height} />
             : <ThumbView item={item.id} fit="contain" style={{ width, height }} accessibilityLabel={item.meta?.name} />) : null}
         </Pressable>
       ) : null}
       {uri ? (
         <Zoomable width={width} height={height} active={active && !ready} onZoom={onZoom} onTap={onTap}>
-          {isLocked(item.meta)
+          {asLocked(item)
             ? <Image source={{ uri }} style={{ width, height }} contentFit="contain" cachePolicy="none" accessibilityLabel={item.meta?.name} />
             : <Image source={{ uri }} style={{ width, height }} contentFit="contain" cachePolicy="memory" accessibilityLabel={item.meta?.name} />}
         </Zoomable>
@@ -481,7 +488,7 @@ function Info({ item, visible, onClose, onOriginal }: { item: Item; visible: boo
           </View>
         ) : null}
         {visible && at ? <MiniMap lat={at.lat} lon={at.lon} /> : null}
-        {visible && !isLocked(item.meta) ? <InPhoto item={item} onClose={onClose} /> : null}
+        {visible && !asLocked(item) ? <InPhoto item={item} onClose={onClose} /> : null}
         <Text variant="bodySmall" style={{ color: th.colors.onSurfaceVariant, marginTop: 12 }}>{t("Only you can read these details. The server stores them encrypted.")}</Text>
       </Modal>
     </Portal>

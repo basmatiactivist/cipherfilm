@@ -22,17 +22,21 @@ export interface ReportDetails {
 // characters go, and a length cap keeps an odd browser string from making the link too long for GitHub (414).
 const clean = (s: string) => s.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 120);
 const enc = (s: string) => encodeURIComponent(clean(s)).replace(/[!'()*]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase());
+// The server's version is what the server says, and it lands in a public form: only a plain release number ("2.8.0"),
+// with at most a short ASCII pre-release suffix ("2.8.0-rc.1"), or "dev" goes in; anything else is left out.
+const SERVER_VERSION = /^(dev|\d{1,4}\.\d{1,4}\.\d{1,4}(-[0-9A-Za-z.]{1,20})?)$/;
+const serverVersion = (v?: string) => (v && SERVER_VERSION.test(v) ? v : undefined);
 
 /** The link; without details it is only the empty form. */
 export function reportUrl(d?: ReportDetails): string {
   if (!d) return ISSUE_FORM;
-  const fields: [string, string | undefined][] = [["app", d.app], ["app_version", d.appVersion], ["device", d.device], ["server_version", d.serverVersion]];
+  const fields: [string, string | undefined][] = [["app", d.app], ["app_version", d.appVersion], ["device", d.device], ["server_version", serverVersion(d.serverVersion)]];
   return ISSUE_FORM + fields.filter(([, v]) => v && clean(v)).map(([k, v]) => `&${k}=${enc(v!)}`).join("");
 }
 
 /** The line the dialog shows, built from the same fields the link carries. */
 export function summary(d: ReportDetails): string {
-  return [`Cipherfilm ${clean(d.appVersion)}`, clean(d.device), d.serverVersion && clean(d.serverVersion) ? `Server ${clean(d.serverVersion)}` : ""].filter(Boolean).join(" · ");
+  return [`Cipherfilm ${clean(d.appVersion)}`, clean(d.device), serverVersion(d.serverVersion) ? `Server ${serverVersion(d.serverVersion)}` : ""].filter(Boolean).join(" · ");
 }
 
 interface UAData { brands?: { brand: string; version: string }[]; platform?: string; mobile?: boolean }

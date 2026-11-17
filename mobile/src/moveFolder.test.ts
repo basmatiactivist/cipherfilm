@@ -13,8 +13,26 @@ vi.mock("./api", () => ({
     return {};
   },
 }));
-vi.mock("./session", () => ({ session: () => ({ me: { user: { id: "u1" }, demo: who.demo }, masterKey: who.master }), onWipe: () => {} }));
-vi.mock("./library", () => ({ forgetPictures: (id: string) => { forgot.push(id); } }));
+vi.mock("./session", () => ({ session: () => ({ me: { user: { id: "u1" }, demo: who.demo }, masterKey: who.master }), onOwnSignOut: () => {}, onWipe: () => {} }));
+// library.ts writeMeta as it seals and sends (its own tests: library.test.ts), with a server that may refuse once
+const fresh = vi.hoisted(() => ({ items: [] as any[], refuse: new Set<string>() }));
+vi.mock("./library", async () => {
+  const { b64, getSodium } = await import("@crypto/sodium");
+  const { encryptMeta } = await import("@crypto/item");
+  const { api } = await import("./api");
+  class MetaChanged extends Error {}
+  const writable = (it: any) => !it.broken && !it.stale && !!it.meta && !!it.itemKey;
+  return {
+    forgetPictures: (id: string) => { forgot.push(id); },
+    MetaChanged, writable,
+    loadLibrary: async () => fresh.items,
+    writeMeta: async (it: any, meta: any) => {
+      if (fresh.refuse.delete(it.id)) throw new MetaChanged();
+      const s = await getSodium();
+      await api("PUT", `/api/items/${it.id}/meta`, { meta_enc: b64(s, encryptMeta(s, { ...meta, mv: (meta.mv ?? 0) + 1 }, it.itemKey, it.id)) });
+    },
+  };
+});
 
 const { moveTo, movable } = await import("./moveFolder");
 const { getSodium } = await import("@crypto/sodium");
@@ -24,7 +42,7 @@ const { folderOf } = await import("@edit/folders");
 const id = (n: number) => n.toString(16).padStart(32, "0");
 
 describe("moving items between folders", () => {
-  beforeEach(() => { puts.length = 0; forgot.length = 0; who.demo = false; who.fail = "never"; });
+  beforeEach(() => { puts.length = 0; forgot.length = 0; who.demo = false; who.fail = "never"; fresh.items = []; fresh.refuse.clear(); });
 
   it("writes `locked: true` only inside the encrypted metadata, version raised, every other field kept", async () => {
     const s = await getSodium();
@@ -73,6 +91,23 @@ describe("moving items between folders", () => {
     const r = await moveTo([stale, broken, failing, fine], "locked", (d) => { progress = d; });
     expect(r).toEqual({ moved: [id(4)], failed: 3 });
     expect(progress).toBe(4);
+  });
+
+  it("an item another device changed meanwhile is loaded again and moved from its current metadata", async () => {
+    const s = await getSodium();
+    const key = newItemKey(s);
+    const mk = (meta: object) => ({ id: id(5), kind: "image" as const, size: 1, segment_count: 1, created_at: 1, has_thumb: true, has_preview: true, itemKey: key, meta: { name: "x", mime: "image/jpeg", size: 1, lastModified: 0, capture_ts: 0, ...meta } });
+    fresh.items = [mk({ gps: undefined, mv: 1 })]; // the other device removed the place
+    fresh.refuse.add(id(5));
+    expect(await moveTo([mk({ gps: { lat: 1, lon: 2 } })], "archive")).toEqual({ moved: [id(5)], failed: 0 });
+    const sealed = decryptMeta<Record<string, unknown>>(s, s.from_base64(puts[0].body.meta_enc as string, s.base64_variants.URLSAFE_NO_PADDING), key, id(5));
+    expect(sealed).toMatchObject({ archived: true, mv: 2 });
+    expect(sealed.gps).toBeUndefined();
+    // stale once loaded again: left alone
+    fresh.items = [{ ...mk({}), stale: true }];
+    fresh.refuse.add(id(5)); puts.length = 0;
+    expect(await moveTo([mk({})], "archive")).toEqual({ moved: [], failed: 1 });
+    expect(puts).toEqual([]);
   });
 
   it("is refused in the public demo, like editing", async () => {

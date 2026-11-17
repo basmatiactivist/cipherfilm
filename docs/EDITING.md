@@ -83,7 +83,8 @@ Two folders besides the library, on every app (web, Android, Mac). The rules are
 **Stored encrypted.** The folder is a field of the item's encrypted metadata, `archived: true` or `locked: true`
 (only `true` counts; locked wins if both were ever written), written like any other change: the next metadata version
 through `PUT /api/items/{id}/meta`, every other field kept. Moving back to the library removes the field. The server
-sees only that the item's metadata changed (docs/THREAT_MODEL.md), not which folder it went to. Favorites, by
+sees only that the item's metadata changed, not which folder it went to (what it can work out from which items are
+fetched: docs/THREAT_MODEL.md, Archive and locked folder). Favorites, by
 contrast, are a plain flag on the server (server/index.go); the folders deliberately don't follow that.
 
 **Split right after decrypting.** Each app splits the decrypted list once: every view outside the locked folder reads

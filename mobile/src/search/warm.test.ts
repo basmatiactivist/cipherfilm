@@ -75,6 +75,7 @@ vi.mock("../api", () => ({
   ApiError: class extends Error {},
   server: () => "https://a.test",
 }));
+vi.mock("../ownUploads", () => ({ matchable: async () => [] }));
 vi.mock("../session", () => ({
   onWipe: (f: (how?: "locked" | "ended") => void) => { st.wipe = (how = "locked") => f(how); },
   refreshMe: async () => null,

@@ -52,7 +52,7 @@ vi.mock("./api", () => ({
 }));
 vi.mock("./session", () => ({
   session: () => ({ me: { user: { id: "alice", email: "a@x.org" }, wrapped_privkey: "" }, masterKey: st.master }),
-  onWipe: () => {},
+  onOwnSignOut: () => {}, onWipe: () => {},
 }));
 vi.mock("@crypto/sodium", () => ({ getSodium: async () => ({ memzero: () => {} }), unb64: (_s: unknown, v: string) => v }));
 vi.mock("@crypto/account", () => ({ normEmail: (e: string) => e }));
@@ -77,14 +77,42 @@ describe("locked items and the cache on this phone", () => {
     Object.assign(st, { files: new Map(), answers: {}, keyed: [], prefetched: [], forgot: [], fetched: [] });
   });
 
-  it("never hands a locked item's key to the native thumbnails, nor prefetches it", async () => {
+  it("never hands a locked item's key to the native thumbnails; fetching ahead asks for it too, but keeps nothing", async () => {
     const lib = await import("./library");
     st.answers["/api/items"] = { items: [rec(A), rec(B, {}, { locked: true }), rec(C, {}, { archived: true })], next: "", cursor: "e.1" };
     const list = await lib.loadLibrary();
     expect(list.find((i) => i.id === B)!.meta!.locked).toBe(true);
     expect(st.keyed.sort()).toEqual([A, C]);
     lib.prefetchThumbs(list);
-    expect(st.prefetched.sort()).toEqual([A, C]);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(st.prefetched.sort()).toEqual([A, C]); // into the encrypted cache, natively
+    // which thumbnails are asked for doesn't depend on the folder: the locked one's is fetched and dropped
+    expect(st.fetched).toEqual([`/api/items/${B}/thumb`]);
+    expect([...st.files.keys()].filter((k) => k.includes(B))).toEqual([]);
+    // once per app start, also over locks (the open ones' stay in the cache over locks too)
+    lib.prefetchThumbs(list);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(st.fetched).toHaveLength(1);
+  });
+
+  it("a stale item is handled as a locked one: no key for the native thumbnails, nothing cached", async () => {
+    let lib = await import("./library");
+    st.answers["/api/items"] = { items: [rec(A, {}, { locked: true, mv: 1 })], next: "", cursor: "e.1" };
+    await lib.loadLibrary();
+    vi.resetModules(); // the app started again: only the version is known
+    st.keyed = [];
+    lib = await import("./library");
+    st.answers["/api/items"] = { items: [rec(A)], next: "", cursor: "e.2" }; // the copy from before the lock
+    const [it] = await lib.loadLibrary();
+    expect(it.stale).toBe(true);
+    expect(st.keyed).toEqual([]);
+    const { splitLocked } = await import("@edit/folders");
+    expect(splitLocked([it]).open).toEqual([]);
+    await lib.thumbBytes(it);
+    await lib.previewUri(it);
+    expect([...st.files.keys()].filter((k) => k.startsWith(DIR) && !k.endsWith("list.json"))).toEqual([]);
+    lib.prefetchThumbs([it]);
+    expect(st.prefetched).toEqual([]);
   });
 
   it("writes an open item's thumbnail and preview ciphertext to the cache, a locked item's never", async () => {

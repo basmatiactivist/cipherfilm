@@ -2,13 +2,11 @@
 // videos never showed on the map. While the map is on, this browser reads it from the encrypted original (only the
 // box headers and the moov box, see videoLocation.ts) and writes it into the item's encrypted details; the other devices
 // get it with the next change list. Photos already got theirs at upload.
-import { api, getBytes } from "../api";
-import { b64, getSodium } from "../crypto/sodium";
+import { getBytes } from "../api";
+import { getSodium } from "../crypto/sodium";
 import { decryptSegment, SEG_PLAIN } from "../crypto/file";
-import { encryptMeta } from "../crypto/item";
-import { nextVersion } from "../crypto/metaVersion";
 import { mem } from "../state";
-import type { Item } from "../items";
+import { writeMeta, type Item } from "../items";
 import { coords } from "./locations";
 import { videoLocation } from "../places/videoLocation";
 import { placeChanged } from "../edit/edit";
@@ -24,9 +22,10 @@ function saveDone(done: Set<string>) {
   try { localStorage.setItem(key(), JSON.stringify([...done])); } catch { /* looked at again next time */ }
 }
 /** Videos that could still get a location: finished, decrypted, none yet, not looked at before, and not one whose
- *  place the person removed or set themselves (edit/edit.ts). */
+ *  place the person removed or set themselves (edit/edit.ts). Never a stale one (its metadata is an older copy than
+ *  seen here: writing on top of it would undo a change); it is looked at again once its current metadata is known. */
 export const lackingVideos = (items: Item[], done: Set<string>) =>
-  items.filter((it) => it.kind === "video" && !it.broken && !it.trashed_at && it.meta && it.itemKey && !coords(it) && !done.has(it.id) && !placeChanged(it.meta));
+  items.filter((it) => it.kind === "video" && !it.broken && !it.stale && !it.trashed_at && it.meta && it.itemKey && !coords(it) && !done.has(it.id) && !placeChanged(it.meta));
 
 /** Reads a stored item's plain bytes by range, decrypting only the segments the range touches. */
 export function segmentReader(it: Item, fetchSegment: (i: number) => Promise<Uint8Array>) {
@@ -79,7 +78,7 @@ async function run(items: Item[]): Promise<number> {
       const read = segmentReader(it, async (i) => decryptSegment(s, it.itemKey!, it.id, i, it.segment_count, it.size, await getBytes(`/api/items/${it.id}/segments/${i}`)));
       const g = await videoLocation(it.size, read);
       if (g) {
-        await api("PUT", `/api/items/${it.id}/meta`, { meta_enc: b64(s, encryptMeta(s, nextVersion({ ...it.meta!, gps: g }), it.itemKey!, it.id)) });
+        await writeMeta(it, { ...it.meta!, gps: g }); // changed meanwhile on another device: looked at again next time
         added++;
       }
       done.add(it.id);

@@ -90,8 +90,9 @@ and visitors are signed out every hour. To keep your own photos, [run your own s
 - **Archive and locked folder.** Archive screenshots and receipts out of the timeline (search, albums and the map
   still find them), or move photos and videos into a locked folder that shows them nowhere else and asks for your
   fingerprint or password each time it opens. Which folder a photo is in is encrypted with its other details, so the
-  server doesn't know ([docs/EDITING.md](docs/EDITING.md)).
-- **Free up space.** Remove photos from the phone once they are in Cipherfilm.
+  server isn't told; it can guess some of it from which photos a device fetches ([docs/EDITING.md](docs/EDITING.md)).
+- **Free up space.** Remove photos from the phone once they are in Cipherfilm (ones this phone backed up, or added with
+  the Upload button, the web or the Mac).
 - **Duplicates and similar photos.** Find photos uploaded twice and bursts of nearly the same shot, worked out on
   your device, and move the extras to the trash (web and Android).
 - **Locks itself.** Fingerprint unlock, automatic lock after a time you choose or when the screen turns off, and
@@ -106,9 +107,11 @@ and visitors are signed out every hour. To keep your own photos, [run your own s
   local copy) and indexes for search in the background ([docs/MAC.md](docs/MAC.md)).
 - **Storage and backup overview.** How much your library takes on the server, split into photos, videos, other files,
   thumbnails and search data, and when each of your devices last uploaded, with a warning when a phone in use seems to
-  have stopped backing up. Administrators see it for every account, with the server's free disk space.
+  have stopped backing up. Administrators see it for every account, with the server's free disk space (when another
+  account's device was last used only to the day).
 - **Made for a small group.** Invite-only, a private library per person, storage limits, an admin area that never
-  shows anyone's photos, on the web and in the Android and Mac apps.
+  shows anyone's photos, on the web and in the Android and Mac apps. Its activity log shows administrators account
+  changes, including people's own device sign-outs and two-step sign-in, passkey and recovery-code changes.
 - **Light to run.** One Docker container with SQLite; about 35 MB of RAM when idle, fine on a 1–2 vCPU / 2 GB server.
 - **Your data stays yours.** Plain backups with one script, and a standalone tool that decrypts everything from the
   data folder without the server ([docs/TOOLS.md](docs/TOOLS.md)).

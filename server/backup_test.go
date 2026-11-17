@@ -592,3 +592,49 @@ func TestPendingRestoreBlocksStartUntilAfterRestore(t *testing.T) {
 		t.Fatalf("after after-restore: %v", err)
 	}
 }
+
+// A device the replaced server already owed "signed out on purpose" (unused for longer than the account allows, but it
+// hasn't come back yet) is still told so after a restore, and a shorter limit chosen after the backup stays.
+func TestRestoreKeepsOwedIdleSignOuts(t *testing.T) {
+	e := newEnv(t)
+	admin, ab := e.setupAdmin("admin@x.org")
+	phone := e.login("admin@x.org", ab)
+	if err := runBackup(e.app.dataDir); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := admin.do("PUT", "/api/me/device-idle", map[string]int{"days": 14}, true); code != 200 {
+		t.Fatal(code)
+	}
+	var phonePub string
+	for _, s := range sessionList(t, phone) {
+		if s["current"] == true {
+			phonePub = s["id"].(string)
+		}
+	}
+	// unused for 20 days in the replaced database: beyond its account's 14, within the default 30
+	e.app.db.Exec(`UPDATE sessions SET last_seen=? WHERE pub=?`, time.Now().Add(-20*24*time.Hour).Unix(), phonePub)
+	app2 := restoredApp(t, e)
+	srv := httptest.NewTLSServer(app2.handler())
+	defer srv.Close()
+	req, _ := http.NewRequest("GET", srv.URL+"/api/items", nil)
+	resp, err := phone.c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 401 || resp.Header.Get("X-CF-Session") != "revoked" {
+		t.Fatalf("a device owed the sign-out is not told after the restore: %d %q", resp.StatusCode, resp.Header.Get("X-CF-Session"))
+	}
+	if u, err := app2.userByEmail("admin@x.org"); err != nil || u.IdleDays != 14 {
+		t.Fatalf("the idle limit chosen after the backup: %v %v", u, err)
+	}
+	// the device that was in use is only asked to sign in again
+	req, _ = http.NewRequest("GET", srv.URL+"/api/items", nil)
+	if resp, err = admin.c.Do(req); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 401 || resp.Header.Get("X-CF-Session") == "revoked" {
+		t.Fatalf("a device in use is told to delete its copy: %d %q", resp.StatusCode, resp.Header.Get("X-CF-Session"))
+	}
+}

@@ -49,3 +49,72 @@ func TestPutMetaReplacesTheEncryptedMetadata(t *testing.T) {
 		t.Fatalf("list shows %v", got)
 	}
 }
+
+// A change names the metadata it was made from: one made from an older copy (another device changed the item
+// meanwhile) is refused, so it can't write over the newer one; a change without a base (older apps) still applies.
+func TestPutMetaRefusesAChangeMadeFromAnOlderCopy(t *testing.T) {
+	e := newEnv(t)
+	admin, _ := e.setupAdmin("admin@x.org")
+	id := e.newItem(admin, 10)
+	admin.put("/api/items/"+id+"/segments/0", randBytes(int(cipherLen(10))))
+	if code, _ := admin.do("POST", "/api/items/"+id+"/finalize", finalizeBody(), true); code != 200 {
+		t.Fatalf("finalize: %d", code)
+	}
+	stored := func() (m string) {
+		e.app.db.QueryRow(`SELECT meta_enc FROM items WHERE id=?`, id).Scan(&m)
+		return
+	}
+	base := metaDigest(stored())
+
+	first, second := rb(120), rb(121)
+	if code, _ := admin.do("PUT", "/api/items/"+id+"/meta", map[string]any{"meta_enc": first, "base": base}, true); code != 200 {
+		t.Fatalf("first change: %d", code)
+	}
+	// a second device that still had the upload's metadata
+	if code, _ := admin.do("PUT", "/api/items/"+id+"/meta", map[string]any{"meta_enc": second, "base": base}, true); code != 409 {
+		t.Fatalf("change from an older copy: %d", code)
+	}
+	if stored() != first {
+		t.Fatal("the newer metadata was replaced")
+	}
+	// made again from the current copy, it applies
+	if code, _ := admin.do("PUT", "/api/items/"+id+"/meta", map[string]any{"meta_enc": second, "base": metaDigest(first)}, true); code != 200 {
+		t.Fatalf("change from the current copy: %d", code)
+	}
+	if stored() != second {
+		t.Fatal("not replaced")
+	}
+	for _, bad := range []any{"", "xyz", base[:63], base + "0", 5} {
+		if code, _ := admin.do("PUT", "/api/items/"+id+"/meta", map[string]any{"meta_enc": rb(122), "base": bad}, true); code != 400 {
+			t.Fatalf("base %v: %d", bad, code)
+		}
+	}
+	// an app from before sends no base
+	if code, _ := admin.do("PUT", "/api/items/"+id+"/meta", map[string]any{"meta_enc": first}, true); code != 200 {
+		t.Fatalf("without a base: %d", code)
+	}
+}
+
+// An item finished by a server before 2.0 has no charge for its metadata in stored_bytes; a smaller metadata
+// afterwards never takes its stored bytes, or the account's counters, below zero.
+func TestSmallerMetaNeverTakesStoredBytesBelowZero(t *testing.T) {
+	e := newEnv(t)
+	admin, _ := e.setupAdmin("admin@x.org")
+	id := e.newItem(admin, 10)
+	admin.put("/api/items/"+id+"/segments/0", randBytes(int(cipherLen(10))))
+	body := finalizeBody()
+	body["meta_enc"] = rb(4000)
+	if code, _ := admin.do("POST", "/api/items/"+id+"/finalize", body, true); code != 200 {
+		t.Fatalf("finalize: %d", code)
+	}
+	e.app.db.Exec(`UPDATE items SET stored_bytes=100 WHERE id=?`, id) // as an older server charged it
+	if code, _ := admin.do("PUT", "/api/items/"+id+"/meta", map[string]any{"meta_enc": rb(100)}, true); code != 200 {
+		t.Fatalf("update: %d", code)
+	}
+	var stored int64
+	e.app.db.QueryRow(`SELECT stored_bytes FROM items WHERE id=?`, id).Scan(&stored)
+	if stored != 0 {
+		t.Fatalf("stored_bytes %d, want 0", stored)
+	}
+	checkCounters(e, "smaller meta")
+}

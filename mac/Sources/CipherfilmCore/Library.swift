@@ -22,6 +22,9 @@ public struct ItemMeta: Codable, Sendable, Hashable {
   /** the archive and the locked folder (Folders.swift): only a literal `true` counts, any other value is "not set" */
   public var archived: JSONTrue?
   public var locked: JSONTrue?
+  /** the metadata's version, raised by every change of it (MetaVersion.swift); none: 0 */
+  public var mv: MetaVersionNumber?
+  public var version: Int { mv?.value ?? 0 }
 
   public init(name: String, mime: String, size: Int64, lastModified: Double, capture_ts: Double, width: Double? = nil, height: Double? = nil,
               duration: Double? = nil, make: String? = nil, model: String? = nil, gps: GPS? = nil) {
@@ -48,6 +51,12 @@ public struct Item: Identifiable, Sendable, Hashable {
   public var itemKey: Data?
   /** Decryption or verification failed: never shown, the screen says so. */
   public var broken: Bool
+  /** The server gave an older version of the metadata than this Mac saw before, or another copy at the version seen
+   *  (MetaVersion.swift), and the newer one isn't known here any more: handled as a locked item (isLocked), never
+   *  changed here. */
+  public var stale: Bool = false
+  /** Which sealed copy of the metadata `meta` is (MetaHighWater.digest): a change names it as its base. */
+  public var base: String? = nil
 
   /** Capture time in milliseconds (the upload time when nothing better is known). */
   public var when: Double { meta?.capture_ts ?? createdAt * 1000 }
@@ -63,7 +72,7 @@ public struct Item: Identifiable, Sendable, Hashable {
   }
 
   // a changed date, place or edit (made in another app) is a change the screens show
-  public static func == (a: Item, b: Item) -> Bool { a.id == b.id && a.favorite == b.favorite && a.trashedAt == b.trashedAt && a.broken == b.broken && a.meta == b.meta }
+  public static func == (a: Item, b: Item) -> Bool { a.id == b.id && a.favorite == b.favorite && a.trashedAt == b.trashedAt && a.broken == b.broken && a.stale == b.stale && a.meta == b.meta }
   public func hash(into h: inout Hasher) { h.combine(id) }
 }
 
@@ -96,9 +105,16 @@ public final class Vault: @unchecked Sendable {
   private let lock = NSLock()
   private var master: Data?
   private var pairCache: KeyPair?
+  /** the metadata versions seen (MetaVersion.swift): kept over locks and sessions the server ended */
+  public let versions: MetaHighWater
+  /** the items accepted in this session whose metadata was changed at least once (version above 0), by id: when the
+   *  server hands out an older copy, this one stays; dropped at every lock */
+  private var accepted: [String: Item] = [:]
 
-  public init(api: API, me: Me, masterKey: Data) {
+  /** versions: the metadata versions seen; by default this account's file (MetaHighWater.file). */
+  public init(api: API, me: Me, masterKey: Data, versions: MetaHighWater? = nil) {
     self.api = api; self.me = me; self.master = masterKey
+    self.versions = versions ?? MetaHighWater(file: MetaHighWater.file(for: me.user.id))
   }
 
   public var userId: String { me.user.id }
@@ -134,6 +150,7 @@ public final class Vault: @unchecked Sendable {
       if master != nil { Sodium.memzero(&master!) }
       if pairCache != nil { Sodium.memzero(&pairCache!.sk) }
       master = nil; pairCache = nil
+      accepted = [:] // the same items (and keys) as the lists hold
       listWrite?.cancel(); listWrite = nil
     }
   }
@@ -159,7 +176,8 @@ public final class Vault: @unchecked Sendable {
   }
 
   func keep(_ name: String, _ data: Data) {
-    guard let dir = cacheDir else { return }
+    // after a lock or sign-out (work that was in flight) nothing is kept, and a deleted folder isn't made again
+    guard isOpen, let dir = cacheDir else { return }
     try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
     let f = dir.appendingPathComponent(name)
     if (try? data.write(to: f, options: .atomic)) != nil { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: f.path) }
@@ -180,7 +198,7 @@ public final class Vault: @unchecked Sendable {
   /** Decrypts the list on all cores: each item's key, then its metadata, checked against the server's size. The
    *  numbers are checked too (the size against the segment count, the picture's dimensions), so nothing later works
    *  with values no honest upload has. */
-  private func decrypt(_ raw: [RawItem]) throws -> [Item] {
+  func decrypt(_ raw: [RawItem]) throws -> [Item] {
     let m = try masterKey()
     let out = UnsafeMutableBufferPointer<Item?>.allocate(capacity: raw.count)
     out.initialize(repeating: nil)
@@ -209,7 +227,33 @@ public final class Vault: @unchecked Sendable {
       }
       out[i] = it
     }
-    return out.compactMap { $0 }.sorted { $0.when > $1.when }
+    return checkVersions(out.compactMap { $0 }, raw).sorted { $0.when > $1.when }
+  }
+
+  /** Each item's metadata against the versions seen (MetaVersion.swift): an older copy than seen before, or another
+   *  copy at the version seen, isn't taken. The one accepted in this session stays; without it the item is stale. */
+  private func checkVersions(_ items: [Item], _ raw: [RawItem]) -> [Item] {
+    let enc = Dictionary(raw.map { ($0.id, $0.meta_enc) }, uniquingKeysWith: { _, b in b })
+    let out: [Item] = lock.withLock {
+      items.map { x in
+        var it = x
+        guard !it.broken, let meta = it.meta, let e = enc[it.id] else { return it }
+        let d = MetaHighWater.digest(e)
+        it.base = d
+        if versions.check(it.id, meta.version, d) {
+          if meta.version > 0 { accepted[it.id] = it }
+          return it
+        }
+        if let k = accepted[it.id], let km = k.meta, versions.accepts(it.id, km.version, k.base) {
+          it.meta = km; it.itemKey = k.itemKey; it.kind = k.kind; it.base = k.base
+          return it
+        }
+        it.stale = true
+        return it
+      }
+    }
+    versions.flush()
+    return out
   }
 
   /** The times in milliseconds taken as dates: 1 January 1900 to 1 January 2100. */
@@ -414,21 +458,51 @@ public final class Vault: @unchecked Sendable {
   public func trash(_ ids: [String]) async throws { for c in ids.chunked(500) { try await api.json("POST", "/api/items/trash", body: ["item_ids": c]) } }
   public func restore(_ ids: [String]) async throws { for c in ids.chunked(500) { try await api.json("POST", "/api/items/restore", body: ["item_ids": c]) } }
   public func purge(_ ids: [String]) async throws { for c in ids.chunked(500) { try await api.json("POST", "/api/trash/purge", body: ["item_ids": c]) } }
+  /** The item's metadata changed on another device after the copy here was decrypted: the change was not written. */
+  public static let changedMeanwhile = "This item was changed on another device meanwhile. Try again."
+
   /** Moves items to the archive, the locked folder or back to the library: each item's metadata as the server has it
    *  (every field kept, also ones this app doesn't know), with the folder's flag set and its version raised, sealed
-   *  again (Folders.resealed). Into the locked folder, its cached pictures go from disk at once. */
+   *  again (Folders.resealed). Into the locked folder, its cached pictures go from disk at once. A stale item (its
+   *  newest metadata isn't known here) is never written: that would undo a change on every device. The request names
+   *  the copy it was made from; one another device changed meanwhile is loaded again and moved from its current
+   *  metadata. */
   public func move(_ items: [Item], to folder: Folder) async throws {
     if me.isDemo { throw APIError(status: -1, message: "This is the public demo: changes are turned off.") }
     for it in items {
-      guard ServerId.valid(it.id), !it.broken, let key = it.itemKey else { throw CryptoError.failed("This item can't be read.") }
-      var rec = await librarySync.record(it.id)
-      if rec == nil { rec = await trashSync.record(it.id) }
-      guard let rec else { throw APIError(status: -1, message: "The library is still loading. Try again in a moment.") }
-      let sealed = try Folders.resealed(B64.decode(rec.meta_enc), itemKey: key, itemId: it.id, to: folder)
-      _ = try masterKey() // locked meanwhile: nothing more is sent
-      try await api.json("PUT", "/api/items/\(it.id)/meta", body: ["meta_enc": B64.encode(sealed)])
-      if folder == .locked { dropPictures(it.id) }
+      do {
+        try await moveOne(it, to: folder)
+      } catch let e as APIError where e.status == 409 {
+        // changed on another device meanwhile: once more, from the metadata as it is now
+        _ = try await syncLibrary()
+        let fresh = await librarySync.current().first { $0.id == it.id }
+        guard let fresh else { throw APIError(status: 409, message: Self.changedMeanwhile) }
+        do { try await moveOne(fresh, to: folder) } catch let e as APIError where e.status == 409 { throw APIError(status: 409, message: Self.changedMeanwhile) }
+      }
     }
+  }
+
+  private func moveOne(_ it: Item, to folder: Folder) async throws {
+    guard ServerId.valid(it.id), !it.broken, let key = it.itemKey else { throw CryptoError.failed("This item can't be read.") }
+    guard !it.stale else { throw CryptoError.failed("This item's newest details aren't known on this Mac. Reload the library and try again.") }
+    var rec = await librarySync.record(it.id)
+    if rec == nil { rec = await trashSync.record(it.id) }
+    guard let rec else { throw APIError(status: -1, message: "The library is still loading. Try again in a moment.") }
+    // only the copy this Mac accepted is changed: a record the server sent since (another copy) is not written over
+    let base = MetaHighWater.digest(rec.meta_enc)
+    guard base == it.base else { throw APIError(status: 409, message: Self.changedMeanwhile) }
+    let (sealed, version) = try Folders.resealedVersion(B64.decode(rec.meta_enc), itemKey: key, itemId: it.id, to: folder, above: versions.highest(it.id))
+    let enc = B64.encode(sealed)
+    _ = try masterKey() // locked meanwhile: nothing more is sent
+    do {
+      try await api.json("PUT", "/api/items/\(it.id)/meta", body: ["meta_enc": enc, "base": base])
+    } catch let e as APIError where e.status == 400 {
+      // a server from before bases refuses the unknown field: written as before
+      try await api.json("PUT", "/api/items/\(it.id)/meta", body: ["meta_enc": enc])
+    }
+    versions.wrote(it.id, version, MetaHighWater.digest(enc))
+    versions.flush()
+    if folder == .locked { dropPictures(it.id) }
   }
 
   /** Removes an item's cached thumbnail and preview (ciphertext) from disk. */

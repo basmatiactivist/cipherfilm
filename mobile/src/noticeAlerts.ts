@@ -65,7 +65,7 @@ export function readSeen(v: unknown): Seen | null {
  */
 export function alertText(n: Notice): { title: string; text: string; publicTitle: string } {
   const title = n.kind === "sign_in" ? t("New sign-in") : n.kind === "2fa_reset" || n.kind === "2fa_off" ? t("Two-step sign-in turned off")
-    : isTwoStepChange(n.kind) ? t("Two-step sign-in changed") : t("Unfinished sign-in");
+    : isTwoStepChange(n.kind) ? t("Two-step sign-in changed") : n.kind === "recovery_key" ? t("New recovery key made") : t("Unfinished sign-in");
   const publicTitle = n.kind === "sign_in" ? t("New sign-in to Cipherfilm") : t("Security notice from Cipherfilm");
   return { title, text: noticeText(n), publicTitle };
 }

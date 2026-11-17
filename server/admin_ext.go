@@ -105,12 +105,14 @@ func forgetEmail(x interface {
 // audit records an administrative event: who did what to whom. Metadata only, never content.
 // selfService matches the entries people write about their own devices. They are kept, and shown, apart from the
 // administrative ones, so however many of them someone writes, they never push an admin's actions out of the log.
-const selfService = `action IN ('signed out a device','signed out other devices','signed out unused devices','turned on two-step sign-in','turned off two-step sign-in','made new recovery codes','added a passkey','removed a passkey','added an authenticator app','removed the authenticator app')`
+const selfService = `action IN ('signed out a device','signed out other devices','signed out unused devices','turned on two-step sign-in','turned off two-step sign-in','made new recovery codes','made a new recovery key','added a passkey','removed a passkey','added an authenticator app','removed the authenticator app')`
 
 func (a *App) audit(actor, action, target, detail string) {
 	a.db.Exec(`INSERT INTO audit_log(at,actor,action,target,detail) VALUES (?,?,?,?,?)`, a.now().Unix(), actor, action, target, detail)
 	for _, cond := range []string{selfService, "NOT " + selfService} {
-		a.db.Exec(`DELETE FROM audit_log WHERE `+cond+` AND id <= (SELECT MAX(id) FROM audit_log WHERE `+cond+`) - ?`, auditKeep)
+		// keep this part's newest auditKeep rows. Both parts share one id counter, so a distance in ids is not a row
+		// count: rows written to the other part must never move this part's cutoff.
+		a.db.Exec(`DELETE FROM audit_log WHERE `+cond+` AND id <= (SELECT id FROM audit_log WHERE `+cond+` ORDER BY id DESC LIMIT 1 OFFSET ?)`, auditKeep)
 	}
 }
 

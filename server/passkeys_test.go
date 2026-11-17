@@ -361,6 +361,39 @@ func TestPasskeyBelongsToItsName(t *testing.T) {
 	if name, origin, err := (&App{}).rpName(&http.Request{Host: "Photos.Test:8443"}); err != nil || name != "photos.test" || origin != "https://photos.test:8443" {
 		t.Fatalf("with a port: %q %q %v", name, origin, err)
 	}
+	// with PUBLIC_HOSTS, a port only as it gives it: the Host a client sends doesn't make another port's page this app's
+	v := "a.test, b.test:8443"
+	pub := &App{hosts: publicHosts(v), ports: publicPorts(v)}
+	for host, want := range map[string]string{"a.test": "https://a.test", "a.test:443": "https://a.test", "a.test:8443": "https://a.test",
+		"b.test": "https://b.test", "b.test:8443": "https://b.test:8443", "b.test:9443": "https://b.test"} {
+		if _, origin, err := pub.rpName(&http.Request{Host: host}); err != nil || origin != want {
+			t.Fatalf("%s: %q %v, want %q", host, origin, err, want)
+		}
+	}
+}
+
+// With PUBLIC_HOSTS set, a passkey's answer made for a page on another port of the server's name is refused, also when
+// the request names that port in its Host.
+func TestPasskeyAnswerFromAnotherPortIsRefused(t *testing.T) {
+	e := newEnv(t)
+	e.pinClock()
+	_, ab, k, _ := e.adminWithPasskey()
+	e.app.hosts = publicHosts(rpHost)
+	h := e.client()
+	h.host = rpHost + ":8443"
+	p := e.passwordStep(h, "admin@x.org", ab)
+	opts := e.passkeyChallenge(h, p)
+	k.origin = "https://" + rpHost + ":8443"
+	if r := h.post("/api/auth/login/2fa", map[string]any{"pending": p, "passkey": k.get(opts)}); r.code != 401 || r.body["code"] != "wrong_passkey" {
+		t.Fatalf("an answer for another port: %d %v", r.code, r.body)
+	}
+	// listed with its port, that origin is this app's
+	e.app.ports = publicPorts(rpHost + ":8443")
+	p = e.passwordStep(h, "admin@x.org", ab)
+	opts = e.passkeyChallenge(h, p)
+	if r := h.post("/api/auth/login/2fa", map[string]any{"pending": p, "passkey": k.get(opts)}); r.code != 200 {
+		t.Fatalf("an answer for the port PUBLIC_HOSTS gives: %d %v", r.code, r.body)
+	}
 }
 
 func TestPasskeyFromTheAndroidApp(t *testing.T) {
@@ -620,5 +653,110 @@ func TestRestoreKeepsLaterPasskeyChanges(t *testing.T) {
 	u, _ := app2.userByEmail("admin@x.org")
 	if l, err := app2.passkeysOf(u.ID, rpHost); err != nil || len(l) != 1 {
 		t.Fatalf("readable after the restore: %v %v", l, err)
+	}
+}
+
+// An account whose second steps are passkeys alone can make new recovery codes: the old ones stop working.
+func TestPasskeyOnlyAccountMakesNewRecoveryCodes(t *testing.T) {
+	e := newEnv(t)
+	e.pinClock()
+	admin, ab, k, codes := e.adminWithPasskey()
+	code, out := admin.do("POST", "/api/me/2fa/recovery-codes", map[string]any{"current_auth": ab["auth"], "code": codes[0]}, true)
+	if code != 200 || len(out["recovery_codes"].([]any)) != recoveryN {
+		t.Fatalf("new codes with a recovery code: %d %v", code, out)
+	}
+	fresh := out["recovery_codes"].([]any)
+	code, out = admin.do("POST", "/api/me/2fa/recovery-codes", map[string]any{"current_auth": ab["auth"], "passkey": e.proofPasskey(admin, k)}, true)
+	if code != 200 || len(out["recovery_codes"].([]any)) != recoveryN {
+		t.Fatalf("new codes with a passkey: %d %v", code, out)
+	}
+	// the first set and the one before it are gone
+	for _, old := range []string{codes[1], fresh[0].(string)} {
+		if code, _ := admin.do("POST", "/api/me/2fa/recovery-codes", map[string]any{"current_auth": ab["auth"], "code": old}, true); code != 403 {
+			t.Fatalf("an old recovery code still works: %d", code)
+		}
+	}
+}
+
+// An authenticator setup checked with a second step can't be finished once the last passkey was removed (two-step
+// sign-in went off with it): it would turn two-step sign-in on again with ten new recovery codes.
+func TestSetupCheckedUnderTwoStepEndsWithTheLastPasskey(t *testing.T) {
+	e := newEnv(t)
+	clk := e.pinClock()
+	admin, ab, k, codes := e.adminWithPasskey()
+	code, setup := admin.do("POST", "/api/me/2fa/setup", map[string]any{"current_auth": ab["auth"], "code": codes[0]}, true)
+	if code != 200 {
+		t.Fatalf("setup: %d %v", code, setup)
+	}
+	_, l := admin.do("GET", "/api/me/passkeys", nil, false)
+	id := l["passkeys"].([]any)[0].(map[string]any)["id"].(string)
+	if code, out := admin.do("DELETE", "/api/me/passkeys/"+id, map[string]any{"current_auth": ab["auth"], "passkey": e.proofPasskey(admin, k)}, true); code != 200 || out["two_factor"] != false {
+		t.Fatalf("remove the last passkey: %d %v", code, out)
+	}
+	if code, out := admin.do("POST", "/api/me/2fa/enable", map[string]any{"code": codeAt(t, setup["secret"].(string), clk.at)}, true); code != 409 {
+		t.Fatalf("a setup from before two-step sign-in went off was finished: %d %v", code, out)
+	}
+	// and one sealed as checked is refused while two-step sign-in is off, also if the pending setup were still stored
+	secret := randBytes(20)
+	e.app.db.Exec(`UPDATE users SET totp_pending=? WHERE email='admin@x.org'`, e.app.sealPending(mustUserID(e, "admin@x.org"), secret, true, clk.at))
+	if code, _ := admin.do("POST", "/api/me/2fa/enable", map[string]any{"code": hotp(secret, uint64(clk.at.Unix()/30))}, true); code != 409 {
+		t.Fatalf("a checked setup was finished while two-step sign-in is off: %d", code)
+	}
+	if _, st := admin.do("GET", "/api/me/2fa", nil, false); st["enabled"] != false {
+		t.Fatalf("two-step sign-in is on again: %v", st)
+	}
+}
+
+// A passkey being added while two-step sign-in was on can't be finished after the server console turned two-step
+// sign-in off (in a process of its own, so the running server's memory of the registration stays), nor after it was
+// turned off and on again meanwhile: the second step it was checked with is gone.
+func TestRegistrationEndsWithTheSecondStepItWasCheckedWith(t *testing.T) {
+	for _, after := range []string{"off", "off-and-on"} {
+		e := newEnv(t)
+		clk := e.pinClock()
+		admin := e.hostClient()
+		ab := with(bundle(), "setup_token", e.knownSetupToken(), "email", "admin@x.org")
+		if code, out := admin.do("POST", "/api/setup", ab, false); code != 201 {
+			t.Fatalf("setup: %d %v", code, out)
+		}
+		secret, _ := e.enable2FA(admin, ab)
+		clk.tick(30 * time.Second)
+		code, begin := admin.do("POST", "/api/me/passkeys/register/begin", map[string]any{"current_auth": ab["auth"], "code": codeAt(t, secret, clk.at)}, true)
+		if code != 200 {
+			t.Fatalf("begin: %d %v", code, begin)
+		}
+		if out, err := e.cli("reset-2fa", "admin@x.org"); err != nil {
+			t.Fatalf("reset-2fa: %v %q", err, out)
+		}
+		if after == "off-and-on" {
+			clk.tick(30 * time.Second)
+			e.enable2FA(admin, ab)
+		}
+		k := newSoftKey(t)
+		code, out := admin.do("POST", "/api/me/passkeys/register/finish", map[string]any{"credential": k.create(begin["options"].(map[string]any))}, true)
+		if code != 409 || out["code"] != "passkey_expired" {
+			t.Fatalf("%s: finished: %d %v", after, code, out)
+		}
+		if _, st := admin.do("GET", "/api/me/2fa", nil, false); st["passkeys"] != float64(0) || st["enabled"] != (after == "off-and-on") {
+			t.Fatalf("%s: status: %v", after, st)
+		}
+	}
+
+	// a registration begun while on, with the second step still there, is finished (also when another one went meanwhile)
+	e := newEnv(t)
+	e.pinClock()
+	admin, ab, k, codes := e.adminWithPasskey()
+	e.addPasskey(admin, ab, newSoftKey(t), "code", codes[0])
+	code, begin := admin.do("POST", "/api/me/passkeys/register/begin", map[string]any{"current_auth": ab["auth"], "code": codes[1]}, true)
+	if code != 200 {
+		t.Fatalf("begin: %d %v", code, begin)
+	}
+	_, l := admin.do("GET", "/api/me/passkeys", nil, false)
+	id := l["passkeys"].([]any)[0].(map[string]any)["id"].(string)
+	if code, out := admin.do("DELETE", "/api/me/passkeys/"+id, map[string]any{"current_auth": ab["auth"], "passkey": e.proofPasskey(admin, k)}, true); code != 200 || out["two_factor"] != true {
+		t.Fatalf("remove one: %d %v", code, out)
+	}
+	if code, out := admin.do("POST", "/api/me/passkeys/register/finish", map[string]any{"credential": newSoftKey(t).create(begin["options"].(map[string]any))}, true); code != 200 {
+		t.Fatalf("finish: %d %v", code, out)
 	}
 }

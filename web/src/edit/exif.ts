@@ -131,7 +131,8 @@ const keepSegment = (jpeg: Uint8Array, o: number, marker: number) => {
   if (marker === 0xfe) return false; // a comment
   if (marker < 0xe0 || marker > 0xef) return true;
   const id = String.fromCharCode(...jpeg.subarray(o + 4, o + 15));
-  return marker === 0xe0 || marker === 0xee || (marker === 0xe2 && id === "ICC_PROFILE");
+  // APP0 only as JFIF (a JFXX extension can hold a whole second picture), Adobe's colour block, the ICC profile
+  return (marker === 0xe0 && id.startsWith("JFIF\0")) || marker === 0xee || (marker === 0xe2 && id === "ICC_PROFILE");
 };
 
 /**

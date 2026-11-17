@@ -166,6 +166,8 @@ func (a *App) adminPatchUser(w http.ResponseWriter, r *http.Request, u *user, s 
 			// its devices learn they were signed out on purpose and delete what they keep
 			a.remember(`user_id=?`, id)
 			a.db.Exec(`DELETE FROM sessions WHERE user_id=?`, id)
+			// and its open invites go: enabling the account again must not bring them back
+			a.dropInvitesOf(id, `1`)
 			a.revokeTickets(id)
 			a.live.recheck(id)
 		}
@@ -187,6 +189,9 @@ func (a *App) adminPatchUser(w http.ResponseWriter, r *http.Request, u *user, s 
 		if rowsAffected(res, err) != 1 {
 			fail(w, http.StatusConflict, "at least one active administrator must remain")
 			return
+		}
+		if *req.Role == "user" {
+			a.dropInvitesOf(id, `1`) // no longer an administrator: making it one again must not bring its invites back
 		}
 		a.audit(u.Email, "role changed", target.Email, *req.Role)
 	}
@@ -210,11 +215,17 @@ func (a *App) adminDeleteUser(w http.ResponseWriter, r *http.Request, u *user, s
 		return
 	}
 	ids := a.itemIDs(id)
+	// its devices learn they were signed out on purpose and delete what they keep (as when it is disabled); kept only
+	// once the account is really gone
+	all := a.toRevoke(`user_id=?`, id)
 	res, err := a.db.Exec(`DELETE FROM users WHERE id=? AND `+keepsAdmin, id)
 	if rowsAffected(res, err) != 1 {
 		fail(w, http.StatusConflict, "at least one active administrator must remain")
 		return
 	}
+	a.revokeLater(all)
+	a.revokeTickets(id)
+	a.pending.dropUser(id, a.now())
 	for _, it := range ids {
 		a.removeBlobs(it)
 	}

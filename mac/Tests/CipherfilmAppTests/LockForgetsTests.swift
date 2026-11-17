@@ -37,6 +37,40 @@ import Testing
   }
 }
 
+/** Work that was in flight at a lock or sign-out keeps nothing and writes nothing back afterwards. */
+@MainActor @Suite(.serialized) struct LateWorkTests {
+  private func item(_ id: String) -> Item {
+    Item(id: id, kind: .image, size: 1, segmentCount: 1, createdAt: 1, hasThumb: true, hasPreview: true, favorite: false, trashedAt: nil, purgeAt: nil,
+         meta: ItemMeta(name: "a.jpg", mime: "image/jpeg", size: 1, lastModified: 0, capture_ts: 0, gps: GPS(lat: 47.4, lon: 8.5)), itemKey: nil, broken: false)
+  }
+
+  @Test func tripsWorkedOutBeforeALockAreDropped() async {
+    let book = TripBook()
+    let g = book.generation
+    let t = Task { await book.update([item("0123456789abcdef0123456789abcdef")]) }
+    while book.generation == g { await Task.yield() } // the update is waiting for its result
+    book.forget()
+    await t.value
+    #expect(book.trips == nil)
+  }
+
+  @Test func aClosedVaultWritesNoCache() throws {
+    let uid = String(format: "%032x", UInt64.random(in: 1...UInt64.max))
+    let json = #"{"user":{"id":"\#(uid)","email":"a@x.org","role":"user"},"csrf":"c","kdf":{"alg":"argon2id13","v":1,"ops":3,"mem":67108864,"salt":"AAAAAAAAAAAAAAAAAAAAAA"},"wrapped_master_pw":"x","wrapped_privkey":"x","pubkey":"x"}"#
+    let me = try JSONDecoder().decode(Me.self, from: Data(json.utf8))
+    let v = Vault(api: API(base: URL(string: "https://127.0.0.1:9")!), me: me, masterKey: Data(repeating: 1, count: 32))
+    let dir = try #require(v.cacheDir)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    v.close()
+    v.keep("thumb-x", Data([1]))
+    IndexCache(since: 1, entries: ["a": "b"]).write(v, "clip")
+    #expect(!FileManager.default.fileExists(atPath: dir.path))
+    // the account's small files: only while its folder is there
+    AccountFile<[String]>(userId: uid, name: "late.json").writeIfPresent(["x"])
+    #expect(!FileManager.default.fileExists(atPath: Paths.account(uid).path))
+  }
+}
+
 /** A photo's small map loads only for the photo the person asked it for, not because the details column is open. */
 @Suite struct MiniMapGateTests {
   @Test func onlyAfterShowMapForThatPhoto() {

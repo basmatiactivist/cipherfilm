@@ -1,8 +1,10 @@
 // Archive and locked folder (docs/EDITING.md, "Archive and locked folder"): the Mac's copy of web/src/edit/folders.ts,
 // with tests on the same cases (FoldersTests). Which folder an item is in is written INSIDE its encrypted metadata
 // (`archived: true` or `locked: true`, through PUT /api/items/{id}/meta with the metadata version raised, as for every
-// other change), so the server never learns which items are archived or locked: it sees only that an item's metadata
-// changed.
+// other change), so the server is never told which items are archived or locked: it sees that an item's metadata
+// changed, and which thumbnails, previews and originals this Mac fetches. From those requests (opening the locked
+// folder or an item in it, scrolling, what is fetched again after a restart, a trash followed at once by a purge) it
+// can infer much of which items are locked, never what they show (docs/THREAT_MODEL.md, Archive and locked folder).
 //
 //   library  the main grid, On this day, search, albums, people, map, duplicates
 //   archive  out of the main grid and On this day; still in search, albums, people, the map and favorites
@@ -69,20 +71,32 @@ public enum Folders {
   // ---- the change ----
 
   /** The decrypted metadata JSON as the move writes it: read as a plain dictionary (never through ItemMeta, which
-   *  knows only some fields), moved, the version raised. */
-  public static func movedJSON(_ plain: Data, to: Folder) throws -> Data {
+   *  knows only some fields), moved, the version raised (above `above` too: the highest version seen of the item). */
+  public static func movedJSON(_ plain: Data, to: Folder, above: Int = 0) throws -> Data {
+    try moved(plain, to: to, above: above).json
+  }
+
+  private static func moved(_ plain: Data, to: Folder, above: Int) throws -> (json: Data, version: Int) {
     guard let meta = try JSONSerialization.jsonObject(with: plain) as? [String: Any] else { throw CryptoError.failed("bad metadata") }
-    return try JSONSerialization.data(withJSONObject: nextVersion(withFolder(meta, to)), options: [.withoutEscapingSlashes])
+    var m = withFolder(meta, to)
+    let v = max(metaVersion(meta), above) + 1
+    m["mv"] = v
+    return (try JSONSerialization.data(withJSONObject: m, options: [.withoutEscapingSlashes]), v)
   }
 
   /** The item's sealed metadata (meta_enc, as the server has it) moved to `to`, sealed again: what PUT
    *  /api/items/{id}/meta takes. Padded to 256 bytes like every metadata (Crypto.encryptMeta). */
   public static func resealed(_ metaEnc: Data, itemKey: Data, itemId: String, to: Folder) throws -> Data {
+    try resealedVersion(metaEnc, itemKey: itemKey, itemId: itemId, to: to).sealed
+  }
+
+  /** resealed(), with the version it was written as. */
+  public static func resealedVersion(_ metaEnc: Data, itemKey: Data, itemId: String, to: Folder, above: Int = 0) throws -> (sealed: Data, version: Int) {
     var plain = try Crypto.decryptMeta(metaEnc, itemKey: itemKey, itemId: itemId)
     defer { Sodium.memzero(&plain) }
-    var next = try movedJSON(plain, to: to)
+    var (next, v) = try moved(plain, to: to, above: above)
     defer { Sodium.memzero(&next) }
-    return Crypto.encryptMeta(next, itemKey: itemKey, itemId: itemId)
+    return (Crypto.encryptMeta(next, itemKey: itemKey, itemId: itemId), v)
   }
 
   // ---- decrypted items ----
@@ -119,7 +133,10 @@ public struct JSONTrue: Codable, Sendable, Hashable {
 }
 
 public extension Item {
-  var isLocked: Bool { meta?.locked?.value == true }
+  /** In the locked folder, or handled as if: a stale item (its metadata is an older copy than this Mac has seen, so which
+   *  folder it is really in isn't known) is shown in no open view, nothing of it is kept on disk, and nothing writes
+   *  its metadata, until a copy at least as new as the one seen arrives. */
+  var isLocked: Bool { stale || meta?.locked?.value == true }
   var isArchived: Bool { meta?.archived?.value == true && !isLocked }
   var folder: Folder { isLocked ? .locked : isArchived ? .archive : .library }
 }

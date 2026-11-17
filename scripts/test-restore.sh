@@ -1,5 +1,5 @@
 #!/bin/sh
-# Offline checks of scripts/restore.sh and deploy/demo/reset.sh (make restore-test): no Docker, no network. A stand-in
+# Offline checks of scripts/restore.sh, deploy/demo/reset.sh and deploy/mac-local/fotocrypt.sh's restore (make restore-test): no Docker, no network. A stand-in
 # `docker` on PATH runs the scripts' container steps on a local folder as the data volume, and plays the app's
 # after-restore step (FAKE_AFTER_RESTORE=fail makes it fail). Checks that a failed after-restore leaves the restore
 # marked as pending, and that neither a second restore nor the demo reset then drops .previous/ (the live data).
@@ -86,4 +86,26 @@ deploy/demo/reset.sh "$WORK/seed.tar" > "$WORK/out" 2>&1 || { cat "$WORK/out"; f
 [ ! -e "$WORK/vol/.previous" ] || fail "demo reset kept .previous"
 [ "$(cat "$WORK/vol/app.db")" = backup-db ] || fail "demo reset did not restore"
 echo "ok   demo reset"
+
+# 6.-8. the Mac-local restore (deploy/mac-local/fotocrypt.sh) marks the restore as pending the same way; it works on
+# ./data next to the script, so a copy of it runs in a folder of its own here
+mkdir -p "$WORK/mac"
+cp deploy/mac-local/fotocrypt.sh "$WORK/mac/"
+export FAKE_VOLUME="$WORK/mac/data"
+maclive() { rm -rf "$WORK/mac/data" "$WORK/mac"/data.vorher-*; mkdir -p "$WORK/mac/data/blobs"; echo "$1" > "$WORK/mac/data/app.db"; echo live-secret > "$WORK/mac/data/secret"; }
+maclive live-3
+"$WORK/mac/fotocrypt.sh" restore "$WORK/seed.tar" --yes > "$WORK/out" 2>&1 || { cat "$WORK/out"; fail "fotocrypt restore"; }
+[ "$(cat "$WORK/mac/data/app.db")" = backup-db ] || fail "fotocrypt: backup not in place"
+[ ! -e "$WORK/mac/data/.restore-pending" ] && [ ! -e "$WORK/mac/data/.previous" ] || fail "fotocrypt: mark or .previous left after a good restore"
+[ "$(cat "$WORK"/mac/data.vorher-*/app.db)" = live-3 ] || fail "fotocrypt: replaced data not kept"
+echo "ok   fotocrypt restore"
+maclive live-4
+if FAKE_AFTER_RESTORE=fail "$WORK/mac/fotocrypt.sh" restore "$WORK/seed.tar" --yes > "$WORK/out" 2>&1; then fail "fotocrypt: a failed after-restore went unnoticed"; fi
+[ -e "$WORK/mac/data/.restore-pending" ] || fail "fotocrypt: no mark after a failed after-restore"
+[ "$(cat "$WORK/mac/data/.previous/app.db")" = live-4 ] || fail "fotocrypt: live data not in .previous"
+echo "ok   fotocrypt: failed after-restore leaves the mark"
+if "$WORK/mac/fotocrypt.sh" restore "$WORK/seed.tar" --yes > "$WORK/out" 2>&1; then fail "fotocrypt: second restore ran over a pending one"; fi
+grep -q "nicht fertig" "$WORK/out" || { cat "$WORK/out"; fail "fotocrypt: no reason given"; }
+[ "$(cat "$WORK/mac/data/.previous/app.db")" = live-4 ] || fail "fotocrypt: second restore dropped the live data"
+echo "ok   fotocrypt: rerun refuses"
 echo "restore-test: all passed"

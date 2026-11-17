@@ -214,6 +214,14 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer release()
+	} else {
+		// at most sourceInFlight at once from one source, right or wrong (sign-ins and recoveries together)
+		release, ok := a.sourceTurn(ip)
+		if !ok {
+			failBusy(w)
+			return
+		}
+		defer release()
 	}
 	at, ok := reserve(slots...)
 	if !ok {
@@ -260,8 +268,8 @@ func failBusy(w http.ResponseWriter) {
 }
 
 func (a *App) logout(w http.ResponseWriter, r *http.Request, u *user, s *session) {
-	a.db.Exec(`DELETE FROM sessions WHERE id_hash=?`, s.IDHash)
-	a.live.recheck(u.ID) // its live-update streams end too
+	a.deleteSessions(`id_hash=?`, s.IDHash) // and the invites made from it
+	a.live.recheck(u.ID)                    // its live-update streams end too
 	clearCookie(w)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
@@ -288,12 +296,12 @@ func (a *App) changePassword(w http.ResponseWriter, r *http.Request, u *user, s 
 	if !readJSON(w, r, &req) {
 		return
 	}
-	at, ok := reserve(slot{a.loginAcct, "pwchange|" + u.ID, true})
+	at, ok := reserve(slot{a.loginAcct, "pwchange|" + s.IDHash, true})
 	if !ok {
 		fail(w, 429, "too many attempts, try later")
 		return
 	}
-	if !a.proofOK(w, r, u, at, req.CurrentAuth) {
+	if !a.proofOK(w, r, u, s, at, req.CurrentAuth) {
 		return
 	}
 	if req.NewKDF.validate() != nil || checkLen(req.NewAuth, 32) != nil || checkLen(req.NewWrappedMasterPW, wrappedLen) != nil {
@@ -367,12 +375,12 @@ func (a *App) deleteMe(w http.ResponseWriter, r *http.Request, u *user, s *sessi
 	if !readJSON(w, r, &req) {
 		return
 	}
-	at, ok := reserve(slot{a.loginAcct, "delete|" + u.ID, true})
+	at, ok := reserve(slot{a.loginAcct, "delete|" + s.IDHash, true})
 	if !ok {
 		fail(w, 429, "too many attempts, try later")
 		return
 	}
-	if !a.proofOK(w, r, u, at, req.CurrentAuth) {
+	if !a.proofOK(w, r, u, s, at, req.CurrentAuth) {
 		return
 	}
 	// with the admin changes: an admin deleting or demoting the other one at the same moment must not leave none
@@ -457,12 +465,12 @@ func (a *App) newRecoveryKey(w http.ResponseWriter, r *http.Request, u *user, s 
 	if !readJSON(w, r, &req) {
 		return
 	}
-	at, ok := reserve(slot{a.loginAcct, "newreckey|" + u.ID, true})
+	at, ok := reserve(slot{a.loginAcct, "newreckey|" + s.IDHash, true})
 	if !ok {
 		fail(w, 429, "too many attempts, try later")
 		return
 	}
-	if !a.proofOK(w, r, u, at, req.CurrentAuth) {
+	if !a.proofOK(w, r, u, s, at, req.CurrentAuth) {
 		return
 	}
 	if checkLen(req.WrappedMasterRecovery, wrappedLen) != nil || checkLen(req.RecoveryVerifier, 32) != nil {
@@ -491,6 +499,10 @@ func (a *App) newRecoveryKey(w http.ResponseWriter, r *http.Request, u *user, s 
 	}
 	at.success()
 	a.revokeTickets(u.ID)
+	// the account's other devices are told, and it is in the activity log: the old key no longer works, and a new one
+	// made by someone else would outlast a password change
+	a.audit(u.Email, "made a new recovery key", u.Email, "")
+	a.factorNotice(u, s, r, noticeRecoveryKey)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
@@ -538,6 +550,14 @@ func (a *App) recoverStart(w http.ResponseWriter, r *http.Request) {
 		// like login: a browser that signed in before is limited per account, not per source
 		slots = []slot{{a.loginDev, "recover|" + u.ID, true}}
 		release, ok := a.knownTurn(u.ID)
+		if !ok {
+			failBusy(w)
+			return
+		}
+		defer release()
+	} else {
+		// at most sourceInFlight at once from one source, right or wrong (sign-ins and recoveries together)
+		release, ok := a.sourceTurn(ip)
 		if !ok {
 			failBusy(w)
 			return
@@ -646,9 +666,12 @@ func (a *App) recoverFinish(w http.ResponseWriter, r *http.Request) {
 // ---- invites ----
 
 // inviteCreatorOK is the condition (on invites) that an invite's creator may still invite: the server console, or an
-// administrator who is still one and active. An invite of someone demoted, disabled or deleted since stops working.
-const inviteCreatorOK = `(invites.created_by='` + consoleActor + `' OR EXISTS (SELECT 1 FROM users c WHERE c.id=invites.created_by
-	AND c.role='admin' AND c.status='active'))`
+// administrator who is still one and active, from a session that still exists. An invite of someone demoted, disabled
+// or deleted since stops working, and so does one whose session has ended (the paths that end a session also delete
+// its invites; this holds should one of them be missed).
+const inviteCreatorOK = `(invites.created_by='` + consoleActor + `' OR (EXISTS (SELECT 1 FROM users c WHERE c.id=invites.created_by
+	AND c.role='admin' AND c.status='active') AND (invites.created_session='' OR EXISTS (SELECT 1 FROM sessions cs
+	WHERE cs.pub=invites.created_session AND cs.user_id=invites.created_by))))`
 
 // dropInvitesOf deletes the open invites an account made from the sessions where selects (a fixed condition on
 // invites, values in args): sessions that were just signed out, by the person or by a password change or recovery,

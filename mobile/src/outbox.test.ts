@@ -39,7 +39,7 @@ vi.mock("./api", () => ({
 vi.mock("@crypto/sodium", () => ({ getSodium: async () => ({ to_hex: () => "ab", randombytes_buf: () => new Uint8Array(16) }) }));
 vi.mock("@crypto/file", () => ({ decryptSegment: () => new Uint8Array(4) }));
 const wipes = vi.hoisted(() => [] as ((how: string) => void)[]);
-vi.mock("./session", () => ({ onWipe: (f: (how: string) => void) => { wipes.push(f); }, session: () => ({ masterKey: new Uint8Array(32) }) }));
+vi.mock("./session", () => ({ onOwnSignOut: () => {}, onWipe: (f: (how: string) => void) => { wipes.push(f); }, session: () => ({ masterKey: new Uint8Array(32) }) }));
 vi.mock("./autolock", () => ({ away: (f: () => Promise<unknown>) => f() }));
 // an edited photo leaves as the edited copy (edit.ts, a stand-in here): written like the others, as a JPEG
 vi.mock("./edit", () => ({
@@ -129,6 +129,22 @@ describe("photos whose place or date changed", () => {
     expect(native.shared[0]).toMatch(/c\.jpg \(retagged\)$/);
     expect(native.shared[1]).toMatch(/d \(edited\)\.jpg$/); // another format: drawn anew with the metadata as set
   });
+
+  it("over the edit limit are refused by default, never handed out as the original instead", async () => {
+    const { saveItems, prepareShare, leaving } = await import("./outbox");
+    const big = (id: string, extra: object = {}) => ({ ...(placeRemoved(id) as object), size: 210 * 1024 * 1024, ...extra }) as never;
+    const stale = { ...(item("s") as object), size: 250 * 1024 * 1024, stale: true } as never;
+    expect(leaving(big("a"))).toBe("retag");
+    expect(leaving(stale)).toBe("retag");
+    native.saved = []; native.shared = [];
+    await expect(saveItems([big("a")], () => {})).rejects.toThrow(/too large/);
+    await expect(prepareShare([stale], () => {})).rejects.toThrow(/too large/);
+    expect(native.saved).toEqual([]);
+    expect(native.shared).toEqual([]);
+    // asked for explicitly, the original leaves as it is
+    expect(leaving(big("a"), true)).toBe("original");
+
+  });
 });
 
 describe("share", () => {
@@ -169,5 +185,17 @@ describe("share", () => {
     await prepareShare([item("a")], () => {});
     tidyOutbox();
     expect(disk.size).toBe(0);
+  });
+});
+
+describe("file names handed to other apps", () => {
+  it("carry no path parts, control characters or text-direction marks", async () => {
+    const { safeName } = await import("./outbox");
+    const used = new Set<string>();
+    // "photo‮gpj.exe" would show as "photoexe.jpg" in the receiving app
+    expect(safeName("photo‮gpj.exe", "abcdef0123", used)).toBe("photo_gpj.exe");
+    expect(safeName("a⁦b⁩‏.jpg", "abcdef0123", used)).toBe("a_b__.jpg");
+    expect(safeName("../x/y.jpg", "abcdef0123", used)).toBe("_x_y.jpg");
+    expect(safeName("", "abcdef0123", used)).toBe("photo-abcdef01");
   });
 });

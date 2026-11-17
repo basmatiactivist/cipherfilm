@@ -45,7 +45,7 @@ Merged permissions (app plus libraries):
 | `USE_BIOMETRIC`, `USE_FINGERPRINT` | expo-local-authentication | no |
 | `VIBRATE` | app | no |
 | `READ_EXTERNAL_STORAGE` with `maxSdkVersion="32"` | `plugins/withStoragePermission.js` | no (Android 7–12 only) |
-| Removed: `WRITE_EXTERNAL_STORAGE`, `RECORD_AUDIO`, `SYSTEM_ALERT_WINDOW`, ONNX Runtime telemetry provider | blockedPermissions / `tools:node="remove"` | n/a |
+| Removed: `WRITE_EXTERNAL_STORAGE`, `RECORD_AUDIO`, `SYSTEM_ALERT_WINDOW`, `ACCESS_FINE_LOCATION` and `ACCESS_COARSE_LOCATION` (from the map library), ONNX Runtime telemetry provider | blockedPermissions / `tools:node="remove"` | n/a |
 | Not present (good): location, `MANAGE_MEDIA`, `SCHEDULE_EXACT_ALARM`/`USE_EXACT_ALARM`, `USE_FULL_SCREEN_INTENT`, `com.google.android.gms.permission.AD_ID`, `QUERY_ALL_PACKAGES` | | |
 
 > **Done (2.1.0):** restored with `maxSdkVersion="32"`. Original note: `READ_EXTERNAL_STORAGE` was removed completely, but minSdk is 24. On Android 7–12 the app then has no permission to read the photo library, so backup can't work there. Either restore it with `android:maxSdkVersion="32"` (this is what Immich and Ente do) or raise minSdk to 33. Play's photo policy applies only to `READ_MEDIA_*`, so `READ_EXTERNAL_STORAGE` with maxSdk 32 doesn't add another declaration.
@@ -274,7 +274,10 @@ Sources: [App access](https://support.google.com/googleplay/android-developer/an
     user, and `reviewer2@<domain>`, an administrator, so a reviewer can see the admin area (Account › Administration).
     The public read-only login `demo@<domain>` (`DEMO_ACCOUNTS`) stays as it is: the server refuses every admin change
     to a `DEMO_ACCOUNTS` account (delete, disable, promote, storage limit, two-step reset; `server/handlers_admin.go`
-    `adminGuard`), so the administrator reviewer can't touch it (deploy/demo/README.md);
+    `adminGuard`), so the administrator reviewer can't touch it (deploy/demo/README.md). `reviewer2@` is a full
+    administrator: keep no account of your own on the demo (run it with the server commands), give its password only
+    where an administrator is really needed, and let the daily reset put both reviewer accounts' roles back
+    (`DEMO_ADMINS`, `DEMO_USERS`; deploy/demo/README.md, "Reviewer accounts");
   - about 30 pre-loaded neutral demo photos and videos (own or CC0, no identifiable private people), plus one album;
   - **explicit search not allowed** for the reviewer accounts (the Play build doesn't offer it anyway, and its admin
     area hides the "Allow explicit search" switch; the models come from Hugging Face, not the server), small quota (e.g. 2 GB);

@@ -29,7 +29,7 @@ const token = decodeURIComponent(m[1]);
 const api = `${url.origin}/api/invites/${encodeURIComponent(token)}`;
 
 async function call(method: string, path: string, body?: unknown) {
-  const res = await fetch(path, { method, headers: body ? { "Content-Type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
+  const res = await fetch(path, { method, redirect: "error", headers: body ? { "Content-Type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     console.error(`${method} ${new URL(path).pathname.replace(encodeURIComponent(token), "…")}: HTTP ${res.status} ${data.error ?? ""}`.trim());
@@ -52,7 +52,7 @@ const acc = await createAccount(s, email, password);
 const { data: me, cookie } = await call("POST", `${api}/accept`, acc.bundle);
 s.memzero(acc.masterKey);
 // the sign-in that comes with accepting is of no use here: end it, so it doesn't stay in the account's device list
-await fetch(`${url.origin}/api/auth/logout`, { method: "POST", headers: { Cookie: cookie, "X-CSRF-Token": me.csrf } }).catch(() => {});
+await fetch(`${url.origin}/api/auth/logout`, { method: "POST", redirect: "error", headers: { Cookie: cookie, "X-CSRF-Token": me.csrf } }).catch(() => {});
 
 console.error(`account created: ${email} on ${url.origin}. Its recovery words (keep them safe; the only way back if the password is lost):`);
 console.log(acc.recoveryWords.join(" "));

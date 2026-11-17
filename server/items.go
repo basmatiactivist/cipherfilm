@@ -2,7 +2,10 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"hash/fnv"
@@ -294,7 +297,7 @@ func (a *App) createItem(w http.ResponseWriter, r *http.Request, u *user, s *ses
 		fail(w, 400, "invalid request")
 		return
 	}
-	if left, unlimited := a.quotaLeft(u.ID); !unlimited && left < cipherLen(req.Size) {
+	if a.roomLeft(u.ID) < cipherLen(req.Size) { // what in-flight uploads have reserved counts too
 		fail(w, 413, "this would go over your storage limit")
 		return
 	}
@@ -481,16 +484,27 @@ func (a *App) replaceAux(name string, max int64, col string) func(http.ResponseW
 			fail(w, 409, "this upload isn't finished")
 			return
 		}
-		// Room is reserved before a byte reaches the disk: the most the new picture can add over the one it replaces.
-		// Someone near their limit can still replace a picture with one that fits in the old one's disk blocks plus
-		// what room is left; that body is held in memory, and written only after its growth has been reserved below.
+		// Room is reserved before a byte reaches the disk: the whole body, as it is staged next to the picture it
+		// replaces until it takes its place (and so also whatever the new picture adds). Someone near their limit can
+		// still replace a picture with one that fits in the old one's disk blocks plus what room is left; that body is
+		// held in memory and written only after its growth has been reserved below, one such replacement per account
+		// at a time, so neither memory nor unreserved disk grows with the number of requests.
 		pre, err := a.auxBytes(it.ID, u.ID, name, bytesCol)
 		if err != nil {
 			fail(w, 404, "not found")
 			return
 		}
-		reservedAmt := max + blockSlack(max) - pre - blockSlack(pre)
+		reservedAmt := max + blockSlack(max)
 		release, ok := a.reserveBytes(u.ID, reservedAmt)
+		if !ok {
+			done, free := atLimitTurn(r.Context(), u.ID)
+			if !free {
+				w.Header().Set("Connection", "close") // answer now, without reading the body that was not wanted
+				fail(w, 429, "another replacement is still in progress")
+				return
+			}
+			defer done()
+		}
 		bodyDeadline(w, uploadReadTime)
 		r.Body = http.MaxBytesReader(w, r.Body, max+1)
 		valid := func(n int64) bool { return n >= 1+24+16 && n <= max }
@@ -563,6 +577,27 @@ func (a *App) replaceAux(name string, max int64, col string) func(http.ResponseW
 		a.changed(u.ID, tItems)
 		writeJSON(w, 200, map[string]bool{"ok": true})
 	}
+}
+
+// atLimitTurns: per account, the one replacement at a time whose body is held in memory because there wasn't room to
+// reserve it (replaceAux).
+var atLimitTurns sync.Map // user id -> chan struct{} (capacity 1)
+
+// atLimitWait is how long a second such replacement waits for the first before it is turned away.
+var atLimitWait = 15 * time.Second
+
+func atLimitTurn(ctx context.Context, userID string) (done func(), ok bool) {
+	v, _ := atLimitTurns.LoadOrStore(userID, make(chan struct{}, 1))
+	turn := v.(chan struct{})
+	t := time.NewTimer(atLimitWait)
+	defer t.Stop()
+	select {
+	case turn <- struct{}{}:
+		return func() { <-turn }, true
+	case <-ctx.Done():
+	case <-t.C:
+	}
+	return nil, false
 }
 
 // segmentsOnDisk checks every segment file of an upload before it is marked ready: a row says a part arrived, the file
@@ -651,19 +686,28 @@ func (a *App) finalizeItem(w http.ResponseWriter, r *http.Request, u *user, s *s
 // putMeta replaces a finished item's encrypted metadata: an app adds what it could only read later, such as where a
 // photo was taken (docs/MAP.md). The server can't read it, as at finalize; the change reaches the other devices like
 // any other (items_rev_upd). Its size counts toward the storage limit like the rest of the item.
+//
+// base names the metadata the change was made from: the SHA-256 (hex) of the meta_enc the app decrypted. When the
+// item's metadata is no longer that one (another device changed it meanwhile), the change is refused with 409 and
+// the app loads the item again, instead of writing over a change it never saw. Apps from before send no base.
 func (a *App) putMeta(w http.ResponseWriter, r *http.Request, u *user, s *session) {
 	it, ok := a.owned(w, r, u)
 	if !ok {
 		return
 	}
 	var req struct {
-		MetaEnc string `json:"meta_enc"`
+		MetaEnc string  `json:"meta_enc"`
+		Base    *string `json:"base"`
 	}
 	if !readJSON(w, r, &req) {
 		return
 	}
 	meta, err := b64.DecodeString(req.MetaEnc)
 	if err != nil || len(meta) < 1+24+16 || len(meta) > maxMetaBytes {
+		fail(w, 400, "invalid request")
+		return
+	}
+	if req.Base != nil && !sha256Hex.MatchString(*req.Base) {
 		fail(w, 400, "invalid request")
 		return
 	}
@@ -676,6 +720,10 @@ func (a *App) putMeta(w http.ResponseWriter, r *http.Request, u *user, s *sessio
 		fail(w, 404, "not found")
 		return
 	}
+	if req.Base != nil && metaDigest(old) != *req.Base {
+		fail(w, 409, "the item changed meanwhile")
+		return
+	}
 	grow := int64(len(req.MetaEnc) - len(old))
 	release, ok := a.reserveBytes(u.ID, grow)
 	if !ok {
@@ -683,7 +731,8 @@ func (a *App) putMeta(w http.ResponseWriter, r *http.Request, u *user, s *sessio
 		return
 	}
 	defer release()
-	res, err := a.db.Exec(`UPDATE items SET meta_enc=?, stored_bytes=stored_bytes+? WHERE id=? AND user_id=? AND state='ready' AND COALESCE(meta_enc,'')=?`,
+	// never below 0: an item finished by a server before 2.0 has no metadata charge in stored_bytes to give back
+	res, err := a.db.Exec(`UPDATE items SET meta_enc=?, stored_bytes=MAX(0, stored_bytes+?) WHERE id=? AND user_id=? AND state='ready' AND COALESCE(meta_enc,'')=?`,
 		req.MetaEnc, grow, it.ID, u.ID, old)
 	if rowsAffected(res, err) != 1 {
 		fail(w, 409, "the item changed meanwhile")
@@ -693,9 +742,21 @@ func (a *App) putMeta(w http.ResponseWriter, r *http.Request, u *user, s *sessio
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
+// sha256Hex is a SHA-256 in lowercase hex, as apps send the base of a metadata change.
+var sha256Hex = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// metaDigest is how apps name a stored metadata: the SHA-256 (hex) of its meta_enc as listed.
+func metaDigest(metaEnc string) string {
+	d := sha256.Sum256([]byte(metaEnc))
+	return hex.EncodeToString(d[:])
+}
+
 // listPage and pageBytes bound one list response, in rows and in the bytes of their encrypted fields: a library is
 // fetched page by page (?after=<next of the previous page>), so its size never decides how much memory one request
 // takes. listPerUser bounds how many pages of one account are built and sent at a time; more wait their turn.
+// listsInAll bounds the pages of all accounts that read the database at a time: fewer than its pooled connections
+// (store.go, SetMaxOpenConns(4)), so list pages, however many and however large the libraries, always leave one for
+// everything else, starting with each request's session lookup. A page gives its place up when it starts sending.
 var (
 	// vars for the tests of paging
 	listPage  = 2000
@@ -703,7 +764,7 @@ var (
 )
 
 const (
-	listPerUser   = 4
+	listPerUser   = 2
 	listWriteTime = 5 * time.Minute
 )
 
@@ -730,12 +791,43 @@ func (a *App) listing(h func(http.ResponseWriter, *http.Request, *user, *session
 		case turn <- struct{}{}:
 			defer func() { <-turn }()
 		case <-r.Context().Done():
+			fail(w, 503, "busy, try again")
 			return
 		}
+		select {
+		case listsInAll <- struct{}{}:
+		case <-r.Context().Done():
+			fail(w, 503, "busy, try again")
+			return
+		}
+		var once sync.Once
+		free := func() { once.Do(func() { <-listsInAll }) }
+		defer free()
 		http.NewResponseController(w).SetWriteDeadline(time.Now().Add(listWriteTime))
-		h(w, r, u, s)
+		h(&freeOnWrite{ResponseWriter: w, free: free}, r, u, s)
 	}
 }
+
+var listsInAll = make(chan struct{}, 3)
+
+// freeOnWrite gives the page's place among listsInAll up when the answer starts: its database work is done then, and a
+// slow reader must not keep other accounts' pages waiting.
+type freeOnWrite struct {
+	http.ResponseWriter
+	free func()
+}
+
+func (f *freeOnWrite) WriteHeader(code int) {
+	f.free()
+	f.ResponseWriter.WriteHeader(code)
+}
+
+func (f *freeOnWrite) Write(b []byte) (int, error) {
+	f.free()
+	return f.ResponseWriter.Write(b)
+}
+
+func (f *freeOnWrite) Unwrap() http.ResponseWriter { return f.ResponseWriter }
 
 // pageAfter reads the ?after cursor: "<timestamp>.<id>" of the last item on the previous page.
 func pageAfter(r *http.Request) (ts int64, id string, has, ok bool) {
@@ -768,9 +860,12 @@ func (a *App) listItems(w http.ResponseWriter, r *http.Request, u *user, s *sess
 		fail(w, 500, "server error")
 		return
 	}
-	q, args := `SELECT id,kind,size_bytes,segment_count,wrapped_item_key,meta_enc,has_thumb,has_preview,created_at,favorite FROM items WHERE user_id=? AND state='ready' AND trashed_at IS NULL`, []any{u.ID}
+	// items_lib holds only the library's rows in its order, and the cursor is a range of it: a page reads its own
+	// rows, not the trash or the pages before it
+	q, args := `SELECT id,kind,size_bytes,segment_count,wrapped_item_key,meta_enc,has_thumb,has_preview,created_at,favorite FROM items INDEXED BY items_lib
+		WHERE user_id=? AND state='ready' AND trashed_at IS NULL`, []any{u.ID}
 	if has {
-		q, args = q+` AND (created_at < ? OR (created_at = ? AND id > ?))`, append(args, ts, ts, after)
+		q, args = q+` AND created_at <= ? AND (created_at < ? OR id > ?)`, append(args, ts, ts, after)
 	}
 	rows, err := a.db.QueryContext(r.Context(), q+` ORDER BY created_at DESC, id LIMIT ?`, append(args, listPage)...)
 	if err != nil {

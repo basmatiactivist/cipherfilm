@@ -41,10 +41,10 @@ address is declared as collected; photos, videos and location are exempt because
 <h3>What the Android app accesses on your phone</h3>
 <ul>
   <li><strong>Photos and videos</strong> (permissions "Photos and videos" and, if you allow it, "Location in photos"): to show your library, to back up the folders you choose, also in the background when automatic backup is on, and to free up space by moving backed-up originals to the phone's trash when you ask for it. If you allow access to selected photos only, the app backs up only those.</li>
-  <li><strong>Location stored in your photos</strong> (EXIF GPS data): read together with the photo and encrypted with it. The app has no access to your phone's current location.</li>
+  <li><strong>Location stored in your photos</strong> (EXIF GPS data): read together with the photo and encrypted with it. The app asks for no location permission and has no access to your phone's current location.</li>
   <li><strong>Files you share to Cipherfilm</strong> from other apps: uploaded to your library, encrypted.</li>
   <li><strong>Fingerprint or face unlock</strong>: handled entirely by Android. The app never receives biometric data; it only learns whether unlocking succeeded, and then releases its key from the phone's secure hardware.</li>
-  <li><strong>Notifications</strong>: to show backup and upload progress, and security notices (a new sign-in to your account, changes to two-step sign-in). For those the app asks your own server about every 15 minutes; no push service is used, and they never show on the lock screen.</li>
+  <li><strong>Notifications</strong>: to show backup and upload progress, and security notices (a new sign-in to your account, changes to two-step sign-in). For security notices the app asks your own server about every 15 minutes; no push service is used. None of these notifications shows on the lock screen.</li>
   <li><strong>Network</strong>: to your server; once to Hugging Face to download the search models; and, only if you turn the map on, to the map service (below); only over HTTPS.</li>
 </ul>
 <p id="models">Search by content and faces runs on your phone, with open models that the app downloads once from Hugging Face, the public site where they are published, after it asked you (it says what, how big, and that they come from the site named here). Turning search off deletes them. Hugging Face sees your phone's IP address and that it downloaded these public files, nothing else: no account, photo or search. Nothing is sent anywhere to be analysed.</p>

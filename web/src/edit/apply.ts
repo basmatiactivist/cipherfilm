@@ -1,11 +1,10 @@
 // Edits in this browser (docs/EDITING.md): the original is downloaded and decrypted here, the new thumbnail and preview
 // are drawn from it with the turn and crop, encrypted with the item's key and stored next to it; the original stays
 // as it is. The metadata (with the edit, the new date or place) goes up encrypted like any other change.
-import { api, ApiError, putBytes } from "../api";
-import { b64, getSodium } from "../crypto/sodium";
-import { encryptMeta, encryptPreview, encryptThumb } from "../crypto/item";
-import { nextVersion } from "../crypto/metaVersion";
-import { fetchOriginal, type Item } from "../items";
+import { ApiError, putBytes } from "../api";
+import { getSodium } from "../crypto/sodium";
+import { encryptPreview, encryptThumb } from "../crypto/item";
+import { fetchOriginal, writable, writeMeta, type Item } from "../items";
 import { decodeImage, PREVIEW_PX, THUMB_PX, type Decoded, type ItemMeta } from "../media";
 import { mem } from "../state";
 import { drawPlan, normEdit, sameEdit, versionName, withPicture, type Edit } from "./edit";
@@ -17,8 +16,9 @@ export const EDIT_LIMIT = 200 * 1024 * 1024;
 /** Can this item's picture be turned and cropped here? Videos only get a new date or place. */
 export const canEditPicture = (it: Item) => it.kind === "image" && !it.broken && !!it.itemKey && it.size <= EDIT_LIMIT;
 
-/** Can anything be changed at all: not in the demo, not in the trash, readable. */
-export const canEdit = (it: Item) => !mem.me?.demo && !it.trashed_at && !it.broken && !!it.itemKey && !!it.meta && (it.kind === "image" || it.kind === "video");
+/** Can anything be changed at all: not in the demo, not in the trash, readable, and its newest metadata known here
+ *  (not stale: a change made from an older copy would undo a change on every device). */
+export const canEdit = (it: Item) => !mem.me?.demo && !it.trashed_at && writable(it) && (it.kind === "image" || it.kind === "video");
 
 /** The original, decrypted and decoded (EXIF orientation applied, HEIC through its decoder). */
 export async function decodeOriginal(it: Item, onProgress?: (done: number, total: number) => void): Promise<Decoded> {
@@ -65,13 +65,9 @@ export async function storePictures(it: Item, d: Decoded, e: Edit | undefined): 
   return versionName(s.randombytes_buf(8));
 }
 
-/** The item's new metadata, encrypted, to the server; the other devices get it with the next change list. */
-export async function storeMeta(it: Item, meta: ItemMeta): Promise<void> {
-  if (mem.me?.demo) throw new Error("This is the public demo: changes are turned off.");
-  const s = await getSodium();
-  // a higher version than any before (crypto/metaVersion.ts): no device goes back to an older copy the server kept
-  await api("PUT", `/api/items/${it.id}/meta`, { meta_enc: b64(s, encryptMeta(s, nextVersion(meta), it.itemKey!, it.id)) });
-}
+/** The item's new metadata, encrypted, to the server as its next version (items.ts writeMeta: refused for a stale
+ *  item, and when another device changed it meanwhile); the other devices get it with the next change list. */
+export const storeMeta = (it: Item, meta: ItemMeta): Promise<void> => writeMeta(it, meta);
 
 /**
  * Saves new metadata; when its turn or crop differs from the stored one, new pictures are made first (from `decoded`,
@@ -79,6 +75,7 @@ export async function storeMeta(it: Item, meta: ItemMeta): Promise<void> {
  * new edit finds its pictures.
  */
 export async function saveEdit(it: Item, next: ItemMeta, decoded?: Decoded | null): Promise<void> {
+  if (!writable(it)) throw new Error("This item's newest details aren't known on this device. Reload the page and try again.");
   let meta = next;
   if (!sameEdit(it.meta?.edit, next.edit)) {
     const d = decoded ?? await decodeOriginal(it);

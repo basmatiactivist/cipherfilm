@@ -47,7 +47,7 @@ vi.mock("./cache", () => ({ clearCaches: () => {} }));
 // the browser's passkey dialog: answers whatever challenge it is given
 vi.mock("./passkeys", () => ({ getPasskey: async (o: { challenge: string }) => ({ id: "k", answered: o.challenge }) }));
 vi.mock("./player", () => ({ clearPlayer: () => {} }));
-vi.mock("./items", () => ({ clearUploadMemory: () => {}, forgetDecrypted: () => {} }));
+vi.mock("./items", () => ({ clearUploadMemory: () => {}, forgetDecrypted: () => {}, forgetVersions: () => {} }));
 
 describe("two-step sign-in", () => {
   beforeEach(() => { server.calls = []; server.csrf = []; server.challenges = 0; vi.resetModules(); });

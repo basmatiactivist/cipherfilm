@@ -132,8 +132,10 @@ public enum Media {
     if let m = tiff[kCGImagePropertyTIFFMake] as? String, !m.trimmingCharacters(in: .whitespaces).isEmpty { out.make = m.trimmingCharacters(in: .whitespaces) }
     if let m = tiff[kCGImagePropertyTIFFModel] as? String, !m.trimmingCharacters(in: .whitespaces).isEmpty { out.model = m.trimmingCharacters(in: .whitespaces) }
     if let g = p[kCGImagePropertyGPSDictionary] as? [CFString: Any], let lat = g[kCGImagePropertyGPSLatitude] as? Double, let lon = g[kCGImagePropertyGPSLongitude] as? Double {
-      out.lat = (g[kCGImagePropertyGPSLatitudeRef] as? String) == "S" ? -lat : lat
-      out.lon = (g[kCGImagePropertyGPSLongitudeRef] as? String) == "W" ? -lon : lon
+      let la = (g[kCGImagePropertyGPSLatitudeRef] as? String) == "S" ? -lat : lat
+      let lo = (g[kCGImagePropertyGPSLongitudeRef] as? String) == "W" ? -lon : lon
+      // as for videos (iso6709): only a real place
+      if validPlace(la, lo) { (out.lat, out.lon) = (la, lo) }
     }
     return out
   }
@@ -330,8 +332,13 @@ public enum Media {
     }
     guard let lat = number(2), let lon = number(3) else { return nil }
     if let c = rest.first, c != "/", c != "+", c != "-", !rest.hasPrefix("CRS") { return nil }
-    guard lat.isFinite, lon.isFinite, (-90...90).contains(lat), (-180...180).contains(lon), !(lat == 0 && lon == 0) else { return nil }
+    guard validPlace(lat, lon) else { return nil }
     return (lat, lon)
+  }
+
+  /** A latitude and longitude that name a place: finite, in range, and not the 0,0 a missing fix is written as. */
+  static func validPlace(_ lat: Double, _ lon: Double) -> Bool {
+    lat.isFinite && lon.isFinite && (-90...90).contains(lat) && (-180...180).contains(lon) && !(lat == 0 && lon == 0)
   }
 
   /** "2024:07:14 18:03:22" with an optional "+02:00"; without one it is local time, like the other clients. */
@@ -509,15 +516,17 @@ extension Uploader {
   static func metaJSON(name: String, mime: String, size: Int64, modified: Date, info mi: Media.Info, dims: (Int, Int)?, sha256: String?) throws -> Data {
     var meta: [String: Any] = [
       "name": name, "mime": mime, "size": size, "lastModified": (modified.timeIntervalSince1970 * 1000).rounded(),
-      "capture_ts": (mi.captureTs ?? modified.timeIntervalSince1970 * 1000).rounded(),
+      "capture_ts": (mi.captureTs.flatMap { $0.isFinite ? $0 : nil } ?? modified.timeIntervalSince1970 * 1000).rounded(),
     ]
     if let w = mi.width ?? dims?.0 { meta["width"] = w }
     if let h = mi.height ?? dims?.1 { meta["height"] = h }
-    if let d = mi.duration { meta["duration"] = d }
+    if let d = mi.duration, d.isFinite { meta["duration"] = d }
     if let m = mi.make { meta["make"] = m }
     if let m = mi.model { meta["model"] = m }
-    if let la = mi.lat, let lo = mi.lon { meta["gps"] = ["lat": la, "lon": lo] }
+    if let la = mi.lat, let lo = mi.lon, Media.validPlace(la, lo) { meta["gps"] = ["lat": la, "lon": lo] }
     if let h = sha256 { meta["sha256"] = h }
+    // a number JSON can't hold would end the app inside JSONSerialization: a failed upload instead
+    guard JSONSerialization.isValidJSONObject(meta) else { throw APIError(status: -1, message: "This file's details couldn't be written.") }
     return try JSONSerialization.data(withJSONObject: meta, options: [.withoutEscapingSlashes])
   }
 

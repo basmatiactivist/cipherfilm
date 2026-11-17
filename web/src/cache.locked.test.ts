@@ -2,8 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // The locked folder's pictures (edit/folders.ts) never go into Cache Storage, live in memory apart from the others and
 // leave it when the folder closes; an item moving into the folder takes its stored copies with it.
+const asked = vi.hoisted(() => [] as string[]);
 vi.mock("./api", () => ({
-  getBytes: async (path: string) => new TextEncoder().encode("ct:" + path),
+  getBytes: async (path: string) => { asked.push(path); return new TextEncoder().encode("ct:" + path); },
   postForBytes: async () => { throw Object.assign(new Error("no batch"), { status: 404 }); },
 }));
 vi.mock("./crypto/sodium", () => ({ getSodium: async () => ({}) }));
@@ -32,7 +33,7 @@ const item = (id: string, meta: object) => ({ id, kind: "image", size: 1, segmen
 const settle = () => new Promise((r) => setTimeout(r, 20));
 const storedUrls = () => [...stores.values()].flatMap((m) => [...m.keys()]).filter((u) => !u.endsWith("preview-index"));
 
-beforeEach(() => { vi.resetModules(); stores.clear(); revoked.length = 0; });
+beforeEach(() => { vi.resetModules(); stores.clear(); revoked.length = 0; asked.length = 0; });
 
 describe("pictures of the locked folder", () => {
   it("are never stored, and leave memory when the folder closes", async () => {
@@ -61,5 +62,34 @@ describe("pictures of the locked folder", () => {
     await c.dropStored([it]);
     expect(storedUrls()).toEqual([]);
     expect(c.cachedThumb(it)).toBeUndefined();
+  });
+
+  it("fetching ahead asks for the newest thumbnails whatever their folder, and keeps only the open ones", async () => {
+    const c = await import("./cache");
+    const open = item("d".repeat(32), {}), locked = item("e".repeat(32), { locked: true }), stale = { ...item("f".repeat(32), {}), stale: true };
+    c.prefetchThumbs([open, locked, stale]);
+    await settle();
+    // the server can't tell the locked items from which thumbnails are asked for
+    expect(asked.sort()).toEqual([open, locked, stale].map((i) => `/api/items/${i.id}/thumb`).sort());
+    expect(storedUrls()).toEqual([`/ct/thumb/${open.id}`]);
+    for (const i of [locked, stale]) expect(c.cachedThumb(i)).toBeUndefined();
+    // each at most once per tab and lock
+    c.prefetchThumbs([open, locked, stale]);
+    await settle();
+    expect(asked).toHaveLength(3);
+    c.clearCaches();
+    c.prefetchThumbs([locked]);
+    await settle();
+    expect(asked).toHaveLength(4);
+  });
+
+  it("a stale item's pictures are handled as a locked one's: never stored", async () => {
+    const c = await import("./cache");
+    const stale = { ...item("1".repeat(32), {}), stale: true };
+    c.wantImage("thumb", stale.id);
+    await c.thumbUrl(stale); await c.previewUrl(stale);
+    await settle();
+    expect(storedUrls()).toEqual([]);
+    expect(c.cachedThumb({ id: stale.id, meta: stale.meta })).toBeUndefined();
   });
 });

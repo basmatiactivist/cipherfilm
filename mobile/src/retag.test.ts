@@ -8,7 +8,7 @@ vi.mock("expo-image-manipulator", () => ({ ImageManipulator: {}, SaveFormat: { J
 vi.mock("../modules/cf-native/src/CfNativeModule", () => ({ default: {} }));
 vi.mock("./api", () => ({
   newSignIn: () => {}, api: async () => ({}), putBytes: async () => {}, ApiError: class extends Error {} }));
-vi.mock("./session", () => ({ session: () => ({ me: {} }), onWipe: () => {} }));
+vi.mock("./session", () => ({ session: () => ({ me: {} }), onOwnSignOut: () => {}, onWipe: () => {} }));
 vi.mock("./library", () => ({ forgetPictures: () => {} }));
 vi.mock("./upload", () => ({ THUMB_PX: 640, PREVIEW_PX: 2048 }));
 const written = vi.hoisted(() => ({ bytes: null as Uint8Array | null }));

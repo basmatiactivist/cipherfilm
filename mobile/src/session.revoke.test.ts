@@ -106,4 +106,39 @@ describe("signed out from elsewhere", () => {
     expect(store.get("cf.user")).toBe("alice");
     expect(fingerprintKeys()).toEqual(["cf.mk.alice", "cf.bio.alice"]); // nothing ended
   });
+
+  it("a background run's sign-out is finished at the next start by the parts of the app that run didn't load", async () => {
+    let session = await fresh();
+    net.revoked(SERVER); // a background run: only the backup loaded
+    await settle();
+    expect(store.get("cf.teardown")).toBe("1");
+
+    // the next start, with the whole app: a part that wasn't loaded then (screenshots, auto-lock) deletes its part now
+    session = await fresh();
+    const done: string[] = [];
+    session.onSignOut(() => { done.push("signOut"); });
+    session.onWipe((how) => { done.push(`wipe ${how}`); });
+    net.me = "expired"; // its cookie went with the sign-out
+    await session.start();
+    expect(done).toEqual(["wipe ended", "signOut"]);
+    expect(store.has("cf.teardown")).toBe(false);
+    expect(session.session().phase).toBe("signedOut");
+
+    // once done, a later start deletes nothing more (someone may have signed in since)
+    session = await fresh();
+    done.length = 0;
+    session.onSignOut(() => { done.push("signOut"); });
+    net.me = "ok";
+    await session.start();
+    expect(done).toEqual([]);
+  });
+
+  it("with the app on screen, the sign-out is complete at once and nothing is left for the next start", async () => {
+    const session = await fresh();
+    await session.start();
+    net.revoked(SERVER);
+    await settle();
+    expect(store.has("cf.teardown")).toBe(false);
+    expect(fingerprintKeys()).toEqual([]);
+  });
 });

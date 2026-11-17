@@ -55,6 +55,17 @@ describe("storage overview", () => {
     expect(s.lastUploadText({ last_upload_at: 0 }, NOW)).toBe("Noch kein Upload erfasst");
   });
 
+  it("says only the day for a device the server gives the day of", () => {
+    const midnight = Math.floor(NOW / DAY) * DAY;
+    expect(s.lastSeenText({ last_seen: NOW - 120 }, NOW)).toBe("2 minutes ago");
+    expect(s.lastSeenText({ last_seen: midnight, last_seen_day_only: true }, NOW)).toBe("active today");
+    expect(s.lastSeenText({ last_seen: midnight - DAY, last_seen_day_only: true }, NOW)).toBe("active yesterday");
+    expect(s.lastSeenText({ last_seen: midnight - 5 * DAY, last_seen_day_only: true }, NOW)).toBe("active 5 days ago");
+    setLang("de");
+    expect(s.lastSeenText({ last_seen: midnight - DAY, last_seen_day_only: true }, NOW)).toBe("gestern aktiv");
+    expect(s.lastSeenText({ last_seen: midnight - 5 * DAY, last_seen_day_only: true }, NOW)).toBe("vor 5 Tagen aktiv");
+  });
+
   it("warns only for a phone the server marked stale", () => {
     expect(s.staleText({ backup_stale: false, last_upload_at: NOW - 30 * DAY }, NOW)).toBeUndefined();
     expect(s.staleText({ backup_stale: true, last_upload_at: NOW - 12 * DAY }, NOW))

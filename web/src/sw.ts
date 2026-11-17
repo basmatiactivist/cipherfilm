@@ -1,17 +1,20 @@
 // Service Worker: serves /sw/stream/<itemId> by fetching encrypted segments, decrypting them
 // in memory and answering HTTP Range requests, so <video> can play and seek without a full download.
 // Keys never leave the browser: the page hands them over by message and the worker keeps them in memory only.
+// They belong to the tab that handed them over: another tab (one still at the Unlock screen, say) gets nothing from
+// them, and they go when that tab is closed or navigates away, after a few idle minutes, and on lock and sign-out.
 import { getSodium, unb64 } from "./crypto/sodium";
-import { decryptSegment } from "./crypto/file";
+import { decryptSegment, segmentCount } from "./crypto/file";
 import { parseRange, sliceFor, spanFor } from "./sw-range";
 import { makeZip, predictLength } from "client-zip";
 import { attachment, dedupe } from "./names";
 
 interface Params { key: string; size: number; count: number; mime: string }
-interface Held extends Params { itemKey?: Uint8Array }
+interface Keyed extends Params { itemKey?: Uint8Array }
+interface Held extends Keyed { owner: string; used: number }
 
 const sw: any = self;
-const params = new Map<string, Held>();
+const params = new Map<string, Held>(); // by owner and item id (held())
 const cache = new Map<string, Uint8Array>(); // tiny LRU of decrypted segments
 const pending = new Map<string, Promise<Uint8Array>>();
 const CACHE_MAX = 8;
@@ -20,28 +23,55 @@ const AHEAD = 3; // segments fetched ahead of playback: a 4 MB segment per round
 let generation = 0;
 
 interface Entry extends Params { id: string; name: string; mtime: number }
-interface Job { kind: "file" | "zip"; name: string; entries: Entry[]; expires: number }
+interface Job { kind: "file" | "zip"; name: string; entries: Entry[]; owner: string; expires: number }
 const jobs = new Map<string, Job>(); // download jobs handed over by the page; keys stay in memory only
-const JOB_TTL = 10 * 60_000;
+// a job is fetched once, right after the page handed it over (downloads.ts): it is not kept for a second fetch
+const JOB_TTL = 60_000;
+// a stream's key unused this long is dropped; the tab that plays it hands it over again when asked (askPage)
+const IDLE = 5 * 60_000;
+const held = (owner: string, id: string) => `${owner} ${id}`;
+
+function clearAll() { generation++; params.clear(); cache.clear(); pending.clear(); jobs.clear(); }
+
+/** Drops what belongs to a tab that is gone, has sat unused too long, or has expired; with nothing left, the decrypted
+ *  segments go too. */
+async function prune() {
+  if (!params.size && !jobs.size && !cache.size) return;
+  const live = new Set<string>((await sw.clients.matchAll({ type: "window", includeUncontrolled: true })).map((c: any) => c.id));
+  const now = Date.now();
+  for (const [k, p] of params) if (!live.has(p.owner) || p.used + IDLE < now) params.delete(k);
+  for (const [t, j] of jobs) if (!live.has(j.owner) || j.expires < now) jobs.delete(t);
+  if (!params.size && !jobs.size) clearAll();
+  else schedule();
+}
+// checked again while anything is held, as long as the worker runs: a closed tab's keys don't wait for the next request
+let timer: ReturnType<typeof setTimeout> | undefined;
+function schedule() {
+  if (timer === undefined) timer = setTimeout(() => { timer = undefined; prune().catch(() => {}); }, 30_000);
+}
 
 sw.addEventListener("install", () => sw.skipWaiting());
 sw.addEventListener("activate", (e: any) => e.waitUntil(sw.clients.claim()));
 const ITEM_ID = /^[0-9a-f]{32}$/;
 const isCount = (n: unknown): n is number => Number.isSafeInteger(n) && (n as number) >= 0;
+// the number of segments must fit the size: a smaller one would end a stream early, short of its Content-Length
+const isParams = (p: any): p is Params =>
+  !!p && typeof p.key === "string" && isCount(p.size) && isCount(p.count) && p.count === segmentCount(p.size) && typeof p.mime === "string";
 const isEntry = (e: any): e is Entry =>
-  !!e && typeof e.id === "string" && ITEM_ID.test(e.id) && typeof e.key === "string" && isCount(e.size) && isCount(e.count) &&
-  typeof e.mime === "string" && typeof e.name === "string" && typeof e.mtime === "number";
+  isParams(e) && typeof (e as Entry).id === "string" && ITEM_ID.test((e as Entry).id) && typeof (e as Entry).name === "string" && typeof (e as Entry).mtime === "number";
 
 sw.addEventListener("message", (e: any) => {
   // only this app's own pages hand over keys and jobs
   if (e.origin !== location.origin) return;
-  if (e.data?.type === "clear") { generation++; params.clear(); cache.clear(); pending.clear(); jobs.clear(); }
+  if (e.data?.type === "clear") clearAll();
   if (e.data?.type === "job") {
     const { token, job } = e.data;
-    if (typeof token !== "string" || !token || !job || (job.kind !== "file" && job.kind !== "zip") || typeof job.name !== "string" ||
-      !Array.isArray(job.entries) || !job.entries.length || !job.entries.every(isEntry)) return;
+    const owner: unknown = e.source?.id;
+    if (typeof owner !== "string" || !owner || typeof token !== "string" || !token || !job || (job.kind !== "file" && job.kind !== "zip") ||
+      typeof job.name !== "string" || !Array.isArray(job.entries) || !job.entries.length || !job.entries.every(isEntry)) return;
     for (const [t, j] of jobs) if (j.expires < Date.now()) jobs.delete(t);
-    jobs.set(token, { kind: job.kind, name: job.name, entries: job.entries, expires: Date.now() + JOB_TTL });
+    jobs.set(token, { kind: job.kind, name: job.name, entries: job.entries, owner, expires: Date.now() + JOB_TTL });
+    schedule();
     e.ports[0]?.postMessage("ok");
   }
 });
@@ -60,8 +90,9 @@ sw.addEventListener("fetch", (event: any) => {
   else if (url.pathname.startsWith("/sw/dl/")) event.respondWith(download(url));
 });
 
+/** Asks the tab that is playing for the key; only that tab, never another one of this origin. */
 async function askPage(id: string, clientId: string): Promise<Params | null> {
-  const c = (clientId && (await sw.clients.get(clientId))) || (await sw.clients.matchAll({ type: "window" }))[0];
+  const c = clientId ? await sw.clients.get(clientId) : undefined;
   if (!c) return null;
   return new Promise((resolve) => {
     const ch = new MessageChannel();
@@ -71,7 +102,7 @@ async function askPage(id: string, clientId: string): Promise<Params | null> {
   });
 }
 
-async function segment(id: string, p: Held, n: number): Promise<Uint8Array> {
+async function segment(id: string, p: Keyed, n: number): Promise<Uint8Array> {
   // keyed by the item key too: a cached segment is only ever served to a caller that holds the key it was opened with
   const k = `${id}:${n}:${p.key}`;
   const started = generation;
@@ -89,6 +120,7 @@ async function segment(id: string, p: Held, n: number): Promise<Uint8Array> {
       if (generation !== started) return plain;
       cache.set(k, plain);
       while (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value as string);
+      schedule();
       return plain;
     })().finally(() => { if (pending.get(k) === job) pending.delete(k); });
     pending.set(k, job);
@@ -98,13 +130,17 @@ async function segment(id: string, p: Held, n: number): Promise<Uint8Array> {
 
 async function serve(event: any, url: URL): Promise<Response> {
   const id = url.pathname.slice("/sw/stream/".length);
-  if (!ITEM_ID.test(id)) return new Response("not found", { status: 404 });
-  let p = params.get(id);
+  const owner: string = event.clientId ?? "";
+  if (!ITEM_ID.test(id) || !owner) return new Response("not found", { status: 404 });
+  await prune();
+  let p = params.get(held(owner, id));
   if (!p) {
-    const got = await askPage(id, event.clientId);
-    if (got) params.set(id, (p = { ...got }));
+    const got = await askPage(id, owner);
+    if (isParams(got)) params.set(held(owner, id), (p = { key: got.key, size: got.size, count: got.count, mime: got.mime, owner, used: Date.now() }));
+    schedule();
   }
   if (!p) return new Response("not found", { status: 404 });
+  p.used = Date.now();
 
   const headers: Record<string, string> = {
     "Content-Type": p.mime, "Accept-Ranges": "bytes", "Cache-Control": "no-store",
@@ -124,14 +160,14 @@ async function serve(event: any, url: URL): Promise<Response> {
 }
 
 /** Decrypts segments one at a time and emits the bytes of range r. Any verification failure errors the stream. */
-function plainStream(id: string, held: Held, r: { start: number; end: number }, first: number, last: number): ReadableStream<Uint8Array> {
+function plainStream(id: string, p: Keyed, r: { start: number; end: number }, first: number, last: number): ReadableStream<Uint8Array> {
   let seg = first;
   return new ReadableStream<Uint8Array>({
     async pull(ctl) {
       if (seg > last) return ctl.close();
       try {
-        const plain = await segment(id, held, seg);
-        for (let k = 1; k <= AHEAD && seg + k <= last; k++) segment(id, held, seg + k).catch(() => {}); // read ahead
+        const plain = await segment(id, p, seg);
+        for (let k = 1; k <= AHEAD && seg + k <= last; k++) segment(id, p, seg + k).catch(() => {}); // read ahead
         const [a, b] = sliceFor(seg, r, plain.length);
         ctl.enqueue(plain.slice(a, b));
         seg++;
@@ -149,10 +185,14 @@ const wholeFile = (e: Entry): ReadableStream<Uint8Array> =>
 
 /** /sw/dl/<token>: a single original, or a ZIP of several, streamed out as a download with bounded memory. */
 async function download(url: URL): Promise<Response> {
-  const found = jobs.get(url.pathname.slice("/sw/dl/".length));
+  await prune(); // a job whose tab is gone is gone with it
+  const token = url.pathname.slice("/sw/dl/".length);
+  const found = jobs.get(token);
   if (!found || found.expires < Date.now()) return new Response("not found", { status: 404 });
+  jobs.delete(token); // once: the address isn't a way back to the file
   const job: Job = found;
-  const base = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" };
+  // as for streams: a browser that ignored the attachment would still not run the bytes as a page of this origin
+  const base = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; sandbox", "Cross-Origin-Resource-Policy": "same-origin" };
   if (job.kind === "file") {
     const e = job.entries[0];
     return new Response(wholeFile(e), { headers: { ...base, "Content-Type": "application/octet-stream", "Content-Length": String(e.size), "Content-Disposition": attachment(e.name) } });

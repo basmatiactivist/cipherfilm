@@ -95,6 +95,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const trash = trashSplit?.open ?? null;
   const [retention, setRetention] = useState(30);
   const [confirmPurge, setConfirmPurge] = useState<"selected" | "all" | null>(null);
+  const [confirmLockedPurge, setConfirmLockedPurge] = useState(false); // locked items found in the trash
   const [note, setNote] = useState<{ text: string; undo?: () => void } | null>(null);
   const [query, setQuery] = useState("");
   const [showBroken, setShowBroken] = useState(false);
@@ -118,12 +119,12 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const [narrow, setNarrow] = useState(() => matchMedia("(max-width: 600px)").matches);
   useEffect(() => { const m = matchMedia("(max-width: 600px)"); const f = () => setNarrow(m.matches); m.addEventListener("change", f); return () => m.removeEventListener("change", f); }, []);
 
-  const refreshItems = () => loadItems().then((r) => { setItems(r.items); setError(""); prefetchThumbs(splitLocked(r.items).open); }, (e) => setError(msg(e)));
+  const refreshItems = () => loadItems().then((r) => { setItems(r.items); setError(""); prefetchThumbs(r.items); }, (e) => setError(msg(e)));
   const refreshAlbums = () => loadAlbums().then(setAlbums, (e) => setError(msg(e))).finally(() => setAlbumsLoaded(true));
   const refreshTrash = () => loadTrash().then((r) => { setTrash(r.items); setRetention(r.retentionDays); }, (e) => setError(msg(e)));
   const refreshUsage = () => loadUsage().then(setUsage, () => {});
   // a new sign-in elsewhere, or an admin turning off two-step sign-in (notices.ts): listed under the bell in the top bar
-  // (noticesui.tsx) until removed, which removes it on every device
+  // (noticesui.tsx) until removed (a sign-in notice on every device, a two-step or recovery key change only here)
   const [notices, setNotices] = useState<Notice[]>([]);
   const dismissed = useRef(new Set<number>());
   // and, while this tab is hidden, as the browser's notifications if turned on (noticeAlerts.ts)
@@ -877,7 +878,9 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
               {trashSplit && trashSplit.locked.length > 0 && (
                 <p class="warning small" role="status">
                   {trashSplit.locked.length === 1 ? "1 item of this folder is" : `${trashSplit.locked.length} items of this folder are`} in the trash (moved there by another app).{" "}
-                  {!demo && <><button class="link" onClick={() => restore(trashSplit.locked.map((i) => i.id))}>Restore</button>{" · "}<button class="link" onClick={() => purge(trashSplit.locked.map((i) => i.id))}>Delete forever</button></>}
+                  {!demo && (confirmLockedPurge ? (
+                    <span class="moremenu"><span class="small">Delete {trashSplit.locked.length} forever?</span><button class="btn danger small" onClick={() => { setConfirmLockedPurge(false); purge(trashSplit.locked.map((i) => i.id)); }}>Delete forever</button><KeepButton label="Keep" onClick={() => setConfirmLockedPurge(false)} /></span>
+                  ) : <><button class="link" onClick={() => restore(trashSplit.locked.map((i) => i.id))}>Restore</button>{" · "}<button class="link" onClick={() => setConfirmLockedPurge(true)}>Delete forever…</button></>)}
                 </p>
               )}
               {shown.length === 0 ? (

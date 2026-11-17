@@ -1,8 +1,11 @@
 // Archive and locked folder (docs/EDITING.md, "Archive and locked folder"). Which folder an item is in is written
 // INSIDE its encrypted metadata (`archived: true` or `locked: true`, through the same PUT /api/items/{id}/meta and
-// metadata version as every other change), so the server never learns which items are archived or locked: it sees
-// only that an item's metadata changed. Shared by the web app and the Android app (@edit/folders); the Mac mirrors it
-// in mac/Sources/CipherfilmCore/Folders.swift, with tests on the same cases.
+// metadata version as every other change), so the server is never told which items are archived or locked: it sees
+// that an item's metadata changed, and which thumbnails, previews and originals a device fetches. From those requests
+// (opening the locked folder or an item in it, scrolling, what is fetched again after a reload or restart, a trash
+// followed at once by a purge) it can infer much of which items are locked, never what they show (docs/THREAT_MODEL.md,
+// Archive and locked folder). Shared by the web app and the Android app (@edit/folders); the Mac mirrors it in
+// mac/Sources/CipherfilmCore/Folders.swift, with tests on the same cases.
 //
 //   library  the main grid, On this day, search, albums, people, map, duplicates, free up space
 //   archive  out of the main grid and On this day; still in search, albums, people, the map and favorites
@@ -12,12 +15,17 @@
 export type Folder = "library" | "archive" | "locked";
 
 type Flagged = { archived?: unknown; locked?: unknown } | null | undefined;
-type Listed = { meta?: Flagged; broken?: boolean };
+type Listed = { meta?: Flagged; broken?: boolean; stale?: boolean };
 
 /** Only `true` counts: anything else a device reads (a string, a number) is "not set", never a guess. */
 export const isLocked = (meta: Flagged): boolean => meta?.locked === true;
 /** Archived and not locked (locked wins if both were ever written). */
 export const isArchived = (meta: Flagged): boolean => meta?.archived === true && !isLocked(meta);
+
+/** Handled as a locked item: in the locked folder, or stale (its metadata is an older copy than this device has seen,
+ *  crypto/metaVersion.ts, so which folder it is really in isn't known). No open view shows it, nothing of it is kept
+ *  on disk and nothing writes its metadata, until a copy at least as new as the one seen arrives. */
+export const asLocked = (it: { meta?: Flagged; stale?: boolean }): boolean => it.stale === true || isLocked(it.meta);
 
 export function folderOf(meta: Flagged): Folder {
   return isLocked(meta) ? "locked" : isArchived(meta) ? "archive" : "library";
@@ -43,11 +51,11 @@ export function withFolder<T extends object>(meta: T, to: Folder): T {
 }
 
 /** Splits a decrypted list: `open` is everything any view outside the locked folder may show (an unreadable item
- *  can't say where it is and stays with the library, shown as "couldn't be verified" as before), `locked` the rest.
- *  Every app splits right after decrypting, so no other view is ever handed a locked item. */
+ *  can't say where it is and stays with the library, shown as "couldn't be verified" as before), `locked` the rest,
+ *  with the stale items (asLocked). Every app splits right after decrypting, so no other view is ever handed one. */
 export function splitLocked<T extends Listed>(items: readonly T[]): { open: T[]; locked: T[] } {
   const open: T[] = [], locked: T[] = [];
-  for (const it of items) (!it.broken && isLocked(it.meta) ? locked : open).push(it);
+  for (const it of items) (!it.broken && asLocked(it) ? locked : open).push(it);
   return { open, locked };
 }
 

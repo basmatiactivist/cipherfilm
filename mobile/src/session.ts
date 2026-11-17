@@ -66,6 +66,15 @@ async function forgetAccount() {
   for (const f of signOuts) { try { await f(); } catch { /* keep deleting the rest */ } }
 }
 
+/** What only the person's own sign-out, deleting the account or leaving the server deletes, never a session the server
+ *  ended (a plain 401, a revoked one): which metadata versions this phone saw (library.ts). Otherwise a server could
+ *  make the phone forget them just by ending the session, then hand out older metadata as current. */
+const ownSignOuts = new Set<() => void>();
+export const onOwnSignOut = (f: () => void) => { ownSignOuts.add(f); };
+function ownSignOut() {
+  for (const f of ownSignOuts) { try { f(); } catch { /* the rest */ } }
+}
+
 /** Called whenever who the phone's session belongs to may have changed (a session end, a sign-in, another account,
  *  another server): work running for the account before (the backup) stops before its next request. */
 const handovers = new Set<() => void>();
@@ -96,6 +105,10 @@ async function dropKeys(userId: string, all: boolean) {
   if (all && (await lastUser()) === userId) await SecureStore.deleteItemAsync(LAST_USER).catch(() => {});
 }
 const prompt = () => t("Unlock Cipherfilm");
+/** A sign-out from elsewhere learned where not every part of the app had registered what it deletes (a background run,
+ *  which loads only the backup): the next start, with the whole app loaded, deletes the rest. */
+const TEARDOWN = "cf.teardown";
+let started = false; // start() ran: the whole app is loaded, every onWipe and onSignOut registered
 
 /** Same bounds as the server and the web client: a server can't talk the app into weak or absurd Argon2 settings. */
 export function assertSaneKdf(k: KdfParams) {
@@ -148,6 +161,8 @@ async function revoked(from: string) {
   if (!origin || (origin !== bare(server()) && origin !== saved)) return; // only this phone's own server
   const me = state.me;
   handedOver(); // a backup still running stops before its next request
+  const whole = started;
+  if (!whole) await SecureStore.setItemAsync(TEARDOWN, "1").catch(() => {});
   await dropKeys(me?.user.id ?? (await lastUser()), true);
   wipe("ended");
   await forgetAccount();
@@ -170,6 +185,14 @@ export async function refreshMe(): Promise<Me | null> {
 }
 
 export async function start() {
+  started = true;
+  // signed out from elsewhere in a background run: what that run hadn't loaded is deleted now (no one can have signed
+  // in since: that needs the app on screen, which starts here)
+  if (await SecureStore.getItemAsync(TEARDOWN).catch(() => null)) {
+    wipe("ended");
+    await forgetAccount();
+    await SecureStore.deleteItemAsync(TEARDOWN).catch(() => {});
+  }
   const server = (await SecureStore.getItemAsync(SERVER)) ?? "";
   if (!server) return set({ phase: "noServer" });
   setServer(server);
@@ -200,7 +223,7 @@ export async function chooseServer(input: string) {
     throw e instanceof ApiError && e.status === 0 ? e : new Error(t("That address isn't a Cipherfilm server."));
   }
   // another server: what the phone keeps for the account on the old one (backup, background search) ends too
-  if (url.origin !== (await savedServer())) await forgetAccount();
+  if (url.origin !== (await savedServer())) { await forgetAccount(); ownSignOut(); }
   handedOver();
   setServer(url.origin);
   await SecureStore.setItemAsync(SERVER, url.origin);
@@ -212,6 +235,7 @@ export async function chooseServer(input: string) {
 export async function forgetServer() {
   wipe("ended");
   await forgetAccount();
+  ownSignOut();
   handedOver();
   setServer("");
   setCsrf("");
@@ -408,6 +432,7 @@ export async function signOut() {
   if (me) await dropKeys(me.user.id, true);
   wipe("ended");
   await forgetAccount();
+  ownSignOut();
   if (state.masterKey) state.masterKey.fill(0);
   setCsrf("");
   set({ phase: "signedOut", me: null, masterKey: null, biometric: false, notice: undefined });
@@ -433,6 +458,7 @@ export async function deleteAccount(password: string, second?: () => Promise<Ste
   await dropKeys(me.user.id, true);
   wipe("ended");
   await forgetAccount();
+  ownSignOut();
   handedOver();
   if (state.masterKey) state.masterKey.fill(0);
   setCsrf("");

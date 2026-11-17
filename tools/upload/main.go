@@ -88,12 +88,14 @@ func main() {
 }
 
 func readPassword(file string) (string, error) {
+	// out of the environment whichever source is used, so sips, qlmanage and ffmpeg never inherit it
+	v := os.Getenv("CIPHERFILM_PASSWORD")
+	os.Unsetenv("CIPHERFILM_PASSWORD")
 	if file != "" {
 		b, err := os.ReadFile(file)
 		return strings.TrimRight(string(b), "\r\n"), err
 	}
-	if v := os.Getenv("CIPHERFILM_PASSWORD"); v != "" {
-		os.Unsetenv("CIPHERFILM_PASSWORD") // so sips, qlmanage and ffmpeg do not inherit it
+	if v != "" {
 		return v, nil
 	}
 	fmt.Fprint(os.Stderr, "Password: ")

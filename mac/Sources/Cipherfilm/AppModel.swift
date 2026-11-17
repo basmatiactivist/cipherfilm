@@ -30,11 +30,16 @@ final class AppModel {
 
   /** The library every view reads: never an item of the locked folder (split off right after decrypting, setItems).
    *  Archived items are in it; the main grid and On this day leave them out (Folders.mainGrid). */
-  var items: [Item] = []
+  var items: [Item] = [] { didSet { itemsVersion &+= 1 } }
+  /** changes with every new list (also one of the same length), for views that work something out from it */
+  private(set) var itemsVersion = 0
   private(set) var byId: [String: Item] = [:]
   /** The locked folder's items: only while it is open, after its check passed (openLocked); empty otherwise. */
   private(set) var lockedItems: [Item] = []
   private(set) var lockedOpen = false
+  /** Which visit of the locked folder this is: changed whenever it is left (and at a lock), so a check that finishes
+   *  after the person left opens nothing (openLocked). */
+  private(set) var lockedVisit = 0
   @ObservationIgnored private var lockedById: [String: Item] = [:]
   /** locked items the person asked to delete: deleted for good after the locked folder's confirmation */
   var confirmLockedDelete: [String]?
@@ -124,6 +129,8 @@ final class AppModel {
     a.invalidate()
     startOver()
     wipe(ended: true)
+    // another server: the metadata versions seen go (MetaVersion.swift; not when the server only ends the session)
+    if UserDefaults.standard.string(forKey: "server") != url.absoluteString { MetaHighWater.forgetAll() }
     UserDefaults.standard.set(url.absoluteString, forKey: "server")
     use(server: url)
     me = nil
@@ -134,6 +141,7 @@ final class AppModel {
   func forgetServer() {
     startOver()
     wipe(ended: true)
+    MetaHighWater.forgetAll()
     UserDefaults.standard.removeObject(forKey: "server")
     api?.invalidate(); api = nil; server = nil; me = nil
     phase = .noServer
@@ -332,7 +340,7 @@ final class AppModel {
     if let master, let api {
       vault = Vault(api: api, me: me, masterKey: master)
       phase = .unlocked
-      if let cached = vault!.loadCachedLibrary() { setItems(cached); images.prefetch(Array(items.prefix(400)), vault!) }
+      if let cached = vault!.loadCachedLibrary() { setItems(cached); images.prefetch(Array(cached.prefix(400)), vault!) }
       Task { await refresh() }
       restoreUploads()
       every(120)
@@ -398,7 +406,9 @@ final class AppModel {
     if let dir = Vault.cacheDir(of: userId) { try? FileManager.default.removeItem(at: dir) }
   }
 
-  /** Removes what accounts left on this Mac when its session is gone; true if there was something. */
+  /** Removes what accounts left on this Mac when its session is gone, as a running app does when its session ends
+   *  (wipe(ended: true)): the account folders, the encrypted caches, the inbox copies of dropped files and an
+   *  interrupted WebDAV import's temporary files; true if there was an account. */
   @discardableResult
   private func forgetAccounts() -> Bool {
     let root = Paths.support.appendingPathComponent("accounts", isDirectory: true)
@@ -407,6 +417,10 @@ final class AppModel {
       forget(account: id)
       try? FileManager.default.removeItem(at: root.appendingPathComponent(id, isDirectory: true)) // a name from this folder's own listing
     }
+    // caches of an account whose folder is already gone
+    for id in (try? FileManager.default.contentsOfDirectory(atPath: Vault.cacheRoot().path)) ?? [] where !ids.contains(id) { forget(account: id) }
+    Inbox.clear()
+    try? FileManager.default.removeItem(at: WebDAVImporter.temp)
     api?.clearCookies()
     return !ids.isEmpty
   }
@@ -421,6 +435,7 @@ final class AppModel {
     wipe(ended: true)
     api?.clearCookies()
     if let userId { forget(account: userId) }
+    MetaHighWater.forgetAll() // the person's own sign-out only (MetaVersion.swift)
     me = nil
     settings = AccountSettings()
     api?.csrf = ""
@@ -436,6 +451,7 @@ final class AppModel {
     wipe(ended: true)
     api.clearCookies()
     forget(account: me.user.id)
+    MetaHighWater.forgetAll()
     self.me = nil
     settings = AccountSettings()
     api.csrf = ""
@@ -460,7 +476,7 @@ final class AppModel {
     Outbox.clear()
     webdav.stop(forget: ended) // a lock stops the import too: it reads nothing more until the next unlock
     items = []; byId = [:]; albums = []; trash = []; notices = []; noticesSeen = 0
-    lockedItems = []; lockedById = [:]; lockedOpen = false; confirmLockedDelete = nil
+    lockedItems = []; lockedById = [:]; lockedOpen = false; confirmLockedDelete = nil; lockedVisit += 1
     if ended { watcher.stop(forget: true); uploads = []; uploadsOwner = nil; uploadsPaused = false; Inbox.clear() }
   }
 
@@ -543,12 +559,14 @@ final class AppModel {
   /** Whether this account may move items between folders (the public demo can't change anything). */
   var canMove: Bool { me?.isDemo != true }
 
-  /** The locked folder's check passed (LockedGate): its items are taken from the library as last loaded. */
-  func openLocked() async {
-    guard let vault, phase == .unlocked else { return }
+  /** The locked folder's check passed (LockedGate): its items are taken from the library as last loaded. visit: the
+   *  visit the check was started in (lockedVisit then); a check that finishes after the folder was left opens nothing,
+   *  so the next visit asks again. */
+  func openLocked(visit: Int) async {
+    guard let vault, phase == .unlocked, visit == lockedVisit else { return }
     lockedOpen = true
     let all = await vault.currentLibrary()
-    guard self.vault === vault, lockedOpen else { return }
+    guard self.vault === vault, lockedOpen, visit == lockedVisit else { return }
     setLocked(Folders.splitLocked(all).locked)
   }
 
@@ -556,6 +574,7 @@ final class AppModel {
    *  go from memory; the next visit asks again. */
   func leaveLocked() {
     lockedOpen = false
+    lockedVisit += 1
     lockedItems = []; lockedById = [:]; confirmLockedDelete = nil
     images.forgetLocked()
   }
@@ -618,7 +637,7 @@ final class AppModel {
       albums = al
       loadError = nil
       guard r.changed || albumsChanged else { return }
-      images.prefetch(Array(items.prefix(400)), vault)
+      images.prefetch(Array(r.items.prefix(400)), vault) // the whole list: whatever folder (Images.prefetch)
       // the locked folder's pictures aren't kept on disk: a cached copy from before goes here too
       if r.changed { vault.pruneCache(keeping: Set(items.map(\.id))) }
       libraryChanged(all: r.items)
@@ -744,7 +763,7 @@ final class AppModel {
     search.libraryChanged(vault: vault, items: items, settings: settings)
     exporter.libraryChanged(vault: vault, items: items, albums: albums, settings: settings,
                             locked: Set(Folders.splitLocked(all).locked.map(\.id)))
-    backfillLastUpload(all: all)
+    backfillLastUpload()
   }
 
   /** The session this Mac last sent its newest upload time for (CipherfilmCore LastUpload), in the account's folder. */
@@ -754,17 +773,18 @@ final class AppModel {
 
   /** Sends the newest upload of the watched folders once for this session, after the library loaded: the server only
    *  records upload times since the storage overview came, so it showed none for this Mac. Nothing when there is none. */
-  private func backfillLastUpload(all: [Item]) {
+  private func backfillLastUpload() {
     guard let api, let me, let session = me.session_id, lastUploadTried != session else { return }
     lastUploadTried = session
     let file = AccountFile<LastUploadSent>(userId: me.user.id, name: "last-upload.json")
-    let mine = watcher.uploadRecord(me.user.id)
-    let at = LastUpload.newest(items: all, done: mine?.done ?? [], notAfter: mine?.written)
+    let at = LastUpload.time(watcher.lastUpload(me.user.id))
     guard LastUpload.due(me: me, sentFor: file.read()?.session, at: at) else { return }
     Task {
       do {
         try await LastUpload.send(api: api, at: at)
-        file.write(LastUploadSent(session: session))
+        // signed out meanwhile: nothing written into a folder that was deleted
+        guard self.me?.user.id == me.user.id else { return }
+        file.writeIfPresent(LastUploadSent(session: session))
       } catch { /* an older server, or offline: tried again at the next start */ }
     }
   }

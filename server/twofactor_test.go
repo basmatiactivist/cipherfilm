@@ -68,6 +68,12 @@ func TestRecoveryCodeFormat(t *testing.T) {
 	if _, ok := normRecoveryCode("uuuu-0000-0000-0000"); ok {
 		t.Fatal("u is not in the alphabet")
 	}
+	// letters that only lowercase to one of the alphabet's (Kelvin sign, dotted capital I) are not taken for it
+	for _, c := range []string{"\u212a000-0000-0000-0000", "\u0130000-0000-0000-0000"} {
+		if _, ok := normRecoveryCode(c); ok {
+			t.Fatalf("%q accepted", c)
+		}
+	}
 }
 
 // ---- helpers ----
@@ -1046,9 +1052,8 @@ func TestPasswordChangeKeepsTheCodeCount(t *testing.T) {
 	e.enable2FA(admin, ab)
 	auth := ab["auth"]
 	checked := 0
-	u, _ := e.app.userByEmail("admin@x.org")
 	for round := 0; round < 6; round++ {
-		e.app.proofs.clear(u.ID) // the password proofs have their own limit (TestSignedInPasswordProofsAreBounded)
+		e.app.proofs = newLimiter(proofWindow, proofsPerSession) // the password proofs have their own limit (TestSignedInPasswordProofsAreBounded)
 		for i := 0; i < totpAcctMax; i++ {
 			code, _ := admin.do("POST", "/api/me/2fa/disable", map[string]any{"current_auth": auth, "code": "000000"}, true)
 			switch code {

@@ -8,6 +8,7 @@ vi.mock("../session", () => ({ savedServer: async () => st.saved }));
 vi.mock("./settings", () => ({ loadSettings: async () => st.settings, saveSettings: async () => st.settings }));
 vi.mock("./models", () => ({ haveModels: async () => true, modelPath: () => "/models", CLIP: "clip-b32" }));
 vi.mock("./engine", () => ({
+  LOCAL_V: 2,
   localFile: () => ({ exists: true, text: async () => JSON.stringify(st.local), write: async (v: string) => { st.local = JSON.parse(v); } }),
   analyzeBytes: async (_b: Uint8Array, _f: boolean, models: string[]) => { st.models.push(models); return models.map((m) => ({ m })); },
 }));
@@ -39,7 +40,7 @@ describe("background indexing", () => {
     const { fingerprint } = await import("../prints");
     const s = await getSodium();
     st.settings = { enabled: true, background: true, chargingOnly: false, faces: false, server: "https://a.test", userId: "alice", pubkey: b64(s, s.crypto_box_keypair().publicKey) };
-    st.local = { userId: "alice", prints: { [await fingerprint("IMG_1.jpg", 10)]: ID }, done: [] };
+    st.local = { v: 2, userId: "alice", prints: { [await fingerprint("IMG_1.jpg", 10)]: ID }, done: [] };
     st.sent = []; st.models = [];
   });
 
@@ -75,6 +76,16 @@ describe("background indexing", () => {
     expect(api.server()).toBe("https://new.test");
   });
 
+  it("never uses a list written before it named only items the owner's devices made", async () => {
+    st.saved = "https://a.test";
+    // an earlier version's list could name an item someone else added under the phone file's name and size
+    st.local = { ...(st.local as object), v: undefined };
+    const { runBackgroundIndex } = await import("./background");
+    expect(await runBackgroundIndex()).toBe(0);
+    expect(st.models).toEqual([]);
+    expect(st.sent.filter((r) => r.startsWith("PUT"))).toEqual([]);
+  });
+
   it("does nothing (and doesn't fail) with a list of the phone's photos it can't read", async () => {
     st.saved = "https://a.test";
     const { runBackgroundIndex } = await import("./background");
@@ -93,7 +104,7 @@ describe("background indexing after one model", () => {
     const { fingerprint } = await import("../prints");
     const s = await getSodium();
     st.settings = { enabled: true, background: true, chargingOnly: false, faces: true, clip: "mobileclip-s2", server: "https://a.test", userId: "alice", pubkey: b64(s, s.crypto_box_keypair().publicKey) };
-    st.local = { userId: "alice", prints: { [await fingerprint("IMG_1.jpg", 10)]: ID }, done: [] };
+    st.local = { v: 2, userId: "alice", prints: { [await fingerprint("IMG_1.jpg", 10)]: ID }, done: [] };
     st.sent = []; st.models = []; st.saved = "https://a.test";
     const { runBackgroundIndex } = await import("./background");
     expect(await runBackgroundIndex()).toBe(1);

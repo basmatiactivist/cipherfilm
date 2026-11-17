@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -178,5 +179,91 @@ func TestResetNoticeGoesWhenTwoStepIsBackOn(t *testing.T) {
 				t.Fatalf("the reset notice is still shown: %v", shownKinds(t, c))
 			}
 		}
+	}
+}
+
+// A new recovery key is shown on the account's other devices that were signed in at the time, like a change to
+// two-step sign-in, and is in the activity log: the old key stops working, and a key made by someone else would outlast
+// a password change.
+func TestNewRecoveryKeyIsNoticedElsewhere(t *testing.T) {
+	e := newEnv(t)
+	clk := e.pinClock()
+	admin, ab := e.setupAdmin("admin@x.org")
+	other := e.login("admin@x.org", ab)
+	for _, c := range []*client{admin, other} {
+		_, out := c.do("GET", "/api/me/notices", nil, false)
+		for _, n := range out["notices"].([]any) {
+			c.do("POST", "/api/me/notices/"+itoa(int64(n.(map[string]any)["id"].(float64)))+"/dismiss", nil, true)
+		}
+	}
+	clk.tick(time.Second)
+	if code, out := admin.do("POST", "/api/auth/recovery-key", map[string]any{"current_auth": ab["auth"],
+		"wrapped_master_recovery": rb(wrappedLen), "recovery_verifier": rb(32)}, true); code != 200 {
+		t.Fatalf("new recovery key: %d %v", code, out)
+	}
+	if k := shownKinds(t, other); len(k) != 1 || k[0] != noticeRecoveryKey {
+		t.Fatalf("other device: %v", k)
+	}
+	if k := shownKinds(t, admin); len(k) != 0 {
+		t.Fatalf("the device that made it: %v", k)
+	}
+	clk.tick(time.Second)
+	if k := shownKinds(t, e.login("admin@x.org", ab)); len(k) != 0 {
+		t.Fatalf("a device signed in afterwards: %v", k)
+	}
+	_, audit := admin.do("GET", "/api/admin/audit", nil, false)
+	if !strings.Contains(mustJSON(audit), "made a new recovery key") {
+		t.Fatalf("not in the activity log: %v", audit)
+	}
+}
+
+// A change to two-step sign-in is dismissed per device: another session held by whoever made the change (older than
+// the one that made it, so it is shown the notice too) takes it down only for itself, not on the person's devices.
+func TestTwoFactorChangeNoticeIsDismissedPerDevice(t *testing.T) {
+	e := newEnv(t)
+	clk := e.pinClock()
+	owner, ab := e.setupAdmin("admin@x.org")
+	clk.tick(time.Second)
+	older := e.login("admin@x.org", ab) // a stolen session, older than the one that makes the change
+	clk.tick(time.Second)
+	changer := e.login("admin@x.org", ab)
+	clk.tick(time.Second)
+	id := func(c *client, kind string) string {
+		t.Helper()
+		_, out := c.do("GET", "/api/me/notices", nil, false)
+		for _, n := range out["notices"].([]any) {
+			if m := n.(map[string]any); m["kind"] == kind {
+				return itoa(int64(m["id"].(float64)))
+			}
+		}
+		return ""
+	}
+	// a new sign-in is still dismissed for the account, by any device that is shown it
+	if s := id(older, noticeSignIn); s == "" {
+		t.Fatal("the sign-in is not shown")
+	} else if code, _ := older.do("POST", "/api/me/notices/"+s+"/dismiss", nil, true); code != 200 {
+		t.Fatalf("dismiss the sign-in: %d", code)
+	} else if _, out := owner.do("GET", "/api/me/notices", nil, false); strings.Contains(mustJSON(out), `"id":`+s+`,`) {
+		t.Fatal("a sign-in notice is no longer dismissed for the account")
+	}
+	e.enable2FA(changer, ab)
+	n := id(older, noticeTOTPAdded)
+	if n == "" || id(owner, noticeTOTPAdded) != n {
+		t.Fatal("the change is not shown on both earlier devices")
+	}
+	if code, _ := older.do("POST", "/api/me/notices/"+n+"/dismiss", nil, true); code != 200 {
+		t.Fatalf("dismiss: %d", code)
+	}
+	if id(older, noticeTOTPAdded) != "" {
+		t.Fatal("still shown on the device that dismissed it")
+	}
+	if id(owner, noticeTOTPAdded) != n {
+		t.Fatal("dismissing it on another device took it down on the person's device")
+	}
+	if code, _ := older.do("POST", "/api/me/notices/"+n+"/dismiss", nil, true); code != 404 {
+		t.Fatalf("dismissed twice: %d", code)
+	}
+	if code, _ := owner.do("POST", "/api/me/notices/"+n+"/dismiss", nil, true); code != 200 || id(owner, noticeTOTPAdded) != "" {
+		t.Fatalf("the person's own dismissal: %d", code)
 	}
 }

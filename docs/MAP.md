@@ -15,6 +15,9 @@ apps. A photo's details show the place's name and a small map of its spot. Searc
   "where photos were taken" (ACCESS_MEDIA_LOCATION); the photo picker behind the Upload button does the same. The app
   asks for it where the backup is set up and before picking (Android grants it without a dialog), and reads the
   original then. The uploaded file is always the original as the phone gives it, byte for byte.
+- **No device location.** The Android app asks for no location permission (the map library's
+  ACCESS_FINE_LOCATION and ACCESS_COARSE_LOCATION are left out of the build): the map never reads or shows where the
+  phone is. A photo's or video's place always comes from the file's own metadata, as above.
 - **Added afterwards.** What arrived without its location gets it while the map is on: the Android app looks up the
   photos and videos it uploaded on the phone (same name and size) and reads their originals. It does this only for items
   this phone uploaded itself, by the backup or the Upload button, from this version on: it keeps their ids with a hash
@@ -105,7 +108,8 @@ them.
    past a warning.
 2. **Check the styles.** Every URL inside them (`sources` › `url` or `tiles`, `glyphs`, `sprite`) must point at the
    same host as the style itself: the web app's and the Mac app's Content-Security-Policy allow the styles' hosts and
-   nothing else, so a font or tile from another host is blocked. To list the hosts a style uses:
+   nothing else, and the Android app sends a map request only over https to those hosts, so a font or tile from
+   another host is blocked. To list the hosts a style uses:
 
    ```sh
    curl -s https://maps.example.com/styles/light.json | grep -oE 'https?://[^/"]+' | sort -u

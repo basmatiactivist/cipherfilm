@@ -176,24 +176,43 @@ struct JumpPicker: View {
 }
 
 /** Whatever is dropped on the window: files and folders from the Finder, and photos and videos from apps that only
- *  promise a file (Photos, browsers). Promised files are written into the app's inbox, then queued. */
+ *  promise a file (Photos, browsers). Promised files are written into the app's inbox, then queued. A photo of the
+ *  library dragged and let go inside the window (the locked folder's too) is not uploaded again as a new item. */
 enum Dropper {
   @MainActor static func take(_ providers: [NSItemProvider], _ model: AppModel) {
     for p in providers {
-      if p.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-        _ = p.loadObject(ofClass: URL.self) { url, _ in
-          guard let url else { return }
-          let kept = AppModel.Inbox.keep(url)
-          Task { @MainActor in model.upload([kept]) }
-        }
-      } else if let type = [UTType.movie, .image].first(where: { t in p.registeredTypeIdentifiers.contains { UTType($0)?.conforms(to: t) == true } }),
-                let id = p.registeredTypeIdentifiers.first(where: { UTType($0)?.conforms(to: type) == true }) {
-        p.loadFileRepresentation(forTypeIdentifier: id) { url, _ in
-          guard let url else { return }
-          // the file exists only inside this callback: copied now
-          let kept = AppModel.Inbox.keep(url)
-          Task { @MainActor in model.upload([kept]) }
-        }
+      // a tile's drag carries its item id (Outbox.provider): one of this app's own
+      guard p.canLoadObject(ofClass: NSString.self) else { upload(p, model); continue }
+      _ = p.loadObject(ofClass: NSString.self) { s, _ in
+        if let text = (s as? NSString).map({ $0 as String }), isItemDrag(text) { return }
+        upload(p, model)
+      }
+    }
+  }
+
+  /** The text a drag of one of the app's own tiles carries: an item id. */
+  static func isItemDrag(_ text: String) -> Bool { ServerId.valid(text.trimmingCharacters(in: .whitespacesAndNewlines)) }
+
+  /** A decrypted copy the app made for a drag or Share… is never taken back in. */
+  static func isOwnCopy(_ url: URL) -> Bool {
+    let out = Outbox.dir.resolvingSymlinksInPath().standardizedFileURL.path + "/"
+    return url.resolvingSymlinksInPath().standardizedFileURL.path.hasPrefix(out)
+  }
+
+  private static func upload(_ p: NSItemProvider, _ model: AppModel) {
+    if p.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+      _ = p.loadObject(ofClass: URL.self) { url, _ in
+        guard let url, !isOwnCopy(url) else { return }
+        let kept = AppModel.Inbox.keep(url)
+        Task { @MainActor in model.upload([kept]) }
+      }
+    } else if let type = [UTType.movie, .image].first(where: { t in p.registeredTypeIdentifiers.contains { UTType($0)?.conforms(to: t) == true } }),
+              let id = p.registeredTypeIdentifiers.first(where: { UTType($0)?.conforms(to: type) == true }) {
+      p.loadFileRepresentation(forTypeIdentifier: id) { url, _ in
+        guard let url, !isOwnCopy(url) else { return }
+        // the file exists only inside this callback: copied now
+        let kept = AppModel.Inbox.keep(url)
+        Task { @MainActor in model.upload([kept]) }
       }
     }
   }

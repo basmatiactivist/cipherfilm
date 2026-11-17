@@ -137,7 +137,17 @@ import Testing
   static func metaBox(_ iso6709: String, fullBox: Bool) -> [UInt8] {
     let hdlr = box("hdlr", [UInt8](repeating: 0, count: 8) + Array("mdta".utf8) + [UInt8](repeating: 0, count: 13))
     let names = ["com.apple.quicktime.make", Media.locationKey]
-    let keys = box("keys", [0, 0, 0, 0] + be32(names.count) + names.flatMap { be32(8 + $0.utf8.count) + Array("mdta".utf8) + Array($0.utf8) })
+    var entries: [UInt8] = []
+    for n in names {
+      let name: [UInt8] = Array(n.utf8)
+      entries += be32(8 + name.count)
+      entries += Array("mdta".utf8)
+      entries += name
+    }
+    var keysPayload: [UInt8] = [0, 0, 0, 0]
+    keysPayload += be32(names.count)
+    keysPayload += entries
+    let keys = box("keys", keysPayload)
     let data = { (v: String) in box("data", be32(1) + be32(0) + Array(v.utf8)) }
     let ilst = box("ilst", box(1, data("Apple")) + box(2, data(iso6709)))
     return box("meta", (fullBox ? [0, 0, 0, 0] : []) + hdlr + keys + ilst)

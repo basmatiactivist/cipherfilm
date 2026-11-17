@@ -71,7 +71,8 @@ private let places: Places = try! Places(contentsOf: repo.appendingPathComponent
   @Test func fastEnoughForALibrary() {
     let t = Date()
     for i in 0..<10_000 { _ = places.nearest(-60 + Double(i % 120), -170 + Double((i * 7) % 340)) }
-    #expect(Date().timeIntervalSince(t) < 1.5)
+    // a debug build on a shared CI runner takes about 2 s; a lookup that scans every place would take far longer
+    #expect(Date().timeIntervalSince(t) < 5)
   }
 
   @Test func titleForPhotosFromSeveralPlaces() {

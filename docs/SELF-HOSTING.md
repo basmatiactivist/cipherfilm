@@ -125,9 +125,11 @@ scripts/restore.sh /path/to/cipherfilm-20261102-035500.tar --yes
 ```
 
 From your own tool's backup: `tar -cf restore.tar -C restored-folder backup blobs`, then restore that. The script ends
-every session (an older backup would revive revoked ones) and prints a health report. What happened to the accounts
+every session (an older backup would revive revoked ones), so invites made from a session no longer work afterwards
+(the server console's do), and prints a health report. What happened to the accounts
 after the backup is taken over from the replaced data: devices signed out since, changed passwords and recovery keys,
-two-step sign-in turned on or off, passkeys and new recovery codes (and the notices for the devices),
+two-step sign-in turned on or off, passkeys and new recovery codes (and the notices for the devices), the sign-outs
+owed to devices left unused and the idle limit each person chose,
 roles, storage limits (and the default one for new people), explicit search, and disabled or deleted accounts (those stay disabled; their e-mail addresses are printed). This applies only
 when the replaced data is from the same server (the same `secret`).
 
@@ -166,7 +168,7 @@ lost device, turn off someone's two-step sign-in, make an invite link, status). 
 
 | Setting | Where | Default | Meaning |
 |---|---|---|---|
-| `PUBLIC_HOSTS` | `.env` | required | names your proxy serves, e.g. `photos.example.com`; others get 421 |
+| `PUBLIC_HOSTS` | `.env` | required | names your proxy serves, e.g. `photos.example.com`; others get 421. A name may carry a port (`photos.example.com:8443`), and must when the site is published on a port other than 443: passkeys are accepted only from `https://<name>` with exactly the port listed here |
 | `TRUST_PROXY` | `.env` | `1` | trust the last `X-Forwarded-For` entry from exactly one proxy; `0` for a chain, a Cloudflare Tunnel or Tailscale Serve |
 | `TRUST_TAILSCALE_HEADERS` | `.env` | `0` | `1` behind Tailscale Serve with `TRUST_PROXY=0`: requests from loopback are limited per tailnet user (`Tailscale-User-Login`) instead of all as `127.0.0.1`. Only when Serve is the only thing reaching the app on loopback |
 | `TRUSTED_PROXIES` | `.env` | empty (loopback and private networks) | addresses or CIDRs whose `X-Forwarded-For` is believed, comma-separated |
@@ -183,7 +185,7 @@ lost device, turn off someone's two-step sign-in, make an invite link, status). 
 `DEMO_ACCOUNTS` is only for a server whose login you publish on purpose, such as a demo that is reset from a seed. Never
 list an account with real photos or an administrator: anyone with the password can see everything in it.
 
-Built-in limits: 20 GB per invited user (changeable; thumbnails and previews count too), 50 unfinished uploads per user, 8 GB per file, sessions end 30 days after their last use (7 or 14 if the person chose that under Devices) or a year after signing in, 50 signed-in devices per account (a new sign-in beyond that ends the one unused longest), trash empties after 30 days, 10 failed sign-ins per account and source address and 30 per source address overall, per 15 minutes. There is no ceiling across all sources, on purpose: it would let a stranger lock you out. Browsers that signed in before have their own limit of 20 per account. Live-update streams: 8 per session (browser tabs share one), 32 per account, 2000 in all.
+Built-in limits: 20 GB per invited user (changeable; thumbnails and previews count too), 50 unfinished uploads per user, 8 GB per file, sessions end 30 days after their last use (7 or 14 if the person chose that under Devices) or a year after signing in, 50 signed-in devices per account (a new sign-in beyond that ends first one already unused for longer than its limit, then one signed in within the last day, then the one unused longest), trash empties after 30 days, 10 failed sign-ins per account and source address and 30 per source address overall, per 15 minutes, and at most 4 sign-in or recovery checks from new browsers at once per source address. There is no ceiling across all sources, on purpose: it would let a stranger lock you out. Browsers that signed in before have their own limit of 20 per account. Live-update streams: 8 per session (browser tabs share one), 32 per account, 2000 in all.
 
 ## Passkeys
 
@@ -191,7 +193,8 @@ Two-step sign-in can use passkeys instead of the authenticator app's code (the p
 for the name the server is reached by, so:
 
 - Reach the server by its https name, the one in `PUBLIC_HOSTS`, never by an IP address; a passkey made under one name
-  doesn't work under another. The proxy must pass the `Host` header on (it already must, for the CSRF check).
+  doesn't work under another. On a port other than 443, list the name with its port (`photos.example.com:8443`);
+  otherwise passkeys are accepted only from `https://<name>` on 443. The proxy must pass the `Host` header on (it already must, for the CSRF check).
 - The Android app (Android 14 and newer) asks Android, which checks `https://<name>/.well-known/assetlinks.json`
   through Google: the server serves it by itself, but for this the name and that file must be reachable from the
   internet. For a server Google can't reach (a tailnet `*.ts.net` name with Serve and no Funnel, a private or LAN

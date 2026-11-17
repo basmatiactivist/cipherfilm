@@ -29,7 +29,11 @@ read-only root file system, with memory and process limits.
   sign-in on a new device); with `TRUST_TAILSCALE_HEADERS=1` (set by this overlay) they are kept per tailnet user,
   by the `Tailscale-User-Login` header Tailscale Serve adds (Serve removes the header from what a client sends).
   Tagged devices get no such header and still share one bucket. The domain overlay turns it off again: there Serve
-  passes the connection to Caddy unread and adds no header, and Caddy would forward one a client made up.
+  passes the connection to Caddy unread and adds no header, and Caddy would forward one a client made up. Instead
+  Serve puts a PROXY protocol header with the tailnet device's address in front of each connection; Caddy takes the
+  address from it (only from Serve, on loopback), replaces any `X-Forwarded-For` a client sent with it, and the app
+  believes only Caddy (`TRUST_PROXY=1`, `TRUSTED_PROXIES=127.0.0.1/32`), so the limits are kept per tailnet device,
+  tagged ones included.
 - **tailscale**: kernel networking (much faster than the userspace mode over long routes), which needs `/dev/net/tun`
   and `NET_ADMIN` + `NET_RAW` inside its own namespace. The one published host port is WireGuard's UDP `41641`, so
   devices connect directly instead of via relays. Funnel (public sharing) is off for every port.
@@ -85,7 +89,11 @@ overlay keeps it on the same node for simplicity.
 
 **Own name.** Point an A record for `photos.example.com` at the server's tailnet address (100.x.y.z, DNS only, not
 proxied), add the domain overlay and `DOMAIN`, `TS_DOMAIN`, `CF_API_TOKEN`, and add the name to `PUBLIC_HOSTS`
-(comma-separated). The name resolves for everyone but only answers inside your tailnet.
+(comma-separated). The name resolves for everyone but only answers inside your tailnet. When updating a server that
+already uses the overlay from a version before 2.8.0, update `compose.domain.yaml`, the Caddy files
+(`deploy/tailnet/domain/`) and the Serve configuration (`deploy/tailnet/tailscale/serve-domain*.json`) together and
+rebuild Caddy (`docker compose up -d --build`): the new Serve configuration sends a PROXY protocol header that only
+the new Caddy configuration reads.
 
 **Portainer.** Write its admin password (at least 12 characters) into a file only you can read, and name it in
 `.env`; Portainer creates the account `admin` with it at its first start, so there is no moment when a fresh

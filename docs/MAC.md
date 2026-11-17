@@ -124,11 +124,13 @@ What needs what:
 | Search indexing | the master key (it decrypts previews) | waits for unlock; files from watched folders are indexed from the file at upload |
 | Security notifications | the session (cookie); notices aren't encrypted | checked every 5 minutes (live updates while unlocked) |
 
-Security notices (a new sign-in to your account elsewhere, two-step sign-in turned off or changed, recovery codes made,
-the password used for a sign-in that wasn't finished) collect behind the bell in the toolbar, next to Lock. Its badge
+Security notices (a new sign-in to your account elsewhere, two-step sign-in turned off or changed, recovery codes or a
+new recovery key made, the password used for a sign-in that wasn't finished) collect behind the bell in the toolbar,
+next to Lock. Its badge
 marks notices newer than the newest the list has shown on this Mac (remembered per account); opening the list marks
 them all read. Each entry says what happened, on which device and when, with a button to what to check (Review
-Devices, Two-Step Sign-In); each can be removed, or all at once with Remove All, which removes them on every device.
+Devices, Two-Step Sign-In); each can be removed, or all at once with Remove All. A sign-in notice removed here is
+removed on every device; a change to two-step sign-in or a new recovery key only on this Mac.
 
 While the window isn't in front, a new notice also shows as a macOS notification, each once. The title says only what happened ("New sign-in to
 Cipherfilm"); the text names the device and the time, and macOS hides it where it hides previews. A click opens

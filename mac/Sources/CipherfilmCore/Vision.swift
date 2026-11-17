@@ -316,7 +316,13 @@ public final class Vision: @unchecked Sendable {
         let row = Float(i / cols), col = Float(i % cols), fs = Float(st)
         let cx = (col + bb[i * 4]) * fs, cy = (row + bb[i * 4 + 1]) * fs
         let w = exp(bb[i * 4 + 2]) * fs, h = exp(bb[i * 4 + 3]) * fs
-        let pts = (0..<10).map { k in ((k % 2 == 0 ? col : row) + kp[i * 10 + k]) * fs / scale }
+        var pts: [Float] = []
+        pts.reserveCapacity(10)
+        for k in 0..<10 {
+          let base: Float = k % 2 == 0 ? col : row
+          let v: Float = (base + kp[i * 10 + k]) * fs
+          pts.append(v / scale)
+        }
         found.append(Face(score: sc, x: (cx - w / 2) / scale, y: (cy - h / 2) / scale, w: w / scale, h: h / scale, pts: pts))
       }
     }

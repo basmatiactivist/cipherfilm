@@ -60,7 +60,8 @@ version into the GitHub release notes, so a release cannot be published without 
   Android, Touch ID or the password on the Mac. Its pictures are never kept in a cache on disk and leave memory when
   the folder closes. Albums keep such items but don't show or count them.
 - Whether an item is archived or locked is written inside its encrypted metadata (as a new metadata version), so the
-  server can't tell which items are in which folder (docs/EDITING.md, docs/CRYPTO.md). Older app versions don't know
+  server is never told which items are in which folder; it can still infer some of it from which items are opened
+  or fetched again (docs/THREAT_MODEL.md, docs/EDITING.md, docs/CRYPTO.md). Older app versions don't know
   the folders and show such items as usual: update every app before using the locked folder.
 - Combined search on the web, Android and Mac: one query mixes filters and content, such as "dog beach May 2025 Anna
   Rome" or "Hund Strand 2025 Anna Rom". Names of people, years, months (English and German), date ranges ("2019–2021",

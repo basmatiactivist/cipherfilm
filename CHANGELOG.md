@@ -7,6 +7,17 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+### Upgrade notes
+- After a restore, invites made from a session no longer work (every session ends at a restore, and such an invite
+  ends with its session). Invites made on the server console are not affected.
+- A server published on a port other than 443 must list that port in `PUBLIC_HOSTS` (`photos.example.com:8443`), or
+  passkeys stop working there.
+- Notices about a change to two-step sign-in (and the new recovery key notice) are now dismissed per device:
+  dismissing one on a device no longer removes it on the others.
+- Tailnet domain overlay: Tailscale Serve now talks to Caddy with the PROXY protocol. Update
+  `deploy/tailnet/compose.domain.yaml`, the Caddy files and the Serve configuration
+  (`deploy/tailnet/tailscale/serve-domain*.json`) together, then `docker compose up -d --build` (docs/TAILNET.md).
+
 ### Added
 - Mac: import from WebDAV folders (Settings › Import). Any WebDAV folder (https; http only for this Mac or a home
   network, with a warning) imported once or kept importing every 15 minutes to a day; several folders; Test Connection.
@@ -114,7 +125,33 @@ version into the GitHub release notes, so a release cannot be published without 
   never shows its cached library again; while locked it learns of such a sign-out within minutes, also with
   notifications off.
 - Web: a session that ended while the page was closed deletes what the browser kept for it at the next visit.
-<!-- server-a -->
+- Server: deleting an account in the admin area or on the server console now signs its devices out on purpose, so they
+  delete what they keep, as disabling it does.
+- Server: an administrator's open invites are deleted when they are disabled or made a regular user; enabling or
+  promoting them again no longer brings old invite links back.
+- Server: an invite also ends when the session it was made from signs itself out, is pushed out by the limit on
+  sessions, or reaches the end of its lifetime.
+- Server: accounts whose second steps are passkeys alone can make new recovery codes.
+- Server: an authenticator setup begun while two-step sign-in was on can no longer be finished after it was turned off
+  (for example by removing the last passkey).
+- Server: a passkey being added is refused if two-step sign-in was reset meanwhile, also by the server console.
+- Making a new recovery key is told to your other devices (web, Android, Mac show it under the bell) and written to
+  the activity log.
+- Server: a notice about a change to two-step sign-in or a new recovery key is dismissed only on the device that
+  dismisses it.
+- Server: many sign-ins in a row no longer push out the devices that were signed in before them; a device already
+  unused for too long goes first and deletes what it keeps.
+- Server: a restore keeps the sign-outs owed to devices left unused, and the idle limit chosen after the backup.
+- Server: one address can have at most four sign-in or recovery checks from new browsers at once.
+- Server: password checks for account changes are counted per session, so another session of your account can no
+  longer block your own password change.
+- Server: the session cookie is kept for the session's whole lifetime, so a device signed out after a long time unused
+  is still told to delete what it keeps.
+- Server: with `PUBLIC_HOSTS` set, passkeys are accepted only from `https://<name>` (or `name:port` if you list the
+  port in `PUBLIC_HOSTS`).
+- Server: a damaged secret file stops the server from starting instead of being silently replaced.
+- Tailnet with your own domain: sign-in limits are kept per tailnet device again (Tailscale Serve passes each device's
+  address to Caddy). Rebuild Caddy after updating.
 - A change to a photo's details, a move to the archive or the locked folder, or an added location no longer writes
   over a change made meanwhile on another device. The app loads the item again and moves it from its current details,
   or asks you to open it again.
@@ -181,6 +218,8 @@ version into the GitHub release notes, so a release cannot be published without 
 - Mac: the last upload time this Mac reports is its own note of it.
 - Decrypt tool: two items whose names differ only in a way a Mac or Windows disk ignores (for example "ſ" and "s") are
   restored as two files instead of one replacing the other.
+- Mac (fotocrypt.sh): a restore whose last step fails keeps the app stopped and can be finished safely, as
+  `scripts/restore.sh` does.
 
 ## [2.7.3] - 2026-11-15
 

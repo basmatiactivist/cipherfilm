@@ -101,7 +101,7 @@ export default function SignIn() {
         <Problem>{error ?? notice}</Problem>
         <Field label={t("E-mail")} value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" textContentType="emailAddress" autoComplete="email" returnKeyType="next"
           onSubmitEditing={() => passwordField.current?.focus()} submitBehavior="submit" />
-        <Field inputRef={passwordField} label={t("Password")} value={password} onChangeText={setPassword} secureTextEntry textContentType="password" autoComplete="current-password" returnKeyType="go" onSubmitEditing={go}
+        <Field inputRef={passwordField} label={t("Password")} value={password} onChangeText={setPassword} password textContentType="password" autoComplete="current-password" returnKeyType="go" onSubmitEditing={go}
           hint={busy ? t("Unlocking…") : undefined} />
         <Button mode="contained" onPress={go} icon={busy ? busyIcon : undefined} disabled={busy || !email || !password} contentStyle={{ height: 48 }}>{t("Sign in")}</Button>
         <Button mode="text" onPress={() => router.push("/server")} style={{ marginTop: 8 }}>{t("Use a different address")}</Button>

@@ -7,6 +7,19 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+### Added
+- Android: an eye in every password field shows what was typed, and hides it again (sign-in, unlock, Locked folder,
+  two-step sign-in, deleting the account). Screen readers hear "Show password" / "Hide password".
+- Android: Back on Photos, Search, Albums or Map asks before it closes the app, and says when uploads are still running
+  (they go on after closing). The question can be turned off in Account.
+- Android: a short introduction (four pages: encryption and the recovery key, backup and upload, search, locking),
+  shown once on a phone the first time the library opens, and again from Account › How Cipherfilm works.
+- Android: "How search works" on the Search screen and when nothing was found: what the search box understands
+  (things in photos, people, places, dates, kinds, text in photos, combining them, similar photos).
+- Android: Account › Share Cipherfilm (a link to the app through the share sheet, which can also copy it; the Play
+  build shares its store listing, the GitHub build the website) and Account › Suggest an idea (the idea form in the
+  browser, nothing about the phone is sent).
+
 ## [2.8.0] - 2026-11-17
 
 ### Upgrade notes

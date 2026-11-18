@@ -16,6 +16,7 @@ import { loadSettings, onSettingsChange, type SearchSettings } from "../search/s
 import { useAppTheme } from "../ui";
 import { radius, text } from "../tokens";
 import { Loader } from "../Loader";
+import { SearchTips } from "../SearchTips";
 import { locale, t, tn } from "../i18n";
 
 const mb = (n: number) => `${Math.round(n / 1e6).toLocaleString(locale())} MB`;
@@ -27,6 +28,7 @@ export default function Search() {
   const inset = useSafeAreaInsets();
   const params = useLocalSearchParams<{ similar?: string; q?: string }>();
   const { items, error } = useLibrary();
+  const [tips, setTips] = useState(false);
   const [q, setQ] = useState(params.q ?? "");
   const [res, setRes] = useState<Result | null>(null);
   const [similar, setSimilar] = useState<Item[] | null>(null);
@@ -115,8 +117,9 @@ export default function Search() {
           ) : null}
           split={moreSimilar && moreOpen ? { at: res!.items.length, heading: <SimilarHeading onHide={() => setMoreOpen(false)} /> } : undefined}
           footer={moreSimilar && !moreOpen ? <View style={st.moreSimilar}><Button mode="outlined" onPress={() => setMoreOpen(true)}>{t("More similar photos ({n})", { n: num(moreSimilar) })}</Button></View> : null}
-          empty={<NoResults ready={progress.phase === "ready" || progress.phase === "indexing"} on={!!settings?.enabled} />}
+          empty={<NoResults ready={progress.phase === "ready" || progress.phase === "indexing"} on={!!settings?.enabled} onTips={() => setTips(true)} />}
           nav={<NavBar current="search" />} />
+        <SearchTips visible={tips} onClose={() => setTips(false)} />
       </View>
     );
   }
@@ -154,7 +157,9 @@ export default function Search() {
             </Text>
           </>
         ) : null}
+        <Button mode="text" icon="help" onPress={() => setTips(true)} style={st.tipsButton} accessibilityHint={t("Explains what you can search for")}>{t("How search works")}</Button>
       </ScrollView>
+      <SearchTips visible={tips} onClose={() => setTips(false)} />
       <NavBar current="search" />
     </View>
   );
@@ -216,7 +221,7 @@ function TextStatus() {
   );
 }
 
-function NoResults({ ready, on }: { ready: boolean; on: boolean }) {
+function NoResults({ ready, on, onTips }: { ready: boolean; on: boolean; onTips: () => void }) {
   const th = useAppTheme();
   return (
     <View style={{ alignItems: "center", padding: 32 }}>
@@ -224,6 +229,7 @@ function NoResults({ ready, on }: { ready: boolean; on: boolean }) {
       <Text variant="bodyMedium" style={{ textAlign: "center", color: th.colors.onSurfaceVariant, maxWidth: 320 }}>
         {!on ? t("Turn on search to find photos by what's in them. Names, dates and file names work without it.") : !ready ? t("Search is still getting ready.") : t("Try other English words, like \"dog\" or \"mountains\".")}
       </Text>
+      <Button mode="text" icon="help" onPress={onTips} style={{ marginTop: 8 }}>{t("Search tips")}</Button>
     </View>
   );
 }
@@ -262,4 +268,5 @@ const st = StyleSheet.create({
   similarRow: { flexDirection: "row", alignItems: "center", marginTop: 8 },
   queryChips: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 },
   moreSimilar: { alignItems: "center", paddingVertical: 16 },
+  tipsButton: { alignSelf: "flex-start", marginHorizontal: 8, marginTop: 12 },
 });

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AppState, Linking, ScrollView, StyleSheet, View } from "react-native";
+import { AppState, Linking, ScrollView, Share, StyleSheet, View } from "react-native";
 import { router } from "expo-router";
 import { Appbar, Button, Divider, List, Portal, ProgressBar, RadioButton, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -11,12 +11,14 @@ import { clearImages } from "../library";
 import { Icon } from "../icons";
 import { Field, Problem, SwitchItem, useAppTheme, Dialog } from "../ui";
 import { setShake, useShake } from "../shake";
+import { setAskBeforeClosing, useAskBeforeClosing } from "../exitConfirm";
 import { setScreenshots, useScreenshots } from "../screenshots";
 import { setMemoriesOn, useMemoriesOn } from "../memories";
 import { CHOICES, away, expectAway, setAutoLock, useAutoLock } from "../autolock";
 import { privacyUrl } from "../store";
 import { mapProvider, mapProviderLong, setMapOn, useMapOn } from "../mapConsent";
-import { reportUrl, summary, thisPhone } from "../report";
+import { IDEA_FORM, reportUrl, summary, thisPhone } from "../report";
+import { shareMessage } from "../shareApp";
 import { isAdmin } from "../admin";
 import { type AccountStorage, loadMyStorage } from "../storage";
 import { StorageView } from "../StorageView";
@@ -56,6 +58,7 @@ export default function Account() {
   const delStacked = delSecond && delButtons.passkey;
   const [bioOk, setBioOk] = useState(() => biometricPossible());
   const shake = useShake();
+  const askClose = useAskBeforeClosing();
   const shots = useScreenshots();
   const memoriesOn = useMemoriesOn();
   const auto = useAutoLock();
@@ -168,6 +171,10 @@ export default function Account() {
           description={t("Two strong shakes lock and close Cipherfilm")}
           left={() => <View style={st.icon}><Icon name="phone" color={th.colors.primary} /></View>}
           value={shake} onValueChange={setShake} style={st.item} />
+        <SwitchItem title={t("Ask before Back closes the app")}
+          description={t("On Photos, Search, Albums and Map")}
+          left={() => <View style={st.icon}><Icon name="back" color={th.colors.primary} /></View>}
+          value={askClose} onValueChange={setAskBeforeClosing} style={st.item} />
         <SwitchItem title={t("Allow screenshots")}
           description={shots ? t("Other apps and the recent-apps preview can see what's on screen") : t("Blocked, and recent apps show only the icon")}
           left={() => <View style={st.icon}><Icon name="phone" color={th.colors.primary} /></View>}
@@ -191,6 +198,12 @@ export default function Account() {
         {/* the sources ask to be named: GeoNames for the place names (always used), the text-in-photos models' license, OpenStreetMap for the map */}
         <List.Item title={t("Credits")} description={[t("Place names: GeoNames, CC BY 4.0."), t("Text recognition: PaddleOCR models, Apache 2.0."), me?.map ? (mapProvider() === "OpenFreeMap" ? t("Map data © OpenStreetMap contributors, © OpenMapTiles.") : t("Map data: see the credits on the map.")) : ""].filter(Boolean).join(" ")}
           descriptionNumberOfLines={4} style={st.item} />
+        <List.Item title={t("How Cipherfilm works")} description={t("The short introduction again")}
+          onPress={() => router.push({ pathname: "/welcome", params: { again: "1" } })} style={st.item} />
+        <List.Item title={t("Share Cipherfilm")} description={t("Send a link to the app, or copy it")}
+          onPress={() => { expectAway(); Share.share({ message: shareMessage() }, { dialogTitle: t("Share Cipherfilm") }).catch(() => {}); }} style={st.item} />
+        <List.Item title={t("Suggest an idea")} description={t("Opens the idea form in the browser")}
+          onPress={() => { expectAway(); inBrowser(IDEA_FORM); }} style={st.item} />
         <List.Item title={t("Report a problem")} description={t("Opens the issue form in the browser")}
           onPress={() => setReport(true)} style={st.item} />
       </ScrollView>
@@ -242,7 +255,7 @@ export default function Account() {
         <Dialog visible={del === "password"} onDismiss={closeDel}>
           <Dialog.Title>{t("Enter your password")}</Dialog.Title>
           <Dialog.Content>
-            <Field label={t("Password")} value={delPw} onChangeText={setDelPw} secureTextEntry textContentType="password" autoComplete="current-password" autoFocus
+            <Field label={t("Password")} value={delPw} onChangeText={setDelPw} password textContentType="password" autoComplete="current-password" autoFocus
               hint={delBusy ? t("Checking your password…") : undefined} />
             {delSecond && delWays ? <SecondStepFields step={delStep} ways={delWays} /> : null}
             <Problem>{delError}</Problem>

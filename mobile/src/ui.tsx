@@ -5,6 +5,7 @@ import { Dialog as PaperDialog, HelperText, List, Switch, Text, TextInput, useTh
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { AppTheme } from "./theme";
 import { radius } from "./tokens";
+import { t } from "./i18n";
 
 export const useAppTheme = () => useTheme<AppTheme>();
 
@@ -57,11 +58,20 @@ export const Lead = ({ children }: { children: ReactNode }) => {
 /** What a screen may do with a field, e.g. move the focus to it from the one before. */
 export type FieldHandle = { focus: () => void };
 
-export function Field(props: React.ComponentProps<typeof TextInput> & { hint?: string; inputRef?: { current: FieldHandle | null } }) {
-  const { hint, inputRef, ...rest } = props;
+/** A text field. `password` hides what is typed, with an eye at the end that shows it while the person wants to check
+ *  it (and hides it again on a second tap); a screen reader hears "Show password" or "Hide password". */
+export function Field(props: React.ComponentProps<typeof TextInput> & { hint?: string; inputRef?: { current: FieldHandle | null }; password?: boolean }) {
+  const { hint, inputRef, password, ...rest } = props;
+  const [shown, setShown] = useState(false);
+  const eye = password ? (
+    <TextInput.Icon icon={shown ? "eyeOff" : "eye"} forceTextInputFocus={false} onPress={() => setShown((v) => !v)}
+      accessibilityLabel={shown ? t("Hide password") : t("Show password")}
+      accessibilityHint={shown ? t("Hides the password again") : t("Shows the password so you can check it")} />
+  ) : undefined;
   return (
     <View style={s.field}>
       <TextInput mode="outlined" outlineStyle={{ borderRadius: radius.control }} autoCorrect={false} {...rest}
+        {...(password ? { secureTextEntry: !shown, autoCapitalize: "none" as const, right: eye } : null)}
         ref={inputRef ? (r: unknown) => { inputRef.current = r as FieldHandle | null; } : undefined} />
       {hint ? <HelperText type="info" style={s.hint}>{hint}</HelperText> : null}
     </View>

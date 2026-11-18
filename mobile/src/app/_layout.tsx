@@ -19,6 +19,7 @@ import { startLiveSync } from "../liveSync";
 import { refreshLang, useLang } from "../i18n";
 import { onNoticeOpen, takeNoticeOpen } from "../noticeOpen";
 import { mustLeave, routeNames } from "../privateRoutes";
+import { ExitDialog } from "../ExitDialog";
 
 // expo-image keeps decoded pictures (the viewer's previews, faces) in its memory cache beyond the
 // session that decrypted them: dropped at every lock and sign-out, and once more after the screens that showed them
@@ -76,6 +77,7 @@ export default function Root() {
           <Stack.Screen name="albums" options={{ animation: "none" }} />
           <Stack.Screen name="search" options={{ animation: "none" }} />
         </Stack>
+        <ExitDialog />
       </PaperProvider>
     </SafeAreaProvider>
   );

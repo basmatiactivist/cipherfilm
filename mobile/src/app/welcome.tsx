@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { BackHandler, ScrollView, StyleSheet, View } from "react-native";
+import { BackHandler, ScrollView, StyleSheet, View, useWindowDimensions } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Button, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -24,6 +24,7 @@ const pages = (): { icon: IconName; title: string; body: string }[] => [
 export default function Welcome() {
   const th = useAppTheme();
   const inset = useSafeAreaInsets();
+  const { height } = useWindowDimensions();
   const { again } = useLocalSearchParams<{ again?: string }>();
   const [i, setI] = useState(0);
   const finish = () => {
@@ -44,7 +45,8 @@ export default function Welcome() {
       <View style={st.top}>
         {last ? <View /> : <Button onPress={finish} accessibilityHint={t("Ends the introduction")}>{t("Skip")}</Button>}
       </View>
-      <ScrollView key={i} contentContainerStyle={st.page}>
+      {/* Top-aligned at a fixed offset, so the icon sits at the same height on every page whatever the text length */}
+      <ScrollView key={i} contentContainerStyle={[st.page, { paddingTop: Math.round(height * 0.1) }]}>
         <View style={[st.disc, { backgroundColor: th.colors.primaryContainer }]} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
           <Icon name={page.icon} size={34} color={th.colors.primary} />
         </View>
@@ -72,7 +74,7 @@ export default function Welcome() {
 const st = StyleSheet.create({
   fill: { flex: 1 },
   top: { flexDirection: "row", justifyContent: "flex-end", paddingHorizontal: 8, minHeight: 48 },
-  page: { flexGrow: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 32, paddingVertical: 24, maxWidth: 520, alignSelf: "center", width: "100%" },
+  page: { flexGrow: 1, justifyContent: "flex-start", alignItems: "center", paddingHorizontal: 32, paddingVertical: 24, maxWidth: 520, alignSelf: "center", width: "100%" },
   disc: { width: 72, height: 72, borderRadius: 36, alignItems: "center", justifyContent: "center", marginBottom: 24 },
   title: { textAlign: "center", marginBottom: 12 },
   body: { textAlign: "center" },

@@ -108,3 +108,65 @@ public enum Recaps {
     )
   }
 }
+
+/** One page of the year in review played as a story (the same order as the web and Android apps). */
+public enum RecapSlide: Sendable, Hashable {
+  case cover
+  /** a month with photos, 1 = January */
+  case month(Int)
+  /** a trip of the year, by its key */
+  case trip(String)
+  case places
+  case people
+  case end
+}
+
+extension Recaps {
+  /** Trips shown in the story at most: the longest ones by item count. */
+  public static let storyTrips = 3
+
+  /** The story's pages: the cover, each month with photos (each trip right after the month it starts in; a trip that
+   *  began the year before after January, or the first month with photos), the places, the people, the end. `trips` are the year's trips as key, start
+   *  (ms) and item count; at most `storyTrips` of them, the longest, are shown. */
+  public static func slides(year: Int, months: [Int], trips: [(key: String, start: Double, count: Int)], places: Bool, people: Bool,
+                            calendar cal: Calendar = .current) -> [RecapSlide] {
+    let chosen = trips
+      .sorted { $0.count != $1.count ? $0.count > $1.count : $0.start != $1.start ? $0.start < $1.start : $0.key < $1.key }
+      .prefix(storyTrips)
+      .sorted { $0.start != $1.start ? $0.start < $1.start : $0.key < $1.key }
+    let ms = months.sorted()
+    // the month slide each trip follows: the last month with photos on or before the one it starts in, else the first
+    func anchor(_ start: Double) -> Int {
+      let d = Date(timeIntervalSince1970: start / 1000)
+      let y = cal.component(.year, from: d)
+      let m = y < year ? 1 : y > year ? 12 : cal.component(.month, from: d)
+      return ms.last { $0 <= m } ?? ms.first ?? 0
+    }
+    var after: [Int: [String]] = [:]
+    for t in chosen { after[anchor(t.start), default: []].append(t.key) }
+    var out: [RecapSlide] = [.cover]
+    for m in ms {
+      out.append(.month(m))
+      out += (after[m] ?? []).map(RecapSlide.trip)
+    }
+    if places { out.append(.places) }
+    if people { out.append(.people) }
+    out.append(.end)
+    return out
+  }
+
+  /** A recap's story pages; `trips` are the trips starting or ending in its year, `people` whether any named person is in it. */
+  public static func slides(_ r: Recap, trips: [Trip], people: Bool, calendar cal: Calendar = .current) -> [RecapSlide] {
+    slides(year: r.year, months: r.months.map(\.month), trips: trips.map { (key: $0.key, start: $0.start, count: $0.items.count) },
+           places: !r.places.isEmpty, people: people, calendar: cal)
+  }
+
+  /** A month's photos in the story, its best first: the first favorite among the highlights, else the middle one. */
+  public static func storyPhotos(_ m: Recap.Month) -> [Item] {
+    guard !m.highlights.isEmpty else { return [] }
+    let best = m.highlights.firstIndex(where: \.favorite) ?? (m.highlights.count - 1) / 2
+    var l = m.highlights
+    let b = l.remove(at: best)
+    return [b] + l
+  }
+}

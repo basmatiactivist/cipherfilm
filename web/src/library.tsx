@@ -45,6 +45,7 @@ const PersonHeader = lazy(() => import("./people/ui").then((m) => m.PersonHeader
 const MapPage = lazy(() => import("./map/ui").then((m) => m.MapPage));
 const Account = lazy(() => import("./screens").then((m) => m.Account));
 const Admin = lazy(() => import("./screens").then((m) => m.Admin));
+const Story = lazy(() => import("./memories/storyplayer").then((m) => m.Story), () => <div class="lightbox lbwait"><Loading stage label="Opening…" /></div>);
 const Duplicates = lazy(() => import("./cleanup/ui").then((m) => m.Duplicates));
 
 interface Job { key: number; owner: string; name: string; file: File; done: number; total: number; state: "queued" | "working" | "done" | "error"; error?: string; retryable?: boolean; stop: { cancelled: boolean } }
@@ -186,10 +187,13 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   // browser, the place file loaded once Albums or a recap is opened
   const memOn = useMemoriesOn();
   const [tripsWanted, setTripsWanted] = useState(false);
-  useEffect(() => { if (view.n === "albums" || view.n === "trip" || view.n === "recap") setTripsWanted(true); }, [view.n]);
+  // a year's story (memories/storyplayer.tsx), over the page it was opened from; closed when the page changes
+  const [story, setStory] = useState<number | null>(null);
+  useEffect(() => setStory(null), [page]);
+  useEffect(() => { if (view.n === "albums" || view.n === "trip" || view.n === "recap" || story !== null) setTripsWanted(true); }, [view.n, story]);
   const trips = useTrips(items, memOn && tripsWanted);
   const trip = view.n === "trip" ? trips?.find((t) => t.key === view.key) : undefined;
-  const recapPeople = useMemo<RecapPerson[]>(() => people.all.filter((g) => g.person?.name && !g.person.hidden).map((g) => ({ key: g.key, name: g.person!.name, items: g.items })), [people.all]);
+  const recapPeople = useMemo<RecapPerson[]>(() => people.all.filter((g) => g.person?.name && !g.person.hidden).map((g) => ({ key: g.key, name: g.person!.name, items: g.items, cover: g.cover })), [people.all]);
   const shown = useMemo(() => {
     if (view.n === "trash") return trash ?? [];
     if (!items) return [];
@@ -847,7 +851,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
               )}
               {q && items && items.length > 0 && timelineItems.length === 0 && !content.status && <p class="small">Nothing matches “{searched.trim()}”. Search covers file names, dates (2023, March, 2019–2021), places, cameras, albums, people and text in photos{searchable ? ", and what's in them" : ""}.{!searchable && " To search by what's in photos (dog, beach), turn on search in the Android or Mac app."}</p>}
               {!q && <MemoriesRow memories={memories} onOpen={openMemory} />}
-              {!q && memOn && items && <RecapRow items={items} onOpen={(year) => go({ n: "recap", year })} />}
+              {!q && memOn && items && <RecapRow items={items} onOpen={setStory} />}
               {items && items.length > 0 && albums.length > 0 && !selectMode && !q && <p class="small hint desktoponly">Tip: drag photos onto an album to file them.</p>}
               {results(timelineItems)}
             </>
@@ -1023,6 +1027,11 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
       {help && <ShortcutsHelp onClose={() => setHelp(false)} />}
       {report && <ReportDialog serverVersion={mem.me?.server_version} onClose={() => setReport(false)} />}
 
+      {story !== null && items && (
+        <Story year={story} items={items} people={recapPeople} trips={trips} covered={lb !== null} onClose={() => setStory(null)}
+          onOpenPhoto={(list, i) => { setMemList(list); openLb(i); }} onOpenPerson={(key) => { setStory(null); openPerson(key); }}
+          onAllHighlights={() => { const year = story; setStory(null); go({ n: "recap", year }); }} />
+      )}
       {lb !== null && libraryView && lbList[lb] && (
         <Lightbox found={view.n === "locked" ? undefined : textFound} items={lbList} index={lb} onIndex={setLb} onClose={closeLb} onPerson={(key) => { closeLb(); openPerson(key); }}
           onEdited={view.n === "trash" || view.n === "locked" ? undefined : (id) => { follow.current = { id, old: lbList.find((x) => x.id === id) }; refreshItems(); }}

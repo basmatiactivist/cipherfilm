@@ -16,7 +16,7 @@ services:
       LISTEN_ADDR: ":8080"
       DEMO_ACCOUNTS: demo@example.org   # the read-only public demo login (zdemo.spec.ts)
   proxy:
-    image: caddy:2.11.7-alpine
+    image: caddy:2.11.8-alpine
     command: caddy reverse-proxy --from cipherfilm.test --to app:8080 --internal-certs
     depends_on: [app]
     networks:

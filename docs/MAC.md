@@ -11,7 +11,10 @@ build notes: `mac/README.md`.
   on the sign-in and unlock screens, under the brand in the sidebar, and in the menu bar. The master key lives in
   memory only; after a restart the session stays and only the password (or Touch ID) is asked for again. **Lock**
   (⌃⌘L, the toolbar, the menu bar) forgets the keys and everything decrypted. "Lock when this Mac sleeps or its screen
-  locks" (Settings › General, on by default) does the same on its own. Settings › About shows the app's and the server's
+  locks" (Settings › General, on by default) does the same on its own. "Stay unlocked while an import or export runs"
+  (off by default) lets a long WebDAV import or export finish first: a screen that turns off or locks then locks the
+  library once the work is done (not at all if the screen is unlocked before), and the Mac doesn't idle-sleep
+  meanwhile; real sleep (the lid, Apple menu › Sleep) still locks at once. Settings › About shows the app's and the server's
   version.
 - **Unlock with Touch ID** (Settings › Security, off by default): a P-256 key in the Mac's Secure Enclave, usable only
   after a Touch ID check with the fingerprints enrolled at that moment, locks a copy of the master key (ECDH with a

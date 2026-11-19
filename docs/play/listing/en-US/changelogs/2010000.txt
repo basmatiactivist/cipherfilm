@@ -1,0 +1,2 @@
+• No changes in the Android app in this version; it brings an improvement to the Mac app.
+Needs your own Cipherfilm server: https://cipherfilm.app

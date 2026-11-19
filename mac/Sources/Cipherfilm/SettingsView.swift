@@ -130,6 +130,9 @@ struct GeneralSettings: View {
       }
       Section_(title: "Lock") {
         Toggle("Lock when this Mac sleeps or its screen locks", isOn: Binding(get: { AppModel.lockOnSleep }, set: { AppModel.lockOnSleep = $0 }))
+        Toggle("Stay unlocked while an import or export runs", isOn: Binding(get: { StayUnlocked.on }, set: { StayUnlocked.on = $0; model.workChanged() }))
+        Text("For long WebDAV imports and exports: when the screen turns off or locks, Cipherfilm locks once the work is done, and this Mac stays awake until then. Closing the lid or choosing Sleep still locks at once.")
+          .font(Typo.caption).foregroundStyle(.secondary)
       }
       PaneDivider()
       // the map's images come from a third party: off until turned on, per account on this Mac (MapPage.swift)

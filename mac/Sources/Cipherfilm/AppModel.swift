@@ -344,6 +344,7 @@ final class AppModel {
       Task { await refresh() }
       restoreUploads()
       every(120)
+      watchWork()
       startLive(api, vault!)
       Task { await loadNotices() }
       agent.unlocked()
@@ -364,12 +365,53 @@ final class AppModel {
   private func watchSleep() {
     guard !sleepWatched else { return }
     sleepWatched = true
-    let go: @Sendable (Notification) -> Void = { _ in Task { @MainActor in if AppModel.lockOnSleep { AppModel.shared.lock() } } }
     let ws = NSWorkspace.shared.notificationCenter
-    for n in [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification, NSWorkspace.sessionDidResignActiveNotification] {
-      ws.addObserver(forName: n, object: nil, queue: .main, using: go)
+    // real sleep: the network goes too, so the work stops anyway
+    ws.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { _ in
+      Task { @MainActor in if AppModel.lockOnSleep { AppModel.shared.lock() } }
     }
-    DistributedNotificationCenter.default().addObserver(forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: .main, using: go)
+    // the screen turns off or locks: a running import or export may keep the library open until it's done
+    let screen: @Sendable (Notification) -> Void = { _ in Task { @MainActor in AppModel.shared.screenLocked() } }
+    for n in [NSWorkspace.screensDidSleepNotification, NSWorkspace.sessionDidResignActiveNotification] {
+      ws.addObserver(forName: n, object: nil, queue: .main, using: screen)
+    }
+    DistributedNotificationCenter.default().addObserver(forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: .main, using: screen)
+    // the person is back (screen unlocked): a lock that waited for the work isn't needed any more
+    let back: @Sendable (Notification) -> Void = { _ in Task { @MainActor in AppModel.shared.lockWhenDone = false } }
+    ws.addObserver(forName: NSWorkspace.sessionDidBecomeActiveNotification, object: nil, queue: .main, using: back)
+    DistributedNotificationCenter.default().addObserver(forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main, using: back)
+  }
+
+  /** An import or export that needs the library's key runs (the folder watcher doesn't: it uploads without it). */
+  var longWork: Bool { webdav.running || exporter.phase == .working }
+  /** The screen locked while such work ran, with "Stay unlocked while an import or export runs" on: lock once it's done. */
+  @ObservationIgnored private(set) var lockWhenDone = false
+  @ObservationIgnored let keepAwake = KeepAwake()
+  @ObservationIgnored private var workWatch: Task<Void, Never>?
+
+  func screenLocked() {
+    switch StayUnlocked.onScreenLock(lockOnSleep: AppModel.lockOnSleep, stay: StayUnlocked.on, working: longWork) {
+    case .lock: lock()
+    case .later: if phase == .unlocked { lockWhenDone = true }
+    case .nothing: break
+    }
+  }
+
+  /** While unlocked: keeps the Mac awake during long work (if the option is on) and does a lock that waited for it. */
+  private func watchWork() {
+    workWatch?.cancel()
+    workWatch = Task { @MainActor [weak self] in
+      while !Task.isCancelled, let self, self.phase == .unlocked {
+        self.workChanged()
+        try? await Task.sleep(nanoseconds: 3_000_000_000)
+      }
+    }
+  }
+
+  func workChanged() {
+    let working = longWork
+    keepAwake.set(StayUnlocked.on && working && phase == .unlocked)
+    if lockWhenDone && (!working || !StayUnlocked.on) { lock() }
   }
 
   /** Locks the library: the key leaves memory; the session stays (and with it the watched folders). */
@@ -462,6 +504,7 @@ final class AppModel {
   /** Everything derived from the master key goes; "ended" also drops the encrypted cache's owner state. */
   private func wipe(ended: Bool) {
     refreshTimer?.invalidate(); refreshTimer = nil
+    workWatch?.cancel(); workWatch = nil; lockWhenDone = false; keepAwake.set(false)
     liveTask?.cancel(); liveTask = nil; liveFlush?.cancel(); liveFlush = nil; _ = liveBatch.take(); liveV = nil
     search.stop(clear: true)
     exporter.forget() // its copy of the vault, the decrypted items and their item keys go too

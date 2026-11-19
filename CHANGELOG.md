@@ -7,6 +7,13 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+## [2.10.0] - 2026-11-19
+
+### Added
+- Mac: Settings › General › "Stay unlocked while an import or export runs" (off by default). A long WebDAV import or
+  export no longer stops when the screen turns off or locks: the library locks once the work is done, and the Mac
+  stays awake until then. Closing the lid or choosing Sleep still locks at once.
+
 ## [2.9.0] - 2026-11-19
 
 ### Upgrade notes

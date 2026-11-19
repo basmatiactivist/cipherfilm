@@ -111,3 +111,22 @@ import Testing
     #expect(!FileManager.default.fileExists(atPath: list.path))
   }
 }
+
+// "Stay unlocked while an import or export runs": a screen lock waits for the work only with the option on.
+@Suite struct StayUnlockedTests {
+  @Test func aScreenLockWaitsOnlyForRunningWorkWithTheOptionOn() {
+    #expect(StayUnlocked.onScreenLock(lockOnSleep: true, stay: false, working: true) == .lock)
+    #expect(StayUnlocked.onScreenLock(lockOnSleep: true, stay: true, working: false) == .lock)
+    #expect(StayUnlocked.onScreenLock(lockOnSleep: true, stay: true, working: true) == .later)
+    #expect(StayUnlocked.onScreenLock(lockOnSleep: false, stay: true, working: true) == .nothing)
+    #expect(StayUnlocked.onScreenLock(lockOnSleep: false, stay: false, working: false) == .nothing)
+  }
+
+  @MainActor @Test func keepingAwakeStartsAndEnds() {
+    let k = KeepAwake()
+    k.set(true); k.set(true)
+    #expect(k.active)
+    k.set(false)
+    #expect(!k.active)
+  }
+}

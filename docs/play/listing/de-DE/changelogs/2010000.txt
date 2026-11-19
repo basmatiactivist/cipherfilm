@@ -1,0 +1,2 @@
+• Keine Änderungen an der Android-App in dieser Version; sie bringt eine Verbesserung für die Mac-App.
+Benötigt Ihren eigenen Cipherfilm-Server: https://cipherfilm.app/de

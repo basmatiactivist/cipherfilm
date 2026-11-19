@@ -27,6 +27,13 @@ version into the GitHub release notes, so a release cannot be published without 
   browser, nothing about the phone is sent).
 
 ### Changed
+- Android, web and Mac: a year in review now plays as a story: one picture at a time across the whole screen, with
+  bars on top that fill as it plays. The cover, then each month (a month's photos one after the other), the longest
+  trips after the month they start in, the place with the most photos, the people seen most, and "That was {year}"
+  at the end with Watch again and All highlights (the page with everything, as before). Tap on the right for the
+  next, on the left for the one before, hold to pause, swipe down (Android) or Esc (web, Mac) to close; arrow keys and
+  Space on the web and the Mac. With reduced motion or a screen reader it doesn't play on its own and shows Back and
+  Next. It waits while the app is in the background or a photo is open on top.
 - Mac: ONNX Runtime (which runs the search, face and text models on the Mac) now comes from Microsoft's official NuGet
   package `Microsoft.ML.OnnxRuntime` instead of the macOS release on GitHub: Microsoft took
   github.com/microsoft/onnxruntime offline on 2026-11-17/18, without a statement so far. Same version, 1.31.1, and the
@@ -36,6 +43,11 @@ version into the GitHub release notes, so a release cannot be published without 
 - Dependency updates: the Android app (14 updates), the web app (3), the upload tool (3) and the end-to-end tests.
 
 ### Fixed
+- Mac: the app could freeze for good and had to be force quit, for example after signing out and signing in to another
+  account. Writing the library list to the cache took a lock the same code already held, so it waited on itself
+  (since 2.8.0). It no longer does, the lock can't hang this way any more, and a test catches it.
+- Android, web and Mac: naming or renaming a person no longer flickers (the old name, or for someone named for the
+  first time "no photos", showed until the faces were grouped again); the new name shows at once.
 - Mac: builds again with Xcode 26 (face points and two expressions split up so the compiler type-checks them in
   time); the places speed test allows a slow CI runner.
 

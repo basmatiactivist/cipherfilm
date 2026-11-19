@@ -1,4 +1,6 @@
 • Show the password while typing, with the eye in every password field.
 • Back asks before it closes the app, and says when uploads are still running.
+• Your years now play as a story, one picture at a time.
+• A new name for a person shows at once, without flickering.
 • A short introduction, search tips, and Share Cipherfilm and Suggest an idea in Account.
 Needs your own Cipherfilm server: https://cipherfilm.app

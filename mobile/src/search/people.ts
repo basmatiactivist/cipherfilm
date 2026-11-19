@@ -47,8 +47,9 @@ export async function loadPeople(): Promise<Doc> {
   return doc;
 }
 
-/** Applies a change and saves it; if another device saved in between, the change is applied to theirs. */
-async function change(f: (d: Doc) => void) {
+/** Applies a change and saves it; if another device saved in between, the change is applied to theirs. after: runs on
+ *  the saved list before anyone is told, so what is shown can follow at once (a rename, see relabel). */
+async function change(f: (d: Doc) => void, after?: (d: Doc) => void) {
   const { me, masterKey } = need();
   const s = await getSodium();
   for (let i = 0; i < 4; i++) {
@@ -57,7 +58,7 @@ async function change(f: (d: Doc) => void) {
     f(next);
     try {
       const r = await api<{ version: number }>("PUT", "/api/me/blobs/people", { data_enc: b64(s, encryptPeople(s, next, masterKey, me.user.id)), version });
-      doc = next; version = r.version; bump();
+      doc = next; version = r.version; after?.(next); bump();
       return;
     } catch (e) {
       if (!(e instanceof ApiError && e.status === 409)) throw e;
@@ -78,8 +79,18 @@ export async function nameGroup(g: Group, name: string): Promise<string | undefi
     const p = d.people.find((x) => x.id === id);
     if (p) { p.name = clean; p.hidden = false; }
     else d.people.push({ id, name: clean, anchors: take(g.faces), rejects: [] });
-  });
+  }, (d) => relabel(g.key, id, d));
   return id;
+}
+
+/** The group shown under its new name (and, when it had none, under the person's id) right away, while the faces are
+ *  grouped again from the index: otherwise the screen shows the old name until then, which flickers. */
+function relabel(oldKey: string, id: string, d: Doc) {
+  const person = d.people.find((x) => x.id === id);
+  if (!person) return;
+  const re = (x: Group) => (x.key === oldKey || x.person?.id === id ? { ...x, key: id, person } : x);
+  allGroups = allGroups.map(re);
+  groups = groups.map(re);
 }
 
 /** "These are the same person": the group's faces become the person's too. */
@@ -192,6 +203,8 @@ export function usePeople(): { groups: Group[] | null; reload: () => void } {
   const [tick, setTick] = useState(0);
   useEffect(() => {
     let live = true;
+    // what is known now (a rename, already relabelled) is shown at once; the new grouping replaces it when done
+    if (groups.length) setList((l) => (l === null ? l : groups));
     peopleGroups().then((g) => live && setList(g), () => live && setList([]));
     const f = () => setTick((t) => t + 1);
     subs.add(f);

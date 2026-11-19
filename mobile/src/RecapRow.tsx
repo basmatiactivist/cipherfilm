@@ -1,5 +1,5 @@
 // The year recaps on Photos, under "On this day": one card per earlier year (and this one from December). A card
-// opens that year in review (app/recap/[year].tsx).
+// plays that year in review as a story (app/recap/story/[year].tsx).
 import { useMemo } from "react";
 import { router } from "expo-router";
 import { highlights } from "@memories/recap";
@@ -15,7 +15,7 @@ export function RecapRow({ years, items }: { years: number[]; items: Item[] }) {
     return {
       key: String(year), cover, title: String(year), sub: t("In review"),
       label: `${t("{year} in review", { year })}, ${tn(list.length, "{n} item", "{n} items")}`,
-      onPress: () => router.push({ pathname: "/recap/[year]", params: { year: String(year) } }),
+      onPress: () => router.push({ pathname: "/recap/story/[year]", params: { year: String(year) } }),
     };
   }), [years, items]);
   return <CardRow title={t("Your years")} cards={cards} />;

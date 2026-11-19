@@ -746,6 +746,8 @@ final class SearchEngine {
   private var groups: [Group] = []
   private var allGroups: [Group] = []
   private var groupsAt = -1
+  /** The groups as last worked out (a rename already relabelled): shown at once while new ones are worked out. */
+  var knownGroups: [Group] { groups }
 
   /** Another device changed the people document (live updates): it is read again when the groups are next needed. */
   func peopleChangedElsewhere() {
@@ -819,8 +821,9 @@ final class SearchEngine {
     return id
   }
 
-  /** Applies a change and saves it; if another device saved in between, the change is applied to theirs. */
-  private func change(_ f: (inout PeopleDoc) -> Void) async throws {
+  /** Applies a change and saves it; if another device saved in between, the change is applied to theirs. after: runs
+   *  on the saved list before the pages are told, so what they show can follow at once (a rename, see relabel). */
+  private func change(_ f: (inout PeopleDoc) -> Void, after: ((PeopleDoc) -> Void)? = nil) async throws {
     guard let v = runVault else { throw APIError(status: -1, message: "Unlock your library first.") }
     for i in 0..<4 {
       if !peopleLoaded || i > 0 { try await loadPeople() }
@@ -828,7 +831,7 @@ final class SearchEngine {
       f(&next)
       do {
         peopleVersion = try await People.save(v, next, version: peopleVersion)
-        people = next; groupsAt = -1; version += 1
+        people = next; groupsAt = -1; after?(next); version += 1
         return
       } catch let e as APIError where e.status == 409 {
         continue
@@ -850,12 +853,23 @@ final class SearchEngine {
       return same.id
     }
     let id = g.person?.id ?? newId()
-    try await change { d in
+    try await change({ d in
       if let k = d.people.firstIndex(where: { $0.id == id }) { d.people[k].name = clean; d.people[k].hidden = false }
       else { d.people.append(Person(id: id, name: clean, hidden: nil, anchors: faces, rejects: [])) }
-    }
+    }, after: { [weak self] d in self?.relabel(g.key, id, d) })
     guard people.people.first(where: { $0.id == id })?.name == clean else { throw APIError(status: -1, message: "The name wasn't saved. Try again.") }
     return id
+  }
+
+  /** The group shown under its new name (and, when it had none, under the person's id) right away, while the faces are
+   *  grouped again: otherwise the page shows the old name, or nobody, until then, which flickers. */
+  private func relabel(_ oldKey: String, _ id: String, _ d: PeopleDoc) {
+    guard let person = d.people.first(where: { $0.id == id }) else { return }
+    let re = { (x: Group) -> Group in
+      x.key == oldKey || x.person?.id == id ? Group(key: id, person: person, items: x.items, faces: x.faces, cover: x.cover) : x
+    }
+    allGroups = allGroups.map(re)
+    groups = groups.map(re)
   }
 
   /** "These are the same person": the group's faces become the person's too. */

@@ -1,7 +1,8 @@
 // Trips and year recaps (CipherfilmCore/Trips.swift and Recap.swift, the web and Android rules): worked out on this
 // Mac from the decrypted dates and places, kept in memory only. Trips are suggested albums under Albums; one reaches
 // the server only when it is saved as an album (then it is an ordinary encrypted album). Year recaps are a row of
-// cards under "On this day". Both follow Settings › Memories, like "On this day".
+// cards under "On this day" that play the year as a story (RecapStory.swift); its overview page is reached from the
+// story's end. Both follow Settings › Memories, like "On this day".
 import CipherfilmCore
 import SwiftUI
 
@@ -76,7 +77,7 @@ struct YearsRow: View {
           ScrollView(.horizontal, showsIndicators: false) {
             HStack(alignment: .top, spacing: 12) {
               ForEach(cards, id: \.year) { c in
-                Button { nav.go(.recap(c.year)) } label: { Card(cover: c.cover, title: String(c.year), sub: "In review") }
+                Button { withAnimation(.easeOut(duration: Motion.medium)) { nav.story = c.year } } label: { Card(cover: c.cover, title: String(c.year), sub: "In review") }
                   .buttonStyle(.plain)
                   .accessibilityLabel("\(c.year) in review, \(c.count) item\(c.count == 1 ? "" : "s")")
               }

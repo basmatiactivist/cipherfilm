@@ -127,6 +127,19 @@ test.describe.serial("trips and recaps", () => {
     const year = page.getByRole("button", { name: /^2024 in review/ });
     await expect(year).toBeVisible({ timeout: 30_000 });
     await year.click();
+    // the card plays the year as a story; its end slide leads to the page with everything
+    const story = page.getByRole("dialog", { name: "2024 in review" });
+    await expect(story).toBeVisible();
+    await story.getByRole("button", { name: "Pause" }).click();
+    const seen: string[] = [];
+    for (let i = 0; i < 30 && !(await story.getByRole("button", { name: "All highlights" }).isVisible()); i++) {
+      seen.push((await story.locator(".stslide").getAttribute("aria-label")) ?? "");
+      await page.keyboard.press("ArrowRight");
+    }
+    expect(seen.some((l) => /^March/.test(l))).toBe(true);
+    expect(seen.some((l) => /Rome/.test(l))).toBe(true); // the trip, or the place seen most
+    await story.getByRole("button", { name: "All highlights" }).click();
+    await expect(story).toBeHidden();
     await expect(page.locator("h1.pagetitle")).toHaveText("2024 in review");
     await expect(page.locator(".recapfacts")).toHaveText("12 photos · 9 days · 2 countries");
     await expect(page.getByRole("heading", { name: "Places" })).toBeVisible({ timeout: 30_000 });

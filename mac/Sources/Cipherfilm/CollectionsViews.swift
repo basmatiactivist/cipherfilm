@@ -166,7 +166,8 @@ struct PeopleView: View {
         }
       }
     }
-    .task(id: model.search.version) { groups = await model.search.peopleGroups() }
+    // what is known shows at once (a rename, already relabelled), the new grouping when it's done
+    .task(id: model.search.version) { if !model.search.knownGroups.isEmpty { groups = model.search.knownGroups }; groups = await model.search.peopleGroups() }
   }
 
   private func grid(_ list: [SearchEngine.Group]) -> some View {
@@ -231,7 +232,8 @@ struct PersonView: View {
       if g?.person != nil { Text("Select photos that aren't this person, then choose Not \(g!.name.isEmpty ? "this person" : g!.name) from the menu.").font(Typo.caption).foregroundStyle(Ink.faint).padding(.horizontal, 28).frame(maxWidth: .infinity, alignment: .leading) }
       PhotoGrid(items: items, selection: selection) { it, list in nav.viewer = ViewerState(ids: list.map(\.id), index: list.firstIndex(of: it) ?? 0) }
     }
-    .task(id: model.search.version) { groups = await model.search.peopleGroups() }
+    // what is known shows at once (a rename, already relabelled), the new grouping when it's done
+    .task(id: model.search.version) { if !model.search.knownGroups.isEmpty { groups = model.search.knownGroups }; groups = await model.search.peopleGroups() }
     .sheet(isPresented: $naming) {
       NameSheet(title: g?.name.isEmpty == false ? "Rename" : "Who is this?", placeholder: "Name", action: "Save", initial: g?.name ?? "") { n in
         guard let g else { return }

@@ -156,8 +156,9 @@ export async function loadPeople(): Promise<Doc> {
   return doc;
 }
 
-/** Applies a change and saves it; if another device saved in between, the change is applied to theirs. */
-async function change(f: (d: Doc) => void) {
+/** Applies a change and saves it; if another device saved in between, the change is applied to theirs. after: runs on
+ *  the saved list before anyone is told, so what is shown can follow at once (a rename, see relabel). */
+async function change(f: (d: Doc) => void, after?: (d: Doc) => void) {
   const { me, masterKey } = need();
   const s = await getSodium();
   for (let i = 0; i < 4; i++) {
@@ -166,7 +167,7 @@ async function change(f: (d: Doc) => void) {
     f(next);
     try {
       const r = await api<{ version: number }>("PUT", "/api/me/blobs/people", { data_enc: b64(s, encryptPeople(s, next, masterKey, me.user.id)), version });
-      doc = next; version = r.version; bump();
+      doc = next; version = r.version; after?.(next); bump();
       return;
     } catch (e) {
       if (!(e instanceof ApiError && e.status === 409)) throw e;
@@ -192,8 +193,17 @@ export async function nameGroup(g: Group, name: string): Promise<string | undefi
     const p = d.people.find((x) => x.id === id);
     if (p) { p.name = clean; p.hidden = false; }
     else d.people.push({ id, name: clean, anchors: take(g.faces), rejects: [] });
-  });
+  }, (d) => relabel(g.key, id, d));
   return id;
+}
+
+/** The group shown under its new name (and, when it had none, under the person's id) right away, while the faces are
+ *  grouped again in the background: otherwise the page shows the old name, or "no longer in your library", until then. */
+function relabel(oldKey: string, id: string, d: Doc) {
+  const person = d.people.find((x) => x.id === id);
+  if (!person) return;
+  allGroups = allGroups.map((x) => (x.key === oldKey || x.person?.id === id ? { ...x, key: id, person } : x));
+  groups = shown(allGroups);
 }
 
 /** "These are the same person": the group's faces become the person's too. */
@@ -229,10 +239,13 @@ async function computeGroups(live: Set<string>): Promise<Group[]> {
     const person = g.person ? byId.get(g.person) : undefined;
     return { key: person?.id ?? `g${i}:${g.cover?.key}`, person, items: g.items.filter((x) => live.has(x)), faces: g.faces, cover: g.cover };
   }).filter((g) => g.items.length && (!g.person || !seen.has(g.person.id) && !!seen.add(g.person.id)));
-  groups = allGroups.filter((g) => g.person ? !g.person.hidden : g.items.length >= MIN_FACES);
+  groups = shown(allGroups);
   groupsAt = at; groupsFor = live;
   return allGroups;
 }
+
+/** The groups the People page lists: named people not hidden, unnamed groups with enough photos. */
+const shown = (all: Group[]) => all.filter((g) => g.person ? !g.person.hidden : g.items.length >= MIN_FACES);
 
 function allFor(live: Set<string>): Promise<Group[]> {
   if (groupsAt === ver && groupsFor === live) return Promise.resolve(allGroups);
@@ -255,6 +268,8 @@ export function usePeople(live: Set<string>): { groups: Group[] | null; all: Gro
     let alive = true;
     refreshIndex().catch(() => {}); // the library changed: entries other devices made meanwhile (at most once a minute)
     if (!indexChecked() && !hasIndex()) return;
+    // what is known now (a rename, already relabelled) is shown at once; the regrouping replaces it when done
+    if (groupsFor === live && allGroups.length) setState((s) => (s.groups === null ? s : { ...s, groups: hasIndex() ? groups : [], all: allGroups }));
     allFor(live).then((all) => alive && setState({ groups: hasIndex() ? groups : [], all, error: "" }),
       (e) => alive && setState((s) => ({ ...s, groups: s.groups ?? [], error: e instanceof Error ? e.message : "Couldn't group faces." })));
     return () => { alive = false; };

@@ -10,6 +10,9 @@ const paths = {
   check: <Path d="M5 12.5l4.5 4.5L19 7.5" />,
   x: <Path d="M6 6l12 12M18 6L6 18" />,
   back: <Path d="M15 5l-7 7 7 7" />,
+  forward: <Path d="M9 5l7 7-7 7" />,
+  play: <Path d="M8 5.5v13l10.5-6.5z" />,
+  pause: <Path d="M8.5 5.5v13M15.5 5.5v13" />,
   logout: <><Path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4" /><Path d="M16 8l4 4-4 4M20 12H9" /></>,
   lock: <><Rect x="4" y="10" width="16" height="10" rx="2" /><Path d="M8 10V7a4 4 0 0 1 8 0v3" /></>,
   video: <><Rect x="3" y="5" width="18" height="14" rx="3" /><Path d="M10 9.5v5l4.5-2.5z" /></>,
@@ -45,6 +48,9 @@ const paths = {
   archive: <><Rect x="3" y="4" width="18" height="5" rx="1.5" /><Path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9" /><Path d="M10 13h4" /></>,
   unarchive: <><Rect x="3" y="4" width="18" height="5" rx="1.5" /><Path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9" /><Path d="M12 17.5v-5M9.5 15l2.5-2.5 2.5 2.5" /></>,
   unlock: <><Rect x="4" y="10" width="16" height="10" rx="2" /><Path d="M8 10V7a4 4 0 0 1 7.6-1.8" /></>,
+  eye: <><Path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" /><Circle cx="12" cy="12" r="3" /></>,
+  eyeOff: <><Path d="M9.9 5.8A9.6 9.6 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-2.6 3.4M6.2 7.4A16 16 0 0 0 2.5 12S6 18.5 12 18.5a9 9 0 0 0 4.4-1.1" /><Path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" /><Path d="M3.5 3.5l17 17" /></>,
+  help: <><Circle cx="12" cy="12" r="9" /><Path d="M9.6 9.4a2.5 2.5 0 0 1 4.9.6c0 1.7-2.5 2.2-2.5 3.8M12 16.8v.2" /></>,
   fingerprint: <><Path d="M7.5 5.5A7 7 0 0 1 19 11v1.5" /><Path d="M5 9a7 7 0 0 0-.5 2.5V14" /><Path d="M8.5 19.5A10 10 0 0 0 9 15v-3.5a3 3 0 0 1 6 0V14" /><Path d="M12 11.5V15a13 13 0 0 1-1.2 5.5" /><Path d="M15 17.5a12 12 0 0 1-.7 2.5" /><Path d="M18.6 15.5a13 13 0 0 1-.4 2" /></>,
 } as const;
 

@@ -20,6 +20,8 @@ final class Navigator {
   var screen: Screen = .photos
   var query = ""
   var viewer: ViewerState?
+  /** the year in review playing as a story over the window (RecapStory.swift), by its year */
+  var story: Int?
   var confirmPurge: [String]?
   var newAlbumFor: [String]?
   var albumPickFor: [String]?
@@ -32,7 +34,7 @@ final class Navigator {
     // leaving the locked folder: its items go from memory before the next screen draws (it asks again next time)
     if screen == .locked && s != .locked { AppModel.shared.leaveLocked() }
     if s != screen { back.append(screen) }
-    screen = s; viewer = nil
+    screen = s; viewer = nil; story = nil
   }
 
   func showSimilar(_ id: String) { query = ""; go(.similar(id)) }
@@ -64,7 +66,9 @@ struct MainView: View {
     }
     .environment(nav)
     // the viewer takes the whole window: no toolbar, no sidebar, black up to the title bar
-    .toolbar(nav.viewer == nil ? .visible : .hidden, for: .windowToolbar)
+    .toolbar(nav.viewer == nil && nav.story == nil ? .visible : .hidden, for: .windowToolbar)
+    // the year in review as a story, black over the whole window too; the viewer opens over it
+    .overlay { if let y = nav.story { RecapStory(year: y).environment(nav).ignoresSafeArea().transition(.opacity) } }
     .overlay { if let v = nav.viewer { Viewer(state: v).environment(nav).ignoresSafeArea().transition(.opacity) } }
     .overlay { if dropping { DropVeil() } }
     .onDrop(of: [.fileURL, .image, .movie], isTargeted: $dropping) { providers in Dropper.take(providers, model); return !providers.isEmpty }

@@ -83,3 +83,31 @@ import Testing
     #expect(MiniMapGate.state(mapOn: true, serverMap: true, located: false, asked: "a", item: "a") == .none)
   }
 }
+
+/** Writing list.json takes the vault's lock and checks the key under it: it must finish, never wait on itself
+ *  (2.8.0 hung the app for good here after a sync that changed the list). */
+@Suite(.serialized) struct ListWriteTests {
+  /** waits on a thread of its own, so a hang fails the test instead of blocking the test runner */
+  private func finishes(_ t: Task<Void, Never>) -> Bool {
+    let done = DispatchSemaphore(value: 0)
+    Task.detached { await t.value; done.signal() }
+    return done.wait(timeout: .now() + 10) == .success
+  }
+
+  @Test func writingTheListNeverHangs() throws {
+    let uid = String(format: "%032x", UInt64.random(in: 1...UInt64.max))
+    let json = #"{"user":{"id":"\#(uid)","email":"a@x.org","role":"user"},"csrf":"c","kdf":{"alg":"argon2id13","v":1,"ops":3,"mem":67108864,"salt":"AAAAAAAAAAAAAAAAAAAAAA"},"wrapped_master_pw":"x","wrapped_privkey":"x","pubkey":"x"}"#
+    let me = try JSONDecoder().decode(Me.self, from: Data(json.utf8))
+    let v = Vault(api: API(base: URL(string: "https://127.0.0.1:9")!), me: me, masterKey: Data(repeating: 1, count: 32))
+    let dir = try #require(v.cacheDir)
+    let list = dir.appendingPathComponent("list.json")
+    defer { try? FileManager.default.removeItem(at: dir) }
+    #expect(finishes(v.keepList(now: true)), "list.json write hung")
+    #expect(FileManager.default.fileExists(atPath: list.path))
+    // with the vault closed meanwhile: nothing is written, nothing hangs
+    try? FileManager.default.removeItem(at: dir)
+    v.close()
+    #expect(finishes(v.keepList(now: true)))
+    #expect(!FileManager.default.fileExists(atPath: list.path))
+  }
+}

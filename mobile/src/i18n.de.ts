@@ -10,5 +10,6 @@ import { deEdit } from "./i18n/de.edit";
 import { deAdmin } from "./i18n/de.admin";
 import { deMemories } from "./i18n/de.memories";
 import { deFolders } from "./i18n/de.folders";
+import { deFeedback } from "./i18n/de.feedback";
 
-export const de: Record<string, string> = { ...deApp, ...deSearch, ...deBackup, ...deReport, ...deSecurity, ...deCleanup, ...deEdit, ...deAdmin, ...deMemories, ...deFolders };
+export const de: Record<string, string> = { ...deApp, ...deSearch, ...deBackup, ...deReport, ...deSecurity, ...deCleanup, ...deEdit, ...deAdmin, ...deMemories, ...deFolders, ...deFeedback };

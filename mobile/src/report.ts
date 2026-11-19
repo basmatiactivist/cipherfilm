@@ -5,6 +5,9 @@
 // mac/Sources/CipherfilmCore/Report.swift); the field ids are the form's.
 
 export const ISSUE_FORM = "https://github.com/basmatiactivist/cipherfilm/issues/new?template=bug_report.yml";
+/** "Suggest an idea": the feature request form (.github/ISSUE_TEMPLATE/feature_request.yml) with "Which app?" set to
+ *  Android. Nothing about the phone goes in; the person writes the idea on github.com. */
+export const IDEA_FORM = "https://github.com/basmatiactivist/cipherfilm/issues/new?template=feature_request.yml&app=Android";
 
 /** What goes into the form: exactly these fields, and exactly what the dialog shows (summary()). No server address,
  *  e-mail, names or anything about the library: the form is public. */

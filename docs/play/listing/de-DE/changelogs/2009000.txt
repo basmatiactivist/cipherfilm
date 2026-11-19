@@ -1,0 +1,6 @@
+• Passwort beim Tippen anzeigen, mit dem Auge in jedem Passwortfeld.
+• Zurück fragt, bevor die App schließt, und sagt, wenn noch Uploads laufen.
+• Ihre Jahre laufen jetzt als Story ab, ein Bild nach dem anderen.
+• Ein neuer Name für eine Person erscheint sofort, ohne Flackern.
+• Eine kurze Einführung, Suchtipps sowie Cipherfilm teilen und Idee vorschlagen im Konto.
+Benötigt Ihren eigenen Cipherfilm-Server: https://cipherfilm.app/de

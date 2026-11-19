@@ -22,9 +22,10 @@ What the app does and how export, watched folders and search behave: [docs/MAC.m
   state. `scripts/webdav-e2e.sh`
   runs the WebDAV import end to end against a throwaway server and reports disk, memory and throughput.
 
-Dependencies, newest stable versions, pinned: libsodium 1.0.22 (swift-sodium 0.11.0) and ONNX Runtime 1.31.1 (the
-official macOS release, fetched by `scripts/fetch-onnxruntime.sh` and checked against its SHA-256; Microsoft's Swift
-package lags behind, so it is not used).
+Dependencies, newest stable versions, pinned: libsodium 1.0.22 (swift-sodium 0.11.0) and ONNX Runtime 1.31.1 (Microsoft's
+official NuGet package `Microsoft.ML.OnnxRuntime`, fetched by `scripts/fetch-onnxruntime.sh`, checked against its SHA-256
+and against Microsoft's Apple Developer ID signature on the library; until 2.8.0 it came from the macOS release on
+GitHub, which Microsoft took offline on 2026-11-17/18. Microsoft's Swift package lags behind, so it is not used).
 
 ## Build
 

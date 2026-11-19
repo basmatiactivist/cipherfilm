@@ -94,7 +94,7 @@ export default function Locked() {
             </>
           ) : (
             <>
-              <Field label={t("Password")} value={password} onChangeText={setPassword} secureTextEntry textContentType="password" autoComplete="current-password" returnKeyType="go" onSubmitEditing={withPassword}
+              <Field label={t("Password")} value={password} onChangeText={setPassword} password textContentType="password" autoComplete="current-password" returnKeyType="go" onSubmitEditing={withPassword}
                 hint={busy && password ? t("Checking…") : undefined} />
               <Button mode="contained" onPress={withPassword} icon={busy && !!password ? busyIcon : undefined} disabled={busy || !password} contentStyle={{ height: 48 }}>{t("Open")}</Button>
             </>

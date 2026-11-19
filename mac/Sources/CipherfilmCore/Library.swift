@@ -102,7 +102,9 @@ public struct Album: Identifiable, Sendable, Hashable {
 public final class Vault: @unchecked Sendable {
   public let api: API
   public let me: Me
-  private let lock = NSLock()
+  /** Recursive on purpose: a path that already holds it and calls isOpen or masterKey() again (as keepList once did
+   *  through keep) must never hang the app. */
+  private let lock = NSRecursiveLock()
   private var master: Data?
   private var pairCache: KeyPair?
   /** the metadata versions seen (MetaVersion.swift): kept over locks and sessions the server ended */
@@ -177,7 +179,13 @@ public final class Vault: @unchecked Sendable {
 
   func keep(_ name: String, _ data: Data) {
     // after a lock or sign-out (work that was in flight) nothing is kept, and a deleted folder isn't made again
-    guard isOpen, let dir = cacheDir else { return }
+    guard isOpen else { return }
+    write(name, data)
+  }
+
+  /** keep() without its check: for a caller that already holds the lock and checked the key itself (keepList). */
+  private func write(_ name: String, _ data: Data) {
+    guard let dir = cacheDir else { return }
     try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
     let f = dir.appendingPathComponent(name)
     if (try? data.write(to: f, options: .atomic)) != nil { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: f.path) }
@@ -303,16 +311,17 @@ public final class Vault: @unchecked Sendable {
   /** Writes list.json: at once after a whole load, otherwise once changes have been quiet for 5 seconds (the list can be
    *  a few MB; a ping per upload would rewrite it each time). Records and cursor are taken together when it writes, so
    *  the file always holds a matching pair. A lock cancels a waiting write: the older file still matches its cursor. */
-  private func keepList(now: Bool) {
+  @discardableResult func keepList(now: Bool) -> Task<Void, Never> {
     let sync = librarySync
     let t = Task { [weak self] in
       if !now { try? await Task.sleep(nanoseconds: 5_000_000_000) }
       guard !Task.isCancelled, let self else { return }
       let (records, cursor, wholeAt) = await sync.kept()
       guard let d = try? JSONEncoder().encode(KeptList(cursor: cursor, wholeAt: wholeAt, items: records)) else { return }
-      self.lock.withLock { if !Task.isCancelled, self.master != nil { self.keep("list.json", d) } }
+      self.lock.withLock { if !Task.isCancelled, self.master != nil { self.write("list.json", d) } }
     }
     lock.withLock { listWrite?.cancel(); listWrite = t }
+    return t
   }
 
   /** The whole library, newest capture first. */

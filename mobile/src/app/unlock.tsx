@@ -43,7 +43,7 @@ export default function Unlock() {
         {then === "share" ? <Text variant="bodyMedium" style={{ marginBottom: 16 }}>{t("Another app shared files with Cipherfilm. Unlock to see them. Nothing is uploaded until you choose.")}</Text> : null}
         <Problem>{error}</Problem>
         {biometric ? <Button mode="contained" icon="fingerprint" onPress={bio} disabled={busy} contentStyle={{ height: 48 }} style={{ marginBottom: 24 }}>{t("Use fingerprint")}</Button> : null}
-        <Field label={t("Password")} value={password} onChangeText={setPassword} secureTextEntry textContentType="password" autoComplete="current-password" returnKeyType="go" onSubmitEditing={go}
+        <Field label={t("Password")} value={password} onChangeText={setPassword} password textContentType="password" autoComplete="current-password" returnKeyType="go" onSubmitEditing={go}
           hint={busy && password ? t("Unlocking…") : undefined} />
         <Button mode={biometric ? "outlined" : "contained"} onPress={go} icon={busy && !!password ? busyIcon : undefined} disabled={busy || !password} contentStyle={{ height: 48 }}>{t("Unlock")}</Button>
         <Button mode="text" onPress={() => setConfirmOut(true)} style={{ marginTop: 8 }}>{t("Sign out")}</Button>

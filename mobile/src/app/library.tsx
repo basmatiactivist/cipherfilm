@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { mainGrid } from "@edit/folders";
 import { StyleSheet, View } from "react-native";
-import { router, useFocusEffect } from "expo-router";
+import { Redirect, router, useFocusEffect } from "expo-router";
 import { Appbar, Button, Dialog, FAB, Portal, Text } from "react-native-paper";
 import { answerOffer, claimOffer, releaseOffer } from "../search/settings";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -24,6 +24,7 @@ import { useAppTheme } from "../ui";
 import { NoticesButton } from "../NoticesButton";
 import { text } from "../tokens";
 import { t } from "../i18n";
+import { introSeen } from "../intro";
 
 /** Android's photo picker, then the same upload screen as sharing. */
 async function pick() {
@@ -61,6 +62,8 @@ export default function Library() {
     answerOffer();
     if (yes) router.push("/search-settings");
   };
+  // the first time on this phone: the short introduction first (welcome.tsx), which comes back here
+  if (!introSeen()) return <Redirect href="/welcome" />;
   return (
     <View style={{ flex: 1 }}>
       <Portal>

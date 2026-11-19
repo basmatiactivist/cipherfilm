@@ -183,7 +183,7 @@ export default function TwoStep() {
             {ask === "removeapp" ? <Text variant="bodyMedium" style={{ marginBottom: 8 }}>{t("A new sign-in then asks for a passkey (or a recovery code).")}</Text> : null}
             {ask && typeof ask === "object" && keys.length === 1 && !totp ? <Text variant="bodyMedium" style={{ marginBottom: 8 }}>{t("It's your only second step: two-step sign-in turns off.")}</Text> : null}
             {ask === "addkey" ? <Field label={t("Name")} value={name} onChangeText={setName} maxLength={64} /> : null}
-            <Field label={t("Password")} value={password} onChangeText={setPassword} secureTextEntry textContentType="password" autoComplete="current-password" autoFocus={ask !== "addkey"}
+            <Field label={t("Password")} value={password} onChangeText={setPassword} password textContentType="password" autoComplete="current-password" autoFocus={ask !== "addkey"}
               // Enter goes on, where that needs only the password (not while a code is still to be typed)
               returnKeyType="go" onSubmitEditing={() => { if (!second && password && !dialog.busy) confirm(false); }}
               hint={dialog.busy ? t("Checking your password…") : undefined} />

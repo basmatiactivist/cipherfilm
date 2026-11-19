@@ -11,6 +11,7 @@ import { loadPlaces } from "../map/locations";
 import type { Places } from "../places/places";
 import { findTrips, savedAs, tripDates, whereText, type Lookup, type Trip } from "./trips";
 import { highlights, recapYears, yearRecap } from "./recap";
+import type { Cover } from "../people/faces";
 
 const monthFmt = new Intl.DateTimeFormat("en", { month: "long" });
 const monthYearFmt = new Intl.DateTimeFormat("en", { month: "long", year: "numeric" });
@@ -131,12 +132,18 @@ export function RecapRow(p: { items: Item[]; onOpen: (year: number) => void }) {
   );
 }
 
-export interface RecapPerson { key: string; name: string; items: string[] }
+export interface RecapPerson { key: string; name: string; items: string[]; cover?: Cover }
+
+/** The place file's names, null while it loads (and when it can't be loaded). */
+export function usePlaceNames(): Lookup | null {
+  const [names, setNames] = useState<Lookup | null>(() => lookup); // a function: passed as one, useState would call it
+  useEffect(() => { if (!names) loadPlaces().then((pl) => { lookup ??= cachedLookup(pl); setNames(() => lookup); }, () => {}); }, []);
+  return names;
+}
 
 /** A year in review: the numbers, places and people seen most, its trips, and a few photos of each month. */
 export function RecapPage(p: { year: number; items: Item[]; people: RecapPerson[]; trips: Trip<Item>[] | null; onOpenList: (list: Item[], i: number) => void; onOpenTrip: (key: string) => void; onOpenPerson: (key: string) => void }) {
-  const [names, setNames] = useState<Lookup | null>(lookup);
-  useEffect(() => { if (!names) loadPlaces().then((pl) => { lookup ??= cachedLookup(pl); setNames(() => lookup); }, () => {}); }, []);
+  const names = usePlaceNames();
   const r = useMemo(() => yearRecap(p.items, p.year, { lookup: names ?? undefined, people: p.people }), [p.items, p.year, names, p.people]);
   if (!r) return <section class="panel empty"><span class="emptyicon"><Icon name="photos" size={32} /></span><h2>No photos from {p.year}</h2><p>Photos and videos taken in {p.year} show up here.</p></section>;
   const trips = (p.trips ?? []).filter((t) => new Date(t.start).getFullYear() === p.year || new Date(t.end).getFullYear() === p.year);

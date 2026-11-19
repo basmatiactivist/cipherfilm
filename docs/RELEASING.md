@@ -188,7 +188,8 @@ Insights › Dependency graph › Dependabot: a rejected file stops every update
   release) and lists what it finds under Security › Code scanning.
 - **The Mac app's Swift packages** (`swift-sodium`, pinned exactly in `mac/Package.swift`): the package needs the
   ONNX Runtime framework that `mac/scripts/fetch-onnxruntime.sh` downloads, so Dependabot can't resolve it. Check
-  swift-sodium's releases by hand before each release, like ONNX Runtime's version in that script.
+  swift-sodium's releases by hand before each release, like ONNX Runtime's version in that script (on
+  nuget.org, `Microsoft.ML.OnnxRuntime`; keep it the same version as Android's `onnxruntime-android` from Maven Central).
 - **Caddy's Cloudflare module** in `deploy/tailnet/domain/Dockerfile` (`xcaddy build --with
   github.com/caddy-dns/cloudflare@…`) is invisible to Dependabot; check its releases by hand.
 - **Helper images** in the `Makefile` and `scripts/` (`alpine`, `golang`, `node`) are invisible to Dependabot.

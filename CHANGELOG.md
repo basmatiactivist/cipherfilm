@@ -7,6 +7,8 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+## [2.10.1] - 2026-11-19
+
 ### Changed
 - Mac: the status card (sidebar and menu bar) shows how much goes up and how fast: uploads ("3 of 10", MB of MB, MB/s),
   WebDAV imports (which folder, files and MB done, MB/s; a click opens Settings › Import) and watched folders (the

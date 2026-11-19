@@ -119,6 +119,9 @@ struct NeedsUnlock: View {
 struct GeneralSettings: View {
   @Environment(AppModel.self) private var model
   @AppStorage("memoriesOn") private var memoriesOn = true
+  // the same keys as AppModel.lockOnSleep and StayUnlocked.on: through @AppStorage so a click redraws the switch
+  @AppStorage("lockOnSleep") private var lockOnSleep = true
+  @AppStorage("stayUnlockedWhileWorking") private var stayUnlocked = false
 
   var body: some View {
     @Bindable var agent = model.agent
@@ -129,8 +132,9 @@ struct GeneralSettings: View {
         if let p = model.agent.loginProblem { Text(p).font(Typo.caption).foregroundStyle(Ink.danger) }
       }
       Section_(title: "Lock") {
-        Toggle("Lock when this Mac sleeps or its screen locks", isOn: Binding(get: { AppModel.lockOnSleep }, set: { AppModel.lockOnSleep = $0 }))
-        Toggle("Stay unlocked while an import or export runs", isOn: Binding(get: { StayUnlocked.on }, set: { StayUnlocked.on = $0; model.workChanged() }))
+        Toggle("Lock when this Mac sleeps or its screen locks", isOn: $lockOnSleep)
+        Toggle("Stay unlocked while an import or export runs", isOn: $stayUnlocked)
+          .onChange(of: stayUnlocked) { model.workChanged() }
         Text("For long WebDAV imports and exports: when the screen turns off or locks, Cipherfilm locks once the work is done, and this Mac stays awake until then. Closing the lid or choosing Sleep still locks at once.")
           .font(Typo.caption).foregroundStyle(.secondary)
       }

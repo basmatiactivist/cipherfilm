@@ -7,6 +7,10 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+### Fixed
+- Mac: the two switches under Settings › General › Lock didn't move when clicked (the choice was saved, but the
+  switch kept showing the old state).
+
 ## [2.10.0] - 2026-11-19
 
 ### Added

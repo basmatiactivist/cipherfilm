@@ -203,7 +203,10 @@ public final class SearchIndex: @unchecked Sendable {
         for f in kept where have.insert(f.item).inserted { items.append(f.item) }
         return FaceGroup(person: person, faces: kept.map(\.key), items: items, cover: cover.map { FaceGroup.Cover(key: $0.key, item: $0.item, box: $0.box) })
       }.filter { $0.items.count >= minFaces || $0.person != nil }
-        .enumerated().sorted { $0.element.items.count != $1.element.items.count ? $0.element.items.count > $1.element.items.count : $0.offset < $1.offset }.map(\.element)
+        .enumerated().sorted { (a: (offset: Int, element: FaceGroup), b: (offset: Int, element: FaceGroup)) -> Bool in
+          let x = a.element.items.count, y = b.element.items.count
+          return x != y ? x > y : a.offset < b.offset
+        }.map(\.element)
     }
   }
 

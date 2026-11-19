@@ -89,10 +89,14 @@ public enum Recaps {
       .map { Recap.PlaceCount(name: $0.name, country: $0.country, countryCode: $0.code, count: $0.items.count, cover: highlights($0.items, 1, calendar: cal).first ?? $0.items[0]) }
 
     let ids = Set(list.map(\.id))
-    let ppl = people.map { Recap.PersonCount(key: $0.key, count: $0.items.filter { ids.contains($0) }.count) }
-      .filter { $0.count > 0 }
-      .sorted { $0.count != $1.count ? $0.count > $1.count : $0.key < $1.key }
-      .prefix(top)
+    // in typed steps: as one chain, an older compiler gives up type-checking it
+    var counted: [Recap.PersonCount] = []
+    for p in people {
+      let n: Int = p.items.reduce(0) { $0 + (ids.contains($1) ? 1 : 0) }
+      if n > 0 { counted.append(Recap.PersonCount(key: p.key, count: n)) }
+    }
+    counted.sort { (a: Recap.PersonCount, b: Recap.PersonCount) -> Bool in a.count != b.count ? a.count > b.count : a.key < b.key }
+    let ppl = counted.prefix(top)
 
     let favs = list.filter { $0.favorite && usable($0) }
     return Recap(

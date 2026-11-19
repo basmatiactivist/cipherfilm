@@ -7,6 +7,12 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-11-19
+
+### Upgrade notes
+- Android: after the update the short introduction is shown once on every phone (also to people who use the app
+  already); Skip ends it at once.
+
 ### Added
 - Android: an eye in every password field shows what was typed, and hides it again (sign-in, unlock, Locked folder,
   two-step sign-in, deleting the account). Screen readers hear "Show password" / "Hide password".
@@ -19,6 +25,19 @@ version into the GitHub release notes, so a release cannot be published without 
 - Android: Account › Share Cipherfilm (a link to the app through the share sheet, which can also copy it; the Play
   build shares its store listing, the GitHub build the website) and Account › Suggest an idea (the idea form in the
   browser, nothing about the phone is sent).
+
+### Changed
+- Mac: ONNX Runtime (which runs the search, face and text models on the Mac) now comes from Microsoft's official NuGet
+  package `Microsoft.ML.OnnxRuntime` instead of the macOS release on GitHub: Microsoft took
+  github.com/microsoft/onnxruntime offline on 2026-11-17/18, without a statement so far. Same version, 1.31.1, and the
+  same C API (the headers are identical); the library is Microsoft's own build in that package, published on
+  2026-10-28. The build checks the package's SHA-256 and Microsoft's Apple Developer ID signature (team UBF8T346G9) on
+  the library. Android was not affected (it gets ONNX Runtime from Maven Central).
+- Dependency updates: the Android app (14 updates), the web app (3), the upload tool (3) and the end-to-end tests.
+
+### Fixed
+- Mac: builds again with Xcode 26 (face points and two expressions split up so the compiler type-checks them in
+  time); the places speed test allows a slow CI runner.
 
 ## [2.8.0] - 2026-11-17
 

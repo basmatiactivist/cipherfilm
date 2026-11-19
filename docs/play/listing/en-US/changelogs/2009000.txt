@@ -1,0 +1,4 @@
+• Show the password while typing, with the eye in every password field.
+• Back asks before it closes the app, and says when uploads are still running.
+• A short introduction, search tips, and Share Cipherfilm and Suggest an idea in Account.
+Needs your own Cipherfilm server: https://cipherfilm.app

@@ -326,21 +326,15 @@ struct StatusCard: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
       let failed = model.uploads.filter { if case .failed = $0.state { return true }; return false }.count
-      if let u = model.uploadProgress {
-        Button { showUploads = true } label: {
-          StatusLine(icon: model.uploadsPaused ? "pause.circle" : "arrow.up.circle", text: (model.uploadsPaused ? "Paused · " : "Uploading ") + "\(min(u.done + 1, u.total)) of \(u.total)" + (failed > 0 ? " · \(failed) failed" : ""), fraction: u.fraction)
-        }.buttonStyle(TileButton(radius: 6)).help("Show uploads")
-      } else if failed > 0 {
+      // uploads, WebDAV imports and watched folders: how much, and how fast (Transfers.swift)
+      TransferLines(showUploads: $showUploads, failed: failed)
+      if model.uploadProgress == nil && failed > 0 {
         Button { showUploads = true } label: { StatusLine(icon: "exclamationmark.triangle", text: "\(failed) upload\(failed == 1 ? "" : "s") failed", problem: true) }.buttonStyle(TileButton(radius: 6)).help("Show uploads")
       }
       if model.settings.exportOn {
         let e = model.exporter
         StatusLine(icon: "folder", text: e.phase == .working ? "Exporting \(e.done) of \(e.total)" : e.phase == .error ? (e.message ?? "Export stopped") : "Export folder up to date",
                    fraction: e.phase == .working && e.total > 0 ? Double(e.done) / Double(e.total) : nil, problem: e.phase == .error)
-      }
-      if model.settings.watchOn {
-        let w = model.watcher
-        StatusLine(icon: "eye", text: w.problem ?? (w.running ? (w.current.map { "Uploading \($0)" + (w.waiting > 1 ? " · \(w.waiting - 1) more waiting" : "") } ?? "Checking watched folders") : "Watching \(model.settings.watched.count) folder\(model.settings.watched.count == 1 ? "" : "s") · \(w.uploaded) uploaded"), problem: w.problem != nil)
       }
       if model.settings.search {
         let s = model.search
@@ -443,7 +437,7 @@ struct StatusLine: View {
     VStack(alignment: .leading, spacing: 5) {
       HStack(spacing: 6) {
         Image(systemName: icon).font(Typo.small).foregroundStyle(problem ? Ink.danger : Ink.teal).frame(width: 14)
-        Text(text).font(Typo.small).foregroundStyle(problem ? Ink.danger : Ink.muted).lineLimit(2)
+        Text(text).font(Typo.small).foregroundStyle(problem ? Ink.danger : Ink.muted).lineLimit(3)
       }
       if let fraction {
         GeometryReader { g in

@@ -922,7 +922,11 @@ final class AppModel {
     if uploadsOwner == nil { uploadsOwner = me?.user.id }
     let queued = Set(uploads.filter { $0.state != .done }.map(\.url.path))
     uploads.removeAll { $0.state == .done }
-    uploads += files.filter { !queued.contains($0.path) }.map { UploadJob(url: $0) }
+    // the file's size up front, so the bytes left are known before each one starts
+    uploads += files.filter { !queued.contains($0.path) }.map { f in
+      let size: Int = (try? f.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 1
+      return UploadJob(url: f, total: Int64(max(1, size)))
+    }
     saveQueue()
     pump()
   }
@@ -1005,5 +1009,13 @@ final class AppModel {
     let bytesTotal = active.reduce(Int64(0)) { $0 + max(1, $1.total) }
     let bytesDone = active.reduce(Int64(0)) { $0 + ($1.state == .done ? max(1, $1.total) : $1.done) }
     return (done, active.count, Double(bytesDone) / Double(max(1, bytesTotal)))
+  }
+
+  /** The bytes of the upload queue: up so far, and in all. */
+  var uploadBytes: (done: Int64, total: Int64) {
+    uploads.reduce((Int64(0), Int64(0))) { acc, j in
+      let t = max(1, j.total)
+      return (acc.0 + (j.state == .done ? t : min(j.done, t)), acc.1 + t)
+    }
   }
 }

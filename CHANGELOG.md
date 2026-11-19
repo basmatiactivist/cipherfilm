@@ -7,6 +7,11 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+### Changed
+- Mac: the status card (sidebar and menu bar) shows how much goes up and how fast: uploads ("3 of 10", MB of MB, MB/s),
+  WebDAV imports (which folder, files and MB done, MB/s; a click opens Settings › Import) and watched folders (the
+  current file, MB of MB, MB/s). WebDAV imports weren't on the card before.
+
 ### Fixed
 - Mac: the two switches under Settings › General › Lock didn't move when clicked (the choice was saved, but the
   switch kept showing the old state).

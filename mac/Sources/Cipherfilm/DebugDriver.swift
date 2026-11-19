@@ -51,6 +51,25 @@ enum DebugDriver {
     try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(name).png"))
   }
 
+  /** CF_PROGRESS=1: the status card while things go up, as pictures (progress-N.png): uploads of CF_TEST_DIR/upload
+   *  and, with CF_WEBDAV_URL / _USER / _PASSWORD, an import of that WebDAV folder. Nothing else is changed. */
+  static func progressShots() async {
+    let m = AppModel.shared
+    _ = await wait("library") { m.vault != nil }
+    if let u = env["CF_WEBDAV_URL"], let me = m.me, let vault = m.vault {
+      if m.settings.pubkey == nil { m.settings.pubkey = try? B64.encode(vault.checkedPublicKey()) }
+      let src = WebDAVSource(url: u, user: env["CF_WEBDAV_USER"] ?? "")
+      try? WebDAVPasswords.set(env["CF_WEBDAV_PASSWORD"] ?? "", userId: me.user.id, source: src.id)
+      m.settings.webdav.append(src)
+    }
+    if let dir = env["CF_TEST_DIR"] { m.upload([URL(fileURLWithPath: dir).appendingPathComponent("upload", isDirectory: true)]) }
+    for i in 1...10 {
+      try? await Task.sleep(nanoseconds: 1_500_000_000)
+      snapshot("progress-\(i)")
+    }
+    log("DONE progress")
+  }
+
   /** Every Settings pane as a picture (CF_SNAPSHOTS/settings-<pane>.png), for the design review and the PR. */
   static func settingsShots() async {
     let m = AppModel.shared
@@ -118,6 +137,7 @@ enum DebugDriver {
     check(m.phase == .unlocked, "signed in and unlocked")
     // CF_SIGNIN_ONLY=1: only signs in and leaves the app open as it is, for trying it by hand against the test server
     if env["CF_SETTINGS_SHOTS"] == "1" { await settingsShots() }
+    if env["CF_PROGRESS"] == "1" { await progressShots(); return }
     if env["CF_SIGNIN_ONLY"] == "1" { log("DONE signed in"); return }
     m.agent.askNow = false
     m.settings.agentAsked = true

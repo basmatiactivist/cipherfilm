@@ -12,6 +12,11 @@ import CipherfilmCore
 final class Watcher {
   var running = false
   var current: String?
+  /** this pass: the bytes of the files to upload, and how many of them are up (finished files and the current one) */
+  var bytesTotal: Int64 = 0
+  private(set) var bytesDone: Int64 = 0
+  private var passDone: Int64 = 0
+  private var fileDone: Int64 = 0 { didSet { bytesDone = passDone + fileDone } }
   var uploaded = 0
   var waiting = 0
   var problem: String?
@@ -164,6 +169,7 @@ final class Watcher {
         todo += found.filter { c in !known.contains(c.print) && !st.done.contains(c.print) && Self.settled(c.modified) }
       }
       waiting = todo.count
+      bytesTotal = todo.reduce(0) { $0 + $1.size }; passDone = 0; fileDone = 0
       for c in todo {
         guard gen == generation, !Task.isCancelled else { return }
         // still being written (copied in, exported from a camera)? next pass
@@ -171,8 +177,10 @@ final class Watcher {
         current = c.url.lastPathComponent
         do {
           let flag = live
-          let id = try await Uploader.upload(c.url, api: api, wrap: .sealed(pk: pk), live: { if flag.get() != gen { throw Stopped() } })
+          let id = try await Uploader.upload(c.url, api: api, wrap: .sealed(pk: pk), live: { if flag.get() != gen { throw Stopped() } },
+                                             progress: { done, _ in Task { @MainActor in if gen == self.generation { self.fileDone = done } } })
           guard stillOn() else { return }
+          passDone += c.size; fileDone = 0
           if search && indexes { await SearchEngine.indexFile(c.url, id: id, video: Media.kind(name: c.url.lastPathComponent, mime: Media.mime(of: c.url)) == .video, faces: faces, text: text, clip: clip, pk: pk, api: api) }
           st.done.insert(c.print); st.failures.removeValue(forKey: c.print); st.uploaded += 1; st.lastUploadAt = Date().timeIntervalSince1970
           uploaded = st.uploaded
@@ -195,6 +203,7 @@ final class Watcher {
             skipped = Array(([c.url.lastPathComponent + ": " + error.localizedDescription] + skipped).prefix(50))
           }
           waiting -= 1
+          passDone += c.size; fileDone = 0
           sf.write(st)
         }
       }

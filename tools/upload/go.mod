@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/dchest/blake2b v1.0.0
-	golang.org/x/crypto v0.58.0
+	golang.org/x/crypto v0.59.0
 	golang.org/x/image v0.48.0
 	golang.org/x/term v0.48.0
 	golang.org/x/text v0.44.0

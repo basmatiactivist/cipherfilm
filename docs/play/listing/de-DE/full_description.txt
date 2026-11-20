@@ -1,4 +1,4 @@
-Cipherfilm sichert Ihre Fotos und Videos auf einem Server, den Sie selbst betreiben. Jede Datei wird vor dem Hochladen auf Ihrem Handy verschlüsselt; der Server speichert nur verschlüsselte Daten. Er kann kein Bild öffnen, niemand sonst kann es.
+Cipherfilm ist ein verschlüsseltes Foto-Backup: Es sichert Ihre Fotos und Videos auf einem Server, den Sie selbst betreiben. Jede Datei wird vor dem Hochladen auf Ihrem Handy verschlüsselt; der Server speichert nur verschlüsselte Daten. Er kann kein Bild öffnen, niemand sonst kann es.
 
 <b>Sie brauchen Ihren eigenen Cipherfilm-Server</b>
 Cipherfilm ist die Android-App zu einem selbst gehosteten Server. Allein funktioniert sie nicht; wir betreiben keinen Server für Sie. Der Server ist kostenlos, Open Source und läuft als Container auf einem kleinen VPS, einem NAS oder einem Rechner zu Hause. Die Einrichtung dauert wenige Minuten:
@@ -10,7 +10,7 @@ Betreibt jemand schon einen für Familie oder Freunde: um eine Einladung bitten.
 • Ihr Passwort verlässt das Handy nie. Es entsperrt Ihre Schlüssel, ebenso Ihr Wiederherstellungsschlüssel aus 24 Wörtern.
 • Der Server sieht, wie viele Dateien es gibt und wie groß etwa, nie, was sie zeigen, wo sie entstanden oder wie sie heißen.
 
-<b>Backup, das von selbst läuft</b>
+<b>Foto-Backup, das von selbst läuft</b>
 • Wählen Sie die Ordner. Neue Fotos und Videos werden automatisch hochgeladen, auch bei geschlossener App, auf Wunsch nur im WLAN oder beim Laden.
 • Große Videos laden im Hintergrund weiter, mit Fortschrittsanzeige.
 • Aus jeder App mit Cipherfilm teilen, um hochzuladen.

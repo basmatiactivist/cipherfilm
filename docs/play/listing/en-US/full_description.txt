@@ -1,4 +1,4 @@
-Cipherfilm backs up your photos and videos to a server you run yourself. Every file is encrypted on your phone before upload, so the server stores only encrypted data. It can't open a single picture, and neither can anyone else.
+Cipherfilm is an encrypted photo backup: it backs up your photos and videos to a server you run yourself. Every file is encrypted on your phone before upload, so the server stores only encrypted data. It can't open a single picture, and neither can anyone else.
 
 <b>You need your own Cipherfilm server</b>
 Cipherfilm is the Android app for a self-hosted server. It doesn't work on its own, and we don't run a server for you. The server is free, open source and runs in a container on a small VPS, a NAS or a computer at home. Setup takes a few minutes:
@@ -10,7 +10,7 @@ If someone already runs a Cipherfilm server for your family or friends, ask them
 • Your password never leaves the phone. It, or your 24-word recovery key, unlocks your keys.
 • The server sees how many files there are and roughly how big, never what they show, where they were taken or what they are called.
 
-<b>Backup that runs by itself</b>
+<b>Photo backup that runs by itself</b>
 • Choose the folders to back up. New photos and videos upload automatically, even when the app is closed, optionally only on Wi-Fi or while charging.
 • Large videos keep uploading in the background, with a progress notification.
 • Share photos and videos from any app to Cipherfilm to upload them.

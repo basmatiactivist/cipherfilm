@@ -234,11 +234,17 @@ function noteMatches(id: string, has: boolean) {
 /** Writes the on-device schedule (reviewSchedule.ts) for the document as it is, and lets the background task run for
  *  it when a review notifies. */
 async function syncSchedule(facts: Record<string, Facts> = {}) {
+  // what was learnt while the document wasn't loaded (another device changed it, so it is read again) waits for it:
+  // dropped, a review would never notify (its photos found, its words checked, all in memory only)
+  for (const [k, v] of Object.entries(facts)) pending[k] = { ...pending[k], ...v };
   if (!loaded) return;
-  const d = doc;
-  await updateSchedule((s) => scheduleFor(d, s, facts, isPlayBuild()));
+  const d = doc, f = pending;
+  pending = {};
+  await updateSchedule((s) => scheduleFor(d, s, f, isPlayBuild()));
   try { const { scheduleBackground } = require("./backup") as typeof import("./backup"); await scheduleBackground(); } catch { /* next time */ }
 }
+/** Facts for the schedule not written yet (syncSchedule). */
+let pending: Record<string, Facts> = {};
 
 // ---- for screens ----
 
@@ -291,4 +297,4 @@ export function periodLabel(e: Every, now = new Date()): string {
 /** The end slide's line: "Next one tomorrow", "… next week", "… next month". */
 export const nextOneLabel = (e: Every) => (e === "day" ? t("Next one tomorrow") : e === "week" ? t("Next one next week") : t("Next one next month"));
 
-onWipe(() => { wipes++; doc = emptyDoc(); version = 0; loaded = false; loading = null; runs.clear(); checks.clear(); found.clear(); bump(); });
+onWipe(() => { wipes++; doc = emptyDoc(); version = 0; loaded = false; loading = null; runs.clear(); checks.clear(); found.clear(); pending = {}; bump(); });

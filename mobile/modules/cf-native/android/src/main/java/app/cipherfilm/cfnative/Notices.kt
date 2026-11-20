@@ -93,14 +93,15 @@ internal object Notices {
   }
 
   /** Shows the one review notification (replacing the one up, if any); false when Android doesn't allow it. The text
-   *  is generic (never what a review is about), and secret on the lock screen like the notices. A tap opens the app
-   *  with cipherfilm://reviews, which goes to Photos (after unlocking), where the reviews are. */
+   *  is generic (never what a review is about), and secret on the lock screen like the notices. A tap opens the app as
+   *  its icon does: Photos (after unlocking), where the reviews are. (Its launch intent, not a cipherfilm:// link, so a
+   *  build with another scheme, the test package, opens too.) */
   fun showReview(ctx: Context, title: String, text: String, publicTitle: String): Boolean {
     if (!NotificationManagerCompat.from(ctx).areNotificationsEnabled()) return false
     val ch = ctx.getSystemService(NotificationManager::class.java)?.getNotificationChannel(REVIEWS)
     if (ch != null && ch.importance == NotificationManager.IMPORTANCE_NONE) return false
     reviewChannel(ctx)
-    val open = Intent(Intent.ACTION_VIEW, Uri.parse("cipherfilm://reviews")).setPackage(ctx.packageName)
+    val open = (ctx.packageManager.getLaunchIntentForPackage(ctx.packageName) ?: return false)
       .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
     val tap = PendingIntent.getActivity(ctx, 3, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     val icon = android.R.drawable.ic_menu_gallery

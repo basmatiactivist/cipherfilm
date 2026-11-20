@@ -13,6 +13,8 @@ const st = vi.hoisted(() => ({
   play: false,
   blocked: {} as Record<string, boolean | undefined>,
   facts: [] as unknown[],
+  seen: [] as Record<string, unknown>[],
+  found: [] as unknown[],
 }));
 vi.mock("../modules/cf-native/src/CfNativeModule", () => ({ default: {} }));
 vi.mock("@crypto/search", () => ({
@@ -39,15 +41,17 @@ vi.mock("./api", () => {
   };
 });
 vi.mock("./session", () => ({ onWipe: () => {}, session: () => ({ me: { user: { id: "alice" } }, masterKey: new Uint8Array(32) }) }));
-vi.mock("./search/query", () => ({ search: async () => ({ items: [] }) }));
+vi.mock("./search/query", () => ({ search: async () => ({ items: st.found }) }));
 vi.mock("./search/engine", () => ({
   indexVersion: () => 0, searchReady: () => true, useSearchProgress: () => ({ phase: "ready" }),
   wordsBlocked: async (q: string) => st.blocked[q],
+  explicitAmong: async () => new Set(), searchFiltered: () => true,
 }));
 vi.mock("./store", () => ({ isPlayBuild: () => st.play }));
 vi.mock("./reviewSchedule", () => ({
   cancelReviewNotice: () => {}, loadSchedule: async () => ({ v: 1, entries: [], notified: {} }),
-  scheduleFor: (d: unknown) => d, updateSchedule: async () => { st.facts.push(1); },
+  scheduleFor: (d: unknown, _s: unknown, f: Record<string, unknown>) => { st.seen.push(f); return d; },
+  updateSchedule: async (f: (s: unknown) => unknown) => { st.facts.push(1); f({ v: 1, entries: [], notified: {} }); },
 }));
 
 const { setLang } = await import("./i18n");
@@ -60,8 +64,20 @@ const serverDoc = () => st.server!.doc as ReviewDoc;
 
 describe("the reviews document", () => {
   beforeEach(() => {
-    Object.assign(st, { server: null, sealed: null, puts: 0, beforePut: null, putStatus: 0, play: false, blocked: {}, facts: [] });
+    Object.assign(st, { server: null, sealed: null, puts: 0, beforePut: null, putStatus: 0, play: false, blocked: {}, facts: [], seen: [], found: [] });
     R.reviewsChanged(); // read again
+  });
+
+  it("photos found while the document is read again still reach the schedule (else it would never notify)", async () => {
+    st.server = { doc: { ...emptyDoc(), reviews: [review("a", "beach", { notify: true })] }, version: 1 };
+    await R.loadReviews();
+    R.reviewsChanged(); // another device (or this one's own save, echoed) changed it: read again when next needed
+    st.found = [{ id: "p1", kind: "image", created_at: 1, has_thumb: true, meta: { capture_ts: 1 } }];
+    await R.runReview(R.reviewDoc().reviews[0], st.found as never);
+    expect(st.seen.some((f) => (f.a as { hasMatches?: boolean } | undefined)?.hasMatches)).toBe(false);
+    await R.loadReviews();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(st.seen.some((f) => (f.a as { hasMatches?: boolean } | undefined)?.hasMatches === true)).toBe(true);
   });
 
   it("no document yet: starts empty, and the first save makes one", async () => {

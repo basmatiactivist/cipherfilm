@@ -7,6 +7,10 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+### Added
+- Android (Play build only): Account › About › "Rate Cipherfilm" opens the app's page in the Play Store. No rating
+  prompt and no review library; the GitHub build has no such entry.
+
 ## [2.10.1] - 2026-11-19
 
 ### Changed

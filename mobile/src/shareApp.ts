@@ -9,6 +9,11 @@ export const WEBSITE = "https://cipherfilm.app";
 
 export const appLink = (play: boolean = isPlayBuild()) => (play ? PLAY_LISTING : WEBSITE);
 
+// "Rate Cipherfilm": only in the Play build (the GitHub build has no store page to rate on). It opens the listing in
+// the Play Store app, or in the browser if there is no Play Store; no review library, no prompt, nothing is sent.
+export const PLAY_APP_LISTING = "market://details?id=app.cipherfilm";
+export const rateOffered = (play: boolean = isPlayBuild()) => play;
+
 /** What the share sheet gets: one short line and the link. */
 export function shareMessage(play?: boolean): string {
   return t("Cipherfilm keeps photos and videos end-to-end encrypted, on your own server. {link}", { link: appLink(play) });

@@ -55,7 +55,8 @@ Index entries (what the phone found in a photo) use the sealed format too, with 
 account's private key and reject an entry whose id differs from the item's. Text read in a photo is inside the same
 JSON (`t`, padded with spaces to exactly 1022 bytes, with `o` naming the text model), so how much text a photo has
 doesn't change the entry's size. The people list (names) is
-`seal(pad(JSON, 1024), kdf(master, "PEOPLEST", 0), "blob/people", user id)`. The Android app keeps the opened index
+`seal(pad(JSON, 1024), kdf(master, "PEOPLEST", 0), "blob/people", user id)`; the custom reviews (docs/MEMORIES.md)
+`seal(pad(JSON, 4096), kdf(master, "REVIEWST", 0), "blob/reviews", user id)`. The Android app keeps the opened index
 between unlocks in its cache, encrypted with AEAD under `KDF(master, "IDXCOPY1", 1)` with
 `ad = "cipherfilm search index copy v1|" ‖ user id ‖ "|" ‖ model family`, and deletes it at sign-out. Details:
 docs/SEARCH.md.

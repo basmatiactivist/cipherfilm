@@ -7,6 +7,16 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+### Added
+- Custom reviews on the web, Android and the Mac: save a search ("dogs", "Anna in Zürich", "beach 2019") and it plays
+  as a story like the year in review, daily, weekly or monthly, with 6, 12, 20 or 30 photos, and other photos each
+  time (those not shown lately first, spread over the months). Made in Account › Memories › Custom reviews (Mac:
+  Settings › General › Memories); due ones show in "Your reviews" above "Your years"; on Android optionally with a
+  notification that doesn't say what the review is about. Shared by the person's devices in one document encrypted
+  with their master key: the server never learns the searches, the names or which photos were shown
+  (docs/MEMORIES.md). The Android app from Google Play doesn't show reviews of explicit search words. Needs the server
+  of this release (an older one says so in the menu).
+
 ## [2.10.1] - 2026-11-19
 
 ### Changed

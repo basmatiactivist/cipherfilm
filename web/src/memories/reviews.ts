@@ -72,7 +72,7 @@ async function change(f: (d: ReviewDoc) => ReviewDoc): Promise<ReviewDoc> {
 const newId = async () => { const s = await getSodium(); return s.to_hex(s.randombytes_buf(8)); };
 
 /** A new review, not saved yet. */
-export const draft = (): Review => ({ id: "", name: "", query: "", every: "week", count: 12, notify: true, created: 0, updated: 0 });
+export const draft = (): Review => ({ id: "", name: "", query: "", every: "week", count: 12, notify: false, created: 0, updated: 0 });
 
 export async function saveReview(r: Review): Promise<Review> {
   const id = r.id || await newId();

@@ -7,9 +7,10 @@ import { fetch } from "expo/fetch";
 import { AppState } from "react-native";
 import { server } from "./api";
 
-// "notices": a new sign-in or an admin's change for the person to see (notices.ts)
-export type Topic = "items" | "trash" | "albums" | "people" | "index" | "notices";
-export const ALL: Topic[] = ["items", "trash", "albums", "people", "index", "notices"];
+// "notices": a new sign-in or an admin's change for the person to see (notices.ts); "reviews": the custom reviews
+// document (reviews.ts)
+export type Topic = "items" | "trash" | "albums" | "people" | "index" | "notices" | "reviews";
+export const ALL: Topic[] = ["items", "trash", "albums", "people", "index", "notices", "reviews"];
 const TOPICS = new Set<string>(ALL);
 
 /** One event of the stream; a heartbeat (a comment line) has the name ":". */

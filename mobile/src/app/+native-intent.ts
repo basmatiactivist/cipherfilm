@@ -9,6 +9,8 @@ export function redirectSystemPath({ path }: { path: string; initial: boolean })
     if (isPasskeyReturn(path)) { passkeyReturned(path); return ""; }
     if (new URL(path).hostname === "expo-sharing") return "/share";
     if (isNoticeLink(path)) { openFromNotice(); return "/"; }
+    // "A review is ready" (reviewSchedule.ts): to the start too, which comes to Photos and its reviews after unlocking
+    if (new URL(path).hostname === "reviews") return "/";
     return path;
   } catch {
     return "/";

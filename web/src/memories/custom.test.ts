@@ -144,6 +144,18 @@ describe("the document", () => {
     expect(() => upsertReview(emptyDoc(), review({ query: "" }), 1)).toThrow();
     expect(COUNTS).toEqual([6, 12, 20, 30]);
   });
+  test("changing how often: due at once, the history kept", () => {
+    const now = at(2026, 11, 20);
+    let d = upsertReview(emptyDoc(), review({ every: "day" }), 1);
+    d = recordShown(d, "r1", periodOf("day", now), ["a", "b"]);
+    expect(isDue(d.reviews[0], d, now)).toBe(false);
+    d = upsertReview(d, { ...d.reviews[0], every: "month" }, 2);
+    expect(isDue(d.reviews[0], d, now)).toBe(true);
+    expect(d.shown.r1).toEqual({ period: -1, ids: ["a", "b"], now: [] });
+    // a change of something else leaves it as it was
+    const e = upsertReview(recordShown(d, "r1", periodOf("month", now), ["c"]), { ...d.reviews[0], name: "x" }, 3);
+    expect(isDue(e.reviews[0], e, now)).toBe(false);
+  });
   test("at most MAX_REVIEWS", () => {
     let d = emptyDoc();
     for (let i = 0; i < MAX_REVIEWS; i++) d = upsertReview(d, review({ id: `r${i}` }), 1);

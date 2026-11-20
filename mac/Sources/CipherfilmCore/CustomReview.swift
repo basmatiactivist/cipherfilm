@@ -307,6 +307,8 @@ public enum CustomReviews {
     next.count = snap(r.count)
     next.updated = now
     if let k = d.reviews.firstIndex(where: { $0.id == r.id }) {
+      // another rhythm counts its periods in other units: due at once, the photos shown are still remembered
+      if d.reviews[k].every != next.every, var s = d.shown[r.id] { s.period = -1; s.now = []; d.shown[r.id] = s }
       d.reviews[k] = next
     } else if d.reviews.count >= maxReviews {
       throw ReviewError.tooMany

@@ -719,13 +719,26 @@ let tokenizer: Tokenizer | null = null;
  *  content"): words close to explicit content find nothing, and photos that look explicit are left out. */
 export async function textSearch(q: string, limit = 100_000): Promise<Hit[]> {
   if (!ready) return [];
-  await openVision(await loadSettings(), false); // (the background closes the models when it ran while the app was away)
-  await giveConcepts();
-  tokenizer ??= new Tokenizer(JSON.parse(await tokenizerFile().text()));
-  const vec = await N.visionText(tokenizer.encode(q));
+  const vec = await textVector(q);
   const f = filtered;
   if (f && queryBlocked(floats(vec))) return [];
   return N.indexSearch(vec, limit, -1, f);
+}
+
+/** The text model's vector of some words (the models opened first if the background closed them). */
+async function textVector(q: string) {
+  await openVision(await loadSettings(), false); // (the background closes the models when it ran while the app was away)
+  await giveConcepts();
+  tokenizer ??= new Tokenizer(JSON.parse(await tokenizerFile().text()));
+  return N.visionText(tokenizer.encode(q));
+}
+
+/** Whether words are explicit by the filter search uses (queryBlocked), whatever this account chose: the Play build's
+ *  check of a custom review's search and name (reviews.ts). undefined when it can't be checked on this phone (search
+ *  isn't set up or ready here). */
+export async function wordsBlocked(q: string): Promise<boolean | undefined> {
+  if (!ready || !q.trim()) return ready ? false : undefined;
+  try { return queryBlocked(floats(await textVector(q))); } catch { return undefined; }
 }
 
 /** little-endian float32 bytes (the native text vector) as numbers */

@@ -14,6 +14,7 @@ import { Gallery } from "../Gallery";
 import { MemoriesRow } from "../MemoriesRow";
 import { useMemories } from "../memories";
 import { RecapRow } from "../RecapRow";
+import { ReviewsRow, useReviewCards } from "../ReviewsRow";
 import { useRecapYears } from "../trips";
 import { NAV_HEIGHT, NavBar } from "../NavBar";
 import { Icon } from "../icons";
@@ -42,6 +43,7 @@ export default function Library() {
   const demo = !!useSession().me?.demo;
   const memories = useMemories(items);
   const years = useRecapYears(items);
+  const reviews = useReviewCards(items);
   // archived items stay in the shared list (albums, search, the map) but not in this grid (@edit/folders)
   const grid = useMemo(() => (items ? mainGrid(items) : null), [items]);
   useEffect(() => { if (!items) refreshLibrary(); }, []);
@@ -92,7 +94,7 @@ export default function Library() {
             {demo ? <Text variant="labelLarge" style={[st.demo, { backgroundColor: th.colors.primaryContainer, color: th.colors.onPrimaryContainer }]}>{demoNote()}</Text> : null}
           </View>
         }
-        top={memories.length || years.length ? <>{memories.length ? <MemoriesRow memories={memories} /> : null}<RecapRow years={years} items={items ?? []} /></> : undefined}
+        top={memories.length || reviews.length || years.length ? <>{memories.length ? <MemoriesRow memories={memories} /> : null}<ReviewsRow cards={reviews} /><RecapRow years={years} items={items ?? []} /></> : undefined}
         empty={<Empty />}
         fab={demo ? undefined : <FAB icon="upload" label={t("Upload")} onPress={pick} accessibilityLabel={t("Upload photos and videos from this phone")}
           style={[st.fab, { right: 16 + inset.right, bottom: 16 + inset.bottom + NAV_HEIGHT, backgroundColor: th.colors.primary }]} color={th.colors.onPrimary} />}

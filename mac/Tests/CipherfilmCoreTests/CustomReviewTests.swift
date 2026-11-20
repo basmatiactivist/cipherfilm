@@ -187,6 +187,20 @@ private func num(_ x: Any?) -> Int { (x as! NSNumber).intValue }
     #expect(C.counts == [6, 12, 20, 30])
   }
 
+  @Test func changingHowOftenMakesItDueAtOnce() throws {
+    let now = at(2026, 11, 20)
+    var d = try C.upsertReview(ReviewDoc(), review(every: .day), now: 1)
+    d = C.recordShown(d, id: "r1", period: C.periodOf(.day, now), ids: ["a", "b"])
+    #expect(!C.isDue(d.reviews[0], d, now: now))
+    var monthly = d.reviews[0]; monthly.every = .month
+    d = try C.upsertReview(d, monthly, now: 2)
+    #expect(C.isDue(d.reviews[0], d, now: now))
+    #expect(d.shown["r1"] == ReviewShown(period: -1, ids: ["a", "b"], now: []))
+    var renamed = d.reviews[0]; renamed.name = "x"
+    let e = try C.upsertReview(C.recordShown(d, id: "r1", period: C.periodOf(.month, now), ids: ["c"]), renamed, now: 3)
+    #expect(!C.isDue(e.reviews[0], e, now: now))
+  }
+
   @Test func atMostMaxReviews() throws {
     var d = ReviewDoc()
     for i in 0..<C.maxReviews { d = try C.upsertReview(d, review(id: "r\(i)"), now: 1) }

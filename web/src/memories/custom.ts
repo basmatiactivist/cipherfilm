@@ -190,7 +190,8 @@ export function recordShown(doc: ReviewDoc, id: string, period: number, ids: rea
 const clean = (s: unknown) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, MAX_TEXT) : "");
 const snap = (n: unknown) => COUNTS.reduce((best, c) => (Math.abs(c - Number(n)) < Math.abs(best - Number(n)) ? c : best), COUNTS[0] as number);
 
-/** Adds a review or changes one (by id). A review deleted on another device stays deleted. Throws without a query or
+/** Adds a review or changes one (by id); a review that changes how often it comes is due at once. A review deleted on
+ *  another device stays deleted. Throws without a query or
  *  when there are MAX_REVIEWS already. */
 export function upsertReview(doc: ReviewDoc, r: Review, now: number): ReviewDoc {
   const query = clean(r.query);
@@ -202,6 +203,8 @@ export function upsertReview(doc: ReviewDoc, r: Review, now: number): ReviewDoc 
     notify: !!r.notify, updated: now,
   };
   const k = d.reviews.findIndex((x) => x.id === r.id);
+  // another rhythm counts its periods in other units: due at once, the photos shown are still remembered
+  if (k >= 0 && d.reviews[k].every !== next.every && d.shown[r.id]) d.shown[r.id] = { ...d.shown[r.id], period: -1, now: [] };
   if (k >= 0) d.reviews[k] = next;
   else if (d.reviews.length >= MAX_REVIEWS) throw new Error(`At most ${MAX_REVIEWS} reviews.`);
   else d.reviews.push({ ...next, created: now });

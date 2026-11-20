@@ -738,7 +738,22 @@ async function textVector(q: string) {
  *  isn't set up or ready here). */
 export async function wordsBlocked(q: string): Promise<boolean | undefined> {
   if (!ready || !q.trim()) return ready ? false : undefined;
-  try { return queryBlocked(floats(await textVector(q))); } catch { return undefined; }
+  try {
+    // the words together, and each word on its own: an explicit word among harmless ones mustn't get through
+    const words = [...new Set(q.trim().toLowerCase().split(/\s+/).filter((w) => w.length >= 3))];
+    for (const w of [q, ...(words.length > 1 ? words : [])]) if (queryBlocked(floats(await textVector(w)))) return true;
+    return false;
+  } catch { return undefined; }
+}
+
+/** Which of these items look explicit (search's photo filter), while this account's search is filtered: a custom
+ *  review leaves them out also when a filter, a name or the text in a photo found them, not the image model (search
+ *  does that only for the image model's hits). Empty when search isn't filtered or not ready here. */
+export async function explicitAmong(ids: string[]): Promise<Set<string>> {
+  if (!ready || !filtered || !ids.length) return new Set();
+  const kept = new Set((await N.indexSearch(await textVector("a photo"), 1_000_000, -1, true)).map((h) => h.id));
+  const indexed = await indexedAmong(ids);
+  return new Set(ids.filter((id) => indexed.has(id) && !kept.has(id)));
 }
 
 /** little-endian float32 bytes (the native text vector) as numbers */

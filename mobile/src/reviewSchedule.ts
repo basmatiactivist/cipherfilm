@@ -113,9 +113,12 @@ export function reviewNoticesWanted(): boolean {
   try { const f = FILE(); return f.exists && readSchedule(JSON.parse(f.textSync())).entries.some((e) => e.notify && e.ok); } catch { return false; }
 }
 
-export function clearSchedule() {
-  try { const f = FILE(); if (f.exists) f.delete(); } catch { /* gone */ }
+export function clearSchedule(): Promise<void> {
+  // after any write still queued (it may hold the old account's reviews), so nothing is written back afterwards
+  const done = writing.catch(() => {}).then(() => { try { const f = FILE(); if (f.exists) f.delete(); } catch { /* gone */ } });
+  writing = done;
   try { N.reviewCancel?.(); } catch { /* older native build */ }
+  return done;
 }
 
 /** A review was watched, or none is due any more: its notification goes. */

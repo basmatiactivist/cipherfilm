@@ -201,6 +201,18 @@ private func num(_ x: Any?) -> Int { (x as! NSNumber).intValue }
     #expect(!C.isDue(e.reviews[0], e, now: now))
   }
 
+  @Test func cutByCodePointAndStrictRead() throws {
+    let r = try C.upsertReview(ReviewDoc(), review(name: String(repeating: "a", count: 79) + "🐕🐕"), now: 1).reviews[0]
+    #expect(r.name == String(repeating: "a", count: 79) + "🐕")
+    #expect(throws: (any Error).self) { try C.readDocStrict(Data("{\"v\":1,\"reviews\":[{\"name\":\"\\ud83d\"}]".utf8)) }
+    #expect(try C.readDocStrict(Data(#"{"v":1}"#.utf8)) == ReviewDoc())
+  }
+
+  @Test func periodsDontFollowTheMacsCalendar() {
+    #expect(C.periodOf(.month, at(2026, 11, 20)) == 56 * 12 + 10)
+    #expect(C.gregorian.identifier == .gregorian)
+  }
+
   @Test func atMostMaxReviews() throws {
     var d = ReviewDoc()
     for i in 0..<C.maxReviews { d = try C.upsertReview(d, review(id: "r\(i)"), now: 1) }

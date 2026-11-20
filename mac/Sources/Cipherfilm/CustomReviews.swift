@@ -67,7 +67,7 @@ final class ReviewStore {
     var next = ReviewDoc(), ver = 0
     do {
       let r = try await v.api.get(R.self, "/api/me/blobs/reviews")
-      next = CustomReviews.readDoc(try Crypto.decryptReviews(B64.decode(r.data_enc), master: v.masterKey(), userId: v.userId))
+      next = try CustomReviews.readDocStrict(try Crypto.decryptReviews(B64.decode(r.data_enc), master: v.masterKey(), userId: v.userId))
       ver = r.version
     } catch let e as APIError where e.status == 404 {}
     guard vault === v, !Task.isCancelled else { return } // locked meanwhile
@@ -99,7 +99,7 @@ final class ReviewStore {
   }
 
   /** A new review, not saved yet. */
-  static func draft() -> Review { Review(id: "", name: "", query: "", every: .week, count: 12, notify: true, created: 0, updated: 0) }
+  static func draft() -> Review { Review(id: "", name: "", query: "", every: .week, count: 12, notify: false, created: 0, updated: 0) }
 
   @discardableResult
   func save(_ r: Review) async throws -> Review {
@@ -117,7 +117,8 @@ final class ReviewStore {
   /** Remembers that a review was watched now with these photos (once a period; again in the same period changes nothing). */
   func watched(_ r: Review, period: Int, ids: [String]) async {
     if doc.shown[r.id]?.period == period { return }
-    _ = try? await change { d in d.reviews.contains { $0.id == r.id } ? CustomReviews.recordShown(d, id: r.id, period: period, ids: ids) : d }
+    // watched on another device in this period meanwhile: its story stays the period's
+    _ = try? await change { d in d.reviews.contains { $0.id == r.id } && d.shown[r.id]?.period != period ? CustomReviews.recordShown(d, id: r.id, period: period, ids: ids) : d }
   }
 
   /** The photos a query finds as Search does: its close matches only, with this Mac's explicit filter, and only those

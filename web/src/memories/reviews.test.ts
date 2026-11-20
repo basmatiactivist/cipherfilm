@@ -56,7 +56,7 @@ describe("the reviews document", () => {
     const b = await fresh();
     await b.loadReviews();
     await a.removeReview(r.id);
-    await b.saveReview({ ...r, name: "Cats!" });
+    await expect(b.saveReview({ ...r, name: "Cats!" })).rejects.toThrow("deleted on another device");
     expect((await (await fresh()).loadReviews()).reviews).toEqual([]);
   });
 

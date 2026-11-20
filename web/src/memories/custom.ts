@@ -187,7 +187,9 @@ export function recordShown(doc: ReviewDoc, id: string, period: number, ids: rea
   return d;
 }
 
-const clean = (s: unknown) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, MAX_TEXT) : "");
+/** Spaces made one, trimmed, at most MAX_TEXT characters, cut by code point (never half an emoji, which other apps
+ *  couldn't read). */
+const clean = (s: unknown) => (typeof s === "string" ? Array.from(s.replace(/\s+/g, " ").trim()).slice(0, MAX_TEXT).join("") : "");
 const snap = (n: unknown) => COUNTS.reduce((best, c) => (Math.abs(c - Number(n)) < Math.abs(best - Number(n)) ? c : best), COUNTS[0] as number);
 
 /** Adds a review or changes one (by id); a review that changes how often it comes is due at once. A review deleted on

@@ -125,7 +125,7 @@ describe("the schedule from the document", () => {
     expect(S.readSchedule("nonsense")).toEqual(S.emptySchedule());
   });
 
-  it("the background task runs for it only while Memories is on and some review notifies", () => {
+  it("the background task runs for it only while Memories is on and some review notifies", async () => {
     st.memories = true;
     st.file = JSON.stringify(sched([entry("a", { notify: false })]));
     expect(S.reviewNoticesWanted()).toBe(false);
@@ -134,7 +134,7 @@ describe("the schedule from the document", () => {
     st.memories = false;
     expect(S.reviewNoticesWanted()).toBe(false);
     st.memories = true;
-    S.clearSchedule();
+    await S.clearSchedule();
     expect(S.reviewNoticesWanted()).toBe(false);
   });
 });

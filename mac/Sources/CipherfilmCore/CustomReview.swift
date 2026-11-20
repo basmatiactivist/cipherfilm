@@ -108,6 +108,10 @@ public enum ReviewSlide: Sendable, Hashable {
 }
 
 public enum CustomReviews {
+  /** Local time in the Gregorian calendar whatever the Mac's calendar is set to: the periods are shared with the web
+   *  and Android apps and must count the same. */
+  public static let gregorian: Calendar = { var c = Calendar(identifier: .gregorian); c.timeZone = .current; return c }()
+
   /** How many photos a review can show. */
   public static let counts = [6, 12, 20, 30]
   public static let maxReviews = 20
@@ -147,7 +151,7 @@ public enum CustomReviews {
   }
 
   /** The number of the day, week (Monday to Sunday) or month a moment falls in; 0 is the one with 1970-01-01. */
-  public static func periodOf(_ every: Review.Every, _ date: Date, calendar: Calendar = .current) -> Int {
+  public static func periodOf(_ every: Review.Every, _ date: Date, calendar: Calendar = CustomReviews.gregorian) -> Int {
     let c = calendar.dateComponents([.year, .month, .day], from: date)
     let y = c.year ?? 1970, m = c.month ?? 1, d = c.day ?? 1
     if every == .month { return (y - 1970) * 12 + (m - 1) }
@@ -157,7 +161,7 @@ public enum CustomReviews {
   }
 
   /** Where a period starts (local midnight). */
-  public static func periodStart(_ every: Review.Every, _ p: Int, calendar: Calendar = .current) -> Date {
+  public static func periodStart(_ every: Review.Every, _ p: Int, calendar: Calendar = CustomReviews.gregorian) -> Date {
     let comps: DateComponents
     if every == .month {
       comps = DateComponents(year: 1970 + floorDiv(p, 12), month: mod(p, 12) + 1, day: 1)
@@ -169,13 +173,13 @@ public enum CustomReviews {
   }
 
   /** Due: not watched yet in this period (on any device). */
-  public static func isDue(_ r: Review, _ doc: ReviewDoc, now: Date, calendar: Calendar = .current) -> Bool {
+  public static func isDue(_ r: Review, _ doc: ReviewDoc, now: Date, calendar: Calendar = CustomReviews.gregorian) -> Bool {
     guard let s = doc.shown[r.id] else { return true }
     return s.period < periodOf(r.every, now, calendar: calendar)
   }
 
   /** When it's due next: now, if it's due; else the start of the next period. */
-  public static func nextDue(_ r: Review, _ doc: ReviewDoc, now: Date, calendar: Calendar = .current) -> Date {
+  public static func nextDue(_ r: Review, _ doc: ReviewDoc, now: Date, calendar: Calendar = CustomReviews.gregorian) -> Date {
     isDue(r, doc, now: now, calendar: calendar) ? now : periodStart(r.every, periodOf(r.every, now, calendar: calendar) + 1, calendar: calendar)
   }
 
@@ -215,7 +219,7 @@ public enum CustomReviews {
    *    favorite twice as likely as another photo, screenshots and videos only where a month has nothing else.
    * `shown`: the review's history, oldest first. `seed`: seedOf(review, period).
    */
-  public static func pickReview(_ matches: [Item], count: Int, shown: [String], seed: UInt32, calendar cal: Calendar = .current) -> [Item] {
+  public static func pickReview(_ matches: [Item], count: Int, shown: [String], seed: UInt32, calendar cal: Calendar = CustomReviews.gregorian) -> [Item] {
     var seen: [String: Int] = [:]
     for (k, id) in shown.enumerated() { seen[id] = k }
     var ids = Set<String>()
@@ -285,7 +289,10 @@ public enum CustomReviews {
   private static let spaces = try! NSRegularExpression(pattern: "\\s+")
   static func clean(_ s: String) -> String {
     let one = spaces.stringByReplacingMatches(in: s, range: NSRange(s.startIndex..., in: s), withTemplate: " ")
-    return String(one.trimmingCharacters(in: .whitespacesAndNewlines).prefix(maxText))
+    // by code point, like the web and Android apps (never half a character)
+    var u = String.UnicodeScalarView()
+    u.append(contentsOf: one.trimmingCharacters(in: .whitespacesAndNewlines).unicodeScalars.prefix(maxText))
+    return String(u)
   }
 
   /** The nearest of `counts` (the smaller on a tie). */
@@ -377,6 +384,12 @@ public enum CustomReviews {
     readDoc(try? JSONDecoder().decode(JSONValue.self, from: data))
   }
 
+  /** The same, but JSON that can't be read at all throws: what is saved must never replace a document that couldn't be
+   *  read (it would drop every review on every device). */
+  public static func readDocStrict(_ data: Data) throws -> ReviewDoc {
+    readDoc(try JSONDecoder().decode(JSONValue.self, from: data))
+  }
+
   /** The document as JSON, with the same keys as the web and Android apps. */
   public static func json(_ d: ReviewDoc) -> JSONValue {
     let reviews: [JSONValue] = d.reviews.map { r in
@@ -401,7 +414,7 @@ public enum CustomReviews {
 
   /** The slides of a review: the cover (its first favorite, else its middle photo), the photos by year (perSlide a
    *  slide at most), the end. `picked`: pickReview's or replayed's answer; `total`: how many photos match the search. */
-  public static func slides(_ r: Review, picked: [Item], total: Int, calendar cal: Calendar = .current) -> [ReviewSlide] {
+  public static func slides(_ r: Review, picked: [Item], total: Int, calendar cal: Calendar = CustomReviews.gregorian) -> [ReviewSlide] {
     guard !picked.isEmpty else { return [.rend] }
     let images = picked.filter { $0.kind == .image }
     let cover = picked.first { $0.favorite && $0.kind == .image } ?? (images.isEmpty ? picked[0] : images[(images.count - 1) / 2])

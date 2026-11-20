@@ -143,6 +143,9 @@ describe("the document", () => {
     expect(upsertReview(d, review(), 13).reviews).toEqual([]);
     expect(() => upsertReview(emptyDoc(), review({ query: "" }), 1)).toThrow();
     expect(COUNTS).toEqual([6, 12, 20, 30]);
+    // cut by character: never half an emoji (JSON other apps couldn't read)
+    const long = upsertReview(emptyDoc(), review({ id: "e", name: "a".repeat(79) + "🐕🐕" }), 1).reviews[0].name;
+    expect(long).toBe("a".repeat(79) + "🐕");
   });
   test("changing how often: due at once, the history kept", () => {
     const now = at(2026, 11, 20);

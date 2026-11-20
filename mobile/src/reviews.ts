@@ -17,7 +17,7 @@ import {
 import { api, ApiError } from "./api";
 import { onWipe, session } from "./session";
 import { search } from "./search/query";
-import { indexVersion, searchReady, useSearchProgress, wordsBlocked } from "./search/engine";
+import { explicitAmong, indexVersion, searchFiltered, searchReady, useSearchProgress, wordsBlocked } from "./search/engine";
 import { isPlayBuild } from "./store";
 import { cancelReviewNotice, scheduleFor, updateSchedule, loadSchedule, type Facts } from "./reviewSchedule";
 import type { Item } from "./library";
@@ -116,7 +116,7 @@ export async function saveReview(input: ReviewInput): Promise<string> {
     const old = d.reviews.find((x) => x.id === id);
     if (!old && d.reviews.length >= MAX_REVIEWS) throw new Error(t("You can have at most {n} custom reviews.", { n: MAX_REVIEWS }));
     const next = upsertReview(d, {
-      id, name: input.name, query, every: input.every, count: input.count, notify: input.notify, created: old?.created ?? now, updated: now,
+      ...old, id, name: input.name, query, every: input.every, count: input.count, notify: input.notify, created: old?.created ?? now, updated: now,
     }, now);
     // another rhythm counts its periods differently: due again at once, its history kept
     if (old && old.every !== input.every && next.shown[id]) next.shown[id] = { ...next.shown[id], period: -1, now: [] };
@@ -148,11 +148,13 @@ let lists = 0;
 const listId = (l: object) => { let n = listIds.get(l); if (n === undefined) listIds.set(l, (n = ++lists)); return n; };
 
 export async function matchesFor(query: string, items: Item[]): Promise<Item[]> {
-  const key = `${listId(items)}:${indexVersion()}:${searchReady()}`;
+  const key = `${listId(items)}:${indexVersion()}:${searchReady()}:${searchFiltered()}`;
   const hit = runs.get(query);
   if (hit?.key === key) return hit.matches;
   const r = await search(query, items.filter((i) => !i.broken));
-  const matches = r.items.filter(showable);
+  const found = r.items.filter(showable);
+  const explicit = await explicitAmong(found.map((m) => m.id));
+  const matches = explicit.size ? found.filter((m) => !explicit.has(m.id)) : found;
   runs.set(query, { key, matches });
   if (runs.size > 40) runs.delete(runs.keys().next().value!);
   return matches;

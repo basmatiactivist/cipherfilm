@@ -77,7 +77,15 @@ export const draft = (): Review => ({ id: "", name: "", query: "", every: "week"
 export async function saveReview(r: Review): Promise<Review> {
   const id = r.id || await newId();
   const d = await change((d) => upsertReview(d, { ...r, id }, Date.now()));
-  return d.reviews.find((x) => x.id === id) ?? { ...r, id };
+  const saved = d.reviews.find((x) => x.id === id);
+  if (!saved) throw new Error("This review was deleted on another device.");
+  return saved;
+}
+
+/** Forgets the decrypted reviews (lock, sign-out). */
+export function clearReviews() {
+  doc = emptyDoc(); version = 0; owner = null; failed = "";
+  bump();
 }
 
 export const removeReview = (id: string) => change((d) => deleteReview(d, id, Date.now()));
@@ -87,7 +95,8 @@ export async function watched(r: Review, ids: string[], now = new Date()): Promi
   const period = periodOf(r.every, now);
   const s = doc.shown[r.id];
   if (s && s.period === period) return;
-  await change((d) => (d.reviews.some((x) => x.id === r.id) ? recordShown(d, r.id, period, ids) : d));
+  // watched on another device in this period meanwhile: its story stays the period's
+  await change((d) => (d.reviews.some((x) => x.id === r.id) && d.shown[r.id]?.period !== period ? recordShown(d, r.id, period, ids) : d));
 }
 
 /** The document, loaded the first time it's asked for; null until then. */

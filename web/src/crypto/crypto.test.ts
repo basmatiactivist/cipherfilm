@@ -282,6 +282,19 @@ describe("search index", () => {
     expect(decryptPeople(s, enc, acct.masterKey, "u1")).toEqual(people);
     expect(() => decryptPeople(s, enc, acct.masterKey, "u2")).toThrow();
   }, 60_000);
+
+  test("the custom reviews are bound to the account, apart from the people list, and padded", async () => {
+    const { encryptReviews, decryptReviews, decryptPeople, REVIEWS_PAD } = await import("./search");
+    const s = await getSodium();
+    const master = s.randombytes_buf(32);
+    const doc = { v: 1, reviews: [{ id: "r1", name: "Dogs", query: "dog", every: "day", count: 12, notify: true, created: 1, updated: 1 }], shown: {}, deleted: {} };
+    const enc = encryptReviews(s, doc, master, "u1");
+    expect(decryptReviews(s, enc, master, "u1")).toEqual(doc);
+    expect(() => decryptReviews(s, enc, master, "u2")).toThrow();
+    expect(() => decryptPeople(s, enc, master, "u1")).toThrow();
+    const big = encryptReviews(s, { ...doc, shown: { r1: { period: 1, ids: Array(50).fill("0123456789abcdef0123456789abcdef") } } }, master, "u1");
+    expect((big.length - enc.length) % REVIEWS_PAD).toBe(0);
+  });
 });
 
 describe("text in photos (docs/SEARCH.md)", () => {

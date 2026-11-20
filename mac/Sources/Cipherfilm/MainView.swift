@@ -20,8 +20,10 @@ final class Navigator {
   var screen: Screen = .photos
   var query = ""
   var viewer: ViewerState?
-  /** the year in review playing as a story over the window (RecapStory.swift), by its year */
-  var story: Int?
+  /** the year in review or a custom review playing as a story over the window (RecapStory.swift) */
+  var story: Story?
+  /** a custom review's editor as a sheet over the window (from the story's end), by its id */
+  var editReview: String?
   var confirmPurge: [String]?
   var newAlbumFor: [String]?
   var albumPickFor: [String]?
@@ -38,6 +40,12 @@ final class Navigator {
   }
 
   func showSimilar(_ id: String) { query = ""; go(.similar(id)) }
+}
+
+/** What a story plays: a year in review, or a custom review by its id. */
+enum Story: Hashable {
+  case year(Int)
+  case review(String)
 }
 
 struct ViewerState: Equatable {
@@ -68,9 +76,12 @@ struct MainView: View {
     // the viewer takes the whole window: no toolbar, no sidebar, black up to the title bar
     .toolbar(nav.viewer == nil && nav.story == nil ? .visible : .hidden, for: .windowToolbar)
     // the year in review as a story, black over the whole window too; the viewer opens over it
-    .overlay { if let y = nav.story { RecapStory(year: y).environment(nav).ignoresSafeArea().transition(.opacity) } }
+    .overlay { if let s = nav.story { RecapStory(story: s).environment(nav).ignoresSafeArea().transition(.opacity) } }
     .overlay { if let v = nav.viewer { Viewer(state: v).environment(nav).ignoresSafeArea().transition(.opacity) } }
     .overlay { if dropping { DropVeil() } }
+    .sheet(isPresented: Binding(get: { nav.editReview != nil }, set: { if !$0 { nav.editReview = nil } })) {
+      CustomReviewsSheet(start: nav.editReview).environment(model)
+    }
     .onDrop(of: [.fileURL, .image, .movie], isTargeted: $dropping) { providers in Dropper.take(providers, model); return !providers.isEmpty }
     .onChange(of: nav.screen) { selection.clear() }
     .onChange(of: nav.query) { selection.clear() }
@@ -506,7 +517,7 @@ struct Detail: View {
     } else if items.isEmpty {
       Spacer(); EmptyState(icon: empty.0, title: empty.1, text: empty.2); Spacer()
     } else {
-      if title == "Photos" { MemoriesRow(items: items); YearsRow(items: items) }
+      if title == "Photos" { MemoriesRow(items: items); ReviewsRow(items: items); YearsRow(items: items) }
       PhotoGrid(items: items, selection: selection) { it, list in nav.viewer = ViewerState(ids: list.map(\.id), index: list.firstIndex(of: it) ?? 0) }
     }
   }

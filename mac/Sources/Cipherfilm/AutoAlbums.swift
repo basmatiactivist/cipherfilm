@@ -77,7 +77,7 @@ struct YearsRow: View {
           ScrollView(.horizontal, showsIndicators: false) {
             HStack(alignment: .top, spacing: 12) {
               ForEach(cards, id: \.year) { c in
-                Button { withAnimation(.easeOut(duration: Motion.medium)) { nav.story = c.year } } label: { Card(cover: c.cover, title: String(c.year), sub: "In review") }
+                Button { withAnimation(.easeOut(duration: Motion.medium)) { nav.story = .year(c.year) } } label: { Card(cover: c.cover, title: String(c.year), sub: "In review") }
                   .buttonStyle(.plain)
                   .accessibilityLabel("\(c.year) in review, \(c.count) item\(c.count == 1 ? "" : "s")")
               }
@@ -98,6 +98,56 @@ struct YearsRow: View {
           return (year: y, cover: Recaps.highlights(favs.isEmpty ? mine : favs, 1).first ?? mine.first, count: mine.count)
         }
       }.value
+    }
+  }
+}
+
+/** "Your reviews" above "Your years": a card for each custom review with photos (CustomReviews.swift), the due ones
+ *  first; a click plays it as a story. Only when the account has reviews and Memories is on. */
+struct ReviewsRow: View {
+  @Environment(AppModel.self) private var model
+  @Environment(Navigator.self) private var nav
+  let items: [Item]
+  @AppStorage("memoriesOn") private var on = true
+  @State private var cards: [(review: Review, cover: Item?, due: Bool, total: Int)] = []
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      if on && !cards.isEmpty {
+        VStack(alignment: .leading, spacing: 8) {
+          Text("Your reviews").font(Typo.heading).foregroundStyle(Ink.ink)
+          ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .top, spacing: 12) {
+              ForEach(cards, id: \.review.id) { c in
+                let sub = c.due ? "Due now" : ReviewWords.summary(c.review)
+                Button { withAnimation(.easeOut(duration: Motion.medium)) { nav.story = .review(c.review.id) } } label: { Card(cover: c.cover, title: c.review.name, sub: sub) }
+                  .buttonStyle(.plain)
+                  .accessibilityLabel("\(c.review.name), \(sub), \(ReviewWords.matching(c.total))")
+              }
+            }
+          }
+        }
+        .padding(.horizontal, 28).padding(.top, 6).padding(.bottom, 10)
+      }
+    }
+    .task(id: "\(on)-\(model.vault != nil)-\(items.count)-\(items.first?.id ?? "")-\(model.reviews.revision)-\(model.search.version)") {
+      guard on, model.vault != nil else { cards = []; return }
+      // the index changes often while it is built: searched again once it is quiet for a moment
+      try? await Task.sleep(for: .milliseconds(400))
+      if Task.isCancelled { return }
+      await model.reviews.ensure()
+      let store = model.reviews
+      var out: [(review: Review, cover: Item?, due: Bool, total: Int)] = []
+      for r in store.doc.reviews {
+        if Task.isCancelled { return }
+        let p = await store.play(r, library: items)
+        guard !p.picked.isEmpty else { continue }
+        var cover: Item?
+        if case let .rcover(item, _, _, _)? = p.slides.first { cover = item }
+        out.append((review: r, cover: cover, due: store.isDue(r), total: p.total))
+      }
+      // due first, then in the document's order
+      cards = out.filter(\.due) + out.filter { !$0.due }
     }
   }
 }

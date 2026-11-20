@@ -70,6 +70,8 @@ final class AppModel {
 
   let images = ImageStore()
   let search = SearchEngine()
+  /** the custom reviews (CustomReviews.swift) */
+  let reviews = ReviewStore()
   let exporter = Exporter()
   let watcher = Watcher()
   let webdav = WebDAVImporter()
@@ -507,6 +509,7 @@ final class AppModel {
     workWatch?.cancel(); workWatch = nil; lockWhenDone = false; keepAwake.set(false)
     liveTask?.cancel(); liveTask = nil; liveFlush?.cancel(); liveFlush = nil; _ = liveBatch.take(); liveV = nil
     search.stop(clear: true)
+    reviews.forget() // the reviews' names, searches and history
     exporter.forget() // its copy of the vault, the decrypted items and their item keys go too
     Outbox.cancel()
     // after a lock the queue stays (saved in the account's folder) and goes on after the next unlock; once the session
@@ -771,6 +774,7 @@ final class AppModel {
     if !what.isDisjoint(with: [.items, .albums]) && uploading == 0 { await refresh(quiet: true) }
     if what.contains(.trash) { await loadTrash(quiet: true) }
     if what.contains(.people) { search.peopleChangedElsewhere() }
+    if what.contains(.reviews) { reviews.changedElsewhere() }
     if what.contains(.notices) { await loadNotices() }
     liveTook = Date().timeIntervalSince(began)
     liveLast = Date()

@@ -294,6 +294,9 @@ describe("search index", () => {
     expect(() => decryptPeople(s, enc, master, "u1")).toThrow();
     const big = encryptReviews(s, { ...doc, shown: { r1: { period: 1, ids: Array(50).fill("0123456789abcdef0123456789abcdef") } } }, master, "u1");
     expect((big.length - enc.length) % REVIEWS_PAD).toBe(0);
+    // a document made once, which the Mac opens too (CryptoTests.swift)
+    const fx = (await import("../memories/testdata/reviews-blob.json")).default;
+    expect(decryptReviews(s, unb64(s, fx.blob), unb64(s, fx.master), fx.user)).toEqual(fx.doc);
   });
 });
 

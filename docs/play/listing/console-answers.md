@@ -88,14 +88,15 @@ each upload (`mobile/scripts/play-notes.sh`, docs/RELEASING.md "Google Play from
 | Name | Demo server sign-in |
 | Username | `reviewer@cipherfilm.app` |
 | Password | `<set by owner>` |
-| Any other information required to access your app | see below (≤ 500 characters, this text is 470) |
+| Any other information required to access your app | see below (≤ 500 characters, this text is 495; entered 2026-11-20) |
 
 ```text
 Cipherfilm is the app for a self-hosted server, so it first asks for a server address.
-1. Open the app. Address: demo.cipherfilm.app, tap Connect.
+1. Address: demo.cipherfilm.app, tap Connect.
 2. E-mail and password above, tap Sign in. No 2FA, no code.
-3. Fingerprint unlock is offered: tap Not now (or Turn on).
-4. The library has sample photos. Search tab: try "beach". Account > Backup: choose folders, Back up now.
+3. Fingerprint unlock is offered: tap Not now.
+4. An introduction follows: tap Skip.
+5. The library has sample photos. Search tab: try "beach". Account (person icon) > Backup: choose folders, Back up now.
 The account is reset every night. Photos are encrypted on the device; the server cannot see them.
 ```
 
@@ -165,16 +166,16 @@ declared. This matches REQUIREMENTS §4.6.
 |---|---|---|
 | Does your app collect or share any of the required user data types? | **Yes** | The sign-in e-mail address goes to the user's server in readable form. |
 | Is all of the user data collected by your app encrypted in transit? | **Yes** | The app only talks to `https://` servers and refuses plain http (`mobile/src/session.ts`; the model download too). |
-| Which of the following methods of account creation does your app support? | **Username and password** (accounts are created through an invite link from the server's administrator, in the browser) | The app itself only signs in; the sign-in screen points new users to the web app for invites, which counts as directing to account creation (REQUIREMENTS §4.7). |
+| Which of the following methods of account creation does your app support? | **Username and password** and **Username, password and other authentication** (optional two-step sign-in and passkeys; ticked 2026-11-20) (accounts are created through an invite link from the server's administrator, in the browser) | The app itself only signs in; the sign-in screen points new users to the web app for invites, which counts as directing to account creation (REQUIREMENTS §4.7). |
 | Do you provide a way for users to request that their data is deleted? | **Yes** | In the app (Account → Delete account), in the web app, and via the server's administrator. |
 | Delete account URL | `https://cipherfilm.app/delete-account` | Public page, names "Cipherfilm", explains the steps. Content in `delete-account-page.md`. |
-| Do you provide a way for users to request that *some or all* of their data is deleted without deleting the account? (if asked) | **Yes** | Users delete photos, videos and albums in the app; trash is emptied after 30 days or immediately with "Empty trash"; search data is removed with the item. |
+| Do you provide a way for users to request that *some or all* of their data is deleted without deleting the account? (if asked) | **No** for now (Play wants a separate public URL for this; switch to **Yes** once the website has a page on deleting single photos, albums and the trash) | Users delete photos, videos and albums in the app; trash is emptied after 30 days or immediately with "Empty trash"; search data is removed with the item. |
 
 #### Data types
 
 | Category → type | Collected? | Shared? | Details |
 |---|---|---|---|
-| Personal info → **Email address** | **Yes** | No | Required (not optional). Purposes: **App functionality**, **Account management**. Not processed ephemerally. It is the sign-in name on the user's server; Cipherfilm never sends e-mail. |
+| Personal info → **Email address** | **Yes** | No | (Was wrongly entered as shared; corrected 2026-11-20.) Required (not optional). Purposes: **App functionality**, **Account management**. Not processed ephemerally. It is the sign-in name on the user's server; Cipherfilm never sends e-mail. |
 | Personal info → Name | No | No | Names given to people in photos are encrypted on the device (E2E exemption). |
 | Personal info → User IDs | No | No | The server identifies the account by the e-mail address (declared above). Internal random row ids are not tied to anything outside that server. *If a reviewer questions this, declaring "User IDs, App functionality, Account management" is the conservative fallback.* |
 | Personal info → address, phone, race/ethnicity, political or religious beliefs, sexual orientation, other info | No | No | |

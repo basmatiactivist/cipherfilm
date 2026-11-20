@@ -368,8 +368,8 @@ form.inline { max-width: 420px; }
 .reviewname { font-weight: 600; overflow-wrap: anywhere; }
 .fieldlabel { display: block; margin-bottom: var(--space-1); font-weight: 600; }
 .segs { display: flex; flex-wrap: wrap; gap: var(--space-1); }
-.seg { min-width: 44px; min-height: 40px; padding: 0 var(--space-3); font: inherit; color: var(--ink); background: var(--paper); border: 1px solid var(--rule-strong); border-radius: var(--radius-card); cursor: pointer; }
-.seg.on { color: var(--on-teal, var(--paper)); background: var(--teal); border-color: var(--teal); font-weight: 600; }
+.rvseg { min-width: 44px; min-height: 40px; padding: 0 var(--space-3); font: inherit; color: var(--ink); background: var(--paper); border: 1px solid var(--rule-strong); border-radius: var(--radius-card); cursor: pointer; }
+.rvseg.on { color: var(--on-teal, var(--paper)); background: var(--teal); border-color: var(--teal); font-weight: 600; }
 .reviewsdlg .field input { width: 100%; }
 .chips { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0 0 var(--space-5); padding: 0; list-style: none; }
 .chips .chip { cursor: pointer; font: inherit; font-weight: 600; }

@@ -109,7 +109,7 @@ function Segs<T extends string | number>(p: { label: string; value: T; options: 
       <span class="fieldlabel" id={`seg-${p.label}`}>{p.label}</span>
       <div class="segs" role="radiogroup" aria-labelledby={`seg-${p.label}`}>
         {p.options.map((o) => (
-          <button key={o} type="button" role="radio" aria-checked={o === p.value} class={"seg" + (o === p.value ? " on" : "")} onClick={() => p.onChange(o)}>{p.name(o)}</button>
+          <button key={o} type="button" role="radio" aria-checked={o === p.value} class={"rvseg" + (o === p.value ? " on" : "")} onClick={() => p.onChange(o)}>{p.name(o)}</button>
         ))}
       </div>
     </div>

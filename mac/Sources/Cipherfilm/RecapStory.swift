@@ -84,6 +84,10 @@ struct RecapStory: View {
     .task(id: story) { await load() }
     .task(id: running) { await tick() }
     .task(id: index) { await preload() }
+    #if DEBUG
+    .onAppear { DebugHooks.shared.storyStep = { go($0) } }
+    .onDisappear { DebugHooks.shared.storyStep = nil }
+    #endif
   }
 
   // ---- layout ----

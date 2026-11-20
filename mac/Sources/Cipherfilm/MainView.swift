@@ -117,6 +117,8 @@ struct MainView: View {
       h.go = { n.query = ""; n.go($0) }
       h.query = { n.query = $0 }
       h.jump = { n.jump = $0 }
+      h.story = { n.story = $0 }
+      h.editReview = { n.editReview = $0 }
     }
     #endif
   }

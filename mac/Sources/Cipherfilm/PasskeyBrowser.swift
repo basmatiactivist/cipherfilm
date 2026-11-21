@@ -20,7 +20,8 @@ final class PasskeyBrowser: NSObject, ASWebAuthenticationPresentationContextProv
     let url = try Passkeys.handoffURL(server: server, op: op, options: options)
     session?.cancel()
     let back: URL = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<URL, Error>) in
-      let s = ASWebAuthenticationSession(url: url, callback: .customScheme(Passkeys.scheme)) { url, err in
+      let s = ASWebAuthenticationSession(url: url, callback: .customScheme(Passkeys.scheme)) { @Sendable url, err in
+        // runs on a background queue: nonisolated, or Swift's isolation check stops the app (2.11.0 crash)
         if let url { cont.resume(returning: url) } else { cont.resume(throwing: Self.friendly(err)) }
       }
       s.presentationContextProvider = self

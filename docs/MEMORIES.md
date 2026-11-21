@@ -1,9 +1,10 @@
-# Memories: On this day, trips and year recaps
+# Memories: On this day, trips, year recaps and custom reviews
 
 Everything here is worked out on the device from the decrypted capture dates and coordinates. There is no endpoint
 for it and nothing is stored: the results live in memory and are worked out again when the library changes. The
 server sees only the thumbnail requests for the covers, the same requests the grid makes. One setting (Account ›
-Memories on the web and Android, Settings › General › Memories on the Mac) turns all three off on that device.
+Memories on the web and Android, Settings › General › Memories on the Mac) turns them off on that device. Custom
+reviews are the exception to "nothing is stored": they are saved, encrypted, for all the person's devices (below).
 
 The rules are written once in TypeScript (`web/src/memories/`), used by the web app and by the Android app (the
 `@memories` alias), and ported to Swift for the Mac (`mac/Sources/CipherfilmCore/Memories.swift`, `Trips.swift`,
@@ -41,6 +42,39 @@ and shows four photos for every month: favorites first, spread over the month, t
 day, spread over the days, then (a month with photos on fewer than four days) others of those days, spread too
 (`recap.ts` `highlights`). Videos and screenshots are left out where a month has other photos; nothing without a
 thumbnail is shown.
+
+## Custom reviews
+
+A search the person saves ("dogs", "Anna in Zürich", "beach 2019"), played as a story like the year in review, daily,
+weekly or monthly, with other photos each time. Made, changed and deleted in Account › Memories › Custom reviews on
+the web and Android (Settings › General › Memories on the Mac); the due ones show in "Your reviews" above "Your
+years". The rules are in `web/src/memories/custom.ts` (web and Android) and `CustomReview.swift` (Mac), checked
+against the same fixture (`testdata/custom.json`).
+
+- **What it shows.** The search runs on the device exactly like the search box (words, people, places, dates,
+  favorites, videos, text in photos, what the photos show), its close matches only, with that device's explicit
+  filter (docs/SEARCH.md "Explicit content"). Nothing damaged, trashed, in the locked folder or without a thumbnail.
+- **When.** A review is due once a day, a week (Monday to Sunday) or a calendar month, in local time, until it is
+  watched on any device. A new review is due at once.
+- **Other photos each time.** The photos not shown lately come first; when fewer are left than the review shows, those
+  shown longest ago fill up. They are spread over the months they were taken in (the months in a random order, one
+  photo from each in turn, a favorite twice as likely, screenshots and videos only where a month has nothing else).
+  The randomness is seeded by the review and the period, and what a period showed is remembered, so the story is the
+  same when opened again in that period, also on another device. Up to 600 shown photos are remembered per review.
+- **The story.** The cover (the review's name, "12 of 214 photos", the period), the photos by year (at most six a
+  slide), the end ("Next one tomorrow").
+- **Notifications (Android).** Optional per review: "A review is ready", hidden on the lock screen, between 9:00 and
+  21:00, at most once a period. The background task can't read the reviews (no master key there), so the app keeps an
+  on-device list of review ids, how often, when last watched and whether there were photos; no names, no searches.
+  The web and the Mac show the row only.
+- **Google Play.** The Android app from Google Play never shows a review whose search or name is an explicit search
+  word, and needs the search model on the device to check that; such a review stays in the document for the other
+  devices.
+- **Stored.** One document per account (`user_blobs` "reviews", docs/CRYPTO.md), encrypted with a subkey of the master
+  key and padded to steps of 4096 bytes: the reviews (name, search, how often, how many photos, notify), what each
+  showed, and deleted reviews' ids for 90 days (so a device that hadn't seen a delete can't bring one back). The
+  server sees that the document exists, its padded size and when it is written: when a review is made, changed or
+  deleted, and once when a due review is watched. At most 20 reviews.
 
 ## Not included
 

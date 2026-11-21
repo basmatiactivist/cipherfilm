@@ -14,7 +14,7 @@ import (
 // Live updates: GET /api/events is a Server-Sent Events stream that tells a person's other devices that something in
 // the account changed (a photo uploaded on the phone, an album renamed on the Mac), so they load it again within a
 // second or two instead of at their next refresh. A ping carries a counter and which lists changed (items, trash,
-// albums, the people document, the search index), never what changed: the server couldn't read that anyway, and the
+// albums, the people document, the search index, the custom reviews), never what changed: the server couldn't read that anyway, and the
 // device fetches it through the usual, authenticated API.
 //
 // The stream lives as long as the session does: every heartbeat checks the session again, and signing a device out,
@@ -30,12 +30,13 @@ const (
 	tPeople
 	tIndex
 	tNotices // a notice for the person's devices (notices.go)
+	tReviews // the custom reviews document
 )
 
 var topicNames = []struct {
 	t topic
 	n string
-}{{tItems, "items"}, {tTrash, "trash"}, {tAlbums, "albums"}, {tPeople, "people"}, {tIndex, "index"}, {tNotices, "notices"}}
+}{{tItems, "items"}, {tTrash, "trash"}, {tAlbums, "albums"}, {tPeople, "people"}, {tIndex, "index"}, {tNotices, "notices"}, {tReviews, "reviews"}}
 
 func (t topic) names() []string {
 	out := []string{}

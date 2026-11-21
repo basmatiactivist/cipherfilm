@@ -124,6 +124,32 @@ func TestUserBlobsKeepVersions(t *testing.T) {
 	}
 }
 
+// The custom reviews document (docs/MEMORIES.md) is a second per-account document beside people, kept apart from it:
+// clearing the search index doesn't touch it, and other names are still refused.
+func TestReviewsBlob(t *testing.T) {
+	e := newEnv(t)
+	admin, _ := e.setupAdmin("admin@x.org")
+	if code, out := admin.do("PUT", "/api/me/blobs/reviews", map[string]any{"data_enc": rb(4200), "version": 0}, true); code != 200 || out["version"].(float64) != 1 {
+		t.Fatalf("create: %d %v", code, out)
+	}
+	if code, out := admin.do("GET", "/api/me/blobs/reviews", nil, false); code != 200 || out["version"].(float64) != 1 {
+		t.Fatalf("get: %d %v", code, out)
+	}
+	admin.do("DELETE", "/api/index", nil, true)
+	if code, _ := admin.do("GET", "/api/me/blobs/reviews", nil, false); code != 200 {
+		t.Fatal("clearing the index removed the reviews")
+	}
+	if code, _ := admin.do("DELETE", "/api/me/blobs/reviews", nil, true); code != 200 {
+		t.Fatal("delete")
+	}
+	if code, _ := admin.do("GET", "/api/me/blobs/reviews", nil, false); code != 404 {
+		t.Fatal("deleted reviews still there")
+	}
+	if code, _ := admin.do("PUT", "/api/me/blobs/settings", map[string]any{"data_enc": rb(100), "version": 0}, true); code != 404 {
+		t.Fatal("unknown name accepted")
+	}
+}
+
 // model asks for a search model: the status and what came back. fakeModelHost stands in for Hugging Face, so the tests
 // stay off the network.
 func (c *client) model(name string, header ...string) (int, string) {

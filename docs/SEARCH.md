@@ -142,7 +142,9 @@ a photo's details, similar photos and duplicates are not filtered: it is the per
   until an admin turns it on; `GET /api/me` returns it as `user.nsfw`.
 - **Chosen** by the person in Search and people ("Explicit search"), for the account: `"explicit": true` in the
   encrypted people document (`user_blobs` "people", docs/CRYPTO.md), so all their devices follow. Turning it on or off
-  changes only what search shows: nothing is downloaded, indexed again or deleted.
+  changes only what search shows: nothing is downloaded, indexed again or deleted. Custom reviews (docs/MEMORIES.md)
+  are searches and follow the same choice; the Android app from Google Play also leaves out a review whose search or
+  name is an explicit search word.
 - **Never in the Android app from Google Play** (built with `CF_STORE=play`, `mobile/src/store.ts`): it doesn't offer
   the switch and always filters, whatever the account chose; its admin area (Account › Administration) doesn't show
   "Allow explicit search" either (`explicitSearchOffered()`), and the people list names no explicit permission. The APK
@@ -277,6 +279,7 @@ from the decrypted thumbnail or preview in the browser.
 |---|---|---|
 | Index entry per item: model tag, image vector (float16), faces (box, score, float16 vector), text read in the photo (fixed 1022 bytes) | server, `item_index` | sealed to the account's public key: `0x02 ‖ crypto_box_seal(item id (16 bytes) ‖ pad₅₁₂(JSON))` |
 | People: names, anchor faces, taken-out faces, hidden | server, `user_blobs` "people" | XChaCha20-Poly1305 under `kdf(master, "PEOPLEST")`, AD `blob/people \0 user id`, padded to 1024 bytes |
+| Custom reviews: saved searches, names, what each showed (docs/MEMORIES.md) | server, `user_blobs` "reviews" | XChaCha20-Poly1305 under `kdf(master, "REVIEWST")`, AD `blob/reviews \0 user id`, padded to steps of 4096 bytes |
 | Favorites | server, `items.favorite` | plain flag, like album membership |
 | The server's index entries (ciphertext) | phone cache | as on the server; removed at sign-out |
 | The opened index (vectors and faces), so search works seconds after unlocking | phone cache, `cf-ct/<user id>/index-<family>.bin` | XChaCha20-Poly1305 under `kdf(master, "IDXCOPY1", 1)`, bound to the account and model family; removed at sign-out |

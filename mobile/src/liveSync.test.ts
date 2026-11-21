@@ -16,6 +16,7 @@ vi.mock("./albumsStore", () => ({ albumsLoaded: () => st.albumsLoaded, refreshAl
 vi.mock("./upload", () => ({ uploadsRunning: () => st.uploads, onUploadsIdle: (f: () => void) => { st.idle.push(f); } }));
 vi.mock("./noticesStore", () => ({ refreshNotices: async () => { st.calls.push("notices"); } }));
 vi.mock("./search/people", () => ({ peopleChanged: () => { st.calls.push("people"); } }));
+vi.mock("./reviews", () => ({ reviewsChanged: () => { st.calls.push("reviews"); } }));
 vi.mock("./search/engine", () => ({ startSearch: async () => { st.calls.push("search"); }, thisPhoneIndexes: () => st.indexes }));
 vi.mock("react-native", () => ({ AppState: { currentState: "active", addEventListener: () => ({ remove() {} }) } }));
 vi.mock("expo/fetch", () => ({ fetch: async () => { throw new Error("none"); } }));
@@ -42,6 +43,9 @@ describe("liveSync", () => {
     const m = await import("./liveSync");
     await m.sync(new Set(["notices"]));
     expect(st.calls).toEqual(["notices"]);
+    st.calls = [];
+    await m.sync(new Set(["reviews"]));
+    expect(st.calls).toEqual(["reviews"]);
   });
 
   it("leaves alone what this phone hasn't loaded", async () => {

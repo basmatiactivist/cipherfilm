@@ -5,6 +5,8 @@ import Foundation
 
 public enum LiveTopic: String, Sendable, CaseIterable {
   case items, trash, albums, people, index
+  /** the custom reviews document (CustomReview.swift) */
+  case reviews
   /** a notice for this account's devices (a new sign-in; server/notices.go) */
   case notices
 }

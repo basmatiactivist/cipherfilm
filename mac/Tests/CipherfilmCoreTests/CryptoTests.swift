@@ -104,6 +104,36 @@ private struct Meta: Decodable { let name: String; let size: Int64 }
     #expect(throws: CryptoError.self) { try Crypto.decryptPeople(p, master: master, userId: "u2") }
   }
 
+  @Test func reviewsDocument() throws {
+    let master = Sodium.random(32)
+    let doc = Data(#"{"v":1,"reviews":[],"shown":{},"deleted":{}}"#.utf8)
+    let r = Crypto.encryptReviews(doc, master: master, userId: "u1")
+    #expect(try Crypto.decryptReviews(r, master: master, userId: "u1") == doc)
+    #expect(throws: CryptoError.self) { try Crypto.decryptReviews(r, master: master, userId: "u2") }
+    // not the people document's key or label
+    #expect(throws: CryptoError.self) { try Crypto.decryptPeople(r, master: master, userId: "u1") }
+    // the size grows in steps of 4096 bytes
+    let overhead = 1 + 24 + 16
+    #expect(r.count == overhead + 4096)
+    #expect(Crypto.encryptReviews(Data(repeating: 0x20, count: 4095), master: master, userId: "u1").count == overhead + 4096)
+    #expect(Crypto.encryptReviews(Data(repeating: 0x20, count: 4096), master: master, userId: "u1").count == overhead + 8192)
+    #expect(Crypto.encryptReviews(Data(repeating: 0x20, count: 9000), master: master, userId: "u1").count == overhead + 12288)
+  }
+
+  /** A reviews document the web app encrypted once (web/src/memories/testdata/reviews-blob.json; the web test opens it
+   *  too): the Mac opens what the web and Android save. */
+  @Test func reviewsDocumentFromTheWeb() throws {
+    let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../web/src/memories/testdata/reviews-blob.json").standardized
+    let fx = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
+    let plain = try Crypto.decryptReviews(try B64.decode(fx["blob"] as! String), master: try B64.decode(fx["master"] as! String), userId: fx["user"] as! String)
+    let d = CustomReviews.readDoc(plain)
+    #expect(d.reviews.count == 1)
+    let r = try #require(d.reviews.first)
+    #expect(r.id == "0123456789abcdef" && r.name == "Hunde am Strand 🐕" && r.query == "dog beach" && r.every == .week && r.count == 12 && r.notify)
+    #expect(d.shown["0123456789abcdef"] == ReviewShown(period: 2920, ids: ["a1", "b2"], now: ["b2"]))
+    #expect(d.deleted == ["fedcba9876543210": 1763500000000])
+  }
+
   @Test func kdfIsLibsodiums() throws {
     // crypto_kdf_derive_from_key is keyed BLAKE2b with the id as salt and the context as personalisation: a fixed value
     let k = Sodium.subkey(Data(repeating: 7, count: 32), "ITEMMETA", 0)

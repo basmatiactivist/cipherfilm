@@ -1,6 +1,7 @@
-// The year in review played as a story (the same pages and timing as the web and Android apps): over the whole window
-// on black, a 9:16 column in the middle, one picture at a time with a bar of progress segments on top. The pages come
-// from Recaps.slides (CipherfilmCore/Recap.swift). Click the right two thirds for the next page, the left third for the
+// The year in review, or a custom review, played as a story (the same pages and timing as the web and Android apps):
+// over the whole window on black, a 9:16 column in the middle, one picture at a time with a bar of progress segments on
+// top. The year's pages come from Recaps.slides (CipherfilmCore/Recap.swift), a custom review's from
+// CustomReviews.slides (CipherfilmCore/CustomReview.swift; watching it is remembered for its period, CustomReviews.swift). Click the right two thirds for the next page, the left third for the
 // one before, hold to pause. Keys: ← → move, Space pauses or plays, Esc closes. With reduced motion or VoiceOver it
 // starts paused (no slow zoom either) and shows Previous and Next. It pauses while the window isn't active or the
 // viewer is open over it. Worked out on this Mac; nothing about the story goes to the server.
@@ -14,11 +15,19 @@ struct RecapStory: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.controlActiveState) private var windowState
   @Environment(\.scenePhase) private var phase
-  let year: Int
+  let story: Story
+
+  /** A page of either story. */
+  enum Page: Hashable {
+    case recap(RecapSlide)
+    case review(ReviewSlide)
+    var isEnd: Bool { self == .recap(.end) || self == .review(.rend) }
+  }
 
   @State private var recap: Recap?
+  @State private var played: ReviewStore.Played?
   @State private var done = false
-  @State private var slides: [RecapSlide] = []
+  @State private var slides: [Page] = []
   @State private var trips: [String: Trip] = [:]
   @State private var people: [String: SearchEngine.Group] = [:]
   @State private var index = 0
@@ -36,9 +45,17 @@ struct RecapStory: View {
 
   /** no auto-advance and no zoom: the system asks for less motion, or a screen reader is on */
   private var manual: Bool { reduceMotion || voiceOver }
-  private var current: RecapSlide? { slides.indices.contains(index) ? slides[index] : nil }
+  private var current: Page? { slides.indices.contains(index) ? slides[index] : nil }
   private var running: Bool {
-    playing && !held && windowState != .inactive && phase == .active && nav.viewer == nil && current != nil && current != .end
+    playing && !held && windowState != .inactive && phase == .active && nav.viewer == nil && nav.editReview == nil && current.map { !$0.isEnd } == true
+  }
+  private var year: Int? { if case .year(let y) = story { return y }; return nil }
+  /** what the story is called: "2024", or the review's name */
+  private var title: String {
+    switch story {
+    case .year(let y): return String(y)
+    case .review(let id): return played?.review.name ?? model.reviews.review(id)?.name ?? "Review"
+    }
   }
 
   var body: some View {
@@ -53,7 +70,7 @@ struct RecapStory: View {
     .background(Ink.stage)
     .environment(\.colorScheme, .dark)
     .accessibilityElement(children: .contain)
-    .accessibilityLabel("\(String(year)) in review")
+    .accessibilityLabel(year.map { "\(String($0)) in review" } ?? title)
     .accessibilityAddTraits(.isModal)
     .focusable()
     .focusEffectDisabled()
@@ -64,22 +81,26 @@ struct RecapStory: View {
     .onKeyPress(.rightArrow) { go(1); return .handled }
     .onKeyPress(.space) { playing.toggle(); return .handled }
     .onKeyPress(.escape) { close(); return .handled }
-    .task(id: year) { await load() }
+    .task(id: story) { await load() }
     .task(id: running) { await tick() }
     .task(id: index) { await preload() }
+    #if DEBUG
+    .onAppear { DebugHooks.shared.storyStep = { go($0) } }
+    .onDisappear { DebugHooks.shared.storyStep = nil }
+    #endif
   }
 
   // ---- layout ----
 
   @ViewBuilder private func column(width: CGFloat) -> some View {
     ZStack {
-      if let r = recap, let s = current {
-        picture(s, r).id(index).transition(.opacity)
+      if let s = current {
+        picture(s).id(index).transition(.opacity)
         shades
         // clicks and holds anywhere that isn't a button
         Color.clear.contentShape(Rectangle()).gesture(press(width: width)).accessibilityHidden(true)
-        caption(s, r).id(index).transition(.opacity)
-        VStack(spacing: 0) { top(r); Spacer(minLength: 0) }
+        caption(s).id(index).transition(.opacity)
+        VStack(spacing: 0) { top(); Spacer(minLength: 0) }
         if manual {
           HStack {
             NavArrow(icon: "chevron.left", enabled: index > 0) { go(-1) }
@@ -89,11 +110,15 @@ struct RecapStory: View {
         }
       } else if done {
         VStack(spacing: Space.s4) {
-          Text("No photos from \(String(year))").font(Typo.dialog).foregroundStyle(Ink.onStage)
+          Text(year.map { "No photos from \(String($0))" } ?? "No photos match this review").font(Typo.dialog).foregroundStyle(Ink.onStage)
+            .multilineTextAlignment(.center)
+          if case .review(let id) = story, model.reviews.review(id) != nil {
+            Button("Edit") { nav.editReview = id }.buttonStyle(StoryButton())
+          }
           Button("Close") { close() }.buttonStyle(StoryButton())
         }
       } else {
-        Loading(label: "Looking back at \(String(year))…", stage: true)
+        Loading(label: year.map { "Looking back at \(String($0))…" } ?? "Picking photos…", stage: true)
       }
     }
   }
@@ -108,8 +133,8 @@ struct RecapStory: View {
     .allowsHitTesting(false).accessibilityHidden(true)
   }
 
-  /** The progress segments, then the year, Pause or Play and Close. Clear of the window buttons. */
-  private func top(_ r: Recap) -> some View {
+  /** The progress segments, then the year or the review's name, Pause or Play and Close. Clear of the window buttons. */
+  private func top() -> some View {
     VStack(spacing: Space.s2) {
       HStack(spacing: Space.s1) {
         ForEach(slides.indices, id: \.self) { i in
@@ -124,7 +149,7 @@ struct RecapStory: View {
       .accessibilityElement(children: .ignore)
       .accessibilityLabel("Page \(index + 1) of \(slides.count)")
       HStack(spacing: Space.s1) {
-        Text(String(r.year)).font(Typo.title).foregroundStyle(Ink.onStage).accessibilityHidden(true)
+        Text(title).font(Typo.title).foregroundStyle(Ink.onStage).lineLimit(1).accessibilityHidden(true)
         Spacer()
         LightboxButton(icon: playing ? "pause.fill" : "play.fill", help: playing ? "Pause (Space)" : "Play (Space)") { playing.toggle() }
         LightboxButton(icon: "xmark", help: "Close (Esc)") { close() }
@@ -136,22 +161,34 @@ struct RecapStory: View {
   private func fill(_ i: Int) -> CGFloat {
     if i < index { return 1 }
     if i > index { return 0 }
-    guard let s = current, s != .end else { return 1 }
+    guard let s = current, !s.isEnd else { return 1 }
     return CGFloat(min(1, elapsed / duration(s)))
   }
 
   // ---- the pages ----
 
   /** The page's picture, edge to edge, slowly closer (not with reduced motion); dark for people and the end. */
-  @ViewBuilder private func picture(_ s: RecapSlide, _ r: Recap) -> some View {
-    let zoom = manual ? 1 : 1 + 0.06 * min(1, elapsed / duration(s))
+  @ViewBuilder private func picture(_ p: Page) -> some View {
+    let zoom = manual ? 1 : 1 + 0.06 * min(1, elapsed / duration(p))
+    Group {
+      switch p {
+      case .recap(let s): if let r = recap { recapPicture(s, r) }
+      case .review(let s): reviewPicture(s)
+      }
+    }
+    .scaleEffect(zoom)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(label(p))
+  }
+
+  @ViewBuilder private func recapPicture(_ s: RecapSlide, _ r: Recap) -> some View {
     Group {
       switch s {
       case .cover: StoryPhoto(item: r.cover)
       case .month(let m):
         let photos = monthPhotos(m, r)
         if !photos.isEmpty {
-          let it = photos[photoIndex(photos.count, s)]
+          let it = photos[photoIndex(photos.count, .recap(s))]
           ZStack { StoryPhoto(item: it).id(it.id).transition(.opacity) }
             .animation(.easeInOut(duration: 0.6), value: it.id)
         }
@@ -160,13 +197,61 @@ struct RecapStory: View {
       case .people, .end: Ink.stage
       }
     }
-    .scaleEffect(zoom)
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel(label(s, r))
+  }
+
+  @ViewBuilder private func reviewPicture(_ s: ReviewSlide) -> some View {
+    switch s {
+    case .rcover(let item, _, _, _): StoryPhoto(item: item)
+    case .ryear(_, let photos):
+      if !photos.isEmpty {
+        let it = photos[photoIndex(photos.count, .review(s))]
+        ZStack { StoryPhoto(item: it).id(it.id).transition(.opacity) }
+          .animation(.easeInOut(duration: 0.6), value: it.id)
+      }
+    case .rend: Ink.stage
+    }
   }
 
   /** The words over the page, and its buttons. */
-  @ViewBuilder private func caption(_ s: RecapSlide, _ r: Recap) -> some View {
+  @ViewBuilder private func caption(_ p: Page) -> some View {
+    switch p {
+    case .recap(let s): if let r = recap { recapCaption(s, r) }
+    case .review(let s): reviewCaption(s)
+    }
+  }
+
+  @ViewBuilder private func reviewCaption(_ s: ReviewSlide) -> some View {
+    switch s {
+    case let .rcover(item, name, total, shown):
+      bottom(open: item) {
+        Text(name).font(Ink.serif(44)).foregroundStyle(Ink.onStage).lineLimit(3)
+        Text(Self.ofPhotos(shown, total)).font(Typo.body).foregroundStyle(Ink.onStage)
+        Text(ReviewWords.period(played?.review.every ?? .day)).font(Typo.label).foregroundStyle(Ink.stageMuted)
+      }
+    case .ryear(let y, let photos):
+      bottom(open: photos.isEmpty ? nil : photos[photoIndex(photos.count, .review(s))]) {
+        Text(String(y)).font(Ink.serif(34)).foregroundStyle(Ink.onStage)
+      }
+    case .rend:
+      VStack(spacing: Space.s6) {
+        VStack(spacing: Space.s2) {
+          Text(title).font(Ink.serif(36)).foregroundStyle(Ink.onStage).multilineTextAlignment(.center).lineLimit(3)
+            .accessibilityAddTraits(.isHeader)
+          Text(ReviewWords.nextOne(played?.review.every ?? .day)).font(Typo.body).foregroundStyle(Ink.stageMuted)
+        }
+        VStack(spacing: Space.s3) {
+          Button("Watch again") { restart() }.buttonStyle(PrimaryButton()).keyboardShortcut(.defaultAction)
+          if case .review(let id) = story, model.reviews.review(id) != nil {
+            Button("Edit") { nav.editReview = id }.buttonStyle(StoryButton())
+          }
+          Button("Close") { close() }.buttonStyle(StoryButton())
+        }
+      }
+      .padding(.horizontal, Space.s6)
+    }
+  }
+
+  @ViewBuilder private func recapCaption(_ s: RecapSlide, _ r: Recap) -> some View {
     switch s {
     case .cover:
       bottom(open: r.cover) {
@@ -175,7 +260,7 @@ struct RecapStory: View {
       }
     case .month(let m):
       let photos = monthPhotos(m, r)
-      bottom(open: photos.isEmpty ? nil : photos[photoIndex(photos.count, s)]) {
+      bottom(open: photos.isEmpty ? nil : photos[photoIndex(photos.count, .recap(s))]) {
         Text(Calendar.current.standaloneMonthSymbols[m - 1]).font(Ink.serif(34)).foregroundStyle(Ink.onStage)
         Text(Self.items(r.months.first { $0.month == m }?.total ?? 0)).font(Typo.body).foregroundStyle(Ink.onStage)
       }
@@ -221,7 +306,7 @@ struct RecapStory: View {
           .accessibilityAddTraits(.isHeader)
         VStack(spacing: Space.s3) {
           Button("Watch again") { restart() }.buttonStyle(PrimaryButton()).keyboardShortcut(.defaultAction)
-          Button("All highlights") { close(); nav.go(.recap(year)) }.buttonStyle(StoryButton())
+          Button("All highlights") { close(); nav.go(.recap(r.year)) }.buttonStyle(StoryButton())
           Button("Close") { close() }.buttonStyle(StoryButton())
         }
       }
@@ -249,18 +334,27 @@ struct RecapStory: View {
     r.months.first { $0.month == m }.map(Recaps.storyPhotos) ?? []
   }
 
-  /** Which of a month's photos shows now: each for an equal share of the page. */
-  private func photoIndex(_ n: Int, _ s: RecapSlide) -> Int {
+  /** Which of a page's photos shows now: each for an equal share of the page. */
+  private func photoIndex(_ n: Int, _ p: Page) -> Int {
     guard n > 1 else { return 0 }
-    return min(n - 1, max(0, Int(elapsed / (duration(s) / Double(n)))))
+    return min(n - 1, max(0, Int(elapsed / (duration(p) / Double(n)))))
   }
 
-  private func duration(_ s: RecapSlide) -> Double {
-    if case .month(let m) = s, let r = recap { return max(Self.slideSeconds, Double(monthPhotos(m, r).count) * Self.photoSeconds) }
+  private func duration(_ p: Page) -> Double {
+    switch p {
+    case .recap(.month(let m)): if let r = recap { return max(Self.slideSeconds, Double(monthPhotos(m, r).count) * Self.photoSeconds) }
+    case .review(.ryear(_, let photos)): return max(Self.slideSeconds, Double(photos.count) * Self.photoSeconds)
+    default: break
+    }
     return Self.slideSeconds
   }
 
   static func items(_ n: Int) -> String { "\(n) item\(n == 1 ? "" : "s")" }
+
+  /** "12 of 214 photos" */
+  static func ofPhotos(_ shown: Int, _ total: Int) -> String {
+    shown == total ? (total == 1 ? "1 photo" : "\(total) photos") : "\(shown) of \(total) photos"
+  }
 
   private func facts(_ r: Recap) -> String {
     let n = { (k: Int, one: String, many: String) in "\(k) \(k == 1 ? one : many)" }
@@ -270,6 +364,18 @@ struct RecapStory: View {
   }
 
   /** What VoiceOver says for a page. */
+  private func label(_ p: Page) -> String {
+    switch p {
+    case .recap(let s): return recap.map { label(s, $0) } ?? ""
+    case .review(let s):
+      switch s {
+      case let .rcover(_, name, total, shown): return "\(name), \(Self.ofPhotos(shown, total)), \(ReviewWords.period(played?.review.every ?? .day))"
+      case let .ryear(y, photos): return String(y) + (photos.count > 1 ? ", photo \(photoIndex(photos.count, p) + 1) of \(photos.count)" : "")
+      case .rend: return "\(title). \(ReviewWords.nextOne(played?.review.every ?? .day))"
+      }
+    }
+  }
+
   private func label(_ s: RecapSlide, _ r: Recap) -> String {
     switch s {
     case .cover: return "\(String(r.year)) in review, \(facts(r))"
@@ -277,7 +383,7 @@ struct RecapStory: View {
       let photos = monthPhotos(m, r)
       let total = r.months.first { $0.month == m }?.total ?? 0
       return "\(Calendar.current.standaloneMonthSymbols[m - 1]) \(String(r.year)), \(Self.items(total))"
-        + (photos.count > 1 ? ", photo \(photoIndex(photos.count, s) + 1) of \(photos.count)" : "")
+        + (photos.count > 1 ? ", photo \(photoIndex(photos.count, .recap(s)) + 1) of \(photos.count)" : "")
     case .trip(let k): return trips[k].map { "\(Trips.title($0)), \(Self.items($0.items.count))" } ?? ""
     case .places:
       guard let p = r.places.first else { return "" }
@@ -334,9 +440,18 @@ struct RecapStory: View {
 
   /** The sharp pictures of this page and the next, loaded ahead. */
   private func preload() async {
-    guard let r = recap, let v = model.vault else { return }
+    guard let v = model.vault else { return }
     for i in [index, index + 1] where slides.indices.contains(i) {
-      for it in items(slides[i], r) where !Task.isCancelled { _ = await model.images.preview(it, v) }
+      for it in items(slides[i]) where !Task.isCancelled { _ = await model.images.preview(it, v) }
+    }
+  }
+
+  private func items(_ p: Page) -> [Item] {
+    switch p {
+    case .recap(let s): return recap.map { items(s, $0) } ?? []
+    case .review(.rcover(let item, _, _, _)): return [item]
+    case .review(.ryear(_, let photos)): return photos
+    case .review(.rend): return []
     }
   }
 
@@ -350,8 +465,30 @@ struct RecapStory: View {
     }
   }
 
-  /** The recap as the overview page works it out (named, not hidden people), the year's trips, and the pages. */
   private func load() async {
+    switch story {
+    case .year(let y): await loadYear(y)
+    case .review(let id): await loadReview(id)
+    }
+  }
+
+  /** The review's photos for this period (the same as before in this period), its pages; watching it is remembered. */
+  private func loadReview(_ id: String) async {
+    let store = model.reviews
+    await store.ensure()
+    guard let r = store.review(id) else { done = true; return }
+    let p = await store.play(r, library: model.items)
+    played = p
+    if !p.picked.isEmpty {
+      slides = p.slides.map(Page.review)
+      index = 0; elapsed = 0
+    }
+    done = true
+    if !p.picked.isEmpty { await store.watched(r, period: p.period, ids: p.picked.map(\.id)) }
+  }
+
+  /** The recap as the overview page works it out (named, not hidden people), the year's trips, and the pages. */
+  private func loadYear(_ year: Int) async {
     let groups = await model.search.peopleGroups().filter { !$0.name.isEmpty && $0.person?.hidden != true }
     let list = model.items, y = year, keyed = groups.map { (key: $0.key, items: $0.items) }
     let r = await Task.detached(priority: .userInitiated) {
@@ -365,7 +502,7 @@ struct RecapStory: View {
     people = Dictionary(groups.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
     trips = Dictionary(ofYear.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
     if let r {
-      slides = Recaps.slides(r, trips: ofYear, people: r.people.contains { people[$0.key] != nil })
+      slides = Recaps.slides(r, trips: ofYear, people: r.people.contains { people[$0.key] != nil }).map(Page.recap)
       index = 0; elapsed = 0
     }
     recap = r

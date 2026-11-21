@@ -150,4 +150,56 @@ test.describe.serial("trips and recaps", () => {
     await expect(page.locator("h1.pagetitle")).toHaveText("Rome, May 2024");
     await ctx.close();
   });
+
+  test("a custom review: made in Account, synced, played from the timeline, changed and deleted", async ({ browser }) => {
+    const { ctx, page } = await newPage(browser);
+    await signIn(page, IVY, IVY_PW);
+    await openMenuItem(page, "Account");
+    await page.locator("summary", { hasText: "Memories" }).click();
+    await page.getByRole("button", { name: "Custom reviews…" }).click();
+    const menu = page.locator("dialog.reviewsdlg");
+    await expect(menu.getByText("No reviews yet.")).toBeVisible({ timeout: 15_000 });
+    await menu.getByRole("button", { name: "New review" }).click();
+    await menu.getByLabel("Search for").fill("rome");
+    await expect(menu.getByText("6 photos match.")).toBeVisible({ timeout: 30_000 });
+    await menu.getByRole("radio", { name: "Daily" }).click();
+    await menu.getByLabel("Name").fill("Roman days");
+    await menu.getByRole("button", { name: "Create" }).click();
+    await expect(menu.getByRole("button", { name: /Roman days.*Daily · 12 photos · Due now/ })).toBeVisible({ timeout: 15_000 });
+    await menu.getByRole("button", { name: "Close" }).click();
+
+    // a second device sees it at once; it plays there
+    const other = await newPage(browser);
+    await signIn(other.page, IVY, IVY_PW);
+    const card = other.page.getByRole("button", { name: /^Roman days, daily, Due now/ });
+    await expect(card).toBeVisible({ timeout: 30_000 });
+    await card.click();
+    const story = other.page.getByRole("dialog", { name: "Roman days" });
+    await story.getByRole("button", { name: "Pause" }).click();
+    await expect(story.locator(".stslide")).toHaveAttribute("aria-label", "Roman days. Today. 6 of 6 photos");
+    await other.page.keyboard.press("ArrowRight");
+    await expect(story.locator(".stslide")).toHaveAttribute("aria-label", /^2024, photo 1 of 6/);
+    await other.page.keyboard.press("ArrowRight");
+    await expect(story.getByRole("heading", { name: "Next one tomorrow" })).toBeVisible();
+    await story.locator(".stend").getByRole("button", { name: "Close" }).click();
+    await expect(other.page.getByRole("button", { name: /^Roman days, daily, Next: tomorrow/ })).toBeVisible({ timeout: 15_000 });
+    await other.ctx.close();
+
+    // the first device follows; the review is changed, then deleted
+    await page.getByRole("button", { name: "Timeline" }).click();
+    await expect(page.getByRole("button", { name: /^Roman days, daily, Next: tomorrow/ })).toBeVisible({ timeout: 30_000 });
+    await page.getByRole("button", { name: "Manage" }).click();
+    await menu.getByRole("button", { name: /^Roman days/ }).click();
+    await menu.getByRole("radio", { name: "Weekly" }).click();
+    await menu.getByRole("radio", { name: "6" }).click();
+    await menu.getByRole("button", { name: "Save" }).click();
+    await expect(menu.getByRole("button", { name: /Roman days.*Weekly · 6 photos/ })).toBeVisible({ timeout: 15_000 });
+    await menu.getByRole("button", { name: /^Roman days/ }).click();
+    page.once("dialog", (d) => d.accept());
+    await menu.getByRole("button", { name: "Delete" }).click();
+    await expect(menu.getByText("No reviews yet.")).toBeVisible({ timeout: 15_000 });
+    await menu.getByRole("button", { name: "Close" }).click();
+    await expect(page.getByRole("heading", { name: "Your reviews" })).toBeHidden();
+    await ctx.close();
+  });
 });

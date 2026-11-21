@@ -1,4 +1,5 @@
 import "./styles.css";
+import { clearReviews } from "./memories/reviews";
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { isSecure } from "./env";
@@ -42,6 +43,7 @@ function forgetKeys(shared = true) {
   forgetAlbums();
   clearCaches(shared);
   clearPeople();
+  clearReviews();
   if (shared) { clearPlayer(); clearUploadMemory(); }
 }
 

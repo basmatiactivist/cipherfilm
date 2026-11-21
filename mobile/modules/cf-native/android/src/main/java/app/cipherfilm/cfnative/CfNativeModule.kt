@@ -135,6 +135,9 @@ class CfNativeModule : Module() {
     Function("noticeShow") { id: Int, title: String, text: String, publicTitle: String -> Notices.show(appContext.reactContext!!, id, title, text, publicTitle) }
     Function("noticeCancel") { id: Int -> Notices.cancel(appContext.reactContext!!, id) }
     Function("noticeCancelAll") { Notices.cancelAll(appContext.reactContext!!) }
+    // ---- custom reviews: "A review is ready" (Notices.kt, src/reviewSchedule.ts) ----
+    Function("reviewShow") { title: String, text: String, publicTitle: String -> Notices.showReview(appContext.reactContext!!, title, text, publicTitle) }
+    Function("reviewCancel") { Notices.cancelReview(appContext.reactContext!!) }
     Function("keepRunning") { holder: String, title: String, text: String ->
       JsTimers.keep(appContext.reactContext, holder) // also when Android refuses the service: the run still needs timers
       TransferService.hold(appContext.reactContext!!, holder, title, text)

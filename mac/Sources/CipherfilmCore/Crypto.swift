@@ -6,6 +6,7 @@ public enum CTX {
   public static let auth = "AUTHKEY1", kek = "KEKWRAP1", recAuth = "RECAUTH1", recWrap = "RECWRAP1"
   public static let albumName = "ALBUMNAM", itemMeta = "ITEMMETA", itemThumb = "ITEMTHMB", itemPrev = "ITEMPREV", itemSeg = "ITEMSEGM"
   public static let people = "PEOPLEST"
+  public static let reviews = "REVIEWST"
 }
 
 public enum Label {
@@ -168,6 +169,19 @@ public enum Crypto {
 
   public static func decryptPeople(_ blob: Data, master: Data, userId: String) throws -> Data {
     try Sodium.unpad(open(blob, key: Sodium.subkey(master, CTX.people, 0), label: "blob/people", owner: userId), 1024)
+  }
+
+  // ---- the custom reviews (CustomReview.swift): seal(pad(JSON, 4096), kdf(master, "REVIEWST", 0), "blob/reviews",
+  // user id); padded to 4096 bytes so the size says little about how many reviews and how much history it holds ----
+
+  public static let reviewsPad = 4096
+
+  public static func encryptReviews(_ json: Data, master: Data, userId: String) -> Data {
+    seal(Sodium.pad(json, reviewsPad), key: Sodium.subkey(master, CTX.reviews, 0), label: "blob/reviews", owner: userId)
+  }
+
+  public static func decryptReviews(_ blob: Data, master: Data, userId: String) throws -> Data {
+    try Sodium.unpad(open(blob, key: Sodium.subkey(master, CTX.reviews, 0), label: "blob/reviews", owner: userId), reviewsPad)
   }
 
   /** A file by name and size, as the backup, search and "Free up space" recognise it: hex(generichash16(name \0 size)). */

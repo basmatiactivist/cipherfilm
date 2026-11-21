@@ -6,6 +6,7 @@ import * as auth from "./auth";
 import { mem } from "./state";
 import { mapProvider, mapProviderLong, PRIVACY_URL, setMapOn, useMapOn } from "./map/consent";
 import { setMemoriesOn, useMemoriesOn } from "./memories/setting";
+import { openReviewsMenu } from "./memories/reviews";
 import { browserAlertsPossible, setBrowserAlerts, useBrowserAlerts } from "./noticeAlerts";
 import { Loader, Loading } from "./loader";
 import { BackupReport, backupState } from "./backup";
@@ -204,6 +205,9 @@ function MemoriesPanel() {
     <Acc icon="photos" title="Memories" sub={on ? "On in this browser" : "Off in this browser"}>
       <label class="check"><input type="checkbox" checked={on} onChange={(e) => setMemoriesOn((e.target as HTMLInputElement).checked)} /> Show “On this day”, year recaps and trips</label>
       <p class="hint">Photos from around today's date in earlier years, a look back at each year, and trips suggested in Albums. Worked out in this browser from the encrypted dates and places; the server learns nothing about it unless you save a trip as an album.</p>
+      <h3>Custom reviews</h3>
+      <p class="hint">A search you save, played as a story daily, weekly or monthly, with other photos each time. Shared by your devices, encrypted so the server can't read it.</p>
+      <div class="row"><button class="btn secondary" onClick={openReviewsMenu}>Custom reviews…</button></div>
     </Acc>
   );
 }

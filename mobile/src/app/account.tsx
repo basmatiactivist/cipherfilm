@@ -158,6 +158,8 @@ export default function Account() {
         <SwitchItem title={t("Memories")} description={t("Show photos from this day in earlier years, a look back at each year, and trips suggested in Albums. Found on this phone; the server learns nothing unless you save a trip as an album.")}
           left={() => <View style={st.icon}><Icon name="photos" color={th.colors.primary} /></View>}
           value={memoriesOn} onValueChange={setMemoriesOn} style={st.item} />
+        {memoriesOn ? <List.Item title={t("Custom reviews")} description={t("Your own searches as a story, daily, weekly or monthly")}
+          descriptionNumberOfLines={3} left={() => <View style={st.icon}><Icon name="sparkle" color={th.colors.primary} /></View>} onPress={() => router.push("/reviews")} style={st.item} /> : null}
         <SwitchItem title={t("Unlock with fingerprint or face")}
           description={bioOk || biometric ? t("Your key stays in this phone's secure hardware") : t("Set up fingerprint or face unlock in Android settings first")}
           left={() => <View style={st.icon}><Icon name="fingerprint" color={bioOk || biometric ? th.colors.primary : th.colors.onSurfaceDisabled} /></View>}

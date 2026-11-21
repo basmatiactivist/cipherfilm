@@ -7,6 +7,8 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+## [2.11.1] - 2026-11-21
+
 ### Fixed
 - Mac: signing in with a passkey (two-step sign-in) closed the app: the browser's answer came back on a background
   thread, which Swift's checks stop. The same could happen with macOS notifications (a new sign-in) and the menu bar

@@ -8,6 +8,11 @@ describe("private screens at lock and sign-out", () => {
     expect(mustLeave("signedOut", routeNames({ routes: [{ name: "edit/[id]" }] }))).toBe(true);
   });
 
+  it("counts the custom reviews (list, editor, story) as private", () => {
+    expect(mustLeave("locked", routeNames({ routes: [{ name: "reviews/edit" }] }))).toBe(true);
+    expect(mustLeave("signedOut", routeNames({ routes: [{ name: "review/[id]" }] }))).toBe(true);
+  });
+
   it("resets when a private screen is anywhere in the stack, not only on top", () => {
     const nav = { routes: [{ name: "__root", state: { routes: [{ name: "library" }, { name: "map" }, { name: "unlock" }] } }] };
     expect(routeNames(nav)).toEqual(["__root", "library", "map", "unlock"]);

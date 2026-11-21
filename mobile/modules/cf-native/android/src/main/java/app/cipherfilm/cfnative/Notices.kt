@@ -75,4 +75,51 @@ internal object Notices {
     val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
     nm.activeNotifications.filter { it.tag == TAG }.forEach { nm.cancel(TAG, it.id) }
   }
+
+  // ---- custom reviews (src/reviewSchedule.ts): "A review is ready", on a channel of their own ----
+
+  private const val REVIEWS = "reviews"
+  private const val REVIEW_TAG = "review"
+
+  private fun reviewChannel(ctx: Context) {
+    val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
+    val name = de("Reviews", "Rückblicke")
+    val about = de("When one of your custom reviews is ready to watch", "Wenn einer Ihrer eigenen Rückblicke bereit ist")
+    if (nm.getNotificationChannel(REVIEWS)?.let { it.name == name && it.description == about } == true) return
+    nm.createNotificationChannel(NotificationChannel(REVIEWS, name, NotificationManager.IMPORTANCE_DEFAULT).apply {
+      description = about
+      lockscreenVisibility = NotificationCompat.VISIBILITY_SECRET
+    })
+  }
+
+  /** Shows the one review notification (replacing the one up, if any); false when Android doesn't allow it. The text
+   *  is generic (never what a review is about), and secret on the lock screen like the notices. A tap opens the app as
+   *  its icon does: Photos (after unlocking), where the reviews are. (Its launch intent, not a cipherfilm:// link, so a
+   *  build with another scheme, the test package, opens too.) */
+  fun showReview(ctx: Context, title: String, text: String, publicTitle: String): Boolean {
+    if (!NotificationManagerCompat.from(ctx).areNotificationsEnabled()) return false
+    val ch = ctx.getSystemService(NotificationManager::class.java)?.getNotificationChannel(REVIEWS)
+    if (ch != null && ch.importance == NotificationManager.IMPORTANCE_NONE) return false
+    reviewChannel(ctx)
+    val open = (ctx.packageManager.getLaunchIntentForPackage(ctx.packageName) ?: return false)
+      .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+    val tap = PendingIntent.getActivity(ctx, 3, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+    val icon = android.R.drawable.ic_menu_gallery
+    val public = NotificationCompat.Builder(ctx, REVIEWS).setSmallIcon(icon).setContentTitle(publicTitle).setContentIntent(tap).build()
+    val n = NotificationCompat.Builder(ctx, REVIEWS)
+      .setSmallIcon(icon)
+      .setContentTitle(title)
+      .setContentText(text)
+      .setCategory(NotificationCompat.CATEGORY_REMINDER)
+      .setVisibility(NotificationCompat.VISIBILITY_SECRET)
+      .setPublicVersion(public)
+      .setContentIntent(tap)
+      .setAutoCancel(true)
+      .build()
+    return runCatching { ctx.getSystemService(NotificationManager::class.java)?.notify(REVIEW_TAG, 1, n) }.isSuccess
+  }
+
+  fun cancelReview(ctx: Context) {
+    ctx.getSystemService(NotificationManager::class.java)?.cancel(REVIEW_TAG, 1)
+  }
 }

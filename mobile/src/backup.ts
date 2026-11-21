@@ -24,6 +24,7 @@ import { indexUploaded, rememberUploaded, runBackgroundIndex } from "./search/ba
 import { forgetSettings, loadSettings } from "./search/settings";
 import { onSessionChange, onSignOut, savedServer } from "./session";
 import { checkNotices, noticeCheckWanted } from "./noticeCheck";
+import { checkReviews, reviewNoticesWanted } from "./reviewSchedule";
 import { t, tn } from "./i18n";
 
 export const TASK = "cipherfilm-backup";
@@ -618,7 +619,7 @@ export async function waitingCount(): Promise<number> {
 export async function scheduleBackground() {
   const [c, st] = await Promise.all([loadConfig(), loadSettings()]);
   const media = !!c?.enabled || (st.enabled && st.background);
-  const want = media || noticeCheckWanted();
+  const want = media || noticeCheckWanted() || reviewNoticesWanted();
   try {
     if (want) await BackgroundTask.registerTaskAsync(TASK, { minimumInterval: 15 });
     else await BackgroundTask.unregisterTaskAsync(TASK);
@@ -644,6 +645,8 @@ onSignOut(async () => {
 TaskManager.defineTask(TASK, async () => {
   // first, and on its own: one small request, before a backup that may take minutes
   await checkNotices().catch(() => {});
+  // a custom review that is due: one generic notification (no key needed, reviewSchedule.ts)
+  await checkReviews().catch(() => {});
   try {
     await runBackup("background");
     // a backup still going from an earlier run (in the service) uses the models itself

@@ -82,3 +82,13 @@ export const encryptPeople = (s: Sodium, data: unknown, masterKey: Uint8Array, u
 export function decryptPeople<T>(s: Sodium, blob: Uint8Array, masterKey: Uint8Array, userId: string): T {
   return JSON.parse(s.to_string(s.unpad(open(s, blob, subkey(s, masterKey, CTX.people, 0), "blob/people", userId), 1024))) as T;
 }
+
+/** The custom reviews (saved searches played as stories, docs/MEMORIES.md): one document per account, under a subkey
+ *  of its own, padded to 4096 bytes so its size says little about how many reviews and how much history it holds. */
+export const REVIEWS_PAD = 4096;
+export const encryptReviews = (s: Sodium, data: unknown, masterKey: Uint8Array, userId: string) =>
+  seal(s, s.pad(s.from_string(JSON.stringify(data)), REVIEWS_PAD), subkey(s, masterKey, CTX.reviews, 0), "blob/reviews", userId);
+
+export function decryptReviews<T>(s: Sodium, blob: Uint8Array, masterKey: Uint8Array, userId: string): T {
+  return JSON.parse(s.to_string(s.unpad(open(s, blob, subkey(s, masterKey, CTX.reviews, 0), "blob/reviews", userId), REVIEWS_PAD))) as T;
+}

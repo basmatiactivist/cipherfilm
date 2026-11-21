@@ -122,6 +122,7 @@ struct GeneralSettings: View {
   // the same keys as AppModel.lockOnSleep and StayUnlocked.on: through @AppStorage so a click redraws the switch
   @AppStorage("lockOnSleep") private var lockOnSleep = true
   @AppStorage("stayUnlockedWhileWorking") private var stayUnlocked = false
+  @State private var customReviews = false
 
   var body: some View {
     @Bindable var agent = model.agent
@@ -147,8 +148,13 @@ struct GeneralSettings: View {
       }
       Section_(title: "Memories", subtitle: "Worked out on this Mac from the encrypted dates and places; the server learns nothing unless you save a trip as an album.") {
         Toggle("Show “On this day”, year recaps and trips", isOn: $memoriesOn)
+        HStack {
+          Button("Custom reviews…") { customReviews = true }.disabled(model.vault == nil)
+          if model.vault == nil { NeedsUnlock() }
+        }
       }
     }
+    .sheet(isPresented: $customReviews) { CustomReviewsSheet().environment(model) }
   }
 }
 

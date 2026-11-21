@@ -27,9 +27,11 @@ const (
 
 var modelNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 
-// The per-account documents the apps use. Anything else is refused, so an account cannot pile up rows under names of
-// its own; both stores also count toward the storage limit (usedBytesSQL, usage.go).
-var blobNames = map[string]bool{"people": true}
+// The per-account documents the apps use, and the change each announces to the other devices: the people list (names,
+// explicit search) and the custom reviews (saved searches played as stories, docs/MEMORIES.md). Anything else is
+// refused, so an account cannot pile up rows under names of its own; both stores also count toward the storage limit
+// (usedBytesSQL, usage.go).
+var blobNames = map[string]topic{"people": tPeople, "reviews": tReviews}
 
 // The index has one model family for everyone: LAION's OpenCLIP ViT-B/32 (docs/SEARCH.md, docs/MODELS.md). Entries of
 // MobileCLIP S2 ("mcs2", and those from before 1.9.0 without a tag, which were MobileCLIP's too) are no longer written:
@@ -282,7 +284,7 @@ func (a *App) clearIndex(w http.ResponseWriter, r *http.Request, u *user, s *ses
 
 func (a *App) getUserBlob(w http.ResponseWriter, r *http.Request, u *user, s *session) {
 	name := r.PathValue("name")
-	if !blobNames[name] {
+	if blobNames[name] == 0 {
 		fail(w, 404, "not found")
 		return
 	}
@@ -299,7 +301,7 @@ func (a *App) getUserBlob(w http.ResponseWriter, r *http.Request, u *user, s *se
 // devices editing at once don't silently undo each other: the second gets 409 and merges.
 func (a *App) putUserBlob(w http.ResponseWriter, r *http.Request, u *user, s *session) {
 	name := r.PathValue("name")
-	if !blobNames[name] {
+	if blobNames[name] == 0 {
 		fail(w, 404, "not found")
 		return
 	}
@@ -338,18 +340,18 @@ func (a *App) putUserBlob(w http.ResponseWriter, r *http.Request, u *user, s *se
 		fail(w, 409, "changed on another device")
 		return
 	}
-	a.changed(u.ID, tPeople)
+	a.changed(u.ID, blobNames[name])
 	writeJSON(w, 200, map[string]any{"version": req.Version + 1})
 }
 
 func (a *App) deleteUserBlob(w http.ResponseWriter, r *http.Request, u *user, s *session) {
 	name := r.PathValue("name")
-	if !blobNames[name] {
+	if blobNames[name] == 0 {
 		fail(w, 404, "not found")
 		return
 	}
 	a.db.Exec(`DELETE FROM user_blobs WHERE user_id=? AND name=?`, u.ID, name)
-	a.changed(u.ID, tPeople)
+	a.changed(u.ID, blobNames[name])
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 

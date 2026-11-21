@@ -11,7 +11,7 @@ What the app does and how export, watched folders and search behave: [docs/MAC.m
   Android's `Vision.kt` (`Vision.swift`), the CLIP tokenizer (`Tokenizer.swift`), the in-memory index and face
   grouping (`SearchIndex.swift`), models, index entries, the people document and the query words (`Search.swift`),
   the query parser ported from the web (`QueryParser.swift`), text in photos (`Ocr.swift`), the close-match cut
-  (`Matches.swift`), On this day, trips and year recaps (`Memories.swift`, `Trips.swift`, `Recap.swift`), the
+  (`Matches.swift`), On this day, trips, year recaps and custom reviews (`Memories.swift`, `Trips.swift`, `Recap.swift`, `CustomReview.swift`), the
   archive and locked folder (`Folders.swift`), and administration and the storage overview (`Admin.swift`).
 - `Sources/Cipherfilm`: the SwiftUI app (window, menu bar, Settings and its panes), the background work (`SearchEngine.swift`,
   `Exporter.swift`, `Watcher.swift`, `WebDAVImporter.swift`), the locked folder (`LockedFolder.swift`), video streaming

@@ -84,6 +84,10 @@ declare class CfNativeModule extends NativeModule<{ onModelProgress: (e: { path:
   noticeShow(id: number, title: string, text: string, publicTitle: string): boolean;
   noticeCancel(id: number): void;
   noticeCancelAll(): void;
+  // custom reviews (Notices.kt, src/reviewSchedule.ts): one generic notification, secret on the lock screen
+  /** Shows "A review is ready" (replacing one up); false when Android doesn't allow it. */
+  reviewShow(title: string, text: string, publicTitle: string): boolean;
+  reviewCancel(): void;
   /** Keeps the app running while uploads go on (a foreground service with the notification); false if Android
    *  doesn't allow it right now. Each keepRunning(holder) needs its letGo(holder). */
   keepRunning(holder: string, title: string, text: string): boolean;

@@ -719,13 +719,41 @@ let tokenizer: Tokenizer | null = null;
  *  content"): words close to explicit content find nothing, and photos that look explicit are left out. */
 export async function textSearch(q: string, limit = 100_000): Promise<Hit[]> {
   if (!ready) return [];
-  await openVision(await loadSettings(), false); // (the background closes the models when it ran while the app was away)
-  await giveConcepts();
-  tokenizer ??= new Tokenizer(JSON.parse(await tokenizerFile().text()));
-  const vec = await N.visionText(tokenizer.encode(q));
+  const vec = await textVector(q);
   const f = filtered;
   if (f && queryBlocked(floats(vec))) return [];
   return N.indexSearch(vec, limit, -1, f);
+}
+
+/** The text model's vector of some words (the models opened first if the background closed them). */
+async function textVector(q: string) {
+  await openVision(await loadSettings(), false); // (the background closes the models when it ran while the app was away)
+  await giveConcepts();
+  tokenizer ??= new Tokenizer(JSON.parse(await tokenizerFile().text()));
+  return N.visionText(tokenizer.encode(q));
+}
+
+/** Whether words are explicit by the filter search uses (queryBlocked), whatever this account chose: the Play build's
+ *  check of a custom review's search and name (reviews.ts). undefined when it can't be checked on this phone (search
+ *  isn't set up or ready here). */
+export async function wordsBlocked(q: string): Promise<boolean | undefined> {
+  if (!ready || !q.trim()) return ready ? false : undefined;
+  try {
+    // the words together, and each word on its own: an explicit word among harmless ones mustn't get through
+    const words = [...new Set(q.trim().toLowerCase().split(/\s+/).filter((w) => w.length >= 3))];
+    for (const w of [q, ...(words.length > 1 ? words : [])]) if (queryBlocked(floats(await textVector(w)))) return true;
+    return false;
+  } catch { return undefined; }
+}
+
+/** Which of these items look explicit (search's photo filter), while this account's search is filtered: a custom
+ *  review leaves them out also when a filter, a name or the text in a photo found them, not the image model (search
+ *  does that only for the image model's hits). Empty when search isn't filtered or not ready here. */
+export async function explicitAmong(ids: string[]): Promise<Set<string>> {
+  if (!ready || !filtered || !ids.length) return new Set();
+  const kept = new Set((await N.indexSearch(await textVector("a photo"), 1_000_000, -1, true)).map((h) => h.id));
+  const indexed = await indexedAmong(ids);
+  return new Set(ids.filter((id) => indexed.has(id) && !kept.has(id)));
 }
 
 /** little-endian float32 bytes (the native text vector) as numbers */

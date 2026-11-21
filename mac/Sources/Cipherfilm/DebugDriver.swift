@@ -139,6 +139,7 @@ enum DebugDriver {
     if env["CF_SETTINGS_SHOTS"] == "1" { await settingsShots() }
     if env["CF_PROGRESS"] == "1" { await progressShots(); return }
     if env["CF_SIGNIN_ONLY"] == "1" { log("DONE signed in"); return }
+    if env["CF_REVIEWS"] == "1" { await reviewChecks(); return }
     m.agent.askNow = false
     m.settings.agentAsked = true
     m.settings.searchAsked = true
@@ -676,6 +677,82 @@ enum DebugDriver {
   }
 
   /** CF_SHOTS=1: only look, change nothing on the server. Snapshots of the main screens for design reviews. */
+  /** A window as a picture: the first visible one that `pick` accepts (a sheet is a window of its own). */
+  static func snapshotWindow(_ name: String, _ pick: (NSWindow) -> Bool) {
+    guard let dir = env["CF_SNAPSHOTS"], let w = NSApp.windows.first(where: { $0.isVisible && pick($0) }),
+          let v = w.contentView?.superview ?? w.contentView, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) else { log("no window for \(name)"); return }
+    v.cacheDisplay(in: v.bounds, to: rep)
+    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(name).png"))
+  }
+
+  /** CF_REVIEWS=1: custom reviews (CustomReviews.swift) as a person uses them, with pictures: the photos of
+   *  CF_TEST_DIR/upload go up when the library is empty (beach-*, dog-*, city-*), a review of "beach" is made, shown in
+   *  the menu and the editor, on the photos page, played as a story, changed and deleted. */
+  static func reviewChecks() async {
+    let m = AppModel.shared
+    let hooks = DebugHooks.shared
+    let store = m.reviews
+    func pause(_ s: Double = 1.5) async { try? await Task.sleep(nanoseconds: UInt64(s * 1e9)) }
+    let sheet: (NSWindow) -> Bool = { $0.sheetParent != nil }
+    try? await Task.sleep(nanoseconds: 3_000_000_000)
+    if m.items.filter({ $0.name.hasPrefix("beach-") }).isEmpty, let dir = env["CF_TEST_DIR"] {
+      m.upload([URL(fileURLWithPath: dir).appendingPathComponent("upload", isDirectory: true)])
+      _ = await wait("uploads", timeout: 180) { !m.uploads.isEmpty && m.uploads.allSatisfy { if case .waiting = $0.state { return false }; if case .running = $0.state { return false }; return true } }
+      await m.refresh(quiet: true)
+    }
+    check(m.items.filter { $0.name.hasPrefix("beach-") }.count == 8, "8 beach photos in the library (\(m.items.count) items)")
+    await store.ensure()
+    for r in store.doc.reviews { try? await store.remove(r.id) }
+    check(store.doc.reviews.isEmpty, "no reviews to begin with")
+
+    hooks.editReview?(""); await pause(2)
+    snapshotWindow("rv-01-menu-empty", sheet)
+    hooks.editReview?(nil); await pause()
+
+    let found = await ReviewStore.matches("beach", library: m.items)
+    check(found.count == 8, "the search for the review finds the 8 beach photos (\(found.count))")
+    var r = ReviewStore.draft(); r.query = "beach"; r.name = "Beach days"; r.every = .day; r.count = 6
+    guard let saved = try? await store.save(r) else { check(false, "review saved"); return }
+    check(store.doc.reviews.count == 1 && store.isDue(saved), "review saved and due now")
+    hooks.editReview?(""); await pause(2)
+    snapshotWindow("rv-02-menu-list", sheet)
+    hooks.editReview?(nil); await pause()
+    hooks.editReview?(saved.id); await pause(3)
+    snapshotWindow("rv-03-editor", sheet)
+    hooks.editReview?(nil); await pause()
+
+    hooks.go?(.photos); await pause(4)
+    snapshot("rv-04-photos-row")
+
+    // a story plays only in the active window (as the year in review): in front, as when a person clicks the card
+    NSApp.activate(ignoringOtherApps: true)
+    NSApp.windows.first { $0.isVisible && $0.frame.width > 500 }?.makeKeyAndOrderFront(nil)
+    hooks.story?(.review(saved.id)); await pause(2)
+    snapshot("rv-05-story-cover")
+    for k in 1...7 { hooks.storyStep?(1); await pause(1.5); snapshot("rv-06-story-page-\(k)") }
+    _ = await wait("watched", timeout: 30) { store.doc.shown[saved.id] != nil }
+    let shown = store.doc.shown[saved.id]
+    check(shown?.now.count == 6 && !store.isDue(saved), "watching recorded 6 photos for today; not due again today")
+    hooks.story?(nil); await pause(2)
+    snapshot("rv-08-photos-row-after")
+
+    // the next day shows other photos: two of the eight left, four shown longest ago fill up
+    let tomorrow = Date().addingTimeInterval(86_400)
+    let next = await store.play(saved, library: m.items, now: tomorrow)
+    let again = Set(next.picked.map(\.id)).intersection(shown?.now ?? [])
+    check(next.picked.count == 6 && again.count == 4, "tomorrow: 6 photos, only 4 of today's again (\(again.count))")
+
+    var weekly = saved; weekly.every = .week; weekly.count = 12
+    _ = try? await store.save(weekly)
+    check(store.review(saved.id)?.every == .week && store.isDue(store.review(saved.id)!), "changed to weekly: due at once")
+    try? await store.remove(saved.id)
+    check(store.doc.reviews.isEmpty && store.doc.deleted[saved.id] != nil, "deleted, with its marker")
+    hooks.go?(.photos); await pause(3)
+    snapshot("rv-09-photos-no-row")
+    log("DONE reviews (\(failures) failures)")
+    if env["CF_AUTOTEST_QUIT"] == "1" { AppDelegate.quitting = true; NSApp.terminate(nil) }
+  }
+
   static func shots() async {
     let m = AppModel.shared
     let nav = DebugHooks.shared
@@ -702,6 +779,11 @@ final class DebugHooks {
   var go: ((Screen) -> Void)?
   var query: ((String) -> Void)?
   var jump: ((Date) -> Void)?
+  /** a story over the window (nil closes it), and the custom reviews sheet ("" the list, an id its editor, nil closed) */
+  var story: ((Story?) -> Void)?
+  var editReview: ((String?) -> Void)?
+  /** the story on screen one page on or back, as the arrow keys do (a story plays only in the key window) */
+  var storyStep: ((Int) -> Void)?
   /** the map tab's and the photo details' map pages, while they are shown */
   weak var map: MapController?
   weak var mini: MapController?

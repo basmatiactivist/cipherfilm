@@ -7,14 +7,13 @@ import { clearPlayer } from "./player";
 import { ApiError } from "./api";
 import { mem } from "./state";
 import { uploadQueue } from "./upqueue";
-import { haystack, matches } from "./search";
-import { fold as foldWords, parse, removeChip, localDay } from "./search/parse";
-import { chipLabel, narrow as narrowBy, textHits, type Facts } from "./search/combined";
+import { parse, removeChip, localDay } from "./search/parse";
+import { chipLabel, textHits } from "./search/combined";
+import { buildFacts, buildHay, findIn } from "./search/find";
 import { contentSearch, textOf, vectorCount } from "./search/content";
 import { agreeModels, askedLater, askLater, NeedsConsent, useModelConsent } from "./search/consent";
 import { ModelConsent, ModelProgress } from "./search/consentui";
 import { FAMILY as family, TEXT_MODELS, type Family, type Hit } from "./search/rank";
-import { closeMatches } from "./search/matches";
 import { downloadItems, downloadOriginal } from "./downloads";
 import { dropStored, forgetLocked, prefetchThumbs } from "./cache";
 import { Album, addToAlbum, createAlbum, deleteAlbum, loadAlbums, removeFromAlbum, renameAlbum } from "./albums";
@@ -35,6 +34,9 @@ import { Loading } from "./loader";
 import { findMemories, todayKey, type Memory } from "./memories/memories";
 import { useMemoriesOn } from "./memories/setting";
 import { MemoriesRow } from "./memories/ui";
+import { loadReviews, useReviews, watched } from "./memories/reviews";
+import { ReviewsDialog, ReviewsRow } from "./memories/reviewsui";
+import { periodOf, pickReview, replayed, seedOf, type Review } from "./memories/custom";
 import { RecapPage, RecapRow, TripCards, TripHeader, tripTitle, useTrips, type RecapPerson } from "./memories/auto";
 
 // Loaded when first shown; the lightbox is fetched ahead once the grid is up, so the first photo opens at once.
@@ -46,6 +48,7 @@ const MapPage = lazy(() => import("./map/ui").then((m) => m.MapPage));
 const Account = lazy(() => import("./screens").then((m) => m.Account));
 const Admin = lazy(() => import("./screens").then((m) => m.Admin));
 const Story = lazy(() => import("./memories/storyplayer").then((m) => m.Story), () => <div class="lightbox lbwait"><Loading stage label="Opening…" /></div>);
+const ReviewStory = lazy(() => import("./memories/storyplayer").then((m) => m.ReviewStory), () => <div class="lightbox lbwait"><Loading stage label="Opening…" /></div>);
 const Duplicates = lazy(() => import("./cleanup/ui").then((m) => m.Duplicates));
 
 interface Job { key: number; owner: string; name: string; file: File; done: number; total: number; state: "queued" | "working" | "done" | "error"; error?: string; retryable?: boolean; stop: { cancelled: boolean } }
@@ -157,6 +160,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
       if (what.has("items") || what.has("trash")) jobs.push(refreshUsage());
       if (what.has("albums")) jobs.push(refreshAlbums());
       if (what.has("people")) jobs.push(loadPeople().catch(() => {}));
+      if (what.has("reviews")) jobs.push(loadReviews().catch(() => {}));
       if (what.has("index")) jobs.push(refreshIndex(true).catch(() => {}));
       if (what.has("notices")) jobs.push(refreshNotices());
       await Promise.all(jobs);
@@ -451,16 +455,8 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
       .then(([w, n]) => { if (alive) { placeWordsFor.current = these; setPlaceWords(w); setPlaceIdx(n); } }, () => {});
     return () => { alive = false; };
   }, [q, items]);
-  const hay = useMemo(() => {
-    const extra = new Map<string, string[]>();
-    const add = (id: string, n: string) => extra.set(id, [...(extra.get(id) ?? []), n]);
-    for (const [id, w] of placeWords ?? []) add(id, w);
-    for (const a of albums) for (const id of a.itemIds) add(id, a.name);
-    for (const g of people.all) if (g.person?.name && !g.person.hidden) for (const id of g.items) add(id, g.person.name);
-    const out = new Map<string, string>();
-    for (const it of [...(items ?? []), ...(trash ?? [])]) out.set(it.id, foldWords(haystack(it, extra.get(it.id))));
-    return out;
-  }, [items, trash, albums, people.all, placeWords]);
+  const named = useMemo(() => people.all.flatMap((g) => (g.person?.name && !g.person.hidden ? [{ name: g.person.name, items: g.items }] : [])), [people.all]);
+  const hay = useMemo(() => buildHay([...(items ?? []), ...(trash ?? [])], albums, named, placeWords), [items, trash, albums, named, placeWords]);
 
   // what is in the photos: the words that aren't a date, a kind or a name go to the text model (search/content.ts),
   // over the image vectors the Android and Mac apps stored; asked a moment after typing stops
@@ -468,11 +464,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   // left are looked for in names and albums, in the text read in the photos, and by the image model (in English)
   const day0 = localDay(Date.now());
   const parsed = useMemo(() => parse(q, { people: personNames, today: day0, place: (f) => (f.length >= 3 ? placeIdx?.names.get(f) : undefined) }), [q, personNames, placeIdx, day0]);
-  const facts = useMemo<Facts>(() => {
-    const ppl = new Map<string, Set<string>>();
-    for (const g of people.all) if (g.person?.name && !g.person.hidden) ppl.set(g.person.name, new Set([...(ppl.get(g.person.name) ?? []), ...g.items]));
-    return { people: ppl, places: placeIdx?.byItem ?? new Map() };
-  }, [people.all, placeIdx]);
+  const facts = useMemo(() => buildFacts(named, placeIdx?.byItem), [named, placeIdx]);
   const split = { content: parsed.clip };
   // need: the model isn't here and the person wasn't asked yet (search/consent.ts): the question shows, nothing is fetched
   const [content, setContent] = useState<{ q: string; hits: Hit[] | null; status: string; need?: Family }>({ q: "", hits: null, status: "" });
@@ -507,23 +499,8 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
    *  ranked by the image model below its close matches). */
   const match = (list: Item[], withContent = true): { items: Item[]; close: number } => {
     const visible = view.n === "trash" || showBroken ? list : list.filter((i) => !i.broken);
-    const all = (items: Item[]) => ({ items, close: items.length });
-    if (!q) return all(visible);
-    // the filters first; then what the words name (file, camera, album), the text read in the photos, and what the
-    // photos show, in that order
-    const pool = parsed.chips.length ? narrowBy(visible, parsed, facts) : visible;
-    if (!parsed.text) return all(pool);
-    const named = pool.filter((i) => matches(hay.get(i.id) ?? "", parsed.text));
-    const seen = new Set(named.map((i) => i.id));
-    const out = [...named];
-    const byId = new Map(pool.map((i) => [i.id, i]));
-    for (const [id] of textHits(pool, parsed.text, textOf)) { const it = byId.get(id); if (it && !seen.has(id)) { seen.add(id); out.push(it); } }
-    if (!ranked || !withContent) return all(out);
-    // the cut is worked out among the photos the filters let through: "dog Anna" finds Anna's best dog photos
-    const left = ranked.filter((h) => byId.has(h.id) && !seen.has(h.id));
-    const close = out.length + closeMatches(left.map((h) => h.score));
-    for (const h of left) { seen.add(h.id); out.push(byId.get(h.id)!); }
-    return { items: out, close };
+    if (!q) return { items: visible, close: visible.length };
+    return findIn(visible, parsed, facts, hay, textOf, withContent ? ranked : null);
   };
   useEffect(() => {
     if (!parsed.text) { setTextFound(new Map()); return; }
@@ -566,6 +543,37 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
   const [memList, setMemList] = useState<Item[] | null>(null);
   useEffect(() => { if (lb === null) setMemList(null); }, [lb]);
   const openMemory = (m: Memory<Item>) => { setMemList(m.items); openLb(0); };
+
+  // custom reviews (memories/custom.ts): a saved search played as a story; the search runs here like the search box
+  const reviews = useReviews();
+  const [reviewMenu, setReviewMenu] = useState<Review | "new" | "list" | null>(null);
+  const [playing, setPlaying] = useState<{ r: Review; picked?: Item[]; total: number } | null>(null);
+  useEffect(() => { const f = () => { go({ n: "timeline" }); setReviewMenu("list"); }; window.addEventListener("cf-reviews-menu", f); return () => window.removeEventListener("cf-reviews-menu", f); }, []);
+  /** What a review's search finds now: its close matches, like the search box shows them. */
+  const findFor = async (query: string): Promise<Item[]> => {
+    const list = (items ?? []).filter((i) => !i.broken && !i.trashed_at && i.meta?.locked !== true);
+    let words = placeWords, idx = placeIdx;
+    if (!idx && list.length) {
+      const m = await import("./map/locations");
+      [words, idx] = await Promise.all([m.placeWords(list), m.placeNames(list)]);
+    }
+    const pq = parse(query.trim().toLowerCase(), { people: personNames, today: localDay(Date.now()), place: (f) => (f.length >= 3 ? idx?.names.get(f) : undefined) });
+    const ranked = pq.clip.length >= 2 && vectorCount(family) && !askedLater(family) ? await contentSearch(pq.clip, family, searchFiltered()).catch(() => null) : null;
+    const r = findIn(list, pq, buildFacts(named, idx?.byItem), words === placeWords ? hay : buildHay(list, albums, named, words), textOf, ranked);
+    return r.items.slice(0, r.close);
+  };
+  const playReview = (r: Review) => {
+    setReviewMenu(null);
+    setPlaying({ r, total: 0 });
+    const now = new Date();
+    findFor(r.query).then((found) => {
+      const doc = reviews.doc;
+      const period = periodOf(r.every, now);
+      const picked = (doc && replayed(doc, r.id, period, found)) ?? pickReview(found, r.count, doc?.shown[r.id]?.ids ?? [], seedOf(r.id, period));
+      setPlaying((x) => (x?.r.id === r.id ? { r, picked, total: found.length } : x));
+      if (picked.length) watched(r, picked.map((i) => i.id), now).catch(() => {});
+    }, () => setPlaying((x) => (x?.r.id === r.id ? { r, picked: [], total: 0 } : x)));
+  };
   const lbList = memList ?? (view.n === "timeline" ? timelineItems : view.n === "trash" ? trashItemsShown : view.n === "map" ? mapList : shownItems);
   // after an edit the photo may move (a new date) or leave the list (its place removed on the map): the viewer stays on it
   const follow = useRef<{ id: string; old?: Item } | null>(null);
@@ -851,6 +859,7 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
               )}
               {q && items && items.length > 0 && timelineItems.length === 0 && !content.status && <p class="small">Nothing matches “{searched.trim()}”. Search covers file names, dates (2023, March, 2019–2021), places, cameras, albums, people and text in photos{searchable ? ", and what's in them" : ""}.{!searchable && " To search by what's in photos (dog, beach), turn on search in the Android or Mac app."}</p>}
               {!q && <MemoriesRow memories={memories} onOpen={openMemory} />}
+              {!q && memOn && items && reviews.doc && <ReviewsRow doc={reviews.doc} byId={byId} onOpen={playReview} onManage={() => setReviewMenu("list")} />}
               {!q && memOn && items && <RecapRow items={items} onOpen={setStory} />}
               {items && items.length > 0 && albums.length > 0 && !selectMode && !q && <p class="small hint desktoponly">Tip: drag photos onto an album to file them.</p>}
               {results(timelineItems)}
@@ -1027,6 +1036,14 @@ export function Library(props: { email: string; admin: boolean; onSignOut: () =>
       {help && <ShortcutsHelp onClose={() => setHelp(false)} />}
       {report && <ReportDialog serverVersion={mem.me?.server_version} onClose={() => setReport(false)} />}
 
+      {reviewMenu !== null && (
+        <ReviewsDialog doc={reviews.doc} error={reviews.error} start={reviewMenu === "list" ? undefined : reviewMenu}
+          count={async (query) => (await findFor(query)).length} onPlay={playReview} onClose={() => setReviewMenu(null)} />
+      )}
+      {playing && items && (
+        <ReviewStory review={playing.r} picked={playing.picked} total={playing.total} covered={lb !== null} onClose={() => setPlaying(null)}
+          onEdit={() => { const r = playing.r; setPlaying(null); setReviewMenu(r); }} onOpenPhoto={(list, i) => { setMemList(list); openLb(i); }} />
+      )}
       {story !== null && items && (
         <Story year={story} items={items} people={recapPeople} trips={trips} covered={lb !== null} onClose={() => setStory(null)}
           onOpenPhoto={(list, i) => { setMemList(list); openLb(i); }} onOpenPerson={(key) => { setStory(null); openPerson(key); }}

@@ -198,7 +198,8 @@ enum MenuBarIcon {
 
   @MainActor static func image(busy: Bool) -> NSImage {
     if let hit = cache[busy] { return hit }
-    let img = NSImage(size: NSSize(width: 22, height: 18), flipped: true) { _ in
+    // drawn on whatever thread draws the image, not only the main one
+    let img = NSImage(size: NSSize(width: 22, height: 18), flipped: true) { @Sendable _ in
       NSColor.black.set()
       // the mark at the menu bar's full height: the 24-grid shape spans y 1.6...22, scaled to 0...17.5
       let k: CGFloat = 0.86

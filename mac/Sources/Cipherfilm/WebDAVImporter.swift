@@ -196,12 +196,6 @@ final class WebDAVImporter {
   private func run(_ src: WebDAVSource) {
     guard let api, let userId, let pkB64 = settings.pubkey, let pk = try? B64.decode(pkB64), let known, case let locked = knownLocked,
           let folder = URL(string: src.url) else { return }
-    guard let password = WebDAVPasswords.get(userId: userId, source: src.id) else {
-      status[src.id]?.phase = .problem
-      status[src.id]?.problem = "The password isn't in the keychain anymore. Remove this folder and add it again."
-      status[src.id]?.lastChecked = Date()
-      return
-    }
     let gen = generation
     let flag = live
     let parallel = min(6, max(1, settings.webdavParallel))
@@ -211,6 +205,20 @@ final class WebDAVImporter {
     status[id] = st
     task = Task {
       @MainActor func stillOn() -> Bool { gen == generation && !Task.isCancelled }
+      // the keychain is read off the main thread: after an update macOS may ask before handing the password to the new
+      // build, and while that question waits the window must keep drawing (2.11.0 froze there)
+      let srcId = id
+      let found = await Task.detached(priority: .utility) { WebDAVPasswords.get(userId: userId, source: srcId) }.value
+      guard let password = found else {
+        if gen == generation {
+          status[id]?.phase = .problem
+          status[id]?.problem = "The password isn't in the keychain anymore, or access to it was refused. Remove this folder and add it again."
+          status[id]?.lastChecked = Date()
+          task = nil
+        }
+        return
+      }
+      guard stillOn() else { if gen == generation { task = nil }; return }
       let client = WebDAVClient(folder: folder, user: src.user, password: password)
       defer {
         client.invalidate()

@@ -70,7 +70,9 @@ enum TouchID {
   /** The master key after a Touch ID check; nil when the person cancelled. Throws when the stored key no longer works. */
   static func unlock(me: Me) async throws -> Data? {
     let userId = me.user.id
-    guard let st = stored(userId) else { return nil }
+    // read off the main thread: after an update macOS may ask before handing the item to the new build, and that
+    // question must not freeze the window
+    guard let st = await Task.detached(priority: .userInitiated, operation: { stored(userId) }).value else { return nil }
     let ctx = LAContext()
     do {
       try await ctx.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: "unlock your library")

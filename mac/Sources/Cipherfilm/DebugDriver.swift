@@ -757,6 +757,8 @@ enum DebugDriver {
     let m = AppModel.shared
     let nav = DebugHooks.shared
     func pause(_ s: Double = 1.5) async { try? await Task.sleep(nanoseconds: UInt64(s * 1e9)) }
+    // the oldest photos at the end of the timeline (scrolled there by the date jump)
+    if let oldest = m.items.map(\.date).min() { nav.jump?(oldest); await pause(3); snapshot("02b-oldest") }
     nav.go?(.albums); await pause(); snapshot("03-albums")
     nav.go?(.people); await pause(2); snapshot("04-people")
     nav.go?(.trash); await pause(); snapshot("05-trash")

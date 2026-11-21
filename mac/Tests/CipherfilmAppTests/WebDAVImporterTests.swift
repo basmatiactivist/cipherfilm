@@ -8,7 +8,7 @@ import Testing
 @MainActor @Suite struct WebDAVImporterTests {
   let user = "0123456789abcdef0123456789abcdee"
 
-  @Test func stopsAtLockAndForgetsAtSignOut() throws {
+  @Test func stopsAtLockAndForgetsAtSignOut() async throws {
     let w = WebDAVImporter()
     var s = AccountSettings()
     s.pubkey = B64.encode(Data(repeating: 9, count: 32))
@@ -19,7 +19,8 @@ import Testing
                   itemKey: nil, broken: false)
     w.libraryChanged([it])
     #expect(w.knownPrints == [Crypto.fingerprint(name: "a.jpg", size: 1)])
-    // no password in the keychain: the folder says so, nothing runs
+    // no password in the keychain: the folder says so, nothing runs (the keychain is read off the main thread)
+    for _ in 0..<200 where w.running { try await Task.sleep(for: .milliseconds(10)) }
     #expect(!w.running)
     #expect(w.status[s.webdav[0].id]?.phase == .problem)
     w.stop() // lock

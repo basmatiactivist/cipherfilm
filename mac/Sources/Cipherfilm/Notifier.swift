@@ -14,7 +14,7 @@ enum Notifier {
   static func post(_ title: String, _ body: String) {
     guard enabled, Bundle.main.bundleIdentifier != nil else { return }
     let c = UNUserNotificationCenter.current()
-    c.requestAuthorization(options: [.alert, .sound]) { ok, _ in
+    c.requestAuthorization(options: [.alert, .sound]) { @Sendable ok, _ in  // called on a background queue
       guard ok else { return }
       let n = UNMutableNotificationContent()
       n.title = title
@@ -70,7 +70,7 @@ enum Notifier {
       (id: "notice-\(n.id)", title: NoticeAlerts.title(n), body: n.text(time: n.date.formatted(date: .abbreviated, time: .shortened)))
     }
     let c = UNUserNotificationCenter.current()
-    c.requestAuthorization(options: [.alert, .sound]) { ok, _ in
+    c.requestAuthorization(options: [.alert, .sound]) { @Sendable ok, _ in  // called on a background queue
       guard ok else { return }
       for i in items {
         let n = UNMutableNotificationContent()

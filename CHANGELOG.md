@@ -7,6 +7,17 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+## [2.11.1] - 2026-11-21
+
+### Fixed
+- Mac: signing in with a passkey (two-step sign-in) closed the app: the browser's answer came back on a background
+  thread, which Swift's checks stop. The same could happen with macOS notifications (a new sign-in) and the menu bar
+  icon; all three now run where macOS calls them.
+- Mac: after an update macOS may ask before handing a stored WebDAV password or the fingerprint key to the new build;
+  that question froze the window until it was answered. The keychain is now read off the main thread.
+- Mac: the Import and Export icons in Settings were taller than the others and sat on half a point, so they moved a
+  little when the window changed; they now match the rest.
+
 ## [2.11.0] - 2026-11-21
 
 ### Added

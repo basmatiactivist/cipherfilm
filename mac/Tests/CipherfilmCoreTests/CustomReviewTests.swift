@@ -221,10 +221,11 @@ private func num(_ x: Any?) -> Int { (x as! NSNumber).intValue }
 
   @Test func tidyDropsOldMarkersAndOrphanHistory() {
     var d = ReviewDoc()
-    d.deleted = ["old": 0, "fresh": 95 * 86_400_000]
+    let fresh: Double = 95 * 86_400_000
+    d.deleted = ["old": 0, "fresh": fresh]
     d.shown = ["nobody": ReviewShown(period: 1, ids: ["a"], now: ["a"])]
     let t = C.tidy(d, now: 100 * 86_400_000)
-    #expect(t.deleted == ["fresh": 95 * 86_400_000])
+    #expect(t.deleted == ["fresh": fresh])
     #expect(t.shown.isEmpty)
   }
 

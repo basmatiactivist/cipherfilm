@@ -35,27 +35,22 @@ Play build and must not appear anywhere.
 
 ## Shots, in upload order
 
-| # | File | Screen and state | Caption EN | Caption DE |
+Captured 2026-11-21 with 2.11.1 on the demo server (`reviewer@`). The raw captures are in `screenshots/raw/`; the
+framed ones are the store's, in `listing/<locale>/images/phoneScreenshots/`.
+
+| # | File | Screen and state | Caption EN (sub) | Caption DE (sub) |
 |---|---|---|---|---|
-| 1 | `01-timeline` | **Photos** (timeline), scrolled to a day with a varied grid of demo photos, day headings visible | Your photos, encrypted on your phone | Ihre Fotos, auf dem Handy verschlüsselt |
-| 2 | `02-search` | **Search**, query `beach` (or `dog`) typed, results grid shown | Find photos by what is in them | Fotos nach Inhalt finden |
-| 3 | `03-people` | **People**, a few named demo people (use CC0 / consented demo faces only; if none are available, skip this shot) | Faces grouped on your device | Gesichter, erkannt auf dem Gerät |
-| 4 | `04-album` | An **album** opened (e.g. "Hiking 2026"), with its grid | Albums, favourites and a calm timeline | Alben, Favoriten, ruhige Zeitleiste |
-| 5 | `05-backup` | **Backup** screen with folders chosen, "Back up automatically" on, a run in progress (progress visible); optionally pull down the shade to show the upload notification | Automatic backup to your own server | Automatisches Backup auf Ihren Server |
-| 6 | `06-unlock` | **Unlock** screen with the system fingerprint prompt showing ("Unlock with fingerprint or face") | Unlock with your fingerprint | Mit Fingerabdruck entsperren |
-| 7 | `07-share` | Android **share sheet** from the Files/Gallery app with Cipherfilm as target, or Cipherfilm's **share** screen right after (items listed, Upload button) | Share from any app to upload | Aus jeder App teilen und hochladen |
-| 8 | `08-privacy` | **Account** screen: "Unlock with fingerprint or face", "Lock when you leave the app", "Lock when the screen turns off", "Shake to lock and close", app and server version | No ads, no tracking, no account with us | Keine Werbung, kein Tracking, kein Konto bei uns |
+| 1 | `01-timeline` | **Photos**: "Your years" and a day of demo photos | Your photos, encrypted on your phone (Backed up to your own server) | Ihre Fotos, auf dem Handy verschlüsselt (Gesichert auf Ihrem eigenen Server) |
+| 2 | `02-search` | **Search** `harbour`: only demo photos in the results (other words also find the test images in the reviewer library) | Find photos by what is in them (Search runs on the phone) | Fotos nach Inhalt finden (Die Suche läuft auf dem Handy) |
+| 3 | `03-year-in-review` | A year in review playing as a story, its cover | Your year in review, as a story | Ihr Jahr im Rückblick, als Story |
+| 4 | `04-custom-reviews` | **Photos** with "Your reviews" (a weekly review "bridges") above "Your years" | Your own reviews, daily to monthly (Different photos each time) | Eigene Rückblicke, täglich bis monatlich (Jedes Mal andere Fotos) |
+| 5 | `05-albums` | **Albums**: Favorites, Archive, Locked folder, albums | Albums, archive and a locked folder | Alben, Archiv und gesperrter Ordner |
+| 6 | `06-map` | **Map** with photo pins | Your photos on a map (Off until you turn it on) | Ihre Fotos auf der Karte (Aus, bis Sie sie einschalten) |
+| 7 | `07-backup` | **Backup**, automatic backup on, all Android settings ticked; cut above the folder list | Automatic backup to your own server (Needs your own Cipherfilm server) | Automatisches Backup auf Ihren Server (Benötigt Ihren eigenen Cipherfilm-Server) |
+| 8 | `08-locks` | **Account** scrolled to the lock settings (never the top of Account: it lists the account's devices) | Locks itself. No ads, no tracking (Unlock with your fingerprint) | Sperrt sich selbst. Ohne Werbung, ohne Tracking (Mit Fingerabdruck entsperren) |
 
-Optional replacement for 4 or 7: **Free up space** screen with the amount that can be freed:
-EN "Free up space, safely" / DE "Speicher freigeben, sicher".
-
-Optional sub-lines (`--sub`), kept short and identical in spirit across languages:
-
-| # | EN | DE |
-|---|---|---|
-| 1 | Your server stores only ciphertext | Ihr Server speichert nur Chiffretext |
-| 2 | Search runs on the phone | Die Suche läuft auf dem Handy |
-| 5 | Needs your own Cipherfilm server | Benötigt Ihren eigenen Cipherfilm-Server |
+The status bar's notification icons were painted over in the background colour (system UI, not the app).
+The system fingerprint prompt can't be captured (it is a secure window), so the locks are shown in Account.
 
 ## Framing
 

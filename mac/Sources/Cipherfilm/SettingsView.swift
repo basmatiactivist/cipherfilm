@@ -14,8 +14,8 @@ struct SettingsView: View {
       AccountPane().tabItem { Label("Account", systemImage: "person.crop.circle") }.tag("account")
       SecuritySettings().tabItem { Label("Security", systemImage: "lock.shield") }.tag("security")
       SearchSettings().tabItem { Label("Search & People", systemImage: "sparkle.magnifyingglass") }.tag("search")
-      ImportPane().tabItem { Label("Import", systemImage: "square.and.arrow.down.on.square") }.tag("import")
-      ExportSettings().tabItem { Label("Export", systemImage: "square.and.arrow.up.on.square") }.tag("export")
+      ImportPane().tabItem { Label("Import", systemImage: "tray.and.arrow.down") }.tag("import")
+      ExportSettings().tabItem { Label("Export", systemImage: "tray.and.arrow.up") }.tag("export")
       NotificationsPane().tabItem { Label("Notifications", systemImage: "bell.badge") }.tag("notifications")
       // only for an administrator, never the public demo login; the server checks every request itself
       if Admin.offered(model.me) {

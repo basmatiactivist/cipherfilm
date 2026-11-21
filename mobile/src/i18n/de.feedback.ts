@@ -21,6 +21,8 @@ export const deFeedback: Record<string, string> = {
   "The short introduction again": "Die kurze Einführung noch einmal",
   "Share Cipherfilm": "Cipherfilm teilen",
   "Send a link to the app, or copy it": "Einen Link zur App senden oder kopieren",
+  "Rate Cipherfilm": "Cipherfilm bewerten",
+  "Opens the app's page in the Play Store": "Öffnet die Seite der App im Play Store",
   "Cipherfilm keeps photos and videos end-to-end encrypted, on your own server. {link}":
     "Cipherfilm bewahrt Fotos und Videos Ende-zu-Ende-verschlüsselt auf, auf dem eigenen Server. {link}",
   "Suggest an idea": "Idee vorschlagen",

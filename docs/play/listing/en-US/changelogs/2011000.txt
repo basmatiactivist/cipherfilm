@@ -1,0 +1,2 @@
+New: custom reviews. Save a search such as "dogs" or a person's name and get it as a story, daily, weekly or monthly, with 6 to 30 photos and different photos each time. Account › Memories › Custom reviews. Optional notification that doesn't say what the review is about. Needs the Cipherfilm server 2.11.
+New: Account › About › Rate Cipherfilm.

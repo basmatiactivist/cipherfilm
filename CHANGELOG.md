@@ -7,6 +7,8 @@ version into the GitHub release notes, so a release cannot be published without 
 
 ## [Unreleased]
 
+## [2.11.0] - 2026-11-21
+
 ### Added
 - Custom reviews on the web, Android and the Mac: save a search ("dogs", "Anna in Zürich", "beach 2019") and it plays
   as a story like the year in review, daily, weekly or monthly, with 6, 12, 20 or 30 photos, and other photos each
@@ -16,6 +18,8 @@ version into the GitHub release notes, so a release cannot be published without 
   with their master key: the server never learns the searches, the names or which photos were shown
   (docs/MEMORIES.md). The Android app from Google Play doesn't show reviews of explicit search words. Needs the server
   of this release (an older one says so in the menu).
+- Android (Play build only): Account › About › "Rate Cipherfilm" opens the app's page in the Play Store. No rating
+  prompt and no review library; the GitHub build has no such entry.
 
 ## [2.10.1] - 2026-11-19
 

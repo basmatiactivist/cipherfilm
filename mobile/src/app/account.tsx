@@ -18,7 +18,7 @@ import { CHOICES, away, expectAway, setAutoLock, useAutoLock } from "../autolock
 import { privacyUrl } from "../store";
 import { mapProvider, mapProviderLong, setMapOn, useMapOn } from "../mapConsent";
 import { IDEA_FORM, reportUrl, summary, thisPhone } from "../report";
-import { shareMessage } from "../shareApp";
+import { PLAY_APP_LISTING, PLAY_LISTING, rateOffered, shareMessage } from "../shareApp";
 import { isAdmin } from "../admin";
 import { type AccountStorage, loadMyStorage } from "../storage";
 import { StorageView } from "../StorageView";
@@ -204,6 +204,8 @@ export default function Account() {
           onPress={() => router.push({ pathname: "/welcome", params: { again: "1" } })} style={st.item} />
         <List.Item title={t("Share Cipherfilm")} description={t("Send a link to the app, or copy it")}
           onPress={() => { expectAway(); Share.share({ message: shareMessage() }, { dialogTitle: t("Share Cipherfilm") }).catch(() => {}); }} style={st.item} />
+        {rateOffered() ? <List.Item title={t("Rate Cipherfilm")} description={t("Opens the app's page in the Play Store")}
+          onPress={() => { expectAway(); Linking.openURL(PLAY_APP_LISTING).catch(() => inBrowser(PLAY_LISTING)); }} style={st.item} /> : null}
         <List.Item title={t("Suggest an idea")} description={t("Opens the idea form in the browser")}
           onPress={() => { expectAway(); inBrowser(IDEA_FORM); }} style={st.item} />
         <List.Item title={t("Report a problem")} description={t("Opens the issue form in the browser")}

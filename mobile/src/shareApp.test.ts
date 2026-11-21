@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appLink, PLAY_LISTING, shareMessage, WEBSITE } from "./shareApp";
+import { appLink, PLAY_APP_LISTING, PLAY_LISTING, rateOffered, shareMessage, WEBSITE } from "./shareApp";
 import { IDEA_FORM } from "./report";
 
 describe("share the app", () => {
@@ -13,6 +13,14 @@ describe("share the app", () => {
     expect(shareMessage(true)).toContain(PLAY_LISTING);
     expect(shareMessage(false)).toContain(WEBSITE);
     expect(shareMessage(true)).not.toMatch(/@|\{link\}/);
+  });
+});
+
+describe("rate the app", () => {
+  it("is offered only in the Play build and opens this app's store page", () => {
+    expect(rateOffered(true)).toBe(true);
+    expect(rateOffered(false)).toBe(false);
+    expect(PLAY_APP_LISTING).toBe("market://details?id=app.cipherfilm");
   });
 });
 

@@ -120,7 +120,7 @@ and visitors are signed out every hour. To keep your own photos, [run your own s
 
 | | How | |
 |---|---|---|
-| **Android** | [Google Play](https://play.google.com/apps/testing/app.cipherfilm), closed test for now: join the [tester group](https://groups.google.com/g/cipherfilm-testers) first | |
+| **Android** | [Google Play](https://play.google.com/store/apps/details?id=app.cipherfilm), updates through Play with every release | |
 | | [Obtainium](https://obtainium.imranr.dev/), installs and updates from the GitHub releases: add `https://github.com/basmatiactivist/cipherfilm` | recommended without Google |
 | | APK from the [latest release](https://github.com/basmatiactivist/cipherfilm/releases/latest) | 64-bit ARM phones |
 | **Mac** | from the [latest release](https://github.com/basmatiactivist/cipherfilm/releases/latest) | Apple silicon, macOS 15 or newer |

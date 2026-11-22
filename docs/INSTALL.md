@@ -11,7 +11,7 @@ shasum -a 256 -c SHA256SUMS --ignore-missing      # macOS and Linux
 built by the release workflow also carry a signed build provenance; with the GitHub CLI:
 `gh attestation verify cipherfilm-android-X.Y.Z.apk --repo basmatiactivist/cipherfilm`.
 
-You need a **server** first; the apps connect to it. The Android app is also in a closed test on Google Play (below).
+You need a **server** first; the apps connect to it. The Android app is also on Google Play (below).
 
 ## Server (Docker)
 
@@ -43,7 +43,7 @@ to use Cipherfilm on iPhone and iPad; there is no iOS app yet.
 ## Android
 
 For Android 7 or newer on a 64-bit ARM phone (nearly every recent phone). Three ways: the APK by hand,
-the APK through Obtainium (updates on their own), or the Google Play closed test.
+the APK through Obtainium (updates on their own), or Google Play.
 
 File: `cipherfilm-android-X.Y.Z.apk`.
 
@@ -76,13 +76,10 @@ without an app store.
    on the phone.
 3. Tap **Install**. Obtainium checks for new releases and offers each update.
 
-### Google Play (closed test)
+### Google Play
 
-The Play build is in a closed test for now. Join the testers' group
-[groups.google.com/g/cipherfilm-testers](https://groups.google.com/g/cipherfilm-testers) with your Google account,
-then open [play.google.com/apps/testing/app.cipherfilm](https://play.google.com/apps/testing/app.cipherfilm) on the
-phone (or in a browser signed in to the same account), tap **Become a tester** and install Cipherfilm from Play. Play
-installs updates from then on.
+Install Cipherfilm from [Google Play](https://play.google.com/store/apps/details?id=app.cipherfilm). Every release
+also goes to Play, after Google's review, and Play installs the updates.
 
 ### Google Play or the APK?
 
@@ -133,4 +130,4 @@ xattr -d com.apple.quarantine cipherfilm-decrypt-darwin-arm64
 
 ## Coming later
 
-The Android app on Google Play for everyone (after the closed test), and a Mac app signed and notarised by Apple.
+A Mac app signed and notarised by Apple.

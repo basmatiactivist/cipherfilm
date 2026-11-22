@@ -61,8 +61,8 @@ The `Release` workflow then:
    build provenance (`gh attestation verify <file> --repo <owner>/cipherfilm`): `SHA256SUMS` sits next to the files
    it covers, so it only catches a damaged download, while the attestation shows the file came from this workflow.
 6. uploads the Play bundle to Google Play's **internal testing** track and promotes it to the closed test (track
-   `alpha`), not for pre-releases (see "Google Play from CI" below). Production is a second, hand-started step: the
-   **Google Play promote** workflow.
+   `alpha`) and to **production** (full rollout; Play reviews it before it goes live), not for pre-releases (see
+   "Google Play from CI" below). The **Google Play promote** workflow stays for a staged rollout or a run by hand.
 
 GitHub's macOS arm64 runners are sometimes unavailable for a long time ("not acquired by Runner … capacity
 constraints"). The release then goes out without the Mac app. First choice: **Re-run failed jobs** on the release run
@@ -147,7 +147,8 @@ the app. Without them English falls back to the Android lines of the CHANGELOG s
 Console (nothing reviewed yet), Play only takes draft releases: the job then creates one, and you roll it out on the
 track in Play Console once.
 
-**To production** (or closed/open testing), once the internal build looks right: Actions › **Google Play promote** ›
+**To production**: the release workflow does it for every release (full rollout). By hand, e.g. for a staged
+rollout or after a failed run: Actions › **Google Play promote** ›
 Run workflow, *Use workflow from* the tag `vX.Y.Z`, `to` = production, `rollout` = 1 (everyone) or e.g. 0.2 for a
 staged rollout to 20 %. It gives the same release, with its notes, to that track; Play reviews it there. It refuses a
 tag that is not on `master` or has no published GitHub release. Or promote in

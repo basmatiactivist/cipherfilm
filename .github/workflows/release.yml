@@ -266,10 +266,11 @@ jobs:
           fi
 
   play:
-    # Google Play: the bundle just released goes to the internal testing track and the closed test, with "What's new" from
-    # docs/play/listing/<lang>/changelogs/<versionCode>.txt or else CHANGELOG.md (mobile/scripts/play-notes.sh).
-    # Production is a separate, hand-started step (play-promote.yml). Not for pre-releases; without the service
-    # account's key in the release environment it only warns (docs/RELEASING.md, "Google Play from CI").
+    # Google Play: the bundle just released goes to the internal testing track, the closed test and production (full
+    # rollout; Play reviews it there), with "What's new" from docs/play/listing/<lang>/changelogs/<versionCode>.txt or
+    # else CHANGELOG.md (mobile/scripts/play-notes.sh). play-promote.yml stays for a staged rollout or a re-run by hand.
+    # Not for pre-releases; without the service account's key in the release environment it only warns
+    # (docs/RELEASING.md, "Google Play from CI").
     needs: [release, android]
     if: ${{ !cancelled() && needs.release.result == 'success' && needs.release.outputs.created == 'true' && !contains(github.ref_name, '-') }}
     runs-on: ubuntu-latest
@@ -283,7 +284,7 @@ jobs:
         env:
           ANDROID_SUMS: ${{ needs.android.outputs.sums }}
         run: cd dist && echo "$ANDROID_SUMS" | base64 -d | sha256sum -c --strict
-      - name: Upload to the internal testing track
+      - name: Upload to internal testing, the closed test and production
         env:
           PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
         run: |
@@ -296,4 +297,7 @@ jobs:
           mobile/scripts/play.sh upload "dist/cipherfilm-play-$v.aab" internal "$RUNNER_TEMP/notes"
           # and to the testers: the closed test (track "alpha", Google Group cipherfilm-testers), with the same notes
           IFS=. read -r major minor patch <<< "$v"
-          mobile/scripts/play.sh promote "$((major * 1000000 + minor * 1000 + patch))" internal alpha
+          vc=$((major * 1000000 + minor * 1000 + patch))
+          mobile/scripts/play.sh promote "$vc" internal alpha
+          # and to everyone: production (since 2.11.1, after the production access was granted)
+          mobile/scripts/play.sh promote "$vc" internal production 1

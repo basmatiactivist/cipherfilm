@@ -30,7 +30,7 @@ dependencies {
   implementation "androidx.media3:media3-exoplayer:1.11.1"
   implementation "androidx.media3:media3-ui:1.11.1"
   // search on the phone: LAION's CLIP ViT-B/32, YuNet and SFace (Vision.kt)
-  implementation "com.microsoft.onnxruntime:onnxruntime-android:1.31.1"
+  implementation "com.microsoft.onnxruntime:onnxruntime-android:1.32.0"
   // passkeys as the second step of a sign-in (Passkeys.kt): the system's Credential Manager (Android 14+); deliberately
   // not credentials-play-services-auth, which would bring Google Play services' copy for older phones
   implementation "androidx.credentials:credentials:1.6.0"

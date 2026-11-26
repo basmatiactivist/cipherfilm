@@ -3,7 +3,7 @@
 FROM caddy:2.11.8-builder-alpine@sha256:e42a64b3bc70aa3a1387bde85b930e507a378fecae5852d5bfde9dcd37d0b999 AS build
 RUN xcaddy build --with github.com/caddy-dns/cloudflare@v0.2.4
 
-FROM caddy:2.11.8-alpine@sha256:f6228111e5fafa1a5238258d0858e103f10599b8d1659a146e7726681a002bb9
+FROM caddy:2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
 COPY --from=build /usr/bin/caddy /usr/bin/caddy
 # it only listens on 4443 and runs with no capabilities at all; a file capability would stop it from starting
 RUN setcap -r /usr/bin/caddy
